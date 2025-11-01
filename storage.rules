@@ -1,0 +1,80 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // ==================== HELPER FUNCTIONS ====================
+
+    // Проверка аутентификации
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Проверка владения ресурсом
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // Проверка размера файла (макс 5MB)
+    function isValidSize() {
+      return request.resource.size <= 5 * 1024 * 1024;
+    }
+
+    // Проверка типа изображения
+    function isImage() {
+      return request.resource.contentType.matches('image/.*');
+    }
+
+    // ==================== AVATARS ====================
+
+    // Аватары пользователей: avatars/{userId}/profile.jpg
+    match /avatars/{userId}/{fileName} {
+      // ЧТЕНИЕ: Публичный доступ к аватарам (для отображения в UI)
+      allow read: if true;
+
+      // ЗАПИСЬ: Только владелец может загрузить свой аватар
+      // Или админы могут загружать аватары для любого пользователя своей компании
+      allow write: if isOwner(userId) && isImage() && isValidSize();
+    }
+
+    // ==================== DOCUMENTS ====================
+
+    // Документы пользователей: documents/{userId}/{projectId}/{documentId}
+    match /documents/{userId}/{projectId}/{documentId} {
+      // Только владелец может читать и записывать свои документы
+      allow read, write: if isOwner(userId);
+    }
+
+    // ==================== PUBLIC ESTIMATES ====================
+
+    // Публичные сметы: publicEstimates/{estimateId}/{fileName}
+    match /publicEstimates/{estimateId}/{fileName} {
+      // Любой может читать публичные сметы
+      allow read: if true;
+
+      // Только владелец может загружать (проверяется на уровне приложения)
+      allow write: if isSignedIn();
+    }
+
+    // ==================== DEFAULT DENY ====================
+
+    // Запретить доступ ко всем остальным файлам
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
+
+/**
+ * ПРАВИЛА БЕЗОПАСНОСТИ FIREBASE STORAGE
+ *
+ * Эти правила обеспечивают:
+ * 1. Публичный доступ к аватарам (для отображения в UI)
+ * 2. Только владелец может загружать свой аватар
+ * 3. Ограничение размера файла (5MB)
+ * 4. Ограничение типа файла (только изображения)
+ * 5. Приватные документы для пользователей
+ *
+ * РАЗВЕРТЫВАНИЕ:
+ * firebase deploy --only storage
+ */

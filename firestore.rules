@@ -1,0 +1,144 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ==================== HELPER FUNCTIONS ====================
+
+    // Проверка аутентификации
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Проверка владения ресурсом
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // ==================== USER PROFILES ====================
+
+    // Пользователи могут читать и обновлять ТОЛЬКО свой профиль
+    // Создание и удаление выполняется ТОЛЬКО через Cloud Functions
+    match /users/{userId} {
+      // --- Вспомогательные функции для управления командой ---
+      function getUserProfile(uid) {
+        return get(/databases/$(database)/documents/users/$(uid)).data;
+      }
+
+      function requestingUserRole() {
+        return getUserProfile(request.auth.uid).role;
+      }
+
+      function requestingUserCompanyId() {
+        return getUserProfile(request.auth.uid).companyId;
+      }
+
+      function isOwnProfile() {
+        return request.auth.uid == userId;
+      }
+
+      function targetUserCompanyId() {
+        return resource.data.companyId;
+      }
+
+      function targetUserIsActive() {
+        return resource.data.status == 'active';
+      }
+
+      // ЧТЕНИЕ:
+      // Разрешено, если:
+      // 1. Это мой профиль, ИЛИ
+      // 2. Я из той же компании (для просмотра коллег)
+      allow read: if isSignedIn() &&
+                   (request.auth.uid == userId ||
+                    requestingUserCompanyId() == targetUserCompanyId());
+
+      // СОЗДАНИЕ:
+      // Запрещено на клиенте. Только через Cloud Function 'onUserCreate'.
+      allow create: if false;
+
+      // ОБНОВЛЕНИЕ:
+      // Сложное правило с двумя сценариями:
+      allow update: if
+        // Сценарий 1: Я обновляю свой собственный профиль
+        (isOwnProfile() &&
+            // ...но не могу менять себе роль, статус или компанию
+            !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'status', 'companyId']))
+        ||
+        // Сценарий 2: Я Админ компании
+        (requestingUserRole() == 'admin' &&
+            requestingUserCompanyId() == targetUserCompanyId() &&
+            // ...но не могу понизить роль самому себе
+            !(isOwnProfile() && request.resource.data.diff(resource.data).affectedKeys().hasAny(['role'])));
+
+      // УДАЛЕНИЕ:
+      // Запрещено на клиенте. Только через Cloud Function 'adminDeleteUser'.
+      allow delete: if false;
+    }
+
+    // ==================== USER DATA COLLECTIONS ====================
+
+    // Проверка активности пользователя
+    function userIsActive(uid) {
+      return get(/databases/$(database)/documents/users/$(uid)).data.status == 'active';
+    }
+
+    // Сметы пользователя (Estimates)
+    match /users/{userId}/estimates/{estimateId} {
+      allow read, write: if isOwner(userId) && userIsActive(request.auth.uid);
+    }
+
+    // Проекты пользователя (Projects)
+    match /users/{userId}/projects/{projectId} {
+      allow read, write: if isOwner(userId) && userIsActive(request.auth.uid);
+
+      // Документы проекта
+      match /documents/{documentId} {
+        allow read, write: if isOwner(userId) && userIsActive(request.auth.uid);
+      }
+    }
+
+    // Контрагенты пользователя (Counterparties)
+    match /users/{userId}/counterparties/{counterpartyId} {
+      allow read, write: if isOwner(userId) && userIsActive(request.auth.uid);
+    }
+
+    // Задачи пользователя (Tasks)
+    match /users/{userId}/tasks/{taskId} {
+      allow read, write: if isOwner(userId) && userIsActive(request.auth.uid);
+    }
+
+    // Товары/Инвентарь пользователя (Products)
+    match /users/{userId}/products/{productId} {
+      allow read, write: if isOwner(userId) && userIsActive(request.auth.uid);
+    }
+
+    // ==================== PUBLIC DATA ====================
+
+    // Публичные сметы (для просмотра по ссылке)
+    // Любой может читать, запись запрещена
+    match /publicEstimates/{estimateId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // ==================== DEFAULT DENY ====================
+
+    // Запретить доступ ко всем остальным документам
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
+
+/**
+ * ПРАВИЛА БЕЗОПАСНОСТИ FIRESTORE
+ *
+ * Эти правила обеспечивают:
+ * 1. Пользователи могут работать ТОЛЬКО со своими данными
+ * 2. Профили создаются/удаляются только через Cloud Functions
+ * 3. Публичные сметы доступны для чтения всем
+ * 4. Все остальное по умолчанию запрещено
+ *
+ * РАЗВЕРТЫВАНИЕ:
+ * firebase deploy --only firestore:rules
+ */

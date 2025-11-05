@@ -8,6 +8,8 @@ import {
   Task as TaskIcon,
   Folder as FolderIcon,
   AdminPanelSettings as AdminIcon,
+  AccountCircle as ProfileIcon,
+  Settings as SettingsIcon,
 } from '@mui/icons-material';
 import { useAuth } from '../../auth/AuthContext';
 
@@ -20,6 +22,8 @@ const Footer: React.FC = () => {
 
   const mainLinks = [
     { title: 'Главная', path: '/', icon: <HomeIcon sx={{ fontSize: 18 }} /> },
+    { title: 'Мой профиль', path: '/profile', icon: <ProfileIcon sx={{ fontSize: 18 }} /> },
+    { title: 'Настройки', path: '/settings', icon: <SettingsIcon sx={{ fontSize: 18 }} /> },
   ];
 
   const moduleLinks = [
@@ -30,6 +34,7 @@ const Footer: React.FC = () => {
   ];
 
   const adminLinks = [
+    { title: 'Dashboard', path: '/admin/dashboard', icon: <AdminIcon sx={{ fontSize: 18 }} /> },
     { title: 'Управление командой', path: '/admin/team', icon: <AdminIcon sx={{ fontSize: 18 }} /> },
   ];
 

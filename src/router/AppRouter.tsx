@@ -1,28 +1,51 @@
 import React from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
+import MainLayout from '../components/layout/MainLayout';
 import LoginPage from '../pages/auth/LoginPage';
 import SignupPage from '../pages/auth/SignupPage';
 import ForgotPasswordPage from '../pages/auth/ForgotPasswordPage';
 import DashboardPage from '../pages/DashboardPage';
+import ProfilePage from '../pages/ProfilePage';
+import SettingsPage from '../pages/SettingsPage';
 import TeamAdminPage from '../pages/admin/TeamAdminPage';
+import SuperAdminDashboard from '../pages/superadmin/SuperAdminDashboard';
+import CompanyDashboard from '../pages/admin/CompanyDashboard';
 
-// Защищенный роут
-const PrivateRoute: React.FC<{ children: React.ReactElement }> = ({ children }) => {
-  const { currentUser } = useAuth();
-  return currentUser ? children : <Navigate to="/login" />;
+/**
+ * Компонент для защиты маршрутов
+ * Перенаправляет на /login если пользователь не авторизован
+ */
+const ProtectedLayout: React.FC = () => {
+  const { currentUser, loading } = useAuth();
+
+  if (loading) {
+    return null; // Или можно показать loader
+  }
+
+  return currentUser ? <MainLayout /> : <Navigate to="/login" replace />;
 };
 
-// Публичный роут (перенаправляет на главную если уже залогинен)
+/**
+ * Публичный роут (перенаправляет на главную если уже залогинен)
+ */
 const PublicRoute: React.FC<{ children: React.ReactElement }> = ({ children }) => {
-  const { currentUser } = useAuth();
-  return currentUser ? <Navigate to="/" /> : children;
+  const { currentUser, loading } = useAuth();
+
+  if (loading) {
+    return null; // Или можно показать loader
+  }
+
+  return currentUser ? <Navigate to="/admin/dashboard" replace /> : children;
 };
 
 const AppRouter: React.FC = () => {
   return (
     <Routes>
-      {/* Публичные роуты аутентификации */}
+      {/* ============================================ */}
+      {/* ПУБЛИЧНЫЕ МАРШРУТЫ (БЕЗ HEADER И FOOTER)    */}
+      {/* ============================================ */}
+
       <Route
         path="/login"
         element={
@@ -31,6 +54,7 @@ const AppRouter: React.FC = () => {
           </PublicRoute>
         }
       />
+
       <Route
         path="/signup"
         element={
@@ -39,6 +63,7 @@ const AppRouter: React.FC = () => {
           </PublicRoute>
         }
       />
+
       <Route
         path="/forgot-password"
         element={
@@ -48,62 +73,45 @@ const AppRouter: React.FC = () => {
         }
       />
 
-      {/* Защищенные роуты */}
-      <Route
-        path="/"
-        element={
-          <PrivateRoute>
-            <DashboardPage />
-          </PrivateRoute>
-        }
-      />
+      {/* ============================================ */}
+      {/* ЗАЩИЩЕННЫЕ МАРШРУТЫ (С HEADER И FOOTER)      */}
+      {/* ============================================ */}
 
-      {/* Административные роуты */}
-      <Route
-        path="/admin/team"
-        element={
-          <PrivateRoute>
-            <TeamAdminPage />
-          </PrivateRoute>
-        }
-      />
+      {/* Родительский маршрут с MainLayout */}
+      <Route element={<ProtectedLayout />}>
+        {/* Главная страница - редирект на дашборд */}
+        <Route path="/" element={<Navigate to="/admin/dashboard" replace />} />
 
-      {/* Placeholder роуты для модулей */}
-      <Route
-        path="/clients"
-        element={
-          <PrivateRoute>
-            <div>Модуль "Клиенты" в разработке</div>
-          </PrivateRoute>
-        }
-      />
-      <Route
-        path="/projects"
-        element={
-          <PrivateRoute>
-            <div>Модуль "Проекты" в разработке</div>
-          </PrivateRoute>
-        }
-      />
-      <Route
-        path="/tasks"
-        element={
-          <PrivateRoute>
-            <div>Модуль "Задачи" в разработке</div>
-          </PrivateRoute>
-        }
-      />
-      <Route
-        path="/documents"
-        element={
-          <PrivateRoute>
-            <div>Модуль "Документы" в разработке</div>
-          </PrivateRoute>
-        }
-      />
+        {/* Дашборд компании */}
+        <Route path="/admin/dashboard" element={<CompanyDashboard />} />
 
-      {/* Fallback */}
-      <Route path="*" element={<Navigate to="/" />} />
+        {/* Управление командой */}
+        <Route path="/admin/team" element={<TeamAdminPage />} />
+
+        {/* Клиенты */}
+        <Route path="/admin/clients" element={<div>Модуль "Клиенты" в разработке</div>} />
+
+        {/* Профиль пользователя */}
+        <Route path="/profile" element={<ProfilePage />} />
+
+        {/* Настройки */}
+        <Route path="/settings" element={<SettingsPage />} />
+
+        {/* Главный дашборд (старая страница) */}
+        <Route path="/dashboard" element={<DashboardPage />} />
+
+        {/* Super Admin */}
+        <Route path="/superadmin" element={<SuperAdminDashboard />} />
+
+        {/* Другие модули (placeholder) */}
+        <Route path="/clients" element={<div>Модуль "Клиенты" в разработке</div>} />
+        <Route path="/projects" element={<div>Модуль "Проекты" в разработке</div>} />
+        <Route path="/tasks" element={<div>Модуль "Задачи" в разработке</div>} />
+        <Route path="/documents" element={<div>Модуль "Документы" в разработке</div>} />
+      </Route>
+
+      {/* Fallback для неизвестных маршрутов */}
+      <Route path="*" element={<Navigate to="/admin/dashboard" replace />} />
     </Routes>
   );
 };

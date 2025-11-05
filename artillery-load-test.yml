@@ -1,0 +1,117 @@
+# Artillery Load Testing Configuration
+# Usage: npm run test:load
+
+config:
+  target: "https://profit-step-staging.web.app"
+  phases:
+    # Warm-up phase
+    - duration: 60
+      arrivalRate: 5
+      name: "Warm up"
+
+    # Ramp up
+    - duration: 300
+      arrivalRate: 5
+      rampTo: 50
+      name: "Ramp up load"
+
+    # Sustained load
+    - duration: 600
+      arrivalRate: 50
+      name: "Sustained load (50 RPS)"
+
+    # Spike test
+    - duration: 60
+      arrivalRate: 100
+      name: "Spike test"
+
+  # Performance thresholds
+  ensure:
+    p95: 500  # 95th percentile latency < 500ms
+    p99: 1000 # 99th percentile < 1s
+    maxErrorRate: 1  # < 1% errors
+
+scenarios:
+  # Scenario 1: Company Admin Dashboard Load
+  - name: "Company Admin Dashboard"
+    weight: 60
+    flow:
+      - post:
+          url: "/api/auth/login"
+          json:
+            email: "admin@test-company.com"
+            password: "{{ $processEnvironment.TEST_PASSWORD }}"
+          capture:
+            - json: "$.token"
+              as: "authToken"
+
+      - get:
+          url: "/api/admin/dashboard/activity"
+          headers:
+            Authorization: "Bearer {{ authToken }}"
+          capture:
+            - json: "$.companyId"
+              as: "companyId"
+
+      - get:
+          url: "/api/admin/team/members"
+          headers:
+            Authorization: "Bearer {{ authToken }}"
+          qs:
+            companyId: "{{ companyId }}"
+
+      - think: 3  # simulate user reading data
+
+      - get:
+          url: "/api/admin/activity/feed?limit=50"
+          headers:
+            Authorization: "Bearer {{ authToken }}"
+
+  # Scenario 2: Super Admin Dashboard Load
+  - name: "Super Admin Dashboard"
+    weight: 20
+    flow:
+      - post:
+          url: "/api/auth/login"
+          json:
+            email: "qa.superadmin@profit-step.test"
+            password: "{{ $processEnvironment.SUPER_ADMIN_PASSWORD }}"
+          capture:
+            - json: "$.token"
+              as: "authToken"
+
+      - get:
+          url: "/api/superadmin/metrics/growth?days=30"
+          headers:
+            Authorization: "Bearer {{ authToken }}"
+
+      - get:
+          url: "/api/superadmin/metrics/engagement?days=30"
+          headers:
+            Authorization: "Bearer {{ authToken }}"
+
+      - get:
+          url: "/api/superadmin/costs/reports?days=30"
+          headers:
+            Authorization: "Bearer {{ authToken }}"
+
+  # Scenario 3: Real-time Activity Stream
+  - name: "Activity Stream Polling"
+    weight: 20
+    flow:
+      - post:
+          url: "/api/auth/login"
+          json:
+            email: "admin@test-company.com"
+            password: "{{ $processEnvironment.TEST_PASSWORD }}"
+          capture:
+            - json: "$.token"
+              as: "authToken"
+
+      - loop:
+          - get:
+              url: "/api/admin/activity/feed?limit=20"
+              headers:
+                Authorization: "Bearer {{ authToken }}"
+          - think: 5  # poll every 5 seconds
+        count: 10

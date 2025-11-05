@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>🧪 Test Email - Brevo Integration</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .container {
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+      max-width: 600px;
+      width: 100%;
+      padding: 40px;
+    }
+
+    h1 {
+      color: #333;
+      margin-bottom: 10px;
+      font-size: 28px;
+    }
+
+    .subtitle {
+      color: #666;
+      margin-bottom: 30px;
+      font-size: 14px;
+    }
+
+    .status {
+      background: #f3f4f6;
+      padding: 15px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      font-size: 14px;
+    }
+
+    .status-item {
+      display: flex;
+      align-items: center;
+      margin: 8px 0;
+    }
+
+    .status-item::before {
+      content: '⏺';
+      margin-right: 10px;
+      font-size: 12px;
+    }
+
+    .status-item.success::before {
+      content: '✅';
+    }
+
+    .status-item.error::before {
+      content: '❌';
+    }
+
+    .status-item.loading::before {
+      content: '⏳';
+    }
+
+    button {
+      width: 100%;
+      padding: 16px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform 0.2s, box-shadow 0.2s;
+      margin-bottom: 15px;
+    }
+
+    button:hover:not(:disabled) {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 20px rgba(102, 126, 234, 0.4);
+    }
+
+    button:active:not(:disabled) {
+      transform: translateY(0);
+    }
+
+    button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    .result {
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 15px;
+      margin-top: 20px;
+      display: none;
+      font-size: 14px;
+    }
+
+    .result.show {
+      display: block;
+    }
+
+    .result.success {
+      background: #d1fae5;
+      border-color: #10b981;
+    }
+
+    .result.error {
+      background: #fee2e2;
+      border-color: #ef4444;
+    }
+
+    .result h3 {
+      margin-bottom: 10px;
+      font-size: 16px;
+    }
+
+    .result pre {
+      background: white;
+      padding: 10px;
+      border-radius: 4px;
+      overflow-x: auto;
+      font-size: 12px;
+      font-family: 'Courier New', monospace;
+    }
+
+    .info-box {
+      background: #eff6ff;
+      border-left: 4px solid #3b82f6;
+      padding: 15px;
+      margin-bottom: 20px;
+      font-size: 14px;
+      border-radius: 4px;
+    }
+
+    .info-box strong {
+      display: block;
+      margin-bottom: 8px;
+      color: #1e40af;
+    }
+
+    .warning-box {
+      background: #fef3c7;
+      border-left: 4px solid #f59e0b;
+      padding: 15px;
+      margin-top: 20px;
+      font-size: 13px;
+      border-radius: 4px;
+    }
+
+    .code {
+      background: #1f2937;
+      color: #10b981;
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-family: 'Courier New', monospace;
+      font-size: 13px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🧪 Email Integration Test</h1>
+    <p class="subtitle">Тестирование Brevo SMTP через Firebase Functions</p>
+
+    <div class="status">
+      <div class="status-item" id="status-auth">Проверка аутентификации...</div>
+      <div class="status-item" id="status-config">Проверка конфигурации...</div>
+      <div class="status-item" id="status-ready">Ожидание теста...</div>
+    </div>
+
+    <div class="info-box">
+      <strong>📝 Что происходит при нажатии кнопки:</strong>
+      1. Вызывается Cloud Function <span class="code">testEmail</span><br>
+      2. Читается конфигурация из <span class="code">functions.config()</span><br>
+      3. Создается подключение к Brevo SMTP<br>
+      4. Отправляется тестовое письмо на ваш email<br>
+      5. Результат отображается ниже
+    </div>
+
+    <button id="testBtn" onclick="sendTestEmail()">
+      📧 Отправить тестовое письмо
+    </button>
+
+    <button onclick="checkLogs()" style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);">
+      📊 Открыть логи Firebase
+    </button>
+
+    <div class="result" id="result"></div>
+
+    <div class="warning-box">
+      ⚠️ <strong>После теста:</strong> Не забудьте удалить функцию <span class="code">testEmail</span> из production командой:<br>
+      <span class="code">firebase functions:delete testEmail --force</span>
+    </div>
+  </div>
+
+  <script type="module">
+    import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js';
+    import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js';
+    import { getFunctions, httpsCallable } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-functions.js';
+
+    // Firebase конфигурация (замените на вашу!)
+    const firebaseConfig = {
+      apiKey: "AIzaSyDOXiNbM1-N0_UtcqVqDf7FTh9Xqnn5FNY",
+      authDomain: "profit-step.firebaseapp.com",
+      projectId: "profit-step",
+      storageBucket: "profit-step.firebasestorage.app",
+      messagingSenderId: "888396091091",
+      appId: "1:888396091091:web:1993bb46cced21a78d5eac"
+    };
+
+    // Инициализация Firebase
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const functions = getFunctions(app);
+
+    let currentUser = null;
+
+    // Проверка аутентификации
+    onAuthStateChanged(auth, (user) => {
+      currentUser = user;
+      const statusAuth = document.getElementById('status-auth');
+      const statusConfig = document.getElementById('status-config');
+      const statusReady = document.getElementById('status-ready');
+      const testBtn = document.getElementById('testBtn');
+
+      if (user) {
+        statusAuth.textContent = `✅ Вы аутентифицированы как: ${user.email}`;
+        statusAuth.className = 'status-item success';
+        statusConfig.textContent = '✅ Firebase подключен';
+        statusConfig.className = 'status-item success';
+        statusReady.textContent = '✅ Готов к тестированию';
+        statusReady.className = 'status-item success';
+        testBtn.disabled = false;
+      } else {
+        statusAuth.textContent = '❌ Вы не вошли в систему';
+        statusAuth.className = 'status-item error';
+        statusConfig.textContent = '⚠️ Войдите в приложение: https://profit-step.web.app';
+        statusConfig.className = 'status-item';
+        statusReady.textContent = '⏸️ Тест недоступен';
+        statusReady.className = 'status-item';
+        testBtn.disabled = true;
+      }
+    });
+
+    // Отправка тестового email
+    window.sendTestEmail = async function() {
+      if (!currentUser) {
+        alert('❌ Сначала войдите в систему на https://profit-step.web.app');
+        return;
+      }
+
+      const testBtn = document.getElementById('testBtn');
+      const resultDiv = document.getElementById('result');
+      const statusReady = document.getElementById('status-ready');
+
+      try {
+        testBtn.disabled = true;
+        testBtn.textContent = '⏳ Отправка...';
+        statusReady.textContent = '⏳ Отправка тестового email...';
+        statusReady.className = 'status-item loading';
+        resultDiv.className = 'result';
+        resultDiv.innerHTML = '';
+
+        console.log('📤 Вызов Cloud Function testEmail...');
+
+        const testEmail = httpsCallable(functions, 'testEmail');
+        const result = await testEmail();
+
+        console.log('✅ Результат:', result.data);
+
+        resultDiv.className = 'result success show';
+        resultDiv.innerHTML = `
+          <h3>✅ Тестовое письмо отправлено!</h3>
+          <p><strong>Получатель:</strong> ${result.data.recipient}</p>
+          <p><strong>Message ID:</strong> <code>${result.data.messageId}</code></p>
+          <p><strong>SMTP:</strong> <code>${result.data.smtp}</code></p>
+          <p style="margin-top: 10px;">📧 Проверьте email (включая папку SPAM).</p>
+          <pre>${JSON.stringify(result.data, null, 2)}</pre>
+        `;
+
+        statusReady.textContent = '✅ Email успешно отправлен!';
+        statusReady.className = 'status-item success';
+
+      } catch (error) {
+        console.error('❌ Ошибка:', error);
+
+        resultDiv.className = 'result error show';
+        resultDiv.innerHTML = `
+          <h3>❌ Ошибка отправки email</h3>
+          <p><strong>Код ошибки:</strong> <code>${error.code}</code></p>
+          <p><strong>Сообщение:</strong> ${error.message}</p>
+          ${error.details ? `<pre>${JSON.stringify(error.details, null, 2)}</pre>` : ''}
+          <p style="margin-top: 10px;">
+            💡 Проверьте логи Firebase:<br>
+            <code>firebase functions:log --only testEmail</code>
+          </p>
+        `;
+
+        statusReady.textContent = '❌ Ошибка отправки';
+        statusReady.className = 'status-item error';
+
+      } finally {
+        testBtn.disabled = false;
+        testBtn.textContent = '📧 Отправить тестовое письмо';
+      }
+    };
+
+    // Открыть логи Firebase
+    window.checkLogs = function() {
+      window.open('https://console.firebase.google.com/project/profit-step/functions/logs', '_blank');
+    };
+  </script>
+</body>
+</html>

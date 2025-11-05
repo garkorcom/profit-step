@@ -199,3 +199,56 @@ export const adminDeleteUser = async (userIdToDelete: string): Promise<{ success
     throw new Error(error.message || 'Не удалось удалить пользователя');
   }
 };
+
+/**
+ * Приглашает нового пользователя в команду
+ * Вызывает Cloud Function которая:
+ * - Создает пользователя в Firebase Auth
+ * - Создает профиль в Firestore
+ * - Генерирует ссылку для установки пароля
+ *
+ * @param email - Email пользователя
+ * @param displayName - Имя пользователя
+ * @param role - Роль пользователя
+ * @param title - Должность (опционально)
+ * @returns Promise с результатом и ссылкой для установки пароля
+ */
+export const inviteUser = async (
+  email: string,
+  displayName: string,
+  role: UserRole,
+  title?: string
+): Promise<{
+  success: boolean;
+  message: string;
+  userId: string;
+  passwordResetLink: string;
+  emailSent?: boolean;
+  emailError?: string;
+}> => {
+  try {
+    const { getFunctions, httpsCallable } = await import('firebase/functions');
+    const functions = getFunctions();
+
+    const inviteUserFunction = httpsCallable(functions, 'inviteUser');
+    const result = await inviteUserFunction({
+      email,
+      displayName,
+      role,
+      title: title || '',
+    });
+
+    console.log('✅ User invited successfully:', result.data);
+    return result.data as {
+      success: boolean;
+      message: string;
+      userId: string;
+      passwordResetLink: string;
+      emailSent?: boolean;
+      emailError?: string;
+    };
+  } catch (error: any) {
+    console.error('Error calling inviteUser function:', error);
+    throw new Error(error.message || 'Не удалось пригласить пользователя');
+  }
+};

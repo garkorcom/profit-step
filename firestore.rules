@@ -121,6 +121,106 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // ==================== DASHBOARD COLLECTIONS ====================
+
+    // Helper functions для дашбордов
+    function isSuperAdmin() {
+      return isSignedIn() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'superadmin';
+    }
+
+    function getUserCompany() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.companyId;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    // System-level collections (Super Admin only)
+    match /systemErrors/{errorId} {
+      allow read: if isSuperAdmin();
+      allow write: if false; // Only via Cloud Functions
+    }
+
+    match /emailEvents/{eventId} {
+      allow read: if isSuperAdmin();
+      allow write: if false; // Only via Cloud Functions
+    }
+
+    match /costReports/{reportId} {
+      allow read: if isSuperAdmin();
+      allow write: if false; // Only via Cloud Functions
+    }
+
+    match /growthMetrics/{metricId} {
+      allow read: if isSuperAdmin();
+      allow write: if false; // Only via Cloud Functions
+    }
+
+    match /engagementMetrics/{metricId} {
+      allow read: if isSuperAdmin();
+      allow write: if false; // Only via Cloud Functions
+    }
+
+    // Company-scoped collections
+    match /invitations/{inviteId} {
+      // Чтение: только пользователи из той же компании
+      allow read: if isSignedIn() &&
+                     resource.data.companyId == getUserCompany();
+      // Создание: только админы компании
+      allow create: if isSignedIn() &&
+                      request.resource.data.companyId == getUserCompany() &&
+                      isAdmin();
+      // Обновление/Удаление: только админы компании
+      allow update, delete: if isSignedIn() &&
+                              resource.data.companyId == getUserCompany() &&
+                              isAdmin();
+    }
+
+    match /activityLog/{activityId} {
+      // Чтение: только пользователи из той же компании
+      allow read: if isSignedIn() &&
+                     resource.data.companyId == getUserCompany();
+      // Запись: только через Cloud Functions
+      allow write: if false;
+    }
+
+    match /userActivation/{userId} {
+      // Чтение: сам пользователь или superadmin
+      allow read: if isSignedIn() &&
+                     (request.auth.uid == userId || isSuperAdmin());
+      // Запись: только через Cloud Functions
+      allow write: if false;
+    }
+
+    match /featureUsage/{usageId} {
+      // Чтение: все аутентифицированные пользователи
+      allow read: if isSignedIn();
+      // Создание: пользователи могут отслеживать свое использование
+      allow create: if isSignedIn();
+      // Обновление: только Cloud Functions
+      allow update, delete: if false;
+    }
+
+    match /notifications/{notificationId} {
+      // Чтение: только для получателя уведомления
+      allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
+      // Обновление: пользователь может отметить как прочитанное
+      allow update: if isSignedIn() &&
+                      resource.data.userId == request.auth.uid &&
+                      request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']);
+      // Создание/Удаление: только через Cloud Functions
+      allow create, delete: if false;
+    }
+
+    // Companies collection
+    match /companies/{companyId} {
+      // Чтение: только пользователи из этой компании
+      allow read: if isSignedIn() && getUserCompany() == companyId;
+      // Запись: только через Cloud Functions
+      allow write: if false;
+    }
+
     // ==================== DEFAULT DENY ====================
 
     // Запретить доступ ко всем остальным документам

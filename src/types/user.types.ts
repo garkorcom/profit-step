@@ -7,7 +7,7 @@ import { Timestamp } from 'firebase/firestore';
 /**
  * Роли пользователей в системе
  */
-export type UserRole = 'admin' | 'manager' | 'estimator' | 'guest';
+export type UserRole = 'superadmin' | 'admin' | 'manager' | 'estimator' | 'guest';
 
 /**
  * Статус пользователя в системе
@@ -34,6 +34,12 @@ export interface UserProfile {
   dob?: Timestamp | string;  // Дата рождения (Date of Birth)
   lastSeen?: Timestamp | string;  // Дата последней активности
   status: UserStatus;      // Статус активности ('active' по умолчанию)
+
+  // --- Поля для дашбордов ---
+  loginCount?: number;     // Количество входов в систему
+  invitedBy?: string;      // userId пользователя, который пригласил
+  signupMethod?: 'email' | 'google'; // Метод регистрации
+  avatarUpdatedAt?: Timestamp | string; // Когда обновлен аватар
 }
 
 /**

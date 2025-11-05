@@ -19,6 +19,7 @@ export const createUserProfile = async (
     email: string;
     displayName: string;
     photoURL?: string;
+    signupMethod?: 'email' | 'google';
   }
 ): Promise<void> => {
   const userRef = doc(db, 'users', userId);
@@ -33,6 +34,8 @@ export const createUserProfile = async (
     onboarded: false,
     status: 'active', // Статус по умолчанию
     lastSeen: serverTimestamp(), // Устанавливаем время создания как первый вход
+    signupMethod: data.signupMethod || 'email', // Метод регистрации
+    loginCount: 0, // Начальный счетчик входов
   };
 
   await setDoc(userRef, profileData);

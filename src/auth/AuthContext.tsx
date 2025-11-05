@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import React, { createContext, useContext, useEffect, useState, ReactNode, useMemo, useRef } from 'react';
 import {
   User,
   signInWithEmailAndPassword,
@@ -10,7 +10,8 @@ import {
   signInWithPopup,
   sendPasswordResetEmail,
 } from 'firebase/auth';
-import { auth } from '../firebase/firebase';
+import { doc, onSnapshot } from 'firebase/firestore';
+import { auth, db } from '../firebase/firebase';
 import { UserProfile, SignUpData, SignInData } from '../types/user.types';
 import { getUserProfile, createUserProfile, updateLastSeen } from '../api/userApi';
 
@@ -44,34 +45,89 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // Ref для отслеживания последнего обновления lastSeen
+  const lastSeenUpdateRef = useRef<number>(0);
+
   // Подписка на изменения аутентификации
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+    let unsubscribeProfile: (() => void) | undefined;
+
+    const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
       setCurrentUser(user);
 
-      if (user) {
-        // Загружаем профиль пользователя из Firestore
-        try {
-          const profile = await getUserProfile(user.uid);
-          setUserProfile(profile);
+      // Отписываемся от предыдущей подписки на профиль
+      if (unsubscribeProfile) {
+        unsubscribeProfile();
+        unsubscribeProfile = undefined;
+      }
 
-          // Обновляем время последней активности (lastSeen)
-          // Делаем это в фоновом режиме, не блокируя загрузку приложения
+      if (user) {
+        // Подписываемся на изменения профиля в реальном времени
+        const userDocRef = doc(db, 'users', user.uid);
+
+        unsubscribeProfile = onSnapshot(
+          userDocRef,
+          (snapshot) => {
+            if (snapshot.exists()) {
+              const profileData = snapshot.data() as UserProfile;
+              setUserProfile((prev) => {
+                // Оптимизация: проверяем, действительно ли данные изменились
+                const newProfile = {
+                  ...profileData,
+                  id: snapshot.id,
+                };
+
+                // Сравниваем ключевые поля, игнорируя lastSeen для избежания циклов
+                if (
+                  prev &&
+                  prev.role === newProfile.role &&
+                  prev.companyId === newProfile.companyId &&
+                  prev.status === newProfile.status &&
+                  prev.displayName === newProfile.displayName &&
+                  prev.email === newProfile.email
+                ) {
+                  // Обновляем только если есть реальные изменения (не lastSeen)
+                  return prev;
+                }
+
+                return newProfile;
+              });
+            } else {
+              console.log('❌ User profile not found');
+              setUserProfile(null);
+            }
+            setLoading(false);
+          },
+          (error) => {
+            console.error('Error loading user profile:', error);
+            setUserProfile(null);
+            setLoading(false);
+          }
+        );
+
+        // Обновляем время последней активности (lastSeen) ТОЛЬКО РАЗ при входе
+        // Используем throttling - не чаще 1 раза в 5 минут
+        const now = Date.now();
+        const FIVE_MINUTES = 5 * 60 * 1000;
+
+        if (now - lastSeenUpdateRef.current > FIVE_MINUTES) {
+          lastSeenUpdateRef.current = now;
           updateLastSeen(user.uid).catch((error) => {
             console.error('Failed to update lastSeen:', error);
           });
-        } catch (error) {
-          console.error('Error loading user profile:', error);
-          setUserProfile(null);
         }
       } else {
         setUserProfile(null);
+        setLoading(false);
       }
-
-      setLoading(false);
     });
 
-    return unsubscribe;
+    return () => {
+      unsubscribeAuth();
+      if (unsubscribeProfile) {
+        unsubscribeProfile();
+      }
+    };
   }, []);
 
   /**
@@ -95,6 +151,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       await createUserProfile(userCredential.user.uid, {
         email: data.email,
         displayName: data.displayName,
+        signupMethod: 'email',
       });
 
       console.log('✅ User signed up successfully');
@@ -134,6 +191,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           email: result.user.email || '',
           displayName: result.user.displayName || 'User',
           photoURL: result.user.photoURL || undefined,
+          signupMethod: 'google',
         });
       }
 
@@ -170,16 +228,20 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
-  const value: AuthContextType = {
-    currentUser,
-    userProfile,
-    loading,
-    signUp,
-    signIn,
-    signInWithGoogle,
-    signOut,
-    resetPassword,
-  };
+  // Мемоизируем value для избежания лишних re-renders
+  const value: AuthContextType = useMemo(
+    () => ({
+      currentUser,
+      userProfile,
+      loading,
+      signUp,
+      signIn,
+      signInWithGoogle,
+      signOut,
+      resetPassword,
+    }),
+    [currentUser, userProfile, loading]
+  );
 
   return (
     <AuthContext.Provider value={value}>

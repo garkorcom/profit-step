@@ -12,8 +12,9 @@ import {
   deleteDoc,
   Timestamp,
 } from 'firebase/firestore';
+import { httpsCallable } from 'firebase/functions';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { db, storage } from '../firebase/firebase';
+import { db, storage, functions } from '../firebase/firebase';
 import { UserProfile, UserRole, UserStatus } from '../types/user.types';
 
 /**
@@ -184,11 +185,7 @@ export const deleteUserProfile = async (userId: string): Promise<void> => {
  */
 export const adminDeleteUser = async (userIdToDelete: string): Promise<{ success: boolean; message: string }> => {
   try {
-    // Импортируем функции Firebase для вызова Cloud Functions
-    const { getFunctions, httpsCallable } = await import('firebase/functions');
-    const functions = getFunctions();
-
-    // Вызываем Cloud Function
+    // Вызываем Cloud Function (используем централизованный functions из firebase.ts)
     const deleteUserFunction = httpsCallable(functions, 'adminDeleteUser');
     const result = await deleteUserFunction({ userIdToDelete });
 
@@ -227,9 +224,7 @@ export const inviteUser = async (
   emailError?: string;
 }> => {
   try {
-    const { getFunctions, httpsCallable } = await import('firebase/functions');
-    const functions = getFunctions();
-
+    // Вызываем Cloud Function (используем централизованный functions из firebase.ts)
     const inviteUserFunction = httpsCallable(functions, 'inviteUser');
     const result = await inviteUserFunction({
       email,

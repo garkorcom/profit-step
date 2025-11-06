@@ -5,13 +5,40 @@
  * Эти функции автоматически управляют жизненным циклом пользователей:
  * - onUserCreate: Создает профиль в Firestore при регистрации
  * - onUserDelete: Очищает данные при удалении аккаунта
+ * - inviteUser: Приглашает нового пользователя с отправкой email
+ * - adminDeleteUser: Безопасное удаление пользователя администратором
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.adminDeleteUser = exports.onUserDelete = exports.onUserCreate = void 0;
+exports.testEmail = exports.inviteUser = exports.adminDeleteUser = exports.onUserDelete = exports.onUserCreate = exports.updateCompanyMemberCount = exports.incrementLoginCount = exports.logInvitationAccepted = exports.logInvitationSent = exports.logUserDeleted = exports.logUserUpdates = exports.logUserCreated = exports.testBrevoWebhook = exports.brevoWebhookHandler = exports.trackFirstInvite = exports.trackUserActivation = exports.initializeUserActivation = exports.aggregateEngagementMetrics = exports.aggregateGrowthMetrics = exports.processAvatar = void 0;
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
+const crypto = require("crypto");
+const emailService_1 = require("./email/emailService");
 // Инициализация Firebase Admin
 admin.initializeApp();
+// Avatar processing
+var avatarProcessor_1 = require("./avatarProcessor");
+Object.defineProperty(exports, "processAvatar", { enumerable: true, get: function () { return avatarProcessor_1.processAvatar; } });
+// Dashboard metrics aggregation
+var metricsAggregation_1 = require("./metricsAggregation");
+Object.defineProperty(exports, "aggregateGrowthMetrics", { enumerable: true, get: function () { return metricsAggregation_1.aggregateGrowthMetrics; } });
+Object.defineProperty(exports, "aggregateEngagementMetrics", { enumerable: true, get: function () { return metricsAggregation_1.aggregateEngagementMetrics; } });
+Object.defineProperty(exports, "initializeUserActivation", { enumerable: true, get: function () { return metricsAggregation_1.initializeUserActivation; } });
+Object.defineProperty(exports, "trackUserActivation", { enumerable: true, get: function () { return metricsAggregation_1.trackUserActivation; } });
+Object.defineProperty(exports, "trackFirstInvite", { enumerable: true, get: function () { return metricsAggregation_1.trackFirstInvite; } });
+// Brevo webhook handler
+var brevoWebhook_1 = require("./brevoWebhook");
+Object.defineProperty(exports, "brevoWebhookHandler", { enumerable: true, get: function () { return brevoWebhook_1.brevoWebhookHandler; } });
+Object.defineProperty(exports, "testBrevoWebhook", { enumerable: true, get: function () { return brevoWebhook_1.testBrevoWebhook; } });
+// Activity logging
+var activityLogger_1 = require("./activityLogger");
+Object.defineProperty(exports, "logUserCreated", { enumerable: true, get: function () { return activityLogger_1.logUserCreated; } });
+Object.defineProperty(exports, "logUserUpdates", { enumerable: true, get: function () { return activityLogger_1.logUserUpdates; } });
+Object.defineProperty(exports, "logUserDeleted", { enumerable: true, get: function () { return activityLogger_1.logUserDeleted; } });
+Object.defineProperty(exports, "logInvitationSent", { enumerable: true, get: function () { return activityLogger_1.logInvitationSent; } });
+Object.defineProperty(exports, "logInvitationAccepted", { enumerable: true, get: function () { return activityLogger_1.logInvitationAccepted; } });
+Object.defineProperty(exports, "incrementLoginCount", { enumerable: true, get: function () { return activityLogger_1.incrementLoginCount; } });
+Object.defineProperty(exports, "updateCompanyMemberCount", { enumerable: true, get: function () { return activityLogger_1.updateCompanyMemberCount; } });
 const db = admin.firestore();
 /**
  * Триггер: Создание нового пользователя
@@ -184,6 +211,357 @@ exports.adminDeleteUser = functions.https.onCall(async (data, context) => {
     catch (error) {
         console.error(`❌ Error deleting user ${userIdToDelete}:`, error);
         throw new functions.https.HttpsError('internal', `Ошибка удаления пользователя: ${error.message}`);
+    }
+});
+/**
+ * Callable Function: Приглашение нового пользователя (только для Admin)
+ *
+ * Создает нового пользователя в системе:
+ * 1. Проверяет права администратора
+ * 2. Создает пользователя в Firebase Auth
+ * 3. Создает профиль в Firestore с указанной ролью
+ * 4. Отправляет email с инструкциями для входа
+ */
+exports.inviteUser = functions.https.onCall(async (data, context) => {
+    // 1. Валидация: Пользователь должен быть аутентифицирован
+    if (!context.auth) {
+        throw new functions.https.HttpsError('unauthenticated', 'Требуется аутентификация');
+    }
+    const adminUid = context.auth.uid;
+    const { email, displayName, role, title } = data;
+    // Валидация входных данных
+    if (!email || !displayName || !role) {
+        throw new functions.https.HttpsError('invalid-argument', 'Email, displayName и role обязательны');
+    }
+    // Валидация email
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+        throw new functions.https.HttpsError('invalid-argument', 'Некорректный email адрес');
+    }
+    // Валидация роли
+    const validRoles = ['admin', 'manager', 'estimator', 'guest'];
+    if (!validRoles.includes(role)) {
+        throw new functions.https.HttpsError('invalid-argument', 'Некорректная роль пользователя');
+    }
+    try {
+        // 2. Получаем профиль администратора
+        const adminProfile = await db.collection('users').doc(adminUid).get();
+        if (!adminProfile.exists) {
+            throw new functions.https.HttpsError('not-found', 'Профиль администратора не найден');
+        }
+        const adminData = adminProfile.data();
+        if ((adminData === null || adminData === void 0 ? void 0 : adminData.role) !== 'admin') {
+            throw new functions.https.HttpsError('permission-denied', 'Только администраторы могут приглашать пользователей');
+        }
+        const companyId = adminData.companyId;
+        console.log(`🔥 Admin ${adminUid} is inviting user: ${email}`);
+        // 3. Rate Limiting: ВРЕМЕННО ОТКЛЮЧЕНО до полного построения индекса
+        // TODO: Включить когда индекс будет 100% готов
+        /*
+        const oneHourAgo = admin.firestore.Timestamp.fromMillis(Date.now() - 3600000);
+        const recentInvitesQuery = await db
+          .collection('invitations')
+          .where('invitedBy', '==', adminUid)
+          .where('createdAt', '>', oneHourAgo)
+          .get();
+    
+        if (recentInvitesQuery.size >= 10) {
+          throw new functions.https.HttpsError(
+            'resource-exhausted',
+            'Превышен лимит приглашений (максимум 10 в час). Попробуйте позже.'
+          );
+        }
+        */
+        // 4. Проверяем, не существует ли уже пользователь с таким email в компании
+        const existingUsersQuery = await db
+            .collection('users')
+            .where('email', '==', email.toLowerCase())
+            .where('companyId', '==', companyId)
+            .get();
+        if (!existingUsersQuery.empty) {
+            throw new functions.https.HttpsError('already-exists', `Пользователь с email ${email} уже существует в вашей компании`);
+        }
+        // 5. Создаем пользователя в Firebase Auth
+        // Генерируем криптографически стойкий временный пароль
+        const tempPassword = crypto.randomBytes(32).toString('hex');
+        let newUserId = null;
+        try {
+            const userRecord = await admin.auth().createUser({
+                email: email.toLowerCase(),
+                emailVerified: false,
+                password: tempPassword,
+                displayName: displayName,
+                disabled: false,
+            });
+            newUserId = userRecord.uid;
+            console.log(`✅ User created in Auth: ${newUserId}`);
+            // 6. Создаем профиль в Firestore
+            await db.collection('users').doc(newUserId).set({
+                email: email.toLowerCase(),
+                displayName: displayName,
+                companyId: companyId,
+                role: role,
+                title: title || '',
+                photoURL: null,
+                status: 'active',
+                createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                onboarded: false,
+            });
+            console.log(`✅ User profile created in Firestore: ${newUserId}`);
+            // 7. Записываем приглашение для rate limiting - ВРЕМЕННО ОТКЛЮЧЕНО
+            /*
+            await db.collection('invitations').add({
+              invitedBy: adminUid,
+              invitedEmail: email.toLowerCase(),
+              invitedUserId: newUserId,
+              companyId: companyId,
+              createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+            */
+            // 8. Генерируем ссылку для сброса пароля
+            // Это позволит пользователю установить свой собственный пароль
+            const resetLink = await admin.auth().generatePasswordResetLink(email);
+            console.log(`📧 Password reset link generated for: ${email}`);
+            // 9. Отправляем email приглашение
+            const emailResult = await (0, emailService_1.sendInviteEmail)({
+                toEmail: email,
+                userName: displayName,
+                invitedByName: adminData.displayName || 'Администратор',
+                role: role,
+                companyName: adminData.companyId, // TODO: Получать реальное название компании из БД
+                passwordResetLink: resetLink,
+            });
+            if (emailResult.success) {
+                console.log(`✅ Invitation email sent to: ${email}`);
+            }
+            else {
+                console.warn(`⚠️ Failed to send email: ${emailResult.error}`);
+                // Не бросаем ошибку, т.к. пользователь уже создан
+                // Администратор все равно получит ссылку в ответе
+            }
+            return {
+                success: true,
+                message: `Пользователь ${email} успешно приглашен`,
+                userId: newUserId,
+                passwordResetLink: resetLink,
+                emailSent: emailResult.success,
+                emailError: emailResult.error,
+            };
+        }
+        catch (setupError) {
+            // Rollback: удаляем созданного пользователя из Auth если что-то пошло не так
+            if (newUserId) {
+                try {
+                    await admin.auth().deleteUser(newUserId);
+                    console.log(`🔄 Rolled back user creation: ${newUserId}`);
+                }
+                catch (rollbackError) {
+                    console.error('⚠️ Failed to rollback user creation:', rollbackError);
+                }
+            }
+            // Пробрасываем исходную ошибку
+            throw setupError;
+        }
+    }
+    catch (error) {
+        console.error(`❌ Error inviting user:`, error);
+        // Специальная обработка ошибки "email already exists"
+        if (error.code === 'auth/email-already-exists') {
+            throw new functions.https.HttpsError('already-exists', 'Пользователь с таким email уже существует');
+        }
+        throw new functions.https.HttpsError('internal', `Ошибка при приглашении пользователя: ${error.message}`);
+    }
+});
+/**
+ * TEST Function: Тест отправки email через Brevo
+ *
+ * ВРЕМЕННАЯ функция для проверки интеграции с Brevo SMTP.
+ * Отправляет тестовое письмо на email аутентифицированного пользователя.
+ *
+ * Использование:
+ * 1. Вызовите из консоли браузера (см. клиентский код ниже)
+ * 2. Проверьте email (включая папку SPAM)
+ * 3. Проверьте логи: firebase functions:log --only testEmail
+ *
+ * УДАЛИТЕ эту функцию после успешного теста!
+ */
+exports.testEmail = functions.https.onCall(async (data, context) => {
+    var _a, _b, _c, _d, _e;
+    // 1. Проверка аутентификации
+    if (!context.auth) {
+        throw new functions.https.HttpsError('unauthenticated', 'Требуется аутентификация для отправки тестового email');
+    }
+    const userId = context.auth.uid;
+    // Принудительно отправляем на garkorusa@gmail.com для тестирования
+    const testEmailRecipient = 'garkorusa@gmail.com';
+    console.log(`🧪 Test email requested by user: ${userId}`);
+    console.log(`📧 Sending test email to: ${testEmailRecipient}`);
+    try {
+        // 2. Импортируем nodemailer и создаем транспортер напрямую
+        const nodemailer = require('nodemailer');
+        // Читаем конфигурацию из functions.config()
+        const config = functions.config();
+        const emailUser = (_a = config.email) === null || _a === void 0 ? void 0 : _a.user;
+        const emailPassword = (_b = config.email) === null || _b === void 0 ? void 0 : _b.password;
+        const emailHost = ((_c = config.email) === null || _c === void 0 ? void 0 : _c.host) || 'smtp-relay.brevo.com';
+        const emailPort = parseInt(((_d = config.email) === null || _d === void 0 ? void 0 : _d.port) || '587', 10);
+        const emailFrom = ((_e = config.email) === null || _e === void 0 ? void 0 : _e.from) || emailUser;
+        console.log(`📧 Email config loaded:`);
+        console.log(`   Host: ${emailHost}`);
+        console.log(`   Port: ${emailPort}`);
+        console.log(`   User: ${emailUser}`);
+        console.log(`   From: ${emailFrom}`);
+        console.log(`   Password configured: ${!!emailPassword}`);
+        if (!emailUser || !emailPassword) {
+            throw new Error('Email configuration not set. Run: firebase functions:config:set email.host=... email.port=... email.user=... email.password=...');
+        }
+        // 3. Создаем транспортер
+        const transporter = nodemailer.createTransport({
+            host: emailHost,
+            port: emailPort,
+            secure: emailPort === 465,
+            auth: {
+                user: emailUser,
+                pass: emailPassword,
+            },
+        });
+        console.log(`✅ Transporter created successfully`);
+        // 4. Подготавливаем тестовое письмо
+        const mailOptions = {
+            from: {
+                name: 'Profit Step Test',
+                address: emailFrom,
+            },
+            to: testEmailRecipient,
+            subject: '[TEST] Firebase ↔ Brevo',
+            html: `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="UTF-8">
+          <style>
+            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+            .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+            .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
+            .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }
+            .success { background: #10b981; color: white; padding: 15px; border-radius: 5px; margin: 20px 0; text-align: center; }
+            .info { background: #fff; border-left: 4px solid #667eea; padding: 15px; margin: 20px 0; }
+            .footer { text-align: center; margin-top: 30px; font-size: 12px; color: #666; }
+            code { background: #e5e7eb; padding: 2px 6px; border-radius: 3px; font-family: 'Courier New', monospace; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="header">
+              <h1>🎉 Успех!</h1>
+            </div>
+            <div class="content">
+              <div class="success">
+                <strong>✅ Email интеграция работает!</strong>
+              </div>
+
+              <p>Если вы видите это письмо, значит вся цепочка работает корректно:</p>
+
+              <div class="info">
+                <strong>✓ Firebase Functions</strong> — Cloud Function успешно выполнена<br>
+                <strong>✓ functions.config()</strong> — Конфигурация прочитана<br>
+                <strong>✓ Nodemailer</strong> — Email клиент инициализирован<br>
+                <strong>✓ Brevo SMTP</strong> — Подключение установлено<br>
+                <strong>✓ Email Delivery</strong> — Письмо доставлено
+              </div>
+
+              <h3>📊 Детали теста:</h3>
+              <ul>
+                <li><strong>SMTP Server:</strong> <code>${emailHost}:${emailPort}</code></li>
+                <li><strong>SMTP User:</strong> <code>${emailUser}</code></li>
+                <li><strong>From:</strong> <code>${emailFrom}</code></li>
+                <li><strong>To:</strong> <code>${testEmailRecipient}</code></li>
+                <li><strong>User ID:</strong> <code>${userId}</code></li>
+                <li><strong>Timestamp:</strong> ${new Date().toLocaleString('ru-RU')}</li>
+              </ul>
+
+              <h3>🚀 Следующие шаги:</h3>
+              <ol>
+                <li>Проверьте логи Firebase: <code>firebase functions:log --only testEmail</code></li>
+                <li>Убедитесь, что письмо не попало в SPAM</li>
+                <li>Протестируйте функцию <code>inviteUser</code> для приглашения пользователей</li>
+                <li>Удалите тестовую функцию <code>testEmail</code> из production</li>
+              </ol>
+
+              <div class="footer">
+                <p>Это автоматическое тестовое письмо из Profit Step</p>
+                <p>Powered by Firebase Functions + Brevo SMTP</p>
+              </div>
+            </div>
+          </div>
+        </body>
+        </html>
+      `,
+            text: `
+🎉 Успех!
+
+Если вы видите это письмо, значит вся цепочка работает корректно:
+
+✓ Firebase Functions — Cloud Function успешно выполнена
+✓ functions.config() — Конфигурация прочитана
+✓ Nodemailer — Email клиент инициализирован
+✓ Brevo SMTP — Подключение установлено
+✓ Email Delivery — Письмо доставлено
+
+📊 Детали теста:
+- SMTP Server: ${emailHost}:${emailPort}
+- SMTP User: ${emailUser}
+- From: ${emailFrom}
+- To: ${testEmailRecipient}
+- User ID: ${userId}
+- Timestamp: ${new Date().toLocaleString('ru-RU')}
+
+🚀 Следующие шаги:
+1. Проверьте логи Firebase: firebase functions:log --only testEmail
+2. Убедитесь, что письмо не попало в SPAM
+3. Протестируйте функцию inviteUser для приглашения пользователей
+4. Удалите тестовую функцию testEmail из production
+
+Это автоматическое тестовое письмо из Profit Step
+Powered by Firebase Functions + Brevo SMTP
+      `.trim(),
+        };
+        // 5. Отправляем email
+        console.log(`📤 Sending test email to: ${testEmailRecipient}`);
+        const info = await transporter.sendMail(mailOptions);
+        console.log(`✅ Test email sent successfully!`);
+        console.log(`   Message ID: ${info.messageId}`);
+        console.log(`   Response: ${info.response}`);
+        return {
+            success: true,
+            messageId: info.messageId,
+            recipient: testEmailRecipient,
+            smtp: `${emailHost}:${emailPort}`,
+            message: 'Тестовое письмо успешно отправлено на garkorusa@gmail.com! Проверьте ваш email (включая папку SPAM).',
+        };
+    }
+    catch (error) {
+        // 6. Детальное логирование ошибки
+        console.error('❌ Test email failed with error:');
+        console.error(`   Error name: ${error.name}`);
+        console.error(`   Error message: ${error.message}`);
+        console.error(`   Error code: ${error.code}`);
+        console.error(`   Error stack: ${error.stack}`);
+        // Дополнительные детали для SMTP ошибок
+        if (error.response) {
+            console.error(`   SMTP Response: ${error.response}`);
+        }
+        if (error.responseCode) {
+            console.error(`   SMTP Response Code: ${error.responseCode}`);
+        }
+        if (error.command) {
+            console.error(`   SMTP Command: ${error.command}`);
+        }
+        throw new functions.https.HttpsError('internal', `Ошибка отправки тестового email: ${error.message}`, {
+            code: error.code,
+            response: error.response,
+            command: error.command,
+        });
     }
 });
 /**

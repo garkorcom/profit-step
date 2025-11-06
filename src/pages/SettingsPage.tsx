@@ -10,7 +10,8 @@ import {
   CircularProgress,
 } from '@mui/material';
 import { Email as EmailIcon } from '@mui/icons-material';
-import { getFunctions, httpsCallable } from 'firebase/functions';
+import { httpsCallable } from 'firebase/functions';
+import { functions } from '../firebase/firebase';
 import { useAuth } from '../auth/AuthContext';
 
 /**
@@ -32,7 +33,7 @@ const SettingsPage: React.FC = () => {
     setSuccess(null);
 
     try {
-      const functions = getFunctions();
+      // Используем централизованный functions из firebase.ts
       const testEmail = httpsCallable(functions, 'testEmail');
 
       console.log('📤 Отправка тестового email...');

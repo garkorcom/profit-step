@@ -244,6 +244,7 @@ export const logInvitationAccepted = functions
 
 /**
  * Инкремент счетчика входов при каждом lastSeen update
+ * ✅ FIXED: Added idempotency guards to prevent infinite loop
  */
 export const incrementLoginCount = functions
   .region('us-central1')
@@ -252,20 +253,34 @@ export const incrementLoginCount = functions
     try {
       const before = change.before.data();
       const after = change.after.data();
+      const userId = context.params.userId;
 
-      // Проверяем что lastSeen обновился
-      if (before.lastSeen !== after.lastSeen) {
-        const userId = context.params.userId;
+      // 🛡️ GUARD 1: Check if lastSeen changed
+      const lastSeenChanged = before.lastSeen !== after.lastSeen;
 
-        // Инкрементируем loginCount
-        await change.after.ref.update({
-          loginCount: admin.firestore.FieldValue.increment(1),
-        });
+      // 🛡️ GUARD 2: Check if loginCount DIDN'T change
+      const loginCountChanged = before.loginCount !== after.loginCount;
 
-        console.log(`📊 Login count incremented for user: ${userId}`);
+      // 🛡️ GUARD 3: If loginCount already changed - DON'T update again!
+      // This prevents infinite loop: lastSeen update → loginCount update → triggers onUpdate → exits here
+      if (!lastSeenChanged || loginCountChanged) {
+        console.log(
+          `⏩ Skipping loginCount update for user ${userId}: ` +
+          `lastSeenChanged=${lastSeenChanged}, loginCountChanged=${loginCountChanged}`
+        );
+        return null;
       }
+
+      // Only update if lastSeen changed AND loginCount didn't
+      await change.after.ref.update({
+        loginCount: admin.firestore.FieldValue.increment(1),
+      });
+
+      console.log(`📊 Login count incremented for user: ${userId}`);
+      return null;
     } catch (error) {
       console.error('❌ Error incrementing login count:', error);
+      return null;
     }
   });
 

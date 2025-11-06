@@ -76,7 +76,7 @@ export const checkEmailStatuses = functions
  * Helper: Получить статус email из Brevo API
  * Требует API ключ Brevo
  */
-async function getBrevoEmailStatus(messageId: string): Promise<string> {
+export async function getBrevoEmailStatus(messageId: string): Promise<string> {
   // TODO: Implement Brevo API call
   // https://developers.brevo.com/reference/getemailactivity
 

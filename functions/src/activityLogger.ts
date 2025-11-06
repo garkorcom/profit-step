@@ -255,23 +255,14 @@ export const incrementLoginCount = functions
       const after = change.after.data();
       const userId = context.params.userId;
 
-      // 🛡️ GUARD 1: Check if lastSeen changed
-      const lastSeenChanged = before.lastSeen !== after.lastSeen;
-
-      // 🛡️ GUARD 2: Check if loginCount DIDN'T change
-      const loginCountChanged = before.loginCount !== after.loginCount;
-
-      // 🛡️ GUARD 3: If loginCount already changed - DON'T update again!
+      // 🛡️ IDEMPOTENCY GUARD: Only proceed if lastSeen actually changed
       // This prevents infinite loop: lastSeen update → loginCount update → triggers onUpdate → exits here
-      if (!lastSeenChanged || loginCountChanged) {
-        console.log(
-          `⏩ Skipping loginCount update for user ${userId}: ` +
-          `lastSeenChanged=${lastSeenChanged}, loginCountChanged=${loginCountChanged}`
-        );
+      if (before.lastSeen === after.lastSeen) {
+        console.log(`⏩ Guard activated: lastSeen did not change for user ${userId}. Exiting.`);
         return null;
       }
 
-      // Only update if lastSeen changed AND loginCount didn't
+      // Safe to increment: lastSeen changed (user actually logged in)
       await change.after.ref.update({
         loginCount: admin.firestore.FieldValue.increment(1),
       });

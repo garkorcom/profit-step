@@ -5,6 +5,7 @@
 
 import * as admin from 'firebase-admin';
 import * as functionsTest from 'firebase-functions-test';
+import type { Change } from 'firebase-functions';
 
 const testEnv = functionsTest({
   projectId: 'demo-test-project',
@@ -39,7 +40,7 @@ export function makeChange(
   before: any,
   after: any,
   path: string
-): functionsTest.Change<admin.firestore.DocumentSnapshot> {
+): Change<admin.firestore.DocumentSnapshot> {
   return testEnv.firestore.makeDocumentSnapshot(after, path);
 }
 

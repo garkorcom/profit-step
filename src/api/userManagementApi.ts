@@ -11,11 +11,55 @@ import {
   updateDoc,
   deleteDoc,
   Timestamp,
+  DocumentSnapshot,
+  QueryDocumentSnapshot,
+  orderBy,
+  limit,
+  startAfter,
+  endBefore,
+  limitToLast,
+  getCountFromServer,
 } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage, functions } from '../firebase/firebase';
 import { UserProfile, UserRole, UserStatus } from '../types/user.types';
+
+// ============================================
+// PAGINATION INTERFACES
+// ============================================
+
+/**
+ * Результат пагинированного запроса пользователей
+ */
+export interface PaginatedUsersResult {
+  users: UserProfile[];
+  total: number;
+  firstDoc: DocumentSnapshot | null;
+  lastDoc: DocumentSnapshot | null;
+  firestoreReads: number;
+  hasNextPage: boolean;
+  hasPrevPage: boolean;
+}
+
+/**
+ * Параметры для пагинированного запроса пользователей
+ */
+export interface GetPaginatedUsersParams {
+  companyId: string;
+  pageSize: number;
+  startAfterDoc?: DocumentSnapshot;
+  endBeforeDoc?: DocumentSnapshot;
+  searchQuery?: string;
+  statusFilter?: UserStatus | 'all';
+  roleFilter?: UserRole | 'all';
+  sortBy?: 'displayName' | 'email' | 'createdAt' | 'lastSeen';
+  sortOrder?: 'asc' | 'desc';
+}
+
+// ============================================
+// EXISTING METHODS
+// ============================================
 
 /**
  * Получает всех пользователей компании
@@ -245,5 +289,199 @@ export const inviteUser = async (
   } catch (error: any) {
     console.error('Error calling inviteUser function:', error);
     throw new Error(error.message || 'Не удалось пригласить пользователя');
+  }
+};
+
+// ============================================
+// PAGINATION METHODS
+// ============================================
+
+/**
+ * Получает общее количество пользователей компании
+ * Оптимизированный метод с минимальным количеством Firestore reads
+ *
+ * Стратегия:
+ * 1. Сначала проверяет поле memberCount в документе компании (1 read)
+ * 2. Если нет - использует Firestore getCountFromServer() (1 read)
+ *
+ * @param companyId - ID компании
+ * @param statusFilter - Фильтр по статусу (опционально)
+ * @param roleFilter - Фильтр по роли (опционально)
+ * @returns Количество пользователей
+ */
+export const getCompanyUserCount = async (
+  companyId: string,
+  statusFilter?: UserStatus | 'all',
+  roleFilter?: UserRole | 'all'
+): Promise<number> => {
+  try {
+    // Если нет фильтров - пытаемся получить из поля memberCount компании
+    if ((!statusFilter || statusFilter === 'all') && (!roleFilter || roleFilter === 'all')) {
+      try {
+        const companyDoc = await getDocs(query(collection(db, 'companies'), where('id', '==', companyId)));
+        if (!companyDoc.empty) {
+          const companyData = companyDoc.docs[0].data();
+          if (companyData.memberCount !== undefined) {
+            console.log('📊 User count from company.memberCount:', companyData.memberCount);
+            return companyData.memberCount;
+          }
+        }
+      } catch (error) {
+        console.warn('⚠️ Could not get memberCount from company doc, falling back to count query');
+      }
+    }
+
+    // Fallback: используем getCountFromServer с фильтрами
+    const usersRef = collection(db, 'users');
+    let q = query(usersRef, where('companyId', '==', companyId));
+
+    // Добавляем фильтры если указаны
+    if (statusFilter && statusFilter !== 'all') {
+      q = query(q, where('status', '==', statusFilter));
+    }
+    if (roleFilter && roleFilter !== 'all') {
+      q = query(q, where('role', '==', roleFilter));
+    }
+
+    const countSnapshot = await getCountFromServer(q);
+    const count = countSnapshot.data().count;
+
+    console.log('📊 User count from getCountFromServer:', count);
+    return count;
+  } catch (error) {
+    console.error('Error getting company user count:', error);
+    throw error;
+  }
+};
+
+/**
+ * Получает пагинированный список пользователей компании
+ * Enterprise-grade реализация с защитой от высоких затрат
+ *
+ * Особенности:
+ * - Cursor-based pagination (startAfter/endBefore)
+ * - Минимальное количество Firestore reads (только pageSize + 1 для hasNextPage)
+ * - Client-side фильтрация по поиску (не тратит reads)
+ * - Поддержка сортировки и фильтров
+ * - Tracking количества reads для мониторинга
+ *
+ * @param params - Параметры пагинации
+ * @returns Результат с пользователями и метаданными пагинации
+ */
+export const getCompanyUsersPaginated = async (
+  params: GetPaginatedUsersParams
+): Promise<PaginatedUsersResult> => {
+  const {
+    companyId,
+    pageSize,
+    startAfterDoc,
+    endBeforeDoc,
+    statusFilter = 'all',
+    roleFilter = 'all',
+    sortBy = 'displayName',
+    sortOrder = 'asc',
+    searchQuery,
+  } = params;
+
+  try {
+    const startTime = performance.now();
+    let firestoreReads = 0;
+
+    // 1️⃣ Получаем общее количество (1 read)
+    const total = await getCompanyUserCount(companyId, statusFilter, roleFilter);
+    firestoreReads += 1;
+
+    // 2️⃣ Строим базовый запрос
+    const usersRef = collection(db, 'users');
+    let q = query(usersRef, where('companyId', '==', companyId));
+
+    // Добавляем фильтры
+    if (statusFilter && statusFilter !== 'all') {
+      q = query(q, where('status', '==', statusFilter));
+    }
+    if (roleFilter && roleFilter !== 'all') {
+      q = query(q, where('role', '==', roleFilter));
+    }
+
+    // Добавляем сортировку
+    const sortDirection = sortOrder === 'asc' ? 'asc' : 'desc';
+    q = query(q, orderBy(sortBy, sortDirection));
+
+    // 3️⃣ Добавляем курсоры для пагинации
+    if (endBeforeDoc) {
+      // Назад: загружаем предыдущую страницу
+      q = query(q, endBefore(endBeforeDoc), limitToLast(pageSize + 1));
+    } else if (startAfterDoc) {
+      // Вперед: загружаем следующую страницу
+      q = query(q, startAfter(startAfterDoc), limit(pageSize + 1));
+    } else {
+      // Первая страница
+      q = query(q, limit(pageSize + 1));
+    }
+
+    // 4️⃣ Выполняем запрос
+    const snapshot = await getDocs(q);
+    firestoreReads += snapshot.size;
+
+    // 5️⃣ Обрабатываем результаты
+    let users = snapshot.docs.map((doc) => {
+      const data = doc.data();
+      return {
+        id: doc.id,
+        ...data,
+        createdAt: data.createdAt?.toDate?.()?.toISOString() || data.createdAt,
+        lastSeen: data.lastSeen?.toDate?.()?.toISOString() || data.lastSeen,
+        dob: data.dob?.toDate?.()?.toISOString() || data.dob,
+      } as UserProfile;
+    });
+
+    // 6️⃣ Определяем hasNextPage/hasPrevPage
+    const hasNextPage = users.length > pageSize;
+    const hasPrevPage = !!startAfterDoc || !!endBeforeDoc;
+
+    // Если есть следующая страница - убираем последний элемент (он был для проверки)
+    if (hasNextPage) {
+      users = users.slice(0, pageSize);
+    }
+
+    // 7️⃣ Client-side поиск (не тратит reads!)
+    if (searchQuery && searchQuery.trim()) {
+      const search = searchQuery.toLowerCase().trim();
+      users = users.filter((user) => {
+        const displayName = user.displayName?.toLowerCase() || '';
+        const email = user.email?.toLowerCase() || '';
+        const title = user.title?.toLowerCase() || '';
+        return displayName.includes(search) || email.includes(search) || title.includes(search);
+      });
+    }
+
+    // 8️⃣ Получаем первый и последний документы для курсоров
+    const firstDoc = snapshot.docs[0] || null;
+    const lastDoc = snapshot.docs[users.length - 1] || null;
+
+    const duration = performance.now() - startTime;
+    console.log(`✅ Paginated query completed in ${duration.toFixed(0)}ms`);
+    console.log(`📊 Firestore reads: ${firestoreReads} (pageSize: ${pageSize})`);
+    console.log(`📄 Returned ${users.length} users out of ${total} total`);
+
+    // 9️⃣ Проверка на превышение reads (защита от ошибок)
+    const MAX_READS_PER_REQUEST = 100;
+    if (firestoreReads > MAX_READS_PER_REQUEST) {
+      console.warn(`⚠️ WARNING: Firestore reads (${firestoreReads}) exceeded limit (${MAX_READS_PER_REQUEST})`);
+      console.warn('⚠️ This may indicate a configuration error in pagination!');
+    }
+
+    return {
+      users,
+      total,
+      firstDoc,
+      lastDoc,
+      firestoreReads,
+      hasNextPage,
+      hasPrevPage,
+    };
+  } catch (error) {
+    console.error('Error getting paginated users:', error);
+    throw error;
   }
 };

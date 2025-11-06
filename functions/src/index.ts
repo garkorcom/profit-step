@@ -45,6 +45,12 @@ export {
   updateCompanyMemberCount,
 } from './activityLogger';
 
+// Pagination cost monitoring
+export {
+  monitorPaginationCosts,
+  logPaginationMetrics,
+} from './monitorPaginationCosts';
+
 const db = admin.firestore();
 
 /**

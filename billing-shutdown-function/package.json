@@ -1,0 +1,16 @@
+{
+  "name": "budget-alert-handler",
+  "version": "1.0.0",
+  "description": "Automatic billing shutoff when budget exceeds 500%",
+  "main": "index.js",
+  "dependencies": {
+    "@google-cloud/billing": "^3.0.0",
+    "@google-cloud/functions-framework": "^3.0.0"
+  },
+  "scripts": {
+    "start": "functions-framework --target=handleBudgetAlert"
+  },
+  "engines": {
+    "node": "20"
+  }
+}

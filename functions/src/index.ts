@@ -720,3 +720,16 @@ Powered by Firebase Functions + Brevo SMTP
  * - Эти функции запустятся автоматически при регистрации/удалении
  *   пользователей через Firebase Auth
  */
+
+// ========================================
+// V2 FUNCTIONS - Enterprise Anti-Loop Architecture
+// С полной защитой от infinite loops
+// ========================================
+
+export { incrementLoginCount as incrementLoginCount_v2 } from './triggers/users/incrementLoginCount';
+export { logUserUpdates as logUserUpdates_v2 } from './triggers/users/logUserUpdates';
+export { trackUserActivation as trackUserActivation_v2 } from './triggers/users/trackUserActivation';
+export { updateCompanyMemberCount as updateCompanyMemberCount_v2 } from './triggers/users/updateCompanyMemberCount';
+
+// Monitoring
+export { monitorFunctionLoops } from './scheduled/monitorFunctionLoops';

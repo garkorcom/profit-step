@@ -9,7 +9,7 @@
  * - adminDeleteUser: Безопасное удаление пользователя администратором
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.testEmail = exports.inviteUser = exports.adminDeleteUser = exports.onUserDelete = exports.onUserCreate = exports.updateCompanyMemberCount = exports.incrementLoginCount = exports.logInvitationAccepted = exports.logInvitationSent = exports.logUserDeleted = exports.logUserUpdates = exports.logUserCreated = exports.testBrevoWebhook = exports.brevoWebhookHandler = exports.trackFirstInvite = exports.trackUserActivation = exports.initializeUserActivation = exports.aggregateEngagementMetrics = exports.aggregateGrowthMetrics = exports.processAvatar = void 0;
+exports.monitorFunctionLoops = exports.updateCompanyMemberCount_v2 = exports.trackUserActivation_v2 = exports.logUserUpdates_v2 = exports.incrementLoginCount_v2 = exports.testEmail = exports.inviteUser = exports.adminDeleteUser = exports.onUserDelete = exports.onUserCreate = exports.updateCompanyMemberCount = exports.incrementLoginCount = exports.logInvitationAccepted = exports.logInvitationSent = exports.logUserDeleted = exports.logUserUpdates = exports.logUserCreated = exports.testBrevoWebhook = exports.brevoWebhookHandler = exports.trackFirstInvite = exports.trackUserActivation = exports.initializeUserActivation = exports.aggregateEngagementMetrics = exports.aggregateGrowthMetrics = exports.processAvatar = void 0;
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 const crypto = require("crypto");
@@ -581,4 +581,19 @@ Powered by Firebase Functions + Brevo SMTP
  * - Эти функции запустятся автоматически при регистрации/удалении
  *   пользователей через Firebase Auth
  */
+// ========================================
+// V2 FUNCTIONS - Enterprise Anti-Loop Architecture
+// С полной защитой от infinite loops
+// ========================================
+var incrementLoginCount_1 = require("./triggers/users/incrementLoginCount");
+Object.defineProperty(exports, "incrementLoginCount_v2", { enumerable: true, get: function () { return incrementLoginCount_1.incrementLoginCount; } });
+var logUserUpdates_1 = require("./triggers/users/logUserUpdates");
+Object.defineProperty(exports, "logUserUpdates_v2", { enumerable: true, get: function () { return logUserUpdates_1.logUserUpdates; } });
+var trackUserActivation_1 = require("./triggers/users/trackUserActivation");
+Object.defineProperty(exports, "trackUserActivation_v2", { enumerable: true, get: function () { return trackUserActivation_1.trackUserActivation; } });
+var updateCompanyMemberCount_1 = require("./triggers/users/updateCompanyMemberCount");
+Object.defineProperty(exports, "updateCompanyMemberCount_v2", { enumerable: true, get: function () { return updateCompanyMemberCount_1.updateCompanyMemberCount; } });
+// Monitoring
+var monitorFunctionLoops_1 = require("./scheduled/monitorFunctionLoops");
+Object.defineProperty(exports, "monitorFunctionLoops", { enumerable: true, get: function () { return monitorFunctionLoops_1.monitorFunctionLoops; } });
 //# sourceMappingURL=index.js.map

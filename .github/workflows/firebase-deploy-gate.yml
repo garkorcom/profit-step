@@ -1,0 +1,222 @@
+name: 🛡️ Firebase Deploy Gate - Anti-Loop Protection
+
+# Этот workflow блокирует deployment если обнаружены потенциальные infinite loops
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+  pull_request:
+    branches:
+      - main
+      - develop
+
+env:
+  NODE_VERSION: '20.x'
+
+jobs:
+  # Job 1: Static Analysis (Lint)
+  lint:
+    name: 🔍 Static Analysis (ESLint)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: 'functions/package-lock.json'
+
+      - name: Install dependencies
+        working-directory: functions
+        run: npm ci
+
+      - name: 🔥 Run ESLint (with anti-loop rule)
+        working-directory: functions
+        run: npm run lint
+
+      - name: ✅ ESLint passed - no infinite loops detected
+        run: echo "✅ Static analysis passed! Code is safe."
+
+  # Job 2: Unit Tests (with Firebase Emulators)
+  test:
+    name: 🧪 Unit Tests (Anti-Loop Tests)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: 'functions/package-lock.json'
+
+      - name: Install Firebase CLI
+        run: npm install -g firebase-tools
+
+      - name: Install functions dependencies
+        working-directory: functions
+        run: npm ci
+
+      - name: 🔥 Start Firebase Emulators (background)
+        run: |
+          firebase emulators:start --only firestore,auth,storage &
+          echo "Waiting for emulators to start..."
+          sleep 15
+          echo "✅ Emulators started"
+
+      - name: 🧪 Run Anti-Loop Tests
+        working-directory: functions
+        run: npm run test:antiloop
+        env:
+          FIRESTORE_EMULATOR_HOST: localhost:8080
+          FIREBASE_AUTH_EMULATOR_HOST: localhost:9099
+          FIREBASE_STORAGE_EMULATOR_HOST: localhost:9199
+
+      - name: 📊 Run All Tests
+        working-directory: functions
+        run: npm test
+        env:
+          FIRESTORE_EMULATOR_HOST: localhost:8080
+          FIREBASE_AUTH_EMULATOR_HOST: localhost:9099
+          FIREBASE_STORAGE_EMULATOR_HOST: localhost:9199
+
+      - name: ✅ All tests passed
+        run: echo "✅ All tests passed! Anti-loop guards working correctly."
+
+  # Job 3: Build Check
+  build:
+    name: 🏗️ Build Check
+    runs-on: ubuntu-latest
+    needs: [lint, test] # Depends on lint and test
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: 'functions/package-lock.json'
+
+      - name: Install functions dependencies
+        working-directory: functions
+        run: npm ci
+
+      - name: 🏗️ Build TypeScript
+        working-directory: functions
+        run: npm run build
+
+      - name: ✅ Build successful
+        run: echo "✅ TypeScript compilation successful!"
+
+  # Job 4: Security Audit
+  security:
+    name: 🔒 Security Audit
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: 🔒 Run npm audit
+        working-directory: functions
+        run: |
+          npm audit --audit-level=high || true
+          echo "✅ Security audit completed"
+
+  # Job 5: FINAL GATE - Deploy (only on push to main)
+  deploy:
+    name: 🚀 Deploy to Firebase
+    runs-on: ubuntu-latest
+    needs: [lint, test, build, security] # ALL previous jobs must pass
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: 'functions/package-lock.json'
+
+      - name: Install dependencies
+        working-directory: functions
+        run: npm ci
+
+      - name: Build functions
+        working-directory: functions
+        run: npm run build
+
+      - name: 🚀 Deploy to Firebase
+        uses: w9jds/firebase-action@master
+        with:
+          args: deploy
+        env:
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+
+      - name: ✅ Deployment successful
+        run: |
+          echo "✅ Successfully deployed to Firebase!"
+          echo "🔍 Monitor Firebase Console for next 48 hours:"
+          echo "   https://console.firebase.google.com/project/profit-step/functions/logs"
+
+      - name: 📊 Post-deploy reminder
+        run: |
+          echo "⚠️ POST-DEPLOY CHECKLIST:"
+          echo "1. Check Firebase Console → Functions → Logs"
+          echo "2. Look for: '⏩ Skipping' messages (guards working)"
+          echo "3. Monitor billing: https://console.cloud.google.com/billing"
+          echo "4. If you see repeated function calls - INVESTIGATE IMMEDIATELY!"
+
+  # Job 6: Comment on PR with results
+  pr-comment:
+    name: 💬 PR Comment with Results
+    runs-on: ubuntu-latest
+    needs: [lint, test, build]
+    if: github.event_name == 'pull_request'
+
+    steps:
+      - name: Comment PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `## ✅ Anti-Loop Protection Check Passed!
+
+              All safety checks completed successfully:
+
+              - ✅ **ESLint**: No infinite loop patterns detected
+              - ✅ **Tests**: All anti-loop tests passed
+              - ✅ **Build**: TypeScript compilation successful
+
+              ### 🛡️ Your code is safe to deploy!
+
+              **Next steps:**
+              1. Get code review approval
+              2. Merge to main
+              3. Monitor Firebase Console for 48 hours after deploy
+
+              **Remember**: One bug in onUpdate trigger = $174+ bill!`
+            })

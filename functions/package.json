@@ -7,7 +7,13 @@
     "shell": "npm run build && firebase functions:shell",
     "start": "npm run shell",
     "deploy": "firebase deploy --only functions",
-    "logs": "firebase functions:log"
+    "logs": "firebase functions:log",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "test:antiloop": "jest --testPathPattern=antiloop",
+    "lint": "eslint --ext .js,.ts .",
+    "lint:fix": "eslint --ext .js,.ts . --fix"
   },
   "engines": {
     "node": "20"
@@ -22,7 +28,17 @@
     "sharp": "^0.34.4"
   },
   "devDependencies": {
+    "@firebase/rules-unit-testing": "^5.0.0",
+    "@types/jest": "^30.0.0",
     "@types/node": "^20.0.0",
+    "@typescript-eslint/eslint-plugin": "^8.46.3",
+    "@typescript-eslint/parser": "^8.46.3",
+    "eslint": "^9.39.1",
+    "eslint-plugin-import": "^2.32.0",
+    "eslint-plugin-local-rules": "^3.0.2",
+    "firebase-functions-test": "^3.4.1",
+    "jest": "^30.2.0",
+    "ts-jest": "^29.4.5",
     "typescript": "^5.0.0"
   },
   "private": true

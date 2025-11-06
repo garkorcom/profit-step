@@ -210,6 +210,15 @@ export const trackUserActivation = functions
       const before = change.before.data();
       const after = change.after.data();
 
+      // 🛡️ IDEMPOTENCY GUARD: Выходим если title И photoURL не изменились
+      const titleChanged = before.title !== after.title;
+      const photoURLChanged = before.photoURL !== after.photoURL;
+
+      if (!titleChanged && !photoURLChanged) {
+        console.log(`⏩ Guard activated: title and photoURL did not change for user ${userId}. Exiting.`);
+        return null;
+      }
+
       const activationRef = db.collection('userActivation').doc(userId);
       const updates: any = {};
 
@@ -232,6 +241,7 @@ export const trackUserActivation = functions
     } catch (error) {
       console.error('❌ Error tracking user activation:', error);
     }
+    return null;
   });
 
 /**

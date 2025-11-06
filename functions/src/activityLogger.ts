@@ -79,6 +79,18 @@ export const logUserUpdates = functions
         return;
       }
 
+      // 🛡️ IDEMPOTENCY GUARD: Выходим если НИ ОДНО релевантное поле не изменилось
+      const roleChanged = before.role !== after.role;
+      const titleChanged = before.title !== after.title;
+      const phoneChanged = before.phone !== after.phone;
+      const photoURLChanged = before.photoURL !== after.photoURL;
+      const statusChanged = before.status !== after.status;
+
+      if (!roleChanged && !titleChanged && !phoneChanged && !photoURLChanged && !statusChanged) {
+        console.log(`⏩ Guard activated: No relevant changes for user ${userId}. Exiting.`);
+        return null;
+      }
+
       // Изменение роли
       if (before.role !== after.role) {
         await logActivity({
@@ -141,6 +153,7 @@ export const logUserUpdates = functions
     } catch (error) {
       console.error('❌ Error logging user updates:', error);
     }
+    return null;
   });
 
 /**
@@ -283,6 +296,31 @@ export const updateCompanyMemberCount = functions
   .firestore.document('users/{userId}')
   .onWrite(async (change, context) => {
     try {
+      const userId = context.params.userId;
+
+      // 🛡️ IDEMPOTENCY GUARD: Проверяем, нужно ли обновлять счетчик
+      // Обновляем ТОЛЬКО если:
+      // 1. Пользователь создан (onCreate)
+      // 2. Пользователь удален (onDelete)
+      // 3. Изменился status или companyId (onUpdate)
+
+      const isCreate = !change.before.exists && change.after.exists;
+      const isDelete = change.before.exists && !change.after.exists;
+
+      if (!isCreate && !isDelete) {
+        // Это onUpdate - проверяем, изменился ли status или companyId
+        const before = change.before.data();
+        const after = change.after.data();
+
+        const statusChanged = before?.status !== after?.status;
+        const companyIdChanged = before?.companyId !== after?.companyId;
+
+        if (!statusChanged && !companyIdChanged) {
+          console.log(`⏩ Guard activated: status and companyId did not change for user ${userId}. Exiting.`);
+          return null;
+        }
+      }
+
       let companyId: string | null = null;
 
       // Определяем companyId
@@ -316,4 +354,5 @@ export const updateCompanyMemberCount = functions
     } catch (error) {
       console.error('❌ Error updating company member count:', error);
     }
+    return null;
   });

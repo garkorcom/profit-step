@@ -151,10 +151,10 @@ const CompanyDashboard: React.FC = () => {
   };
 
   return (
-    <Container maxWidth="xl" sx={{ mt: 4, mb: 4 }}>
+    <Container maxWidth="xl" sx={{ mt: 4, mb: 4, px: { xs: 2, sm: 3 } }}>
       {/* Заголовок */}
       <Box sx={{ mb: 3 }}>
-        <Typography variant="h4" gutterBottom>
+        <Typography variant="h4" gutterBottom sx={{ fontSize: { xs: '1.75rem', sm: '2.125rem' } }}>
           Dashboard Команды
         </Typography>
         <Typography variant="body2" color="text.secondary">
@@ -168,7 +168,7 @@ const CompanyDashboard: React.FC = () => {
           <CircularProgress />
         </Box>
       ) : (
-        <Grid container spacing={3} sx={{ mb: 4 }}>
+        <Grid container spacing={{ xs: 2, sm: 3 }} sx={{ mb: 4 }}>
           {/* Карточка "Всего Участников" */}
           <Grid size={{ xs: 12, md: 6, lg: 3 }}>
             <Link to="/admin/team?status=active" style={{ textDecoration: 'none' }}>
@@ -239,8 +239,8 @@ const CompanyDashboard: React.FC = () => {
 
       {/* Контент вкладок */}
       <TabPanel value={activeTab} index={0}>
-        <Paper sx={{ p: 3 }}>
-          <Typography variant="h6" gutterBottom>
+        <Paper sx={{ p: { xs: 2, sm: 3 } }}>
+          <Typography variant="h6" gutterBottom sx={{ fontSize: { xs: '1.125rem', sm: '1.25rem' } }}>
             Участники команды
           </Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
@@ -258,8 +258,8 @@ const CompanyDashboard: React.FC = () => {
       </TabPanel>
 
       <TabPanel value={activeTab} index={1}>
-        <Paper sx={{ p: 3 }}>
-          <Typography variant="h6" gutterBottom>
+        <Paper sx={{ p: { xs: 2, sm: 3 } }}>
+          <Typography variant="h6" gutterBottom sx={{ fontSize: { xs: '1.125rem', sm: '1.25rem' } }}>
             История приглашений
           </Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
@@ -274,11 +274,11 @@ const CompanyDashboard: React.FC = () => {
       </TabPanel>
 
       <TabPanel value={activeTab} index={2}>
-        <Grid container spacing={3}>
+        <Grid container spacing={{ xs: 2, sm: 3 }}>
           {/* Activity Feed */}
           <Grid size={{ xs: 12, md: 8 }}>
-            <Paper sx={{ p: 3 }}>
-              <Typography variant="h6" gutterBottom>
+            <Paper sx={{ p: { xs: 2, sm: 3 } }}>
+              <Typography variant="h6" gutterBottom sx={{ fontSize: { xs: '1.125rem', sm: '1.25rem' } }}>
                 Лента активности
               </Typography>
               <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
@@ -294,8 +294,8 @@ const CompanyDashboard: React.FC = () => {
 
           {/* Top Contributors */}
           <Grid size={{ xs: 12, md: 4 }}>
-            <Paper sx={{ p: 3 }}>
-              <Typography variant="h6" gutterBottom>
+            <Paper sx={{ p: { xs: 2, sm: 3 } }}>
+              <Typography variant="h6" gutterBottom sx={{ fontSize: { xs: '1.125rem', sm: '1.25rem' } }}>
                 Топ активных
               </Typography>
               <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
@@ -311,8 +311,8 @@ const CompanyDashboard: React.FC = () => {
 
           {/* Activity Heatmap */}
           <Grid size={{ xs: 12 }}>
-            <Paper sx={{ p: 3 }}>
-              <Typography variant="h6" gutterBottom>
+            <Paper sx={{ p: { xs: 2, sm: 3 } }}>
+              <Typography variant="h6" gutterBottom sx={{ fontSize: { xs: '1.125rem', sm: '1.25rem' } }}>
                 Активность команды по дням и часам
               </Typography>
               <Box sx={{ mt: 2, textAlign: 'center', py: 4 }}>

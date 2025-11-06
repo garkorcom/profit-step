@@ -325,7 +325,16 @@ const TeamAdminPage: React.FC = () => {
   return (
     <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
       {/* Заголовок */}
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+      <Box
+        sx={{
+          display: 'flex',
+          flexDirection: { xs: 'column', sm: 'row' },
+          justifyContent: 'space-between',
+          alignItems: { xs: 'stretch', sm: 'center' },
+          gap: 2,
+          mb: 3,
+        }}
+      >
         <Box>
           <Typography variant="h4">Управление командой</Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
@@ -336,8 +345,15 @@ const TeamAdminPage: React.FC = () => {
           variant="contained"
           startIcon={<PersonAddIcon />}
           onClick={() => setInviteDialogOpen(true)}
+          fullWidth
+          sx={{ display: { xs: 'flex', sm: 'inline-flex' } }}
         >
-          Пригласить участника
+          <Box component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}>
+            Пригласить участника
+          </Box>
+          <Box component="span" sx={{ display: { xs: 'inline', sm: 'none' } }}>
+            Пригласить
+          </Box>
         </Button>
       </Box>
 
@@ -371,18 +387,19 @@ const TeamAdminPage: React.FC = () => {
             <CircularProgress />
           </Box>
         ) : (
-          <TableContainer>
-            <Table>
-              <TableHead>
-                <TableRow>
-                  <TableCell>Пользователь</TableCell>
-                  <TableCell>Должность</TableCell>
-                  <TableCell>Роль</TableCell>
-                  <TableCell>Последний вход</TableCell>
-                  <TableCell>Статус</TableCell>
-                  <TableCell align="right">Действия</TableCell>
-                </TableRow>
-              </TableHead>
+          <Box sx={{ overflowX: 'auto' }}>
+            <TableContainer>
+              <Table sx={{ minWidth: { xs: 500, md: 650 } }}>
+                <TableHead>
+                  <TableRow>
+                    <TableCell>Пользователь</TableCell>
+                    <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>Должность</TableCell>
+                    <TableCell>Роль</TableCell>
+                    <TableCell sx={{ display: { xs: 'none', sm: 'table-cell' } }}>Последний вход</TableCell>
+                    <TableCell>Статус</TableCell>
+                    <TableCell align="right">Действия</TableCell>
+                  </TableRow>
+                </TableHead>
               <TableBody>
                 {users.map((user) => (
                   <TableRow key={user.id}>
@@ -401,12 +418,14 @@ const TeamAdminPage: React.FC = () => {
                       </Box>
                     </TableCell>
 
-                    {/* Должность */}
-                    <TableCell>{user.title || '—'}</TableCell>
+                    {/* Должность (скрыта на мобильных) */}
+                    <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>
+                      {user.title || '—'}
+                    </TableCell>
 
                     {/* Роль (редактируемый выпадающий список) */}
                     <TableCell>
-                      <FormControl size="small" fullWidth>
+                      <FormControl size="small" fullWidth sx={{ minWidth: 100 }}>
                         <Select
                           value={user.role}
                           onChange={(e) => handleRoleChange(user.id, e)}
@@ -420,8 +439,10 @@ const TeamAdminPage: React.FC = () => {
                       </FormControl>
                     </TableCell>
 
-                    {/* Последний вход */}
-                    <TableCell>{formatLastSeen(user.lastSeen)}</TableCell>
+                    {/* Последний вход (скрыт на мобильных) */}
+                    <TableCell sx={{ display: { xs: 'none', sm: 'table-cell' } }}>
+                      {formatLastSeen(user.lastSeen)}
+                    </TableCell>
 
                     {/* Статус */}
                     <TableCell>
@@ -453,6 +474,7 @@ const TeamAdminPage: React.FC = () => {
               </TableBody>
             </Table>
           </TableContainer>
+        </Box>
         )}
       </Paper>
 

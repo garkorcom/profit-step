@@ -11,6 +11,12 @@ import {
   Menu,
   MenuItem,
   Divider,
+  Drawer,
+  List,
+  ListItem,
+  ListItemButton,
+  ListItemIcon,
+  ListItemText,
 } from '@mui/material';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../auth/AuthContext';
@@ -22,6 +28,8 @@ import {
   Settings as SettingsIcon,
   Logout as LogoutIcon,
   Person as PersonIcon,
+  Menu as MenuIcon,
+  Close as CloseIcon,
 } from '@mui/icons-material';
 
 /**
@@ -32,6 +40,7 @@ const Header: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const handleMenuOpen = (event: React.MouseEvent<HTMLElement>) => {
     setAnchorEl(event.currentTarget);
@@ -61,6 +70,14 @@ const Header: React.FC = () => {
     handleMenuClose();
   };
 
+  const toggleMobileMenu = () => {
+    setMobileMenuOpen(!mobileMenuOpen);
+  };
+
+  const handleMobileMenuClose = () => {
+    setMobileMenuOpen(false);
+  };
+
   // Навигационные ссылки в зависимости от роли
   const getNavLinks = () => {
     if (!userProfile) return [];
@@ -86,8 +103,20 @@ const Header: React.FC = () => {
     <AppBar position="sticky" color="default" elevation={1}>
       <Container maxWidth="xl">
         <Toolbar disableGutters sx={{ justifyContent: 'space-between' }}>
-          {/* Логотип */}
-          <Box sx={{ display: 'flex', alignItems: 'center' }}>
+          {/* Логотип + Бургер-меню (мобильное) */}
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            {/* Бургер-кнопка (только на мобильных) */}
+            <IconButton
+              color="inherit"
+              aria-label="open menu"
+              edge="start"
+              onClick={toggleMobileMenu}
+              sx={{ display: { xs: 'flex', md: 'none' } }}
+            >
+              <MenuIcon />
+            </IconButton>
+
+            {/* Логотип */}
             <Link
               to="/admin/dashboard"
               style={{
@@ -105,6 +134,7 @@ const Header: React.FC = () => {
                   fontWeight: 700,
                   color: 'primary.main',
                   letterSpacing: 0.5,
+                  display: { xs: 'none', sm: 'block' }, // Скрываем текст на очень маленьких экранах
                 }}
               >
                 Profit Step
@@ -197,6 +227,106 @@ const Header: React.FC = () => {
           </Box>
         </Toolbar>
       </Container>
+
+      {/* Мобильное меню (Drawer) */}
+      <Drawer
+        anchor="left"
+        open={mobileMenuOpen}
+        onClose={handleMobileMenuClose}
+        sx={{
+          display: { xs: 'block', md: 'none' },
+          '& .MuiDrawer-paper': {
+            width: 280,
+          },
+        }}
+      >
+        {/* Заголовок Drawer */}
+        <Box sx={{ p: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Typography variant="h6" sx={{ fontWeight: 600, color: 'primary.main' }}>
+            Profit Step
+          </Typography>
+          <IconButton onClick={handleMobileMenuClose}>
+            <CloseIcon />
+          </IconButton>
+        </Box>
+        <Divider />
+
+        {/* Навигационные ссылки */}
+        <List>
+          {navLinks.map((link) => (
+            <ListItem key={link.path} disablePadding>
+              <ListItemButton
+                component={Link}
+                to={link.path}
+                onClick={handleMobileMenuClose}
+                selected={location.pathname === link.path}
+                sx={{
+                  '&.Mui-selected': {
+                    backgroundColor: 'primary.light',
+                    color: 'primary.main',
+                    '&:hover': {
+                      backgroundColor: 'primary.light',
+                    },
+                  },
+                }}
+              >
+                <ListItemIcon sx={{ color: location.pathname === link.path ? 'primary.main' : 'inherit' }}>
+                  {link.icon}
+                </ListItemIcon>
+                <ListItemText primary={link.label} />
+              </ListItemButton>
+            </ListItem>
+          ))}
+        </List>
+
+        <Divider />
+
+        {/* Профиль и настройки */}
+        <List>
+          <ListItem disablePadding>
+            <ListItemButton
+              onClick={() => {
+                navigate('/profile');
+                handleMobileMenuClose();
+              }}
+            >
+              <ListItemIcon>
+                <PersonIcon />
+              </ListItemIcon>
+              <ListItemText primary="Профиль" />
+            </ListItemButton>
+          </ListItem>
+          <ListItem disablePadding>
+            <ListItemButton
+              onClick={() => {
+                navigate('/settings');
+                handleMobileMenuClose();
+              }}
+            >
+              <ListItemIcon>
+                <SettingsIcon />
+              </ListItemIcon>
+              <ListItemText primary="Настройки" />
+            </ListItemButton>
+          </ListItem>
+          <Divider />
+          <ListItem disablePadding>
+            <ListItemButton
+              onClick={async () => {
+                await signOut();
+                navigate('/login');
+                handleMobileMenuClose();
+              }}
+              sx={{ color: 'error.main' }}
+            >
+              <ListItemIcon sx={{ color: 'error.main' }}>
+                <LogoutIcon />
+              </ListItemIcon>
+              <ListItemText primary="Выйти" />
+            </ListItemButton>
+          </ListItem>
+        </List>
+      </Drawer>
     </AppBar>
   );
 };

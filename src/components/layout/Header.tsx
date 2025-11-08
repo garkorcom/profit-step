@@ -90,7 +90,7 @@ const Header: React.FC = () => {
       return [
         ...commonLinks,
         { path: '/admin/team', label: 'Команда', icon: <PeopleIcon sx={{ mr: 0.5 }} /> },
-        { path: '/admin/clients', label: 'Клиенты', icon: <BusinessIcon sx={{ mr: 0.5 }} /> },
+        { path: '/admin/companies', label: 'Компании', icon: <BusinessIcon sx={{ mr: 0.5 }} /> },
       ];
     }
 

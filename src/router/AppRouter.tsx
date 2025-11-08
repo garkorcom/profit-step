@@ -11,6 +11,7 @@ import SettingsPage from '../pages/SettingsPage';
 import TeamAdminPage from '../pages/admin/TeamAdminPage';
 import SuperAdminDashboard from '../pages/superadmin/SuperAdminDashboard';
 import CompanyDashboard from '../pages/admin/CompanyDashboard';
+import CompaniesPage from '../pages/admin/CompaniesPage';
 
 /**
  * Компонент для защиты маршрутов
@@ -88,8 +89,11 @@ const AppRouter: React.FC = () => {
         {/* Управление командой */}
         <Route path="/admin/team" element={<TeamAdminPage />} />
 
-        {/* Клиенты */}
-        <Route path="/admin/clients" element={<div>Модуль "Клиенты" в разработке</div>} />
+        {/* Компании (Клиенты) */}
+        <Route path="/admin/companies" element={<CompaniesPage />} />
+
+        {/* Клиенты (старый route - redirect) */}
+        <Route path="/admin/clients" element={<Navigate to="/admin/companies" replace />} />
 
         {/* Профиль пользователя */}
         <Route path="/profile" element={<ProfilePage />} />

@@ -275,13 +275,15 @@ const CreateUserDialog: React.FC<CreateUserDialogProps> = ({ open, onClose, onSu
                   endAdornment: (
                     <InputAdornment position="end">
                       <Tooltip title="Сгенерировать случайный пароль">
-                        <IconButton
-                          onClick={generateRandomPassword}
-                          disabled={loading}
-                          color="primary"
-                        >
-                          <Casino />
-                        </IconButton>
+                        <span>
+                          <IconButton
+                            onClick={generateRandomPassword}
+                            disabled={loading}
+                            color="primary"
+                          >
+                            <Casino />
+                          </IconButton>
+                        </span>
                       </Tooltip>
                       <IconButton
                         onClick={() => setShowPassword(!showPassword)}

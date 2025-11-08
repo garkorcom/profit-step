@@ -403,15 +403,19 @@ export default function CompaniesPage() {
           </Button>
 
           <Tooltip title="Экспорт в CSV (Ctrl+E)">
-            <IconButton onClick={handleExport} disabled={exporting}>
-              <DownloadIcon />
-            </IconButton>
+            <span>
+              <IconButton onClick={handleExport} disabled={exporting}>
+                <DownloadIcon />
+              </IconButton>
+            </span>
           </Tooltip>
 
           <Tooltip title="Обновить (Ctrl+R)">
-            <IconButton onClick={handleRefresh} disabled={loading}>
-              <RefreshIcon />
-            </IconButton>
+            <span>
+              <IconButton onClick={handleRefresh} disabled={loading}>
+                <RefreshIcon />
+              </IconButton>
+            </span>
           </Tooltip>
         </Box>
       </Box>

@@ -566,35 +566,39 @@ const TeamAdminPage: React.FC = () => {
         <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
           {/* Refresh Button */}
           <Tooltip title="Обновить (Ctrl+R)">
-            <IconButton
-              onClick={handleRefresh}
-              disabled={loading}
-              color={hasNewUsers ? 'primary' : 'default'}
-            >
-              {hasNewUsers ? (
-                <Box sx={{ position: 'relative' }}>
+            <span>
+              <IconButton
+                onClick={handleRefresh}
+                disabled={loading}
+                color={hasNewUsers ? 'primary' : 'default'}
+              >
+                {hasNewUsers ? (
+                  <Box sx={{ position: 'relative' }}>
+                    <RefreshIcon />
+                    <NewIcon
+                      sx={{
+                        position: 'absolute',
+                        top: -4,
+                        right: -4,
+                        fontSize: 12,
+                        color: 'error.main',
+                      }}
+                    />
+                  </Box>
+                ) : (
                   <RefreshIcon />
-                  <NewIcon
-                    sx={{
-                      position: 'absolute',
-                      top: -4,
-                      right: -4,
-                      fontSize: 12,
-                      color: 'error.main',
-                    }}
-                  />
-                </Box>
-              ) : (
-                <RefreshIcon />
-              )}
-            </IconButton>
+                )}
+              </IconButton>
+            </span>
           </Tooltip>
 
           {/* Export Button */}
           <Tooltip title="Экспорт в CSV (Ctrl+E)">
-            <IconButton onClick={handleExport} disabled={exporting || loading}>
-              <DownloadIcon />
-            </IconButton>
+            <span>
+              <IconButton onClick={handleExport} disabled={exporting || loading}>
+                <DownloadIcon />
+              </IconButton>
+            </span>
           </Tooltip>
 
           {/* Add User Button */}

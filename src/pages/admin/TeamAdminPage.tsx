@@ -38,6 +38,9 @@ import {
   PersonAdd as PersonAddIcon,
   Search as SearchIcon,
   AttachMoney as MoneyIcon,
+  Refresh as RefreshIcon,
+  Download as DownloadIcon,
+  FiberNew as NewIcon,
 } from '@mui/icons-material';
 import { useAuth } from '../../auth/AuthContext';
 import { UserProfile, UserRole, UserStatus } from '../../types/user.types';
@@ -52,10 +55,14 @@ import {
 import UserProfileModal from '../../components/admin/UserProfileModal';
 import InviteUserDialog from '../../components/admin/InviteUserDialog';
 import CreateUserDialog from '../../components/admin/CreateUserDialog';
+import CostWarningDialog from '../../components/admin/CostWarningDialog';
+import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts';
+import { costProtectionBreaker } from '../../utils/circuitBreaker';
 import { formatDistanceToNow } from 'date-fns';
 import { ru } from 'date-fns/locale';
 import { DocumentSnapshot } from 'firebase/firestore';
 import { useSearchParams } from 'react-router-dom';
+import toast from 'react-hot-toast';
 
 /**
  * Страница управления командой с Enterprise-Grade Серверной Пагинацией
@@ -129,6 +136,11 @@ const TeamAdminPage: React.FC = () => {
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [menuUser, setMenuUser] = useState<UserProfile | null>(null);
   const [addUserMenuAnchor, setAddUserMenuAnchor] = useState<null | HTMLElement>(null);
+
+  // Priority 2 UX Improvements
+  const [warningDismissed, setWarningDismissed] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [hasNewUsers, setHasNewUsers] = useState(false);
 
   // Filters
   const statusFilter = (searchParams.get('status') as StatusFilter) || 'all';
@@ -268,6 +280,122 @@ const TeamAdminPage: React.FC = () => {
       setSearchParams({ status: newValue });
     }
   };
+
+  // ============================================
+  // PRIORITY 2 UX HANDLERS
+  // ============================================
+
+  // Refresh - clear cache and reload
+  const handleRefresh = useCallback(() => {
+    setPageCache(new Map());
+    setPageCursors(new Map());
+    setHasNewUsers(false);
+    loadUsers(page, 'initial');
+    toast.success('Данные обновлены');
+  }, [page, loadUsers]);
+
+  // Export to CSV
+  const handleExport = useCallback(async () => {
+    if (!companyId) return;
+
+    setExporting(true);
+    toast.loading('Экспорт данных...', { id: 'export' });
+
+    try {
+      const allUsers: UserProfile[] = [];
+      let currentLastDoc: DocumentSnapshot | null = null;
+      let hasMore = true;
+      let attempts = 0;
+      const MAX_ATTEMPTS = 100; // Safety limit
+
+      while (hasMore && attempts < MAX_ATTEMPTS) {
+        const result: Awaited<ReturnType<typeof getCompanyUsersPaginated>> = await getCompanyUsersPaginated({
+          companyId,
+          pageSize: 100,
+          startAfterDoc: currentLastDoc || undefined,
+          statusFilter: statusFilter !== 'all' ? (statusFilter as UserStatus) : 'all',
+          sortBy: 'createdAt',
+          sortOrder: 'desc',
+        });
+
+        allUsers.push(...result.users);
+        currentLastDoc = result.lastDoc;
+        hasMore = result.hasNextPage;
+        attempts++;
+
+        // Update progress
+        toast.loading(`Экспорт: ${allUsers.length} записей...`, { id: 'export' });
+      }
+
+      // Generate CSV
+      const headers = ['Имя', 'Email', 'Роль', 'Статус', 'Создан', 'Последний вход'];
+      const rows = allUsers.map((u) => {
+        // Handle both string and Timestamp types
+        const createdAt = u.createdAt
+          ? typeof u.createdAt === 'string'
+            ? new Date(u.createdAt).toLocaleDateString('ru-RU')
+            : u.createdAt.toDate().toLocaleDateString('ru-RU')
+          : '';
+        const lastSeen = u.lastSeen
+          ? typeof u.lastSeen === 'string'
+            ? new Date(u.lastSeen).toLocaleDateString('ru-RU')
+            : u.lastSeen.toDate().toLocaleDateString('ru-RU')
+          : 'Никогда';
+
+        return [
+          u.displayName || '',
+          u.email || '',
+          u.role || '',
+          u.status || '',
+          createdAt,
+          lastSeen,
+        ];
+      });
+
+      const csv = [
+        headers.join(','),
+        ...rows.map((row) => row.map((cell) => `"${cell}"`).join(',')),
+      ].join('\n');
+
+      // Download
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `team-export-${new Date().toISOString().split('T')[0]}.csv`;
+      link.click();
+      URL.revokeObjectURL(url);
+
+      toast.success(`Экспортировано ${allUsers.length} записей`, { id: 'export' });
+    } catch (err: any) {
+      console.error('Export error:', err);
+      toast.error('Ошибка экспорта: ' + err.message, { id: 'export' });
+    } finally {
+      setExporting(false);
+    }
+  }, [companyId, statusFilter]);
+
+  // Keyboard Shortcuts
+  useKeyboardShortcuts({
+    'ctrl+arrowright': () => {
+      if (page < Math.ceil(totalUsers / pageSize) - 1) {
+        handlePageChange(null, page + 1);
+      }
+    },
+    'ctrl+arrowleft': () => {
+      if (page > 0) {
+        handlePageChange(null, page - 1);
+      }
+    },
+    'ctrl+r': () => {
+      handleRefresh();
+    },
+    'ctrl+e': () => {
+      if (!exporting) {
+        handleExport();
+      }
+    },
+  });
 
   // ============================================
   // USER MANAGEMENT HANDLERS
@@ -435,7 +563,41 @@ const TeamAdminPage: React.FC = () => {
             </Tooltip>
           </Box>
         </Box>
-        <Box sx={{ display: 'flex', gap: 1 }}>
+        <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+          {/* Refresh Button */}
+          <Tooltip title="Обновить (Ctrl+R)">
+            <IconButton
+              onClick={handleRefresh}
+              disabled={loading}
+              color={hasNewUsers ? 'primary' : 'default'}
+            >
+              {hasNewUsers ? (
+                <Box sx={{ position: 'relative' }}>
+                  <RefreshIcon />
+                  <NewIcon
+                    sx={{
+                      position: 'absolute',
+                      top: -4,
+                      right: -4,
+                      fontSize: 12,
+                      color: 'error.main',
+                    }}
+                  />
+                </Box>
+              ) : (
+                <RefreshIcon />
+              )}
+            </IconButton>
+          </Tooltip>
+
+          {/* Export Button */}
+          <Tooltip title="Экспорт в CSV (Ctrl+E)">
+            <IconButton onClick={handleExport} disabled={exporting || loading}>
+              <DownloadIcon />
+            </IconButton>
+          </Tooltip>
+
+          {/* Add User Button */}
           <Button
             variant="contained"
             startIcon={<PersonAddIcon />}
@@ -687,6 +849,15 @@ const TeamAdminPage: React.FC = () => {
         onSuccess={() => {
           loadUsers(page, 'initial');
         }}
+      />
+
+      {/* Cost Warning Dialog */}
+      <CostWarningDialog
+        open={totalFirestoreReads > 1000 && !warningDismissed}
+        currentReads={totalFirestoreReads}
+        estimatedCost={sessionCost}
+        onClose={() => setWarningDismissed(true)}
+        onReset={() => window.location.reload()}
       />
     </Container>
   );

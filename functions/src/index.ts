@@ -24,7 +24,7 @@ export {
   aggregateGrowthMetrics,
   aggregateEngagementMetrics,
   initializeUserActivation,
-  trackUserActivation,
+  // trackUserActivation, // REMOVED: Use trackUserActivation_v2 instead
   trackFirstInvite,
 } from './metricsAggregation';
 
@@ -34,12 +34,12 @@ export { brevoWebhookHandler } from './brevoWebhook';
 // Activity logging
 export {
   logUserCreated,
-  logUserUpdates,
+  // logUserUpdates, // REMOVED: Use logUserUpdates_v2 instead
   logUserDeleted,
   logInvitationSent,
   logInvitationAccepted,
-  incrementLoginCount,
-  updateCompanyMemberCount,
+  // incrementLoginCount, // REMOVED: Use incrementLoginCount_v2 instead
+  // updateCompanyMemberCount, // REMOVED: Use updateCompanyMemberCount_v2 instead
 } from './activityLogger';
 
 // Pagination cost monitoring

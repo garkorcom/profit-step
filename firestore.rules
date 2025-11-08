@@ -213,12 +213,23 @@ service cloud.firestore {
       allow create, delete: if false;
     }
 
-    // Companies collection
+    // Companies collection (CRM - клиенты компании)
     match /companies/{companyId} {
-      // Чтение: только пользователи из этой компании
-      allow read: if isSignedIn() && getUserCompany() == companyId;
-      // Запись: только через Cloud Functions
-      allow write: if false;
+      // Чтение: пользователи могут читать клиентов своей компании
+      allow read: if isSignedIn() && resource.data.ownerCompanyId == getUserCompany();
+
+      // Создание: только админы компании могут создавать клиентов
+      allow create: if isSignedIn() &&
+                      isAdmin() &&
+                      request.resource.data.ownerCompanyId == getUserCompany();
+
+      // Обновление: только админы компании могут обновлять своих клиентов
+      allow update: if isSignedIn() &&
+                      isAdmin() &&
+                      resource.data.ownerCompanyId == getUserCompany();
+
+      // Удаление: запрещено (используется архивация через update)
+      allow delete: if false;
     }
 
     // ==================== DEFAULT DENY ====================

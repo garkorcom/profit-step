@@ -9,7 +9,7 @@
  * - adminDeleteUser: Безопасное удаление пользователя администратором
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.monitorFunctionLoops = exports.updateCompanyMemberCount_v2 = exports.trackUserActivation_v2 = exports.logUserUpdates_v2 = exports.incrementLoginCount_v2 = exports.testEmail = exports.inviteUser = exports.adminDeleteUser = exports.onUserDelete = exports.onUserCreate = exports.logPaginationMetrics = exports.monitorPaginationCosts = exports.updateCompanyMemberCount = exports.incrementLoginCount = exports.logInvitationAccepted = exports.logInvitationSent = exports.logUserDeleted = exports.logUserUpdates = exports.logUserCreated = exports.testBrevoWebhook = exports.brevoWebhookHandler = exports.trackFirstInvite = exports.trackUserActivation = exports.initializeUserActivation = exports.aggregateEngagementMetrics = exports.aggregateGrowthMetrics = exports.processAvatar = void 0;
+exports.monitorFunctionLoops = exports.updateCompanyMemberCount_v2 = exports.trackUserActivation_v2 = exports.logUserUpdates_v2 = exports.incrementLoginCount_v2 = exports.testEmail = exports.inviteUser = exports.adminDeleteUser = exports.onUserDelete = exports.onUserCreate = exports.admin_createUserWithPassword = exports.logPaginationMetrics = exports.monitorPaginationCosts = exports.updateCompanyMemberCount = exports.incrementLoginCount = exports.logInvitationAccepted = exports.logInvitationSent = exports.logUserDeleted = exports.logUserUpdates = exports.logUserCreated = exports.testBrevoWebhook = exports.brevoWebhookHandler = exports.trackFirstInvite = exports.trackUserActivation = exports.initializeUserActivation = exports.aggregateEngagementMetrics = exports.aggregateGrowthMetrics = exports.processAvatar = void 0;
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 const crypto = require("crypto");
@@ -43,6 +43,9 @@ Object.defineProperty(exports, "updateCompanyMemberCount", { enumerable: true, g
 var monitorPaginationCosts_1 = require("./monitorPaginationCosts");
 Object.defineProperty(exports, "monitorPaginationCosts", { enumerable: true, get: function () { return monitorPaginationCosts_1.monitorPaginationCosts; } });
 Object.defineProperty(exports, "logPaginationMetrics", { enumerable: true, get: function () { return monitorPaginationCosts_1.logPaginationMetrics; } });
+// Admin: Create user with password and hierarchy
+var adminCreateUserWithPassword_1 = require("./adminCreateUserWithPassword");
+Object.defineProperty(exports, "admin_createUserWithPassword", { enumerable: true, get: function () { return adminCreateUserWithPassword_1.admin_createUserWithPassword; } });
 const db = admin.firestore();
 /**
  * Триггер: Создание нового пользователя

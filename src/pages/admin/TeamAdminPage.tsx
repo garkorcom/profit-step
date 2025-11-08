@@ -51,6 +51,7 @@ import {
 } from '../../api/userManagementApi';
 import UserProfileModal from '../../components/admin/UserProfileModal';
 import InviteUserDialog from '../../components/admin/InviteUserDialog';
+import CreateUserDialog from '../../components/admin/CreateUserDialog';
 import { formatDistanceToNow } from 'date-fns';
 import { ru } from 'date-fns/locale';
 import { DocumentSnapshot } from 'firebase/firestore';
@@ -124,8 +125,10 @@ const TeamAdminPage: React.FC = () => {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [userToDelete, setUserToDelete] = useState<UserProfile | null>(null);
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
+  const [createUserDialogOpen, setCreateUserDialogOpen] = useState(false);
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [menuUser, setMenuUser] = useState<UserProfile | null>(null);
+  const [addUserMenuAnchor, setAddUserMenuAnchor] = useState<null | HTMLElement>(null);
 
   // Filters
   const statusFilter = (searchParams.get('status') as StatusFilter) || 'all';
@@ -432,15 +435,39 @@ const TeamAdminPage: React.FC = () => {
             </Tooltip>
           </Box>
         </Box>
-        <Button
-          variant="contained"
-          startIcon={<PersonAddIcon />}
-          onClick={() => setInviteDialogOpen(true)}
-          fullWidth
-          sx={{ display: { xs: 'flex', sm: 'inline-flex' } }}
-        >
-          Пригласить участника
-        </Button>
+        <Box sx={{ display: 'flex', gap: 1 }}>
+          <Button
+            variant="contained"
+            startIcon={<PersonAddIcon />}
+            onClick={(e) => setAddUserMenuAnchor(e.currentTarget)}
+            fullWidth
+            sx={{ display: { xs: 'flex', sm: 'inline-flex' } }}
+          >
+            Добавить участника
+          </Button>
+          <Menu
+            anchorEl={addUserMenuAnchor}
+            open={Boolean(addUserMenuAnchor)}
+            onClose={() => setAddUserMenuAnchor(null)}
+          >
+            <MenuItem
+              onClick={() => {
+                setCreateUserDialogOpen(true);
+                setAddUserMenuAnchor(null);
+              }}
+            >
+              Создать напрямую (с паролем)
+            </MenuItem>
+            <MenuItem
+              onClick={() => {
+                setInviteDialogOpen(true);
+                setAddUserMenuAnchor(null);
+              }}
+            >
+              Пригласить по email
+            </MenuItem>
+          </Menu>
+        </Box>
       </Box>
 
       {/* Search Bar */}
@@ -648,6 +675,15 @@ const TeamAdminPage: React.FC = () => {
       <InviteUserDialog
         open={inviteDialogOpen}
         onClose={() => setInviteDialogOpen(false)}
+        onSuccess={() => {
+          loadUsers(page, 'initial');
+        }}
+      />
+
+      {/* Create User Dialog */}
+      <CreateUserDialog
+        open={createUserDialogOpen}
+        onClose={() => setCreateUserDialogOpen(false)}
         onSuccess={() => {
           loadUsers(page, 'initial');
         }}

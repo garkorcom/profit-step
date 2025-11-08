@@ -51,6 +51,9 @@ export {
   logPaginationMetrics,
 } from './monitorPaginationCosts';
 
+// Admin: Create user with password and hierarchy
+export { admin_createUserWithPassword } from './adminCreateUserWithPassword';
+
 const db = admin.firestore();
 
 /**

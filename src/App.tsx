@@ -1,6 +1,7 @@
 import React from 'react';
 import { BrowserRouter } from 'react-router-dom';
 import { ThemeProvider, createTheme, CssBaseline } from '@mui/material';
+import { Toaster } from 'react-hot-toast';
 import AppRouter from './router/AppRouter';
 import { AuthProvider } from './auth/AuthContext';
 
@@ -38,6 +39,7 @@ function App() {
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
+      <Toaster position="top-right" />
       <BrowserRouter>
         <AuthProvider>
           <AppRouter />

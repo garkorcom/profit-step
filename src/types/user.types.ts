@@ -7,7 +7,7 @@ import { Timestamp } from 'firebase/firestore';
 /**
  * Роли пользователей в системе
  */
-export type UserRole = 'superadmin' | 'admin' | 'manager' | 'estimator' | 'guest';
+export type UserRole = 'superadmin' | 'company_admin' | 'admin' | 'manager' | 'user' | 'estimator' | 'guest';
 
 /**
  * Статус пользователя в системе

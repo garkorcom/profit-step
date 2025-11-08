@@ -24,6 +24,7 @@ import { httpsCallable } from 'firebase/functions';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage, functions } from '../firebase/firebase';
 import { UserProfile, UserRole, UserStatus } from '../types/user.types';
+import { costProtectionBreaker } from '../utils/circuitBreaker';
 
 // ============================================
 // PAGINATION INTERFACES
@@ -364,6 +365,7 @@ export const getCompanyUserCount = async (
  * - Client-side фильтрация по поиску (не тратит reads)
  * - Поддержка сортировки и фильтров
  * - Tracking количества reads для мониторинга
+ * - Circuit Breaker защита от runaway costs
  *
  * @param params - Параметры пагинации
  * @returns Результат с пользователями и метаданными пагинации
@@ -371,21 +373,23 @@ export const getCompanyUserCount = async (
 export const getCompanyUsersPaginated = async (
   params: GetPaginatedUsersParams
 ): Promise<PaginatedUsersResult> => {
-  const {
-    companyId,
-    pageSize,
-    startAfterDoc,
-    endBeforeDoc,
-    statusFilter = 'all',
-    roleFilter = 'all',
-    sortBy = 'displayName',
-    sortOrder = 'asc',
-    searchQuery,
-  } = params;
+  // Оборачиваем в Circuit Breaker для защиты от перерасхода
+  return costProtectionBreaker.execute(async () => {
+    const {
+      companyId,
+      pageSize,
+      startAfterDoc,
+      endBeforeDoc,
+      statusFilter = 'all',
+      roleFilter = 'all',
+      sortBy = 'displayName',
+      sortOrder = 'asc',
+      searchQuery,
+    } = params;
 
-  try {
-    const startTime = performance.now();
-    let firestoreReads = 0;
+    try {
+      const startTime = performance.now();
+      let firestoreReads = 0;
 
     // 1️⃣ Получаем общее количество (1 read)
     const total = await getCompanyUserCount(companyId, statusFilter, roleFilter);
@@ -422,6 +426,9 @@ export const getCompanyUsersPaginated = async (
     // 4️⃣ Выполняем запрос
     const snapshot = await getDocs(q);
     firestoreReads += snapshot.size;
+
+    // Track reads в Circuit Breaker для защиты от перерасхода
+    costProtectionBreaker.trackReads(snapshot.size);
 
     // 5️⃣ Обрабатываем результаты
     let users = snapshot.docs.map((doc) => {
@@ -471,6 +478,13 @@ export const getCompanyUsersPaginated = async (
       console.warn('⚠️ This may indicate a configuration error in pagination!');
     }
 
+    // 🔟 Проверяем приближение к лимиту для warning
+    const stats = costProtectionBreaker.getStats();
+    if (stats.totalReads > stats.warningThreshold && stats.totalReads < stats.warningThreshold + 100) {
+      console.warn(`⚠️ Approaching read limit: ${stats.totalReads}/${stats.readLimit}`);
+      console.warn(`⚠️ Estimated cost: $${stats.estimatedCost.toFixed(4)}`);
+    }
+
     return {
       users,
       total,
@@ -480,8 +494,9 @@ export const getCompanyUsersPaginated = async (
       hasNextPage,
       hasPrevPage,
     };
-  } catch (error) {
-    console.error('Error getting paginated users:', error);
-    throw error;
-  }
+    } catch (error) {
+      console.error('Error getting paginated users:', error);
+      throw error;
+    }
+  }); // Закрываем costProtectionBreaker.execute()
 };

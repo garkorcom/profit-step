@@ -38,3 +38,6 @@ firebase-debug.log
 *.swp
 *.swo
 *~
+
+# Local backups
+backups/

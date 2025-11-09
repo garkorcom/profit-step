@@ -9,7 +9,7 @@
  * - adminDeleteUser: Безопасное удаление пользователя администратором
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.monitorFunctionLoops = exports.updateCompanyMemberCount_v2 = exports.trackUserActivation_v2 = exports.logUserUpdates_v2 = exports.incrementLoginCount_v2 = exports.inviteUser = exports.adminDeleteUser = exports.onUserDelete = exports.onUserCreate = exports.admin_createUserWithPassword = exports.logPaginationMetrics = exports.monitorPaginationCosts = exports.updateCompanyMemberCount = exports.incrementLoginCount = exports.logInvitationAccepted = exports.logInvitationSent = exports.logUserDeleted = exports.logUserUpdates = exports.logUserCreated = exports.brevoWebhookHandler = exports.trackFirstInvite = exports.trackUserActivation = exports.initializeUserActivation = exports.aggregateEngagementMetrics = exports.aggregateGrowthMetrics = exports.processAvatar = void 0;
+exports.updateCompanyMemberCount_v2 = exports.trackUserActivation_v2 = exports.logUserUpdates_v2 = exports.incrementLoginCount_v2 = exports.inviteUser = exports.adminDeleteUser = exports.onUserDelete = exports.onUserCreate = exports.admin_createUserWithPassword = exports.logPaginationMetrics = exports.logInvitationAccepted = exports.logInvitationSent = exports.logUserDeleted = exports.logUserCreated = exports.brevoWebhookHandler = exports.trackFirstInvite = exports.initializeUserActivation = exports.aggregateEngagementMetrics = exports.aggregateGrowthMetrics = exports.processAvatar = void 0;
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 const crypto = require("crypto");
@@ -24,7 +24,7 @@ var metricsAggregation_1 = require("./metricsAggregation");
 Object.defineProperty(exports, "aggregateGrowthMetrics", { enumerable: true, get: function () { return metricsAggregation_1.aggregateGrowthMetrics; } });
 Object.defineProperty(exports, "aggregateEngagementMetrics", { enumerable: true, get: function () { return metricsAggregation_1.aggregateEngagementMetrics; } });
 Object.defineProperty(exports, "initializeUserActivation", { enumerable: true, get: function () { return metricsAggregation_1.initializeUserActivation; } });
-Object.defineProperty(exports, "trackUserActivation", { enumerable: true, get: function () { return metricsAggregation_1.trackUserActivation; } });
+// trackUserActivation, // REMOVED: Use trackUserActivation_v2 instead
 Object.defineProperty(exports, "trackFirstInvite", { enumerable: true, get: function () { return metricsAggregation_1.trackFirstInvite; } });
 // Brevo webhook handler
 var brevoWebhook_1 = require("./brevoWebhook");
@@ -32,15 +32,13 @@ Object.defineProperty(exports, "brevoWebhookHandler", { enumerable: true, get: f
 // Activity logging
 var activityLogger_1 = require("./activityLogger");
 Object.defineProperty(exports, "logUserCreated", { enumerable: true, get: function () { return activityLogger_1.logUserCreated; } });
-Object.defineProperty(exports, "logUserUpdates", { enumerable: true, get: function () { return activityLogger_1.logUserUpdates; } });
+// logUserUpdates, // REMOVED: Use logUserUpdates_v2 instead
 Object.defineProperty(exports, "logUserDeleted", { enumerable: true, get: function () { return activityLogger_1.logUserDeleted; } });
 Object.defineProperty(exports, "logInvitationSent", { enumerable: true, get: function () { return activityLogger_1.logInvitationSent; } });
 Object.defineProperty(exports, "logInvitationAccepted", { enumerable: true, get: function () { return activityLogger_1.logInvitationAccepted; } });
-Object.defineProperty(exports, "incrementLoginCount", { enumerable: true, get: function () { return activityLogger_1.incrementLoginCount; } });
-Object.defineProperty(exports, "updateCompanyMemberCount", { enumerable: true, get: function () { return activityLogger_1.updateCompanyMemberCount; } });
 // Pagination cost monitoring
 var monitorPaginationCosts_1 = require("./monitorPaginationCosts");
-Object.defineProperty(exports, "monitorPaginationCosts", { enumerable: true, get: function () { return monitorPaginationCosts_1.monitorPaginationCosts; } });
+// monitorPaginationCosts, // REMOVED: Too many Firestore reads (every 15 min)
 Object.defineProperty(exports, "logPaginationMetrics", { enumerable: true, get: function () { return monitorPaginationCosts_1.logPaginationMetrics; } });
 // Admin: Create user with password and hierarchy
 var adminCreateUserWithPassword_1 = require("./adminCreateUserWithPassword");
@@ -408,6 +406,5 @@ Object.defineProperty(exports, "trackUserActivation_v2", { enumerable: true, get
 var updateCompanyMemberCount_1 = require("./triggers/users/updateCompanyMemberCount");
 Object.defineProperty(exports, "updateCompanyMemberCount_v2", { enumerable: true, get: function () { return updateCompanyMemberCount_1.updateCompanyMemberCount; } });
 // Monitoring
-var monitorFunctionLoops_1 = require("./scheduled/monitorFunctionLoops");
-Object.defineProperty(exports, "monitorFunctionLoops", { enumerable: true, get: function () { return monitorFunctionLoops_1.monitorFunctionLoops; } });
+// export { monitorFunctionLoops } from './scheduled/monitorFunctionLoops'; // REMOVED: Infinite loop fixed, monitoring not needed
 //# sourceMappingURL=index.js.map

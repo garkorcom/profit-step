@@ -44,7 +44,7 @@ export {
 
 // Pagination cost monitoring
 export {
-  monitorPaginationCosts,
+  // monitorPaginationCosts, // REMOVED: Too many Firestore reads (every 15 min)
   logPaginationMetrics,
 } from './monitorPaginationCosts';
 
@@ -525,4 +525,4 @@ export { trackUserActivation as trackUserActivation_v2 } from './triggers/users/
 export { updateCompanyMemberCount as updateCompanyMemberCount_v2 } from './triggers/users/updateCompanyMemberCount';
 
 // Monitoring
-export { monitorFunctionLoops } from './scheduled/monitorFunctionLoops';
+// export { monitorFunctionLoops } from './scheduled/monitorFunctionLoops'; // REMOVED: Infinite loop fixed, monitoring not needed

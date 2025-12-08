@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DSB - High-End Renovation & Design</title>
+    <meta name="description"
+        content="International full-service architecture, interior design and renovation company. We take care of everything from design to implementation.">
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400&display=swap"
+        rel="stylesheet">
+
+    <!-- Icons -->
+    <script src="https://unpkg.com/heroicons@2.0.18/24/outline/index.js"></script>
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#0a0a0a', // Rich Black
+                        secondary: '#1a1a1a', // Dark Gray
+                        accent: '#D4AF37',  // Gold
+                        light: '#F3F4F6',   // Off-white
+                        dark: '#111111',    // Text
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        serif: ['Playfair Display', 'serif'],
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0a0a0a;
+            color: #f3f4f6;
+        }
+
+        h1,
+        h2,
+        h3,
+        h4,
+        h5,
+        h6 {
+            font-family: 'Playfair Display', serif;
+        }
+
+        .hero-bg {
+            background-image: linear-gradient(rgba(0, 0, 0, 0.7), rgba(0, 0, 0, 0.5)), url('https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?ixlib=rb-4.0.3&auto=format&fit=crop&w=2053&q=80');
+            background-size: cover;
+            background-position: center;
+        }
+
+        .gold-text {
+            color: #D4AF37;
+        }
+
+        .gold-border {
+            border-color: #D4AF37;
+        }
+
+        .btn-gold {
+            background-color: #D4AF37;
+            color: #000;
+            transition: all 0.3s ease;
+        }
+
+        .btn-gold:hover {
+            background-color: #b5952f;
+            transform: translateY(-2px);
+        }
+    </style>
+</head>
+
+<body class="antialiased">
+
+    <!-- Header -->
+    <header class="bg-primary/90 backdrop-blur-md border-b border-white/10 sticky top-0 z-50">
+        <div class="container mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between items-center h-24">
+                <!-- Logo -->
+                <div class="flex items-center">
+                    <a href="#" class="text-3xl font-bold tracking-widest text-white font-serif">
+                        DSB<span class="text-accent">.</span>
+                    </a>
+                </div>
+
+                <!-- Desktop Nav -->
+                <div class="hidden md:flex items-center space-x-8">
+                    <a href="#services"
+                        class="text-sm uppercase tracking-widest hover:text-accent transition">Services</a>
+                    <a href="#process"
+                        class="text-sm uppercase tracking-widest hover:text-accent transition">Process</a>
+                    <a href="#portfolio"
+                        class="text-sm uppercase tracking-widest hover:text-accent transition">Portfolio</a>
+                    <a href="tel:+19544693000"
+                        class="text-accent font-serif italic text-lg hover:text-white transition">+1 (954) 469-3000</a>
+                    <a href="#contact"
+                        class="btn-gold px-8 py-3 rounded-sm font-medium tracking-wide text-sm uppercase">
+                        Request Consultation
+                    </a>
+                </div>
+
+                <!-- Mobile Menu Button -->
+                <div class="md:hidden flex items-center">
+                    <button id="mobile-menu-btn" class="text-white focus:outline-none">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5"
+                            stroke="currentColor" class="w-8 h-8">
+                            <path stroke-linecap="round" stroke-linejoin="round"
+                                d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        </div>
+        <!-- Mobile Menu -->
+        <div id="mobile-menu" class="hidden md:hidden bg-secondary border-t border-white/10 absolute w-full shadow-2xl">
+            <div class="px-4 pt-4 pb-6 space-y-4 text-center">
+                <a href="#services" class="block text-sm uppercase tracking-widest py-2">Services</a>
+                <a href="#process" class="block text-sm uppercase tracking-widest py-2">Process</a>
+                <a href="tel:+19544693000" class="block text-accent font-serif italic text-xl py-2">+1 (954)
+                    469-3000</a>
+                <a href="#contact" class="block w-full btn-gold py-4 font-bold uppercase tracking-widest">Request
+                    Consultation</a>
+            </div>
+        </div>
+    </header>
+
+    <!-- Hero Section -->
+    <section class="hero-bg relative h-screen flex items-center justify-center">
+        <div class="container mx-auto px-4 sm:px-6 lg:px-8 text-center">
+            <p class="text-accent uppercase tracking-[0.3em] mb-4 text-sm md:text-base animate-fade-in-up">Architecture
+                & Interior Design</p>
+            <h1 class="text-5xl md:text-7xl lg:text-8xl font-bold text-white mb-8 leading-tight">
+                We Take Care <br /> <span class="italic font-light text-accent">of Everything</span>
+            </h1>
+            <p class="text-xl md:text-2xl text-gray-300 mb-12 max-w-2xl mx-auto font-light leading-relaxed">
+                From unique design projects to turnkey implementation.
+                We create not just beautiful pictures, but a lifestyle.
+            </p>
+
+            <div class="flex flex-col sm:flex-row justify-center gap-6">
+                <a href="#contact"
+                    class="btn-gold px-10 py-4 text-sm font-bold uppercase tracking-widest hover:bg-white hover:text-black transition duration-300">
+                    Order a Design
+                </a>
+                <a href="#portfolio"
+                    class="border border-white px-10 py-4 text-sm font-bold uppercase tracking-widest hover:bg-white hover:text-black transition duration-300">
+                    View Gallery
+                </a>
+            </div>
+        </div>
+
+        <!-- Scroll Down Indicator -->
+        <div class="absolute bottom-10 left-1/2 transform -translate-x-1/2 animate-bounce">
+            <svg class="w-6 h-6 text-white/50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M19 14l-7 7m0 0l-7-7m7 7V3">
+                </path>
+            </svg>
+        </div>
+    </section>
+
+    <!-- Services Grid -->
+    <section id="services" class="py-24 bg-primary">
+        <div class="container mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="text-center mb-20">
+                <h2 class="text-4xl md:text-5xl text-white mb-6">Our Expertise</h2>
+                <div class="w-20 h-0.5 bg-accent mx-auto"></div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-12">
+                <!-- Service 1 -->
+                <div
+                    class="group p-8 border border-white/10 hover:border-accent/50 transition duration-500 bg-secondary/30">
+                    <div class="text-accent mb-6">
+                        <svg class="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1"
+                                d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4">
+                            </path>
+                        </svg>
+                    </div>
+                    <h3 class="text-2xl text-white mb-4">Architectural Design</h3>
+                    <p class="text-gray-400 leading-relaxed">
+                        We develop stylish and unique design projects, preparing all necessary drawings and
+                        documentation for implementation.
+                    </p>
+                </div>
+
+                <!-- Service 2 -->
+                <div
+                    class="group p-8 border border-white/10 hover:border-accent/50 transition duration-500 bg-secondary/30">
+                    <div class="text-accent mb-6">
+                        <svg class="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1"
+                                d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01">
+                            </path>
+                        </svg>
+                    </div>
+                    <h3 class="text-2xl text-white mb-4">Project Management</h3>
+                    <p class="text-gray-400 leading-relaxed">
+                        We calculate exact cost estimates, organize construction work, and provide architectural
+                        supervision of the process.
+                    </p>
+                </div>
+
+                <!-- Service 3 -->
+                <div
+                    class="group p-8 border border-white/10 hover:border-accent/50 transition duration-500 bg-secondary/30">
+                    <div class="text-accent mb-6">
+                        <svg class="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1"
+                                d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6">
+                            </path>
+                        </svg>
+                    </div>
+                    <h3 class="text-2xl text-white mb-4">Turnkey Renovation</h3>
+                    <p class="text-gray-400 leading-relaxed">
+                        From foundations to finishing touches. We complete with furniture, household appliances, and
+                        decor items.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Why Choose Us -->
+    <section id="process" class="py-24 bg-secondary relative overflow-hidden">
+        <!-- Decorative Elements -->
+        <div class="absolute top-0 right-0 w-1/3 h-full bg-white/5 skew-x-12 transform translate-x-20"></div>
+
+        <div class="container mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+            <div class="flex flex-col lg:flex-row gap-16 items-center">
+                <div class="lg:w-1/2">
+                    <h2 class="text-4xl md:text-5xl text-white mb-8">Why Choose <span
+                            class="text-accent italic">DSB</span>?</h2>
+
+                    <div class="space-y-8">
+                        <div class="flex gap-6">
+                            <div class="text-accent text-xl font-bold font-serif">01</div>
+                            <div>
+                                <h4 class="text-xl text-white mb-2">Individual Unique Style</h4>
+                                <p class="text-gray-400 text-sm">We analyze your object and preferences to create a
+                                    project that is 100% what you expect.</p>
+                            </div>
+                        </div>
+                        <div class="flex gap-6">
+                            <div class="text-accent text-xl font-bold font-serif">02</div>
+                            <div>
+                                <h4 class="text-xl text-white mb-2">Fixed Price & Clear Deadlines</h4>
+                                <p class="text-gray-400 text-sm">The price is agreed at the contract stage and does not
+                                    increase. Deadlines are carefully observed.</p>
+                            </div>
+                        </div>
+                        <div class="flex gap-6">
+                            <div class="text-accent text-xl font-bold font-serif">03</div>
+                            <div>
+                                <h4 class="text-xl text-white mb-2">VR Visualization as a Gift</h4>
+                                <p class="text-gray-400 text-sm">Virtually walk around your future premises and make the
+                                    final decision before work begins.</p>
+                            </div>
+                        </div>
+                        <div class="flex gap-6">
+                            <div class="text-accent text-xl font-bold font-serif">04</div>
+                            <div>
+                                <h4 class="text-xl text-white mb-2">Personal Manager 24/7</h4>
+                                <p class="text-gray-400 text-sm">A personal curator will be in touch with you at any
+                                    time to report on the progress.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="lg:w-1/2">
+                    <div class="relative">
+                        <div class="absolute -inset-4 border border-accent/30 z-0"></div>
+                        <img src="https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?ixlib=rb-4.0.3&auto=format&fit=crop&w=1600&q=80"
+                            alt="Luxury Interior"
+                            class="relative z-10 shadow-2xl grayscale hover:grayscale-0 transition duration-700 ease-in-out">
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Portfolio Preview -->
+    <section id="portfolio" class="py-24 bg-primary">
+        <div class="container mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between items-end mb-16">
+                <div>
+                    <h2 class="text-4xl md:text-5xl text-white mb-4">Selected Works</h2>
+                    <p class="text-gray-400">Exquisite interiors designed for modern living.</p>
+                </div>
+                <a href="#"
+                    class="hidden md:block text-accent hover:text-white transition uppercase tracking-widest text-sm">View
+                    All Projects &rarr;</a>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <div class="group relative overflow-hidden cursor-pointer">
+                    <img src="https://images.unsplash.com/photo-1600585154340-be6161a56a0c?ixlib=rb-4.0.3&auto=format&fit=crop&w=1470&q=80"
+                        alt="Project 1"
+                        class="w-full h-[400px] object-cover transform group-hover:scale-105 transition duration-700">
+                    <div
+                        class="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition duration-500 flex items-center justify-center">
+                        <div
+                            class="text-center transform translate-y-4 group-hover:translate-y-0 transition duration-500">
+                            <h3 class="text-2xl text-white font-serif italic mb-2">Miami Penthouse</h3>
+                            <p class="text-accent uppercase tracking-widest text-xs">Full Renovation</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="group relative overflow-hidden cursor-pointer">
+                    <img src="https://images.unsplash.com/photo-1600210492486-724fe5c67fb0?ixlib=rb-4.0.3&auto=format&fit=crop&w=1474&q=80"
+                        alt="Project 2"
+                        class="w-full h-[400px] object-cover transform group-hover:scale-105 transition duration-700">
+                    <div
+                        class="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition duration-500 flex items-center justify-center">
+                        <div
+                            class="text-center transform translate-y-4 group-hover:translate-y-0 transition duration-500">
+                            <h3 class="text-2xl text-white font-serif italic mb-2">Modern Villa</h3>
+                            <p class="text-accent uppercase tracking-widest text-xs">Architecture & Design</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Contact Form -->
+    <section id="contact" class="py-24 bg-secondary relative">
+        <div class="container mx-auto px-4 sm:px-6 lg:px-8">
+            <div
+                class="max-w-4xl mx-auto bg-primary border border-white/10 p-8 md:p-16 shadow-2xl relative overflow-hidden">
+                <!-- Gold Accent Line -->
+                <div class="absolute top-0 left-0 w-full h-1 bg-accent"></div>
+
+                <div class="text-center mb-12">
+                    <h2 class="text-3xl md:text-4xl text-white mb-4">Start Your Project</h2>
+                    <p class="text-gray-400">Leave a request for a free consultation and estimate.</p>
+                </div>
+
+                <form class="space-y-6">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div>
+                            <label class="block text-accent text-xs uppercase tracking-widest mb-2">Name</label>
+                            <input type="text" id="name" required
+                                class="w-full bg-secondary border border-white/10 text-white px-4 py-3 focus:outline-none focus:border-accent transition">
+                        </div>
+                        <div>
+                            <label class="block text-accent text-xs uppercase tracking-widest mb-2">Phone</label>
+                            <input type="tel" id="phone" required placeholder="(555) 123-4567"
+                                class="w-full bg-secondary border border-white/10 text-white px-4 py-3 focus:outline-none focus:border-accent transition">
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div>
+                            <label class="block text-accent text-xs uppercase tracking-widest mb-2">Service
+                                Interest</label>
+                            <select id="service"
+                                class="w-full bg-secondary border border-white/10 text-white px-4 py-3 focus:outline-none focus:border-accent transition appearance-none">
+                                <option>Full Renovation</option>
+                                <option>Interior Design</option>
+                                <option>Architectural Planning</option>
+                                <option>Consultation</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-accent text-xs uppercase tracking-widest mb-2">Project Location
+                                (Zip)</label>
+                            <input type="text" id="zipCode" required
+                                class="w-full bg-secondary border border-white/10 text-white px-4 py-3 focus:outline-none focus:border-accent transition">
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-accent text-xs uppercase tracking-widest mb-2">Preferred Contact
+                            Time</label>
+                        <select id="callTime"
+                            class="w-full bg-secondary border border-white/10 text-white px-4 py-3 focus:outline-none focus:border-accent transition appearance-none">
+                            <option>Anytime</option>
+                            <option>Morning</option>
+                            <option>Afternoon</option>
+                            <option>Evening</option>
+                        </select>
+                    </div>
+
+                    <div class="pt-6">
+                        <button type="submit"
+                            class="w-full btn-gold py-4 font-bold uppercase tracking-widest text-sm hover:bg-white hover:text-black transition duration-300">
+                            Submit Request
+                        </button>
+                    </div>
+                    <p class="text-center text-xs text-gray-500 mt-4">
+                        Your privacy is important to us. We do not share your information.
+                    </p>
+                </form>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="bg-black py-12 border-t border-white/10">
+        <div class="container mx-auto px-4 sm:px-6 lg:px-8 text-center md:text-left">
+            <div class="flex flex-col md:flex-row justify-between items-center">
+                <div class="mb-8 md:mb-0">
+                    <a href="#" class="text-2xl font-bold tracking-widest text-white font-serif">
+                        DSB<span class="text-accent">.</span>
+                    </a>
+                    <p class="text-gray-500 text-sm mt-4 max-w-xs">
+                        International full-service architecture, interior design and renovation company.
+                    </p>
+                </div>
+                <div class="flex flex-col md:flex-row gap-8 text-sm text-gray-400">
+                    <div>
+                        <h4 class="text-white uppercase tracking-widest mb-4">Contact</h4>
+                        <p>Miami, FL</p>
+                        <p><a href="tel:+19544693000" class="hover:text-accent transition">+1 (954) 469-3000</a></p>
+                        <p><a href="mailto:customer@dsb-usa.com"
+                                class="hover:text-accent transition">customer@dsb-usa.com</a></p>
+                        <p><a href="https://t.me/Garkor_bot" target="_blank" class="hover:text-accent transition">Chat
+                                on Telegram</a></p>
+                    </div>
+                    <div>
+                        <h4 class="text-white uppercase tracking-widest mb-4">Social</h4>
+                        <div class="flex gap-4">
+                            <a href="#" class="hover:text-accent transition">Instagram</a>
+                            <a href="#" class="hover:text-accent transition">Facebook</a>
+                            <a href="#" class="hover:text-accent transition">Houzz</a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="border-t border-white/5 mt-12 pt-8 text-center text-xs text-gray-600">
+                <p>&copy; 2025 DSB Design & Renovation. All rights reserved. License Number: CGC1539008</p>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Toast Notification -->
+    <div id="toast"
+        class="fixed bottom-5 right-5 bg-white border-l-4 border-accent text-gray-800 px-6 py-4 rounded shadow-2xl transform translate-y-20 opacity-0 transition duration-300 z-50 flex items-center gap-3">
+        <svg class="w-6 h-6 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+        </svg>
+        <div>
+            <p class="font-bold font-serif">Request Received</p>
+            <p class="text-sm">We will contact you shortly.</p>
+        </div>
+    </div>
+
+    <script type="module">
+        // Mobile Menu Toggle
+        const btn = document.getElementById('mobile-menu-btn');
+        const menu = document.getElementById('mobile-menu');
+
+        btn.addEventListener('click', () => {
+            menu.classList.toggle('hidden');
+        });
+
+        // Phone Masking
+        const phoneInput = document.getElementById('phone');
+        phoneInput.addEventListener('input', (e) => {
+            let x = e.target.value.replace(/\D/g, '').match(/(\d{0,3})(\d{0,3})(\d{0,4})/);
+            e.target.value = !x[2] ? x[1] : '(' + x[1] + ') ' + x[2] + (x[3] ? '-' + x[3] : '');
+        });
+
+        // Firebase Integration
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
+        import { getFirestore, collection, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyDjBgLGw60VDlMkFu3w9DiSwTftH6nTh8E",
+            authDomain: "profit-step.firebaseapp.com",
+            projectId: "profit-step",
+            storageBucket: "profit-step.firebasestorage.app",
+            messagingSenderId: "155664324159",
+            appId: "1:155664324159:web:87900e4aab0a78aa57ca8a"
+        };
+
+        // Initialize Firebase
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+        // Toast Function
+        const showToast = (message, isError = false) => {
+            const toast = document.getElementById('toast');
+            const icon = toast.querySelector('svg');
+            const title = toast.querySelector('.font-bold');
+            const text = toast.querySelector('.text-sm');
+
+            if (isError) {
+                toast.classList.replace('border-accent', 'border-red-500');
+                icon.classList.replace('text-accent', 'text-red-500');
+                icon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>';
+                title.innerText = 'Error';
+            } else {
+                toast.classList.replace('border-red-500', 'border-accent');
+                icon.classList.replace('text-red-500', 'text-accent');
+                icon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>';
+                title.innerText = 'Request Received';
+            }
+
+            text.innerText = message;
+            toast.classList.remove('translate-y-20', 'opacity-0');
+
+            setTimeout(() => {
+                toast.classList.add('translate-y-20', 'opacity-0');
+            }, 5000);
+        };
+
+        // Handle Form Submission
+        const form = document.querySelector('form');
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const name = document.getElementById('name').value;
+            const phone = document.getElementById('phone').value;
+            const service = document.getElementById('service').value;
+            const zipCode = document.getElementById('zipCode').value;
+            const callTime = document.getElementById('callTime').value;
+
+            const btn = form.querySelector('button');
+            const originalText = btn.innerHTML;
+
+            // Validation
+            if (phone.length < 14) { // (555) 123-4567 is 14 chars
+                showToast('Please enter a valid phone number.', true);
+                return;
+            }
+
+            try {
+                btn.disabled = true;
+                btn.innerHTML = 'Sending...';
+
+                const timeout = new Promise((_, reject) =>
+                    setTimeout(() => reject(new Error("Request timed out.")), 10000)
+                );
+
+                // 1. Create Lead
+                const leadPromise = addDoc(collection(db, "leads"), {
+                    name,
+                    phone,
+                    service,
+                    zipCode,
+                    callTime,
+                    status: 'new',
+                    createdAt: serverTimestamp(),
+                    source: 'landing_page_high_end',
+                    visitorId: getVisitorId(),
+                    utm: getUtmParams()
+                });
+
+                // 2. Track Conversion Event
+                const eventPromise = addDoc(collection(db, "landing_events"), {
+                    type: 'form_submit',
+                    visitorId: getVisitorId(),
+                    timestamp: serverTimestamp(),
+                    utm: getUtmParams(),
+                    metadata: { service, zipCode, page: 'high-end' }
+                });
+
+                await Promise.race([
+                    Promise.all([leadPromise, eventPromise]),
+                    timeout
+                ]);
+
+                showToast('Thank you! We will contact you shortly.');
+                form.reset();
+            } catch (error) {
+                console.error("Error adding document: ", error);
+                showToast('Error submitting form. Please try again.', true);
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = originalText;
+            }
+        });
+
+        // --- Analytics Tracking ---
+
+        function getVisitorId() {
+            let vid = localStorage.getItem('visitor_id');
+            if (!vid) {
+                vid = 'v_' + Math.random().toString(36).substr(2, 9) + '_' + Date.now();
+                localStorage.setItem('visitor_id', vid);
+            }
+            return vid;
+        }
+
+        function getUtmParams() {
+            const params = new URLSearchParams(window.location.search);
+            return {
+                source: params.get('utm_source') || 'direct',
+                medium: params.get('utm_medium') || '',
+                campaign: params.get('utm_campaign') || '',
+                term: params.get('utm_term') || '',
+                content: params.get('utm_content') || ''
+            };
+        }
+
+        // Track Page View
+        async function trackPageView() {
+            try {
+                // Check if already tracked this session (optional, but good for reducing writes)
+                const lastVisit = sessionStorage.getItem('last_visit_high_end');
+                if (!lastVisit) {
+                    await addDoc(collection(db, "landing_events"), {
+                        type: 'page_view',
+                        visitorId: getVisitorId(),
+                        timestamp: serverTimestamp(),
+                        utm: getUtmParams(),
+                        userAgent: navigator.userAgent,
+                        referrer: document.referrer,
+                        page: 'high-end'
+                    });
+                    sessionStorage.setItem('last_visit_high_end', Date.now().toString());
+                    console.log('Page view tracked');
+                }
+            } catch (e) {
+                console.error('Analytics error:', e);
+            }
+        }
+
+        // Initialize Tracking
+        trackPageView();
+    </script>
+</body>
+
+</html>

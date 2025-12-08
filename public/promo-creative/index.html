@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MiSite Creative | High-End Digital Agency</title>
+    <meta name="description"
+        content="We build digital experiences that sell. Web Design, App Development, and Marketing.">
+
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://profit-step.web.app/promo-creative/">
+    <meta property="og:title" content="MiSite Creative | High-End Digital Agency">
+    <meta property="og:description"
+        content="We build digital experiences that sell. Web Design, App Development, and Marketing.">
+    <meta property="og:image"
+        content="https://images.unsplash.com/photo-1497366216548-37526070297c?ixlib=rb-4.0.3&auto=format&fit=crop&w=1200&q=630">
+
+    <!-- Twitter -->
+    <meta property="twitter:card" content="summary_large_image">
+    <meta property="twitter:url" content="https://profit-step.web.app/promo-creative/">
+    <meta property="twitter:title" content="MiSite Creative | High-End Digital Agency">
+    <meta property="twitter:description"
+        content="We build digital experiences that sell. Web Design, App Development, and Marketing.">
+    <meta property="twitter:image"
+        content="https://images.unsplash.com/photo-1497366216548-37526070297c?ixlib=rb-4.0.3&auto=format&fit=crop&w=1200&q=630">
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400&display=swap"
+        rel="stylesheet">
+
+    <!-- Icons & Animations -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <link href="https://unpkg.com/aos@2.3.1/dist/aos.css" rel="stylesheet">
+    <script src="https://unpkg.com/aos@2.3.1/dist/aos.js"></script>
+
+    <!-- Firebase -->
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-analytics-compat.js"></script>
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#0a0a0a', // Rich Black
+                        secondary: '#1a1a1a', // Dark Gray
+                        accent: '#D4AF37',  // Gold
+                        light: '#F3F4F6',   // Off-white
+                        dark: '#111111',    // Text
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        serif: ['Playfair Display', 'serif'],
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0a0a0a;
+            color: #f3f4f6;
+        }
+
+        h1,
+        h2,
+        h3,
+        h4,
+        h5,
+        h6 {
+            font-family: 'Playfair Display', serif;
+        }
+
+        .gold-text {
+            color: #D4AF37;
+        }
+
+        .btn-gold {
+            background-color: #D4AF37;
+            color: #000;
+            transition: all 0.3s ease;
+        }
+
+        .btn-gold:hover {
+            background-color: #b5952f;
+            transform: translateY(-2px);
+        }
+
+        /* Glassmorphism for Dark Theme */
+        .glass-card {
+            background: rgba(26, 26, 26, 0.6);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .glass-card:hover {
+            border-color: rgba(212, 175, 55, 0.5);
+            /* Gold border on hover */
+        }
+    </style>
+</head>
+
+<body class="antialiased">
+
+    <!-- Navigation -->
+    <nav class="fixed w-full z-50 bg-primary/90 backdrop-blur-md border-b border-white/10">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between items-center h-24">
+                <div class="flex items-center">
+                    <a href="#" class="text-2xl font-bold tracking-widest text-white font-serif">
+                        MiSite<span class="text-accent">.</span>
+                    </a>
+                </div>
+                <div class="hidden md:flex items-center space-x-8">
+                    <a href="#services"
+                        class="text-sm uppercase tracking-widest hover:text-accent transition">Services</a>
+                    <a href="#process"
+                        class="text-sm uppercase tracking-widest hover:text-accent transition">Process</a>
+                    <a href="#contact"
+                        class="btn-gold px-8 py-3 rounded-sm font-medium tracking-wide text-sm uppercase">
+                        Start Project
+                    </a>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Hero Section -->
+    <section class="relative pt-32 pb-20 overflow-hidden min-h-screen flex items-center">
+        <!-- Background Image with Overlay -->
+        <div class="absolute inset-0 z-0">
+            <img src="https://images.unsplash.com/photo-1497366216548-37526070297c?ixlib=rb-4.0.3&auto=format&fit=crop&w=1920&q=80"
+                alt="Office" class="w-full h-full object-cover">
+            <div class="absolute inset-0 bg-gradient-to-b from-black/80 via-black/60 to-primary"></div>
+        </div>
+
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+            <div class="text-center max-w-4xl mx-auto">
+                <p class="text-accent uppercase tracking-[0.3em] mb-6 text-sm animate-fade-in-up">Digital Excellence</p>
+                <h1 class="text-5xl md:text-7xl font-bold text-white mb-8 leading-tight">
+                    We Build <span class="italic font-light text-accent">Digital Experiences</span> That Sell
+                </h1>
+                <p class="text-xl text-gray-400 mb-12 leading-relaxed font-light">
+                    Professional web design, app development, and marketing services to help your business attract more
+                    visitors and convert them into loyal customers.
+                </p>
+                <div class="flex flex-col sm:flex-row justify-center gap-6">
+                    <a href="#contact" class="btn-gold px-10 py-4 text-sm font-bold uppercase tracking-widest">
+                        Schedule Consultation
+                    </a>
+                    <a href="#services"
+                        class="border border-white px-10 py-4 text-sm font-bold uppercase tracking-widest hover:bg-white hover:text-black transition duration-300 text-white">
+                        View Services
+                    </a>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Services Section -->
+    <section id="services" class="py-24 bg-primary">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="text-center mb-20" data-aos="fade-up">
+                <h2 class="text-4xl md:text-5xl text-white mb-6">Our Expertise</h2>
+                <div class="w-20 h-0.5 bg-accent mx-auto"></div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+                <!-- Service 1 -->
+                <div class="glass-card p-10 transition duration-500 group" data-aos="fade-up" data-aos-delay="0">
+                    <div class="text-accent mb-6 group-hover:scale-110 transition duration-300">
+                        <i data-lucide="monitor" class="w-12 h-12"></i>
+                    </div>
+                    <h3 class="text-2xl text-white mb-4">Web Design</h3>
+                    <p class="text-gray-400 leading-relaxed mb-6">
+                        Structuring information architecture and mapping out functionalities. We build digital shopping
+                        experiences to meet ambitious sales goals.
+                    </p>
+                    <span class="text-accent text-sm uppercase tracking-widest">Starting at $1,200</span>
+                </div>
+
+                <!-- Service 2 -->
+                <div class="glass-card p-10 transition duration-500 group" data-aos="fade-up" data-aos-delay="100">
+                    <div class="text-accent mb-6 group-hover:scale-110 transition duration-300">
+                        <i data-lucide="smartphone" class="w-12 h-12"></i>
+                    </div>
+                    <h3 class="text-2xl text-white mb-4">App Development</h3>
+                    <p class="text-gray-400 leading-relaxed mb-6">
+                        We build custom mobile apps to assist in the growth of your business. Native iOS and Android
+                        solutions tailored to your needs.
+                    </p>
+                    <span class="text-accent text-sm uppercase tracking-widest">Starting at $2,400</span>
+                </div>
+
+                <!-- Service 3 -->
+                <div class="glass-card p-10 transition duration-500 group" data-aos="fade-up" data-aos-delay="200">
+                    <div class="text-accent mb-6 group-hover:scale-110 transition duration-300">
+                        <i data-lucide="bar-chart-2" class="w-12 h-12"></i>
+                    </div>
+                    <h3 class="text-2xl text-white mb-4">Digital Marketing</h3>
+                    <p class="text-gray-400 leading-relaxed mb-6">
+                        Contextual advertising on Google, Facebook, and Instagram. SEO optimization to improve rankings
+                        in search engines.
+                    </p>
+                    <span class="text-accent text-sm uppercase tracking-widest">$500 / month</span>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Portfolio Section -->
+    <section id="portfolio" class="py-24 bg-secondary">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="text-center mb-20" data-aos="fade-up">
+                <h2 class="text-4xl md:text-5xl text-white mb-6">Featured Work</h2>
+                <div class="w-20 h-0.5 bg-accent mx-auto"></div>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <!-- Project 1 -->
+                <div class="group relative overflow-hidden rounded-sm" data-aos="fade-up">
+                    <img src="https://images.unsplash.com/photo-1481487484168-9b930d5b7d9d?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80"
+                        alt="Project 1" class="w-full h-80 object-cover transition duration-500 group-hover:scale-110">
+                    <div
+                        class="absolute inset-0 bg-black/80 opacity-0 group-hover:opacity-100 transition duration-300 flex flex-col justify-center items-center">
+                        <h3 class="text-2xl text-white font-serif mb-2">Luxe Interiors</h3>
+                        <p class="text-accent uppercase tracking-widest text-sm">Web Design</p>
+                    </div>
+                </div>
+                <!-- Project 2 -->
+                <div class="group relative overflow-hidden rounded-sm" data-aos="fade-up" data-aos-delay="100">
+                    <img src="https://images.unsplash.com/photo-1555421689-491a97ff2040?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80"
+                        alt="Project 2" class="w-full h-80 object-cover transition duration-500 group-hover:scale-110">
+                    <div
+                        class="absolute inset-0 bg-black/80 opacity-0 group-hover:opacity-100 transition duration-300 flex flex-col justify-center items-center">
+                        <h3 class="text-2xl text-white font-serif mb-2">FinTech Corp</h3>
+                        <p class="text-accent uppercase tracking-widest text-sm">App Development</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Process Section -->
+    <section id="process" class="py-24 bg-secondary relative overflow-hidden">
+        <!-- Decorative Background -->
+        <div class="absolute top-0 right-0 w-1/3 h-full bg-white/5 skew-x-12 transform translate-x-20"></div>
+
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+            <div class="flex flex-col lg:flex-row gap-16 items-center">
+                <!-- Left Column: Content -->
+                <div class="lg:w-1/2">
+                    <h2 class="text-4xl md:text-5xl text-white mb-6">Our Process</h2>
+                    <p class="text-gray-400 text-lg mb-12">A proven path to digital success.</p>
+
+                    <div class="space-y-8">
+                        <!-- Step 1 -->
+                        <div class="flex gap-6 group" data-aos="fade-up" data-aos-delay="0">
+                            <div class="text-accent text-xl font-bold font-serif pt-1">01</div>
+                            <div>
+                                <h4 class="text-xl text-white mb-2 group-hover:text-accent transition">Discovery</h4>
+                                <p class="text-gray-400 text-sm leading-relaxed">Analyzing your niche, competitors, and
+                                    business goals to build a solid foundation.</p>
+                            </div>
+                        </div>
+
+                        <!-- Step 2 -->
+                        <div class="flex gap-6 group" data-aos="fade-up" data-aos-delay="100">
+                            <div class="text-accent text-xl font-bold font-serif pt-1">02</div>
+                            <div>
+                                <h4 class="text-xl text-white mb-2 group-hover:text-accent transition">Planning</h4>
+                                <p class="text-gray-400 text-sm leading-relaxed">Creating a strategic roadmap and
+                                    selecting the right technologies for your success.</p>
+                            </div>
+                        </div>
+
+                        <!-- Step 3 -->
+                        <div class="flex gap-6 group" data-aos="fade-up" data-aos-delay="200">
+                            <div class="text-accent text-xl font-bold font-serif pt-1">03</div>
+                            <div>
+                                <h4 class="text-xl text-white mb-2 group-hover:text-accent transition">Design</h4>
+                                <p class="text-gray-400 text-sm leading-relaxed">Crafting stunning visuals and intuitive
+                                    interfaces that align with your brand identity.</p>
+                            </div>
+                        </div>
+
+                        <!-- Step 4 -->
+                        <div class="flex gap-6 group" data-aos="fade-up" data-aos-delay="300">
+                            <div class="text-accent text-xl font-bold font-serif pt-1">04</div>
+                            <div>
+                                <h4 class="text-xl text-white mb-2 group-hover:text-accent transition">Build</h4>
+                                <p class="text-gray-400 text-sm leading-relaxed">Developing robust, scalable solutions
+                                    with clean code and modern standards.</p>
+                            </div>
+                        </div>
+
+                        <!-- Step 5 -->
+                        <div class="flex gap-6 group" data-aos="fade-up" data-aos-delay="400">
+                            <div class="text-accent text-xl font-bold font-serif pt-1">05</div>
+                            <div>
+                                <h4 class="text-xl text-white mb-2 group-hover:text-accent transition">Launch</h4>
+                                <p class="text-gray-400 text-sm leading-relaxed">Rigorous testing and deployment,
+                                    ensuring a flawless experience for your users.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Right Column: Image -->
+                <div class="lg:w-1/2" data-aos="fade-left">
+                    <div class="relative">
+                        <div class="absolute -inset-4 border border-accent/30 z-0"></div>
+                        <img src="https://images.unsplash.com/photo-1552664730-d307ca884978?ixlib=rb-4.0.3&auto=format&fit=crop&w=1600&q=80"
+                            alt="Creative Team"
+                            class="relative z-10 shadow-2xl grayscale hover:grayscale-0 transition duration-700 ease-in-out w-full h-[600px] object-cover">
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Testimonials Section -->
+    <section class="py-24 bg-primary relative">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="text-center mb-20" data-aos="fade-up">
+                <h2 class="text-4xl md:text-5xl text-white mb-6">Client Stories</h2>
+                <div class="w-20 h-0.5 bg-accent mx-auto"></div>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+                <!-- Review 1 -->
+                <div class="glass-card p-8" data-aos="fade-up">
+                    <div class="text-accent mb-4"><i data-lucide="quote" class="w-8 h-8"></i></div>
+                    <p class="text-gray-400 mb-6 italic">"MiSite transformed our online presence. The design is stunning
+                        and our conversions have doubled."</p>
+                    <h4 class="text-white font-serif text-lg">Sarah Jenkins</h4>
+                    <p class="text-sm text-gray-500">CEO, Luxe Interiors</p>
+                </div>
+                <!-- Review 2 -->
+                <div class="glass-card p-8" data-aos="fade-up" data-aos-delay="100">
+                    <div class="text-accent mb-4"><i data-lucide="quote" class="w-8 h-8"></i></div>
+                    <p class="text-gray-400 mb-6 italic">"Professional, creative, and timely. The best agency we've
+                        worked with."</p>
+                    <h4 class="text-white font-serif text-lg">Michael Ross</h4>
+                    <p class="text-sm text-gray-500">Founder, TechStart</p>
+                </div>
+                <!-- Review 3 -->
+                <div class="glass-card p-8" data-aos="fade-up" data-aos-delay="200">
+                    <div class="text-accent mb-4"><i data-lucide="quote" class="w-8 h-8"></i></div>
+                    <p class="text-gray-400 mb-6 italic">"They understood our vision perfectly and executed it with
+                        precision."</p>
+                    <h4 class="text-white font-serif text-lg">Elena Rodriguez</h4>
+                    <p class="text-sm text-gray-500">Marketing Director</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Booking Section -->
+    <section id="contact" class="py-24 bg-primary relative overflow-hidden">
+        <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+            <div class="bg-secondary border border-white/10 p-8 md:p-16 shadow-2xl relative overflow-hidden">
+                <!-- Gold Accent Line -->
+                <div class="absolute top-0 left-0 w-full h-1 bg-accent"></div>
+
+                <div class="text-center mb-12">
+                    <h2 class="text-3xl md:text-4xl text-white mb-4">Start Your Project</h2>
+                    <p class="text-gray-400">Choose a time that works for you, and let's discuss your vision.</p>
+                </div>
+
+                <form id="bookingForm" class="space-y-6">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div>
+                            <label class="block text-accent text-xs uppercase tracking-widest mb-2">Full Name</label>
+                            <input type="text" id="name" required
+                                class="w-full bg-primary border border-white/10 text-white px-4 py-3 focus:outline-none focus:border-accent transition"
+                                placeholder="John Doe">
+                        </div>
+                        <div>
+                            <label class="block text-accent text-xs uppercase tracking-widest mb-2">Phone Number</label>
+                            <input type="tel" id="phone" required
+                                class="w-full bg-primary border border-white/10 text-white px-4 py-3 focus:outline-none focus:border-accent transition"
+                                placeholder="(555) 123-4567">
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-accent text-xs uppercase tracking-widest mb-2">Email Address</label>
+                        <input type="email" id="email" required
+                            class="w-full bg-primary border border-white/10 text-white px-4 py-3 focus:outline-none focus:border-accent transition"
+                            placeholder="john@example.com">
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div>
+                            <label class="block text-accent text-xs uppercase tracking-widest mb-2">Preferred
+                                Date</label>
+                            <input type="date" id="date" required
+                                class="w-full bg-primary border border-white/10 text-white px-4 py-3 focus:outline-none focus:border-accent transition">
+                        </div>
+                        <div>
+                            <label class="block text-accent text-xs uppercase tracking-widest mb-2">Preferred
+                                Time</label>
+                            <select id="time" required
+                                class="w-full bg-primary border border-white/10 text-white px-4 py-3 focus:outline-none focus:border-accent transition appearance-none">
+                                <option value="">Select a time</option>
+                                <option value="09:00">09:00 AM</option>
+                                <option value="10:00">10:00 AM</option>
+                                <option value="11:00">11:00 AM</option>
+                                <option value="12:00">12:00 PM</option>
+                                <option value="13:00">01:00 PM</option>
+                                <option value="14:00">02:00 PM</option>
+                                <option value="15:00">03:00 PM</option>
+                                <option value="16:00">04:00 PM</option>
+                                <option value="17:00">05:00 PM</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-accent text-xs uppercase tracking-widest mb-2">Project Details</label>
+                        <textarea id="notes" rows="3"
+                            class="w-full bg-primary border border-white/10 text-white px-4 py-3 focus:outline-none focus:border-accent transition"
+                            placeholder="Tell us about your project..."></textarea>
+                    </div>
+
+                    <div class="pt-6">
+                        <button type="submit" id="submitBtn"
+                            class="w-full btn-gold py-4 font-bold uppercase tracking-widest text-sm hover:bg-white hover:text-black transition duration-300">
+                            Confirm Booking
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="bg-black py-12 border-t border-white/10">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+            <div class="flex justify-center gap-6 mb-6">
+                <a href="https://t.me/Garkor_bot" target="_blank"
+                    class="flex items-center gap-2 text-gray-400 hover:text-accent transition">
+                    <i data-lucide="message-circle" class="w-5 h-5"></i>
+                    <span>Chat on Telegram</span>
+                </a>
+            </div>
+            <p class="text-gray-500 text-sm">&copy; 2024 MiSite Creative. All rights reserved.</p>
+        </div>
+    </footer>
+
+    <!-- Toast Notification -->
+    <div id="toast"
+        class="fixed bottom-5 right-5 bg-white border-l-4 border-accent text-gray-800 px-6 py-4 rounded shadow-2xl transform translate-y-20 opacity-0 transition duration-300 z-50 flex items-center gap-3">
+        <i data-lucide="check-circle" class="text-accent"></i>
+        <div>
+            <h4 class="font-bold font-serif">Booking Confirmed!</h4>
+            <p class="text-sm">We'll call you at the selected time.</p>
+        </div>
+    </div>
+
+    <script>
+        // Initialize AOS
+        AOS.init({
+            duration: 800,
+            once: true,
+            offset: 100
+        });
+
+        // Initialize Lucide Icons
+        lucide.createIcons();
+
+        // Firebase Configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyDOCAbC123dEfG456hIjK789lmN012opQ",
+            authDomain: "profit-step.firebaseapp.com",
+            projectId: "profit-step",
+            storageBucket: "profit-step.appspot.com",
+            messagingSenderId: "436685645148",
+            appId: "1:436685645148:web:7b60580971717835848286",
+            measurementId: "G-8R68564514"
+        };
+
+        // Initialize Firebase
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+        const analytics = firebase.analytics();
+
+        // Form Handling
+        const form = document.getElementById('bookingForm');
+        const submitBtn = document.getElementById('submitBtn');
+        const toast = document.getElementById('toast');
+
+        // Set min date to today
+        const dateInput = document.getElementById('date');
+        dateInput.min = new Date().toISOString().split('T')[0];
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const originalBtnText = submitBtn.innerText;
+            submitBtn.innerText = 'Processing...';
+            submitBtn.disabled = true;
+
+            try {
+                const formData = {
+                    name: document.getElementById('name').value,
+                    phone: document.getElementById('phone').value,
+                    email: document.getElementById('email').value,
+                    preferred_date: document.getElementById('date').value,
+                    preferred_time: document.getElementById('time').value,
+                    notes: [{
+                        text: document.getElementById('notes').value,
+                        date: firebase.firestore.Timestamp.now()
+                    }],
+                    service: 'Creative Services',
+                    source: 'landing_page_creative',
+                    status: 'new',
+                    createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                    bookingDateTime: new Date(`${document.getElementById('date').value}T${document.getElementById('time').value}`)
+                };
+
+                // Save to Firestore
+                await db.collection('leads').add(formData);
+
+                // Track Event
+                analytics.logEvent('generate_lead', {
+                    currency: 'USD',
+                    value: 1200,
+                    source: 'landing_page_creative'
+                });
+
+                // Show Success
+                showToast();
+                form.reset();
+
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Something went wrong. Please try again.');
+            } finally {
+                submitBtn.innerText = originalBtnText;
+                submitBtn.disabled = false;
+            }
+        });
+
+        function showToast() {
+            toast.classList.remove('translate-y-20', 'opacity-0');
+            setTimeout(() => {
+                toast.classList.add('translate-y-20', 'opacity-0');
+            }, 5000);
+        }
+
+        // Phone Masking
+        const phoneInput = document.getElementById('phone');
+        phoneInput.addEventListener('input', (e) => {
+            let x = e.target.value.replace(/\D/g, '').match(/(\d{0,3})(\d{0,3})(\d{0,4})/);
+            e.target.value = !x[2] ? x[1] : '(' + x[1] + ') ' + x[2] + (x[3] ? '-' + x[3] : '');
+        });
+    </script>
+</body>
+
+</html>

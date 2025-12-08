@@ -9,9 +9,23 @@ import DashboardPage from '../pages/DashboardPage';
 import ProfilePage from '../pages/ProfilePage';
 import SettingsPage from '../pages/SettingsPage';
 import TeamAdminPage from '../pages/admin/TeamAdminPage';
+import EstimatesPage from '../pages/estimates/EstimatesPage';
+import EstimateBuilderPage from '../pages/estimates/EstimateBuilderPage';
+import ElectricalEstimatorPage from '../pages/estimates/ElectricalEstimatorPage';
 import SuperAdminDashboard from '../pages/superadmin/SuperAdminDashboard';
 import CompanyDashboard from '../pages/admin/CompanyDashboard';
 import CompaniesPage from '../pages/admin/CompaniesPage';
+import ClientsPage from '../pages/crm/ClientsPage';
+import ClientDetailsPage from '../pages/crm/ClientDetailsPage';
+import ClientBuilderPage from '../pages/crm/ClientBuilderPage';
+import DevIndexPage from '../pages/DevIndexPage';
+import SystemHealthCheck from '../pages/debug/SystemHealthCheck';
+import TasksPage from '../pages/crm/TasksPage';
+import DealsPage from '../pages/crm/DealsPage';
+import CalendarPage from '../pages/crm/CalendarPage';
+import LeadDetailsPage from '../pages/crm/LeadDetailsPage';
+import TimeTrackingPage from '../pages/crm/TimeTrackingPage';
+import FinancePage from '../pages/crm/FinancePage';
 
 /**
  * Компонент для защиты маршрутов
@@ -108,11 +122,38 @@ const AppRouter: React.FC = () => {
         <Route path="/superadmin" element={<SuperAdminDashboard />} />
 
         {/* Другие модули (placeholder) */}
-        <Route path="/clients" element={<div>Модуль "Клиенты" в разработке</div>} />
+        {/* Estimates Routes */}
+        <Route path="/estimates" element={<EstimatesPage />} />
+        <Route path="/estimates/new" element={<EstimateBuilderPage />} />
+        <Route path="/estimates/:id" element={<EstimateBuilderPage />} />
+        <Route path="/estimates/electrical" element={<ElectricalEstimatorPage />} />
+
+        {/* CRM Routes */}
+        <Route path="/crm/clients" element={<ClientsPage />} />
+        <Route path="/crm/clients/new" element={<ClientBuilderPage />} />
+        <Route path="/crm/clients/:id" element={<ClientDetailsPage />} />
+        <Route path="/crm/clients/:id/edit" element={<ClientBuilderPage />} />
+
+        {/* Placeholders for V2.1 & V3.1 & V4 */}
+        <Route path="/crm/deals" element={<DealsPage />} />
+        <Route path="/crm/calendar" element={<CalendarPage />} />
+        <Route path="/crm/leads/:id" element={<LeadDetailsPage />} />
+        <Route path="/crm/tasks" element={<TasksPage />} />
+        <Route path="/crm/scheduler" element={<div>Scheduler (Coming Soon)</div>} />
+        <Route path="/crm/time-tracking" element={<TimeTrackingPage />} />
+        <Route path="/crm/finance" element={<FinancePage />} />
+        <Route path="/reports" element={<div>Reports Hub (Coming Soon)</div>} />
+
+        {/* Legacy Redirects */}
+        <Route path="/clients" element={<Navigate to="/crm/clients" replace />} />
         <Route path="/projects" element={<div>Модуль "Проекты" в разработке</div>} />
         <Route path="/tasks" element={<div>Модуль "Задачи" в разработке</div>} />
         <Route path="/documents" element={<div>Модуль "Документы" в разработке</div>} />
       </Route>
+
+      {/* Dev Map - Public for Dev */}
+      <Route path="/dev-map" element={<DevIndexPage />} />
+      <Route path="/dev-health" element={<SystemHealthCheck />} />
 
       {/* Fallback для неизвестных маршрутов */}
       <Route path="*" element={<Navigate to="/admin/dashboard" replace />} />

@@ -30,6 +30,12 @@ import {
   Person as PersonIcon,
   Menu as MenuIcon,
   Close as CloseIcon,
+  Contacts as ContactsIcon,
+  ViewWeek as KanbanIcon,
+  Assignment as TaskIcon,
+  Calculate as CalculateIcon,
+  CalendarMonth as CalendarIcon,
+  AttachMoney as AttachMoneyIcon,
 } from '@mui/icons-material';
 
 /**
@@ -86,11 +92,29 @@ const Header: React.FC = () => {
       { path: '/admin/dashboard', label: 'Дашборд', icon: <DashboardIcon sx={{ mr: 0.5 }} /> },
     ];
 
+    const crmLinks = [
+      { path: '/crm/clients', label: 'Клиенты', icon: <ContactsIcon sx={{ mr: 0.5 }} /> },
+      { path: '/crm/deals', label: 'Сделки', icon: <KanbanIcon sx={{ mr: 0.5 }} /> },
+      { path: '/crm/tasks', label: 'Задачи', icon: <TaskIcon sx={{ mr: 0.5 }} /> },
+      { path: '/crm/calendar', label: 'Календарь', icon: <CalendarIcon sx={{ mr: 0.5 }} /> },
+      { path: '/crm/time-tracking', label: 'Отчеты', icon: <DescriptionIcon sx={{ mr: 0.5 }} /> },
+      { path: '/crm/finance', label: 'Финансы', icon: <AttachMoneyIcon sx={{ mr: 0.5 }} /> },
+      { path: '/estimates/electrical', label: 'Калькулятор', icon: <CalculateIcon sx={{ mr: 0.5 }} /> },
+    ];
+
     if (userProfile.role === 'admin') {
       return [
         ...commonLinks,
+        ...crmLinks,
         { path: '/admin/team', label: 'Команда', icon: <PeopleIcon sx={{ mr: 0.5 }} /> },
         { path: '/admin/companies', label: 'Компании', icon: <BusinessIcon sx={{ mr: 0.5 }} /> },
+      ];
+    }
+
+    if (userProfile.role === 'manager') {
+      return [
+        ...commonLinks,
+        ...crmLinks,
       ];
     }
 
@@ -177,10 +201,10 @@ const Header: React.FC = () => {
                 {userProfile?.role === 'admin'
                   ? 'Администратор'
                   : userProfile?.role === 'manager'
-                  ? 'Менеджер'
-                  : userProfile?.role === 'estimator'
-                  ? 'Сметчик'
-                  : 'Гость'}
+                    ? 'Менеджер'
+                    : userProfile?.role === 'estimator'
+                      ? 'Сметчик'
+                      : 'Гость'}
               </Typography>
             </Box>
 

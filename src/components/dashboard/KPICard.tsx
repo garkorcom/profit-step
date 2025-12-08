@@ -10,6 +10,7 @@ interface KPICardProps {
   color?: 'primary' | 'secondary' | 'success' | 'warning' | 'error' | 'info';
   onClick?: () => void;
   sx?: SxProps<Theme>;
+  children?: React.ReactNode;
 }
 
 /**
@@ -24,6 +25,7 @@ export const KPICard: React.FC<KPICardProps> = ({
   color = 'primary',
   onClick,
   sx,
+  children,
 }) => {
   return (
     <Card
@@ -33,9 +35,9 @@ export const KPICard: React.FC<KPICardProps> = ({
         transition: 'all 0.2s ease-in-out',
         '&:hover': onClick
           ? {
-              transform: 'translateY(-4px)',
-              boxShadow: 4,
-            }
+            transform: 'translateY(-4px)',
+            boxShadow: 4,
+          }
           : {},
         ...sx,
       }}
@@ -54,6 +56,7 @@ export const KPICard: React.FC<KPICardProps> = ({
             {subtitle}
           </Typography>
         )}
+        {children}
       </CardContent>
     </Card>
   );

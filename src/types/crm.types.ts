@@ -1,37 +1,235 @@
-/**
- * CRM Types - Company (Client) Management
- */
+import { Timestamp } from 'firebase/firestore';
 
-import { Timestamp, DocumentSnapshot } from 'firebase/firestore';
+// --- Shared Types ---
+
+export type Currency = 'USD' | 'EUR' | 'RUB' | 'UAH' | 'KZT';
+
+export interface Money {
+  amount: number;
+  currency: Currency;
+}
+
+// --- Company (Tenant) ---
+
+export type CompanyStatus = 'active' | 'suspended' | 'archived';
 
 export interface Company {
   id: string;
-
-  // Основные данные
   name: string;
-  name_lowercase: string;
-  phone?: string;
+  ownerId: string;
+  status: CompanyStatus;
+
+  // Contact Info
   email?: string;
+  phone?: string;
   website?: string;
   address?: string;
 
-  // Системные поля
-  isArchived: boolean;
-  createdAt: Timestamp | string;
-  updatedAt: Timestamp | string;
+  // Flags
+  isArchived?: boolean;
+  name_lowercase?: string; // For search
+  ownerCompanyId?: string; // For hierarchy if needed
 
-  // Владелец
-  ownerCompanyId: string;
+  // Billing
+  subscriptionPlan?: 'free' | 'pro' | 'enterprise';
+  subscriptionStatus?: 'active' | 'past_due' | 'canceled';
+
+  // Settings
+  settings?: {
+    currency?: Currency;
+    dateFormat?: string;
+    timezone?: string;
+  };
+
+  createdAt: Timestamp;
+  updatedAt?: Timestamp;
+  deletedAt?: Timestamp;
 }
 
 export interface PaginatedCompaniesResult {
   companies: Company[];
-  firstDoc: DocumentSnapshot | null;
-  lastDoc: DocumentSnapshot | null;
+
+  // Pagination cursors
+  firstDoc: any; // QueryDocumentSnapshot
+  lastDoc: any; // QueryDocumentSnapshot
+
+  // Metadata
   reads: number;
-  duration?: number;
+  duration: number;
   hasNextPage: boolean;
   hasPrevPage: boolean;
+
+  // Legacy/Optional
+  lastDocId?: string | null;
+  hasMore?: boolean;
 }
 
-export type CompanyStatus = 'active' | 'archived' | 'all';
+// --- Client (Customer 360) ---
+
+export type ClientType = 'person' | 'company';
+export type ClientStatus = 'new' | 'contacted' | 'qualified' | 'customer' | 'churned';
+
+export interface ClientContact {
+  phone: string;
+  email: string;
+  contactPerson?: string;
+  role?: string;
+}
+
+export interface Client {
+  id: string;
+  companyId: string;
+  type: ClientType;
+  name: string;
+
+  // Contacts
+  contacts: ClientContact[];
+
+  // Legacy fields (kept for compatibility, but prefer contacts array)
+  email?: string;
+  phone?: string;
+  website?: string;
+  address?: string;
+
+  // Business Info
+  industry?: string;
+  source?: string;
+  status: ClientStatus;
+
+  // Financials
+  totalRevenue: number; // LTV
+
+  // Metadata
+  tags: string[];
+  assignedTo: string;
+  createdBy: string;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+  lastContactedAt?: Timestamp;
+
+  customFields?: Record<string, any>;
+}
+
+export interface Site {
+  id: string;
+  clientId: string;
+  companyId: string;
+
+  name: string; // e.g. "Miami Beach House"
+  address: string;
+
+  // Geo-fencing
+  geo: {
+    lat: number;
+    lng: number;
+    radius: number; // meters, default 100
+  };
+
+  accessCodes?: string; // Encrypted/Hidden
+  photos: string[];
+
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+
+// --- Pipeline & Deals ---
+
+export interface Pipeline {
+  id: string;
+  companyId: string;
+  name: string;
+  stages: PipelineStage[];
+  isDefault: boolean;
+}
+
+export interface PipelineStage {
+  id: string;
+  name: string;
+  order: number;
+  color?: string;
+  probability?: number; // Win probability in %
+}
+
+export type DealPriority = 'low' | 'medium' | 'high';
+export type DealStatus = 'open' | 'won' | 'lost';
+
+export interface Deal {
+  id: string;
+  companyId: string;
+  clientId: string; // Link to Client
+  pipelineId: string;
+  stageId: string;
+
+  title: string;
+  value: Money;
+
+  priority: DealPriority;
+  status: DealStatus;
+
+  expectedCloseDate?: Timestamp;
+
+  assignedTo: string;
+  createdBy: string;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+
+  // Lost reason
+  lostReason?: string;
+}
+
+// --- Tasks ---
+
+export type TaskType = 'call' | 'email' | 'meeting' | 'task' | 'deadline';
+export type TaskPriority = 'low' | 'medium' | 'high';
+export type TaskStatus = 'todo' | 'in_progress' | 'done' | 'canceled';
+
+export interface Task {
+  id: string;
+  companyId: string;
+
+  // Relations
+  clientId?: string;
+  dealId?: string;
+
+  title: string;
+  description?: string;
+  type: TaskType;
+
+  dueDate: Timestamp;
+  completedAt?: Timestamp;
+
+  priority: TaskPriority;
+  status: TaskStatus;
+
+  assignedTo: string;
+  createdBy: string;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+
+// --- Activity History (Timeline) ---
+
+export type ActivityType =
+  | 'note'
+  | 'email_sent'
+  | 'call_log'
+  | 'status_change'
+  | 'deal_stage_change'
+  | 'task_completed';
+
+export interface ActivityLog {
+  id: string;
+  companyId: string;
+
+  // Context
+  clientId?: string;
+  dealId?: string;
+  taskId?: string;
+
+  type: ActivityType;
+  content: string; // Description or message body
+  metadata?: Record<string, any>; // Extra data (e.g., oldStage -> newStage)
+
+  performedBy: string; // User ID
+  performedAt: Timestamp;
+}

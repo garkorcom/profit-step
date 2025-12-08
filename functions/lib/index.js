@@ -9,7 +9,7 @@
  * - adminDeleteUser: Безопасное удаление пользователя администратором
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.updateCompanyMemberCount_v2 = exports.trackUserActivation_v2 = exports.logUserUpdates_v2 = exports.incrementLoginCount_v2 = exports.inviteUser = exports.adminDeleteUser = exports.onUserDelete = exports.onUserCreate = exports.admin_createUserWithPassword = exports.logPaginationMetrics = exports.logInvitationAccepted = exports.logInvitationSent = exports.logUserDeleted = exports.logUserCreated = exports.brevoWebhookHandler = exports.trackFirstInvite = exports.initializeUserActivation = exports.aggregateEngagementMetrics = exports.aggregateGrowthMetrics = exports.processAvatar = void 0;
+exports.generateDailyPayroll = exports.forceFinishAllSessions = exports.checkLongSessions = exports.onWorkerBotMessage = exports.generateLeadSummary = exports.sendMessage = exports.onTelegramMessage = exports.onWhatsAppMessage = exports.onLeadCreate = exports.updateCompanyMemberCount_v2 = exports.trackUserActivation_v2 = exports.logUserUpdates_v2 = exports.incrementLoginCount_v2 = exports.inviteUser = exports.adminDeleteUser = exports.onUserDelete = exports.onUserCreate = exports.admin_createUserWithPassword = exports.logPaginationMetrics = exports.logInvitationAccepted = exports.logInvitationSent = exports.logUserDeleted = exports.logUserCreated = exports.brevoWebhookHandler = exports.trackFirstInvite = exports.initializeUserActivation = exports.aggregateEngagementMetrics = exports.aggregateGrowthMetrics = exports.processAvatar = void 0;
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 const crypto = require("crypto");
@@ -59,6 +59,12 @@ exports.onUserCreate = functions.auth.user().onCreate(async (user) => {
     const photoURL = user.photoURL || null;
     try {
         console.log(`🔥 Creating user profile for: ${userId}`);
+        // Check if profile already exists (e.g. created by admin_createUserWithPassword)
+        const userDoc = await db.collection('users').doc(userId).get();
+        if (userDoc.exists) {
+            console.log(`⚠️ User profile already exists for ${userId}. Skipping default creation.`);
+            return;
+        }
         // Создаем документ профиля пользователя
         await db.collection('users').doc(userId).set({
             email: email.toLowerCase(),
@@ -407,4 +413,25 @@ var updateCompanyMemberCount_1 = require("./triggers/users/updateCompanyMemberCo
 Object.defineProperty(exports, "updateCompanyMemberCount_v2", { enumerable: true, get: function () { return updateCompanyMemberCount_1.updateCompanyMemberCount; } });
 // Monitoring
 // export { monitorFunctionLoops } from './scheduled/monitorFunctionLoops'; // REMOVED: Infinite loop fixed, monitoring not needed
+// AI Agent
+var onLeadCreate_1 = require("./triggers/leads/onLeadCreate");
+Object.defineProperty(exports, "onLeadCreate", { enumerable: true, get: function () { return onLeadCreate_1.onLeadCreate; } });
+var onWhatsAppMessage_1 = require("./triggers/whatsapp/onWhatsAppMessage");
+Object.defineProperty(exports, "onWhatsAppMessage", { enumerable: true, get: function () { return onWhatsAppMessage_1.onWhatsAppMessage; } });
+var onTelegramMessage_1 = require("./triggers/telegram/onTelegramMessage");
+Object.defineProperty(exports, "onTelegramMessage", { enumerable: true, get: function () { return onTelegramMessage_1.onTelegramMessage; } });
+// Messaging
+var sendMessage_1 = require("./callable/messaging/sendMessage");
+Object.defineProperty(exports, "sendMessage", { enumerable: true, get: function () { return sendMessage_1.sendMessage; } });
+// AI
+var generateLeadSummary_1 = require("./callable/ai/generateLeadSummary");
+Object.defineProperty(exports, "generateLeadSummary", { enumerable: true, get: function () { return generateLeadSummary_1.generateLeadSummary; } });
+var onWorkerBotMessage_1 = require("./triggers/telegram/onWorkerBotMessage");
+Object.defineProperty(exports, "onWorkerBotMessage", { enumerable: true, get: function () { return onWorkerBotMessage_1.onWorkerBotMessage; } });
+var checkLongSessions_1 = require("./scheduled/checkLongSessions");
+Object.defineProperty(exports, "checkLongSessions", { enumerable: true, get: function () { return checkLongSessions_1.checkLongSessions; } });
+var forceFinishAllSessions_1 = require("./callable/admin/forceFinishAllSessions");
+Object.defineProperty(exports, "forceFinishAllSessions", { enumerable: true, get: function () { return forceFinishAllSessions_1.forceFinishAllSessions; } });
+var generateDailyPayroll_1 = require("./scheduled/generateDailyPayroll");
+Object.defineProperty(exports, "generateDailyPayroll", { enumerable: true, get: function () { return generateDailyPayroll_1.generateDailyPayroll; } });
 //# sourceMappingURL=index.js.map

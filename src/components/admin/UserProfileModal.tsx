@@ -36,6 +36,7 @@ const UserProfileModal: React.FC<UserProfileModalProps> = ({
   const [displayName, setDisplayName] = useState('');
   const [title, setTitle] = useState('');
   const [phone, setPhone] = useState('');
+  const [telegramId, setTelegramId] = useState('');
   const [dob, setDob] = useState('');
   const [photoURL, setPhotoURL] = useState('');
   const [uploading, setUploading] = useState(false);
@@ -48,6 +49,7 @@ const UserProfileModal: React.FC<UserProfileModalProps> = ({
       setDisplayName(user.displayName || '');
       setTitle(user.title || '');
       setPhone(user.phone || '');
+      setTelegramId(user.telegramId || '');
       setPhotoURL(user.photoURL || '');
 
       // Преобразуем дату рождения в формат YYYY-MM-DD для input[type="date"]
@@ -105,6 +107,7 @@ const UserProfileModal: React.FC<UserProfileModalProps> = ({
         displayName: displayName.trim(),
         title: title.trim() || undefined,
         phone: phone.trim() || undefined,
+        telegramId: telegramId.trim() || undefined,
         dob: dob ? new Date(dob) : null,
       });
 
@@ -199,6 +202,16 @@ const UserProfileModal: React.FC<UserProfileModalProps> = ({
           onChange={(e) => setPhone(e.target.value)}
           margin="normal"
           placeholder="+7 (999) 123-45-67"
+        />
+
+        <TextField
+          label="Telegram ID"
+          fullWidth
+          value={telegramId}
+          onChange={(e) => setTelegramId(e.target.value)}
+          margin="normal"
+          placeholder="123456789"
+          helperText="ID для привязки к боту (можно найти через /me)"
         />
 
         <TextField

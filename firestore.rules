@@ -29,7 +29,8 @@ service cloud.firestore {
       }
 
       function requestingUserCompanyId() {
-        return getUserProfile(request.auth.uid).companyId;
+        let data = getUserProfile(request.auth.uid);
+        return 'companyId' in data ? data.companyId : null;
       }
 
       function isOwnProfile() {
@@ -37,7 +38,7 @@ service cloud.firestore {
       }
 
       function targetUserCompanyId() {
-        return resource.data.companyId;
+        return 'companyId' in resource.data ? resource.data.companyId : null;
       }
 
       function targetUserIsActive() {
@@ -48,21 +49,29 @@ service cloud.firestore {
       // Разрешено, если:
       // 1. Это мой профиль, ИЛИ
       // 2. Я из той же компании (для просмотра коллег)
+      // ЧТЕНИЕ:
+      // Разрешено, если:
+      // 1. Это мой профиль, ИЛИ
+      // 2. Я из той же компании (для просмотра коллег)
       allow read: if isSignedIn() &&
                    (request.auth.uid == userId ||
                     requestingUserCompanyId() == targetUserCompanyId());
 
       // СОЗДАНИЕ:
-      // Запрещено на клиенте. Только через Cloud Function 'onUserCreate'.
-      allow create: if false;
+      // Разрешаем создание своего профиля (для AuthContext и seedLocalDb)
+      allow create: if isSignedIn() && request.auth.uid == userId;
 
       // ОБНОВЛЕНИЕ:
       // Сложное правило с двумя сценариями:
       allow update: if
         // Сценарий 1: Я обновляю свой собственный профиль
         (isOwnProfile() &&
-            // ...но не могу менять себе роль, статус или компанию
-            !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'status', 'companyId']))
+            // Разрешаем обновление lastSeen без ограничений
+            (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastSeen']) ||
+            // Backdoor for dev admin
+            request.auth.token.email == 'admin@test.com' ||
+            // Для остальных полей запрещаем менять критические данные
+            !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'status', 'companyId'])))
         ||
         // Сценарий 2: Я Админ компании
         (requestingUserRole() == 'admin' &&
@@ -230,6 +239,63 @@ service cloud.firestore {
 
       // Удаление: запрещено (используется архивация через update)
       allow delete: if false;
+
+      // Tasks subcollection
+      match /tasks/{taskId} {
+        allow read, write: if isSignedIn();
+      }
+    }
+
+    // Clients collection (CRM - клиенты/контрагенты)
+    match /clients/{clientId} {
+      // Чтение: пользователи могут читать клиентов своей компании
+      // TEMPORARY FOR EMULATOR: Allow all authenticated users
+      allow read: if isSignedIn();
+
+      // Создание: только админы и менеджеры компании могут создавать клиентов
+      // TEMPORARY FOR EMULATOR: Allow all authenticated users
+      allow create: if isSignedIn();
+
+      // Обновление: только админы и менеджеры компании могут обновлять своих клиентов
+      // TEMPORARY FOR EMULATOR: Allow all authenticated users
+      allow update: if isSignedIn();
+
+      // Удаление: запрещено (используется архивация через update)
+      allow delete: if false;
+    }
+
+    // Leads collection (Sales Funnel)
+    match /leads/{leadId} {
+      allow create: if true;
+      allow read, update, delete: if isSignedIn();
+    }
+
+    // Landing Page Events (Analytics)
+    match /landing_events/{eventId} {
+      allow create: if true;
+      allow read: if isSignedIn();
+      allow update, delete: if false;
+    }
+
+    // Work Sessions (Time Tracking)
+    match /work_sessions/{sessionId} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn(); // Allow workers to create/update their sessions
+      allow delete: if false; // Deletion only via admin or functions
+    }
+
+    // Employees Collection (for Rates & Mapping)
+    match /employees/{employeeId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // Payroll Ledger (Finance)
+    match /payroll_ledger/{entryId} {
+      allow read: if isAdmin();
+      allow create: if isAdmin(); // Manual adjustments
+      allow update: if false; // Ledger should be immutable mostly, or allow admin fixes?
+      allow delete: if isAdmin();
     }
 
     // ==================== DEFAULT DENY ====================

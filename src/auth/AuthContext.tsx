@@ -190,7 +190,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         await createUserProfile(result.user.uid, {
           email: result.user.email || '',
           displayName: result.user.displayName || 'User',
-          photoURL: result.user.photoURL || undefined,
+          photoURL: result.user.photoURL || undefined, // undefined is fine here as interface allows optional, but we need to handle it in userApi
           signupMethod: 'google',
         });
       }

@@ -38,7 +38,7 @@ const MAX_READS_PER_REQUEST = 100;
 // ===== 1. ПОЛУЧЕНИЕ КОЛИЧЕСТВА =====
 export async function getCompanyClientsCount(
   ownerCompanyId: string,
-  statusFilter: CompanyStatus = 'active'
+  statusFilter: CompanyStatus | 'all' = 'active'
 ): Promise<{ count: number; source: 'aggregation' }> {
   return costProtectionBreaker.execute(async () => {
     try {
@@ -77,7 +77,7 @@ export async function getCompanyClientsPaginated(params: {
   orderBy: string;
   orderDirection: 'asc' | 'desc';
   searchTerm?: string;
-  statusFilter: CompanyStatus;
+  statusFilter: CompanyStatus | 'all';
 }): Promise<PaginatedCompaniesResult> {
   return costProtectionBreaker.execute(async () => {
     const startTime = performance.now();
@@ -124,10 +124,10 @@ export async function getCompanyClientsPaginated(params: {
 
       const companies = snapshot.docs.map(
         (docSnap) =>
-          ({
-            id: docSnap.id,
-            ...docSnap.data(),
-          } as Company)
+        ({
+          id: docSnap.id,
+          ...docSnap.data(),
+        } as Company)
       );
 
       const duration = performance.now() - startTime;

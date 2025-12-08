@@ -70,6 +70,13 @@ export const onUserCreate = functions.auth.user().onCreate(async (user) => {
   try {
     console.log(`🔥 Creating user profile for: ${userId}`);
 
+    // Check if profile already exists (e.g. created by admin_createUserWithPassword)
+    const userDoc = await db.collection('users').doc(userId).get();
+    if (userDoc.exists) {
+      console.log(`⚠️ User profile already exists for ${userId}. Skipping default creation.`);
+      return;
+    }
+
     // Создаем документ профиля пользователя
     await db.collection('users').doc(userId).set({
       email: email.toLowerCase(),
@@ -526,3 +533,18 @@ export { updateCompanyMemberCount as updateCompanyMemberCount_v2 } from './trigg
 
 // Monitoring
 // export { monitorFunctionLoops } from './scheduled/monitorFunctionLoops'; // REMOVED: Infinite loop fixed, monitoring not needed
+
+// AI Agent
+export { onLeadCreate } from './triggers/leads/onLeadCreate';
+export { onWhatsAppMessage } from './triggers/whatsapp/onWhatsAppMessage';
+export { onTelegramMessage } from './triggers/telegram/onTelegramMessage';
+
+// Messaging
+export { sendMessage } from './callable/messaging/sendMessage';
+
+// AI
+export { generateLeadSummary } from './callable/ai/generateLeadSummary';
+export { onWorkerBotMessage } from './triggers/telegram/onWorkerBotMessage';
+export { checkLongSessions } from './scheduled/checkLongSessions';
+export { forceFinishAllSessions } from './callable/admin/forceFinishAllSessions';
+export { generateDailyPayroll } from './scheduled/generateDailyPayroll';

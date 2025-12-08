@@ -162,6 +162,7 @@ export const updateUserExtendedProfile = async (
     displayName?: string;
     title?: string;
     phone?: string;
+    telegramId?: string;
     dob?: Date | null;
   }
 ): Promise<void> => {
@@ -172,6 +173,7 @@ export const updateUserExtendedProfile = async (
     if (data.displayName !== undefined) updateData.displayName = data.displayName;
     if (data.title !== undefined) updateData.title = data.title;
     if (data.phone !== undefined) updateData.phone = data.phone;
+    if (data.telegramId !== undefined) updateData.telegramId = data.telegramId;
     if (data.dob !== undefined) {
       updateData.dob = data.dob ? Timestamp.fromDate(data.dob) : null;
     }
@@ -391,109 +393,109 @@ export const getCompanyUsersPaginated = async (
       const startTime = performance.now();
       let firestoreReads = 0;
 
-    // 1️⃣ Получаем общее количество (1 read)
-    const total = await getCompanyUserCount(companyId, statusFilter, roleFilter);
-    firestoreReads += 1;
+      // 1️⃣ Получаем общее количество (1 read)
+      const total = await getCompanyUserCount(companyId, statusFilter, roleFilter);
+      firestoreReads += 1;
 
-    // 2️⃣ Строим базовый запрос
-    const usersRef = collection(db, 'users');
-    let q = query(usersRef, where('companyId', '==', companyId));
+      // 2️⃣ Строим базовый запрос
+      const usersRef = collection(db, 'users');
+      let q = query(usersRef, where('companyId', '==', companyId));
 
-    // Добавляем фильтры
-    if (statusFilter && statusFilter !== 'all') {
-      q = query(q, where('status', '==', statusFilter));
-    }
-    if (roleFilter && roleFilter !== 'all') {
-      q = query(q, where('role', '==', roleFilter));
-    }
+      // Добавляем фильтры
+      if (statusFilter && statusFilter !== 'all') {
+        q = query(q, where('status', '==', statusFilter));
+      }
+      if (roleFilter && roleFilter !== 'all') {
+        q = query(q, where('role', '==', roleFilter));
+      }
 
-    // Добавляем сортировку
-    const sortDirection = sortOrder === 'asc' ? 'asc' : 'desc';
-    q = query(q, orderBy(sortBy, sortDirection));
+      // Добавляем сортировку
+      const sortDirection = sortOrder === 'asc' ? 'asc' : 'desc';
+      q = query(q, orderBy(sortBy, sortDirection));
 
-    // 3️⃣ Добавляем курсоры для пагинации
-    if (endBeforeDoc) {
-      // Назад: загружаем предыдущую страницу
-      q = query(q, endBefore(endBeforeDoc), limitToLast(pageSize + 1));
-    } else if (startAfterDoc) {
-      // Вперед: загружаем следующую страницу
-      q = query(q, startAfter(startAfterDoc), limit(pageSize + 1));
-    } else {
-      // Первая страница
-      q = query(q, limit(pageSize + 1));
-    }
+      // 3️⃣ Добавляем курсоры для пагинации
+      if (endBeforeDoc) {
+        // Назад: загружаем предыдущую страницу
+        q = query(q, endBefore(endBeforeDoc), limitToLast(pageSize + 1));
+      } else if (startAfterDoc) {
+        // Вперед: загружаем следующую страницу
+        q = query(q, startAfter(startAfterDoc), limit(pageSize + 1));
+      } else {
+        // Первая страница
+        q = query(q, limit(pageSize + 1));
+      }
 
-    // 4️⃣ Выполняем запрос
-    const snapshot = await getDocs(q);
-    firestoreReads += snapshot.size;
+      // 4️⃣ Выполняем запрос
+      const snapshot = await getDocs(q);
+      firestoreReads += snapshot.size;
 
-    // Track reads в Circuit Breaker для защиты от перерасхода
-    costProtectionBreaker.trackReads(snapshot.size);
+      // Track reads в Circuit Breaker для защиты от перерасхода
+      costProtectionBreaker.trackReads(snapshot.size);
 
-    // 5️⃣ Обрабатываем результаты
-    let users = snapshot.docs.map((doc) => {
-      const data = doc.data();
-      return {
-        id: doc.id,
-        ...data,
-        createdAt: data.createdAt?.toDate?.()?.toISOString() || data.createdAt,
-        lastSeen: data.lastSeen?.toDate?.()?.toISOString() || data.lastSeen,
-        dob: data.dob?.toDate?.()?.toISOString() || data.dob,
-      } as UserProfile;
-    });
-
-    // 6️⃣ Определяем hasNextPage/hasPrevPage
-    const hasNextPage = users.length > pageSize;
-    const hasPrevPage = !!startAfterDoc || !!endBeforeDoc;
-
-    // Если есть следующая страница - убираем последний элемент (он был для проверки)
-    if (hasNextPage) {
-      users = users.slice(0, pageSize);
-    }
-
-    // 7️⃣ Client-side поиск (не тратит reads!)
-    if (searchQuery && searchQuery.trim()) {
-      const search = searchQuery.toLowerCase().trim();
-      users = users.filter((user) => {
-        const displayName = user.displayName?.toLowerCase() || '';
-        const email = user.email?.toLowerCase() || '';
-        const title = user.title?.toLowerCase() || '';
-        return displayName.includes(search) || email.includes(search) || title.includes(search);
+      // 5️⃣ Обрабатываем результаты
+      let users = snapshot.docs.map((doc) => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          ...data,
+          createdAt: data.createdAt?.toDate?.()?.toISOString() || data.createdAt,
+          lastSeen: data.lastSeen?.toDate?.()?.toISOString() || data.lastSeen,
+          dob: data.dob?.toDate?.()?.toISOString() || data.dob,
+        } as UserProfile;
       });
-    }
 
-    // 8️⃣ Получаем первый и последний документы для курсоров
-    const firstDoc = snapshot.docs[0] || null;
-    const lastDoc = snapshot.docs[users.length - 1] || null;
+      // 6️⃣ Определяем hasNextPage/hasPrevPage
+      const hasNextPage = users.length > pageSize;
+      const hasPrevPage = !!startAfterDoc || !!endBeforeDoc;
 
-    const duration = performance.now() - startTime;
-    console.log(`✅ Paginated query completed in ${duration.toFixed(0)}ms`);
-    console.log(`📊 Firestore reads: ${firestoreReads} (pageSize: ${pageSize})`);
-    console.log(`📄 Returned ${users.length} users out of ${total} total`);
+      // Если есть следующая страница - убираем последний элемент (он был для проверки)
+      if (hasNextPage) {
+        users = users.slice(0, pageSize);
+      }
 
-    // 9️⃣ Проверка на превышение reads (защита от ошибок)
-    const MAX_READS_PER_REQUEST = 100;
-    if (firestoreReads > MAX_READS_PER_REQUEST) {
-      console.warn(`⚠️ WARNING: Firestore reads (${firestoreReads}) exceeded limit (${MAX_READS_PER_REQUEST})`);
-      console.warn('⚠️ This may indicate a configuration error in pagination!');
-    }
+      // 7️⃣ Client-side поиск (не тратит reads!)
+      if (searchQuery && searchQuery.trim()) {
+        const search = searchQuery.toLowerCase().trim();
+        users = users.filter((user) => {
+          const displayName = user.displayName?.toLowerCase() || '';
+          const email = user.email?.toLowerCase() || '';
+          const title = user.title?.toLowerCase() || '';
+          return displayName.includes(search) || email.includes(search) || title.includes(search);
+        });
+      }
 
-    // 🔟 Проверяем приближение к лимиту для warning
-    const stats = costProtectionBreaker.getStats();
-    if (stats.totalReads > stats.warningThreshold && stats.totalReads < stats.warningThreshold + 100) {
-      console.warn(`⚠️ Approaching read limit: ${stats.totalReads}/${stats.readLimit}`);
-      console.warn(`⚠️ Estimated cost: $${stats.estimatedCost.toFixed(4)}`);
-    }
+      // 8️⃣ Получаем первый и последний документы для курсоров
+      const firstDoc = snapshot.docs[0] || null;
+      const lastDoc = snapshot.docs[users.length - 1] || null;
 
-    return {
-      users,
-      total,
-      firstDoc,
-      lastDoc,
-      firestoreReads,
-      hasNextPage,
-      hasPrevPage,
-    };
+      const duration = performance.now() - startTime;
+      console.log(`✅ Paginated query completed in ${duration.toFixed(0)}ms`);
+      console.log(`📊 Firestore reads: ${firestoreReads} (pageSize: ${pageSize})`);
+      console.log(`📄 Returned ${users.length} users out of ${total} total`);
+
+      // 9️⃣ Проверка на превышение reads (защита от ошибок)
+      const MAX_READS_PER_REQUEST = 100;
+      if (firestoreReads > MAX_READS_PER_REQUEST) {
+        console.warn(`⚠️ WARNING: Firestore reads (${firestoreReads}) exceeded limit (${MAX_READS_PER_REQUEST})`);
+        console.warn('⚠️ This may indicate a configuration error in pagination!');
+      }
+
+      // 🔟 Проверяем приближение к лимиту для warning
+      const stats = costProtectionBreaker.getStats();
+      if (stats.totalReads > stats.warningThreshold && stats.totalReads < stats.warningThreshold + 100) {
+        console.warn(`⚠️ Approaching read limit: ${stats.totalReads}/${stats.readLimit}`);
+        console.warn(`⚠️ Estimated cost: $${stats.estimatedCost.toFixed(4)}`);
+      }
+
+      return {
+        users,
+        total,
+        firstDoc,
+        lastDoc,
+        firestoreReads,
+        hasNextPage,
+        hasPrevPage,
+      };
     } catch (error) {
       console.error('Error getting paginated users:', error);
       throw error;

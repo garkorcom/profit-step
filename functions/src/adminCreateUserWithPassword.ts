@@ -17,6 +17,7 @@
 
 import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
+import { FieldValue } from 'firebase-admin/firestore';
 
 const db = admin.firestore();
 
@@ -64,21 +65,48 @@ export const admin_createUserWithPassword = functions.https.onCall(
     const callerCompanyId = context.auth.token.companyId as string | undefined;
     const callerUid = context.auth.uid;
 
-    // Проверка роли: только company_admin или super_admin
-    if (callerRole !== 'company_admin' && callerRole !== 'super_admin' && callerRole !== 'admin') {
-      console.error(`❌ Permission denied: Role ${callerRole} not authorized`);
+    // Проверка роли: сначала смотрим токен, если нет - проверяем Firestore
+    let effectiveRole = callerRole;
+    let effectiveCompanyId = callerCompanyId;
+
+    if (effectiveRole !== 'company_admin' && effectiveRole !== 'super_admin' && effectiveRole !== 'admin') {
+      console.log(`⚠️ Token role '${effectiveRole}' insufficient, checking Firestore profile...`);
+
+      const callerDoc = await db.collection('users').doc(callerUid).get();
+      if (callerDoc.exists) {
+        const callerData = callerDoc.data();
+        effectiveRole = callerData?.role;
+        effectiveCompanyId = callerData?.companyId;
+        console.log(`✅ Retrieved role from Firestore: ${effectiveRole}`);
+      }
+    }
+
+    if (effectiveRole !== 'company_admin' && effectiveRole !== 'super_admin' && effectiveRole !== 'admin') {
+      console.error(`❌ Permission denied: Role ${effectiveRole} not authorized`);
       throw new functions.https.HttpsError(
         'permission-denied',
         'Только администраторы могут создавать пользователей'
       );
     }
 
+    // Fallback: If admin has no companyId, assume they are their own company (Dev/Solo mode)
+    if (!effectiveCompanyId && (effectiveRole === 'admin' || effectiveRole === 'super_admin' || effectiveRole === 'company_admin')) {
+      console.log(`⚠️ Admin ${callerUid} has no companyId, defaulting to userId`);
+      effectiveCompanyId = callerUid;
+    }
+
+    // Update variables for later use
+    const finalCompanyId = effectiveCompanyId;
+
     console.log(`✅ Auth Guard passed: ${callerUid} (role: ${callerRole})`);
 
     // ============================================
     // 2️⃣ VALIDATION: Входные данные
     // ============================================
-    const { email, password, displayName, role, reportsTo, title } = data;
+    const { email, password, displayName, role, title } = data;
+
+    // Sanitize reportsTo (handle empty strings)
+    const reportsTo = data.reportsTo || null;
 
     // Валидация обязательных полей
     if (!email || !password || !displayName || !role) {
@@ -115,7 +143,7 @@ export const admin_createUserWithPassword = functions.https.onCall(
     }
 
     // Валидация companyId
-    if (!callerCompanyId) {
+    if (!finalCompanyId) {
       throw new functions.https.HttpsError(
         'failed-precondition',
         'У администратора не установлен companyId'
@@ -141,7 +169,7 @@ export const admin_createUserWithPassword = functions.https.onCall(
         const managerData = managerDoc.data();
 
         // Проверка что руководитель из той же компании
-        if (managerData?.companyId !== callerCompanyId) {
+        if (managerData?.companyId !== finalCompanyId) {
           throw new functions.https.HttpsError(
             'permission-denied',
             'Руководитель должен быть из вашей компании'
@@ -214,11 +242,11 @@ export const admin_createUserWithPassword = functions.https.onCall(
         email: email.toLowerCase(),
         displayName: displayName,
         role: role,
-        companyId: callerCompanyId,
+        companyId: finalCompanyId,
         reportsTo: reportsTo || null,
         title: title || null,
         status: 'active',
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        createdAt: FieldValue.serverTimestamp(),
         createdBy: callerUid,
         loginCount: 0,
         onboarded: false,
@@ -241,7 +269,7 @@ export const admin_createUserWithPassword = functions.https.onCall(
 
       throw new functions.https.HttpsError(
         'internal',
-        'Ошибка создания профиля пользователя'
+        `Ошибка создания профиля пользователя: ${error.message}`
       );
     }
 
@@ -251,7 +279,7 @@ export const admin_createUserWithPassword = functions.https.onCall(
     try {
       await admin.auth().setCustomUserClaims(newUser.uid, {
         role: role,
-        companyId: callerCompanyId,
+        companyId: finalCompanyId,
       });
 
       console.log(`✅ Custom claims set for user: ${newUser.uid}`);
@@ -268,14 +296,14 @@ export const admin_createUserWithPassword = functions.https.onCall(
         type: 'user_created_by_admin',
         userId: newUser.uid,
         createdBy: callerUid,
-        companyId: callerCompanyId,
+        companyId: finalCompanyId,
         details: {
           email: email.toLowerCase(),
           displayName: displayName,
           role: role,
           reportsTo: reportsTo || null,
         },
-        timestamp: admin.firestore.FieldValue.serverTimestamp(),
+        timestamp: FieldValue.serverTimestamp(),
       });
 
       console.log(`✅ Activity log created`);
@@ -293,7 +321,7 @@ export const admin_createUserWithPassword = functions.https.onCall(
     console.log(`   - Email: ${email}`);
     console.log(`   - Role: ${role}`);
     console.log(`   - ReportsTo: ${reportsTo || 'none'}`);
-    console.log(`   - CompanyId: ${callerCompanyId}`);
+    console.log(`   - CompanyId: ${finalCompanyId}`);
 
     return {
       success: true,

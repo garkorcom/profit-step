@@ -1,0 +1,615 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Garkor Corp | Miami Home Improvement</title>
+    <meta name="description"
+        content="High-End General Contractor & Home Builder in Miami. House Painting, Electric Services, Remodeling, and Security Camera Installation.">
+
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://profit-step.web.app/promo-garkor/">
+    <meta property="og:title" content="Garkor Corp | Miami Home Improvement">
+    <meta property="og:description"
+        content="High-End General Contractor & Home Builder in Miami. From concept to reality!">
+    <meta property="og:image"
+        content="https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?ixlib=rb-4.0.3&auto=format&fit=crop&w=1200&q=80">
+
+    <!-- Twitter -->
+    <meta property="twitter:card" content="summary_large_image">
+    <meta property="twitter:url" content="https://profit-step.web.app/promo-garkor/">
+    <meta property="twitter:title" content="Garkor Corp | Miami Home Improvement">
+    <meta property="twitter:description"
+        content="High-End General Contractor & Home Builder in Miami. From concept to reality!">
+    <meta property="twitter:image"
+        content="https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?ixlib=rb-4.0.3&auto=format&fit=crop&w=1200&q=80">
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400&display=swap"
+        rel="stylesheet">
+
+    <!-- AOS Animation Library -->
+    <link href="https://unpkg.com/aos@2.3.1/dist/aos.css" rel="stylesheet">
+    <script src="https://unpkg.com/aos@2.3.1/dist/aos.js"></script>
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#0a0a0a', // Rich Black
+                        secondary: '#1a1a1a', // Dark Gray
+                        accent: '#D4AF37',  // Gold
+                        light: '#F3F4F6',   // Off-white
+                        dark: '#111111',    // Text
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        serif: ['Playfair Display', 'serif'],
+                    },
+                    animation: {
+                        'fade-in-up': 'fadeInUp 1s ease-out forwards',
+                        'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                    },
+                    keyframes: {
+                        fadeInUp: {
+                            '0%': { opacity: '0', transform: 'translateY(20px)' },
+                            '100%': { opacity: '1', transform: 'translateY(0)' },
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0a0a0a;
+            color: #f3f4f6;
+        }
+
+        h1,
+        h2,
+        h3,
+        h4,
+        h5,
+        h6 {
+            font-family: 'Playfair Display', serif;
+        }
+
+        .glass-card {
+            background: rgba(26, 26, 26, 0.6);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .glass-card:hover {
+            border-color: rgba(212, 175, 55, 0.5);
+        }
+
+        .btn-gold {
+            background-color: #D4AF37;
+            color: #000;
+            transition: all 0.3s ease;
+        }
+
+        .btn-gold:hover {
+            background-color: #b5952f;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(212, 175, 55, 0.3);
+        }
+    </style>
+</head>
+
+<body class="antialiased">
+
+    <!-- Navigation -->
+    <nav class="fixed w-full z-50 bg-primary/90 backdrop-blur-md border-b border-white/10">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between items-center h-24">
+                <div class="flex items-center">
+                    <a href="#" class="text-2xl font-bold tracking-widest text-white font-serif">
+                        Garkor<span class="text-accent">.</span>
+                    </a>
+                </div>
+                <div class="hidden md:flex items-center space-x-8">
+                    <a href="#services"
+                        class="text-sm uppercase tracking-widest hover:text-accent transition">Services</a>
+                    <a href="#process"
+                        class="text-sm uppercase tracking-widest hover:text-accent transition">Process</a>
+                    <a href="#portfolio" class="text-sm uppercase tracking-widest hover:text-accent transition">Our
+                        Work</a>
+                    <a href="#contact"
+                        class="btn-gold px-8 py-3 rounded-sm font-medium tracking-wide text-sm uppercase">
+                        Get Quote
+                    </a>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Hero Section -->
+    <section class="relative pt-32 pb-20 overflow-hidden min-h-screen flex items-center">
+        <!-- Background Image with Overlay -->
+        <div class="absolute inset-0 z-0">
+            <img src="https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?ixlib=rb-4.0.3&auto=format&fit=crop&w=1920&q=80"
+                alt="Luxury Home" class="w-full h-full object-cover">
+            <div class="absolute inset-0 bg-gradient-to-b from-black/80 via-black/60 to-primary"></div>
+        </div>
+
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+            <div class="text-center max-w-4xl mx-auto">
+                <p class="text-accent uppercase tracking-[0.3em] mb-6 text-sm animate-fade-in-up">Miami Home Improvement
+                </p>
+                <h1 class="text-5xl md:text-7xl font-bold text-white mb-8 leading-tight">
+                    From Concept <br /> <span class="italic font-light text-accent">to Reality</span>
+                </h1>
+                <p class="text-xl md:text-2xl text-gray-300 mb-12 font-light leading-relaxed max-w-2xl mx-auto">
+                    High-End General Contractor & Home Builder in Miami. We offer a trouble-free 3 year warranty on all
+                    of our work.
+                </p>
+                <div class="flex flex-col sm:flex-row justify-center gap-6">
+                    <a href="#contact" class="btn-gold px-10 py-4 text-sm font-bold uppercase tracking-widest">
+                        Schedule Consultation
+                    </a>
+                    <a href="#services"
+                        class="border border-white/30 px-10 py-4 text-sm font-bold uppercase tracking-widest text-white hover:bg-white hover:text-black transition duration-300 backdrop-blur-sm">
+                        View Services
+                    </a>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Services Section -->
+    <section id="services" class="py-24 bg-primary relative">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="text-center mb-20" data-aos="fade-up">
+                <h2 class="text-4xl md:text-5xl text-white mb-6">Our Services</h2>
+                <p class="text-gray-400 text-lg">Comprehensive solutions for your home and business.</p>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+                <!-- Service 1 -->
+                <div class="glass-card p-8 group transition duration-300 hover:-translate-y-2" data-aos="fade-up"
+                    data-aos-delay="0">
+                    <div
+                        class="w-14 h-14 rounded-full bg-secondary border border-accent/30 flex items-center justify-center mb-6 group-hover:border-accent transition duration-300">
+                        <svg class="w-7 h-7 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                                d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01">
+                            </path>
+                        </svg>
+                    </div>
+                    <h3 class="text-xl text-white font-serif mb-3">House Painting</h3>
+                    <p class="text-gray-400 text-sm leading-relaxed">Professional interior and exterior painting
+                        services to revitalize your home's appearance.</p>
+                </div>
+
+                <!-- Service 2 -->
+                <div class="glass-card p-8 group transition duration-300 hover:-translate-y-2" data-aos="fade-up"
+                    data-aos-delay="100">
+                    <div
+                        class="w-14 h-14 rounded-full bg-secondary border border-accent/30 flex items-center justify-center mb-6 group-hover:border-accent transition duration-300">
+                        <svg class="w-7 h-7 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                                d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                        </svg>
+                    </div>
+                    <h3 class="text-xl text-white font-serif mb-3">Electric Services</h3>
+                    <p class="text-gray-400 text-sm leading-relaxed">Complete electrical solutions, from wiring and
+                        lighting to panel upgrades and repairs.</p>
+                </div>
+
+                <!-- Service 3 -->
+                <div class="glass-card p-8 group transition duration-300 hover:-translate-y-2" data-aos="fade-up"
+                    data-aos-delay="200">
+                    <div
+                        class="w-14 h-14 rounded-full bg-secondary border border-accent/30 flex items-center justify-center mb-6 group-hover:border-accent transition duration-300">
+                        <svg class="w-7 h-7 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                                d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z">
+                            </path>
+                        </svg>
+                    </div>
+                    <h3 class="text-xl text-white font-serif mb-3">Security Systems</h3>
+                    <p class="text-gray-400 text-sm leading-relaxed">Advanced home security camera installation to keep
+                        your property and loved ones safe.</p>
+                </div>
+
+                <!-- Service 4 -->
+                <div class="glass-card p-8 group transition duration-300 hover:-translate-y-2" data-aos="fade-up"
+                    data-aos-delay="300">
+                    <div
+                        class="w-14 h-14 rounded-full bg-secondary border border-accent/30 flex items-center justify-center mb-6 group-hover:border-accent transition duration-300">
+                        <svg class="w-7 h-7 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                                d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4">
+                            </path>
+                        </svg>
+                    </div>
+                    <h3 class="text-xl text-white font-serif mb-3">Remodeling</h3>
+                    <p class="text-gray-400 text-sm leading-relaxed">Full-service residential and commercial remodeling
+                        to transform your space.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Featured Work (Portfolio) -->
+    <section id="portfolio" class="py-24 bg-secondary relative overflow-hidden">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+            <div class="flex justify-between items-end mb-16" data-aos="fade-up">
+                <div>
+                    <h2 class="text-4xl md:text-5xl text-white mb-4">Our Work</h2>
+                    <p class="text-gray-400 text-lg">Quality craftsmanship in every detail.</p>
+                </div>
+                <a href="#"
+                    class="hidden md:block text-accent hover:text-white transition uppercase tracking-widest text-sm">View
+                    All Projects &rarr;</a>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <!-- Project 1 -->
+                <div class="group relative overflow-hidden h-[400px] cursor-pointer" data-aos="fade-up"
+                    data-aos-delay="0">
+                    <img src="https://images.unsplash.com/photo-1600585154340-be6161a56a0c?ixlib=rb-4.0.3&auto=format&fit=crop&w=1470&q=80"
+                        alt="Modern Kitchen"
+                        class="w-full h-full object-cover transform group-hover:scale-110 transition duration-700">
+                    <div
+                        class="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition duration-500 flex flex-col justify-end p-8">
+                        <h3
+                            class="text-2xl text-white font-serif mb-2 transform translate-y-4 group-hover:translate-y-0 transition duration-500">
+                            Modern Kitchen Remodel</h3>
+                        <p
+                            class="text-accent text-sm uppercase tracking-widest transform translate-y-4 group-hover:translate-y-0 transition duration-500 delay-75">
+                            Full Renovation</p>
+                    </div>
+                </div>
+
+                <!-- Project 2 -->
+                <div class="group relative overflow-hidden h-[400px] cursor-pointer" data-aos="fade-up"
+                    data-aos-delay="100">
+                    <img src="https://images.unsplash.com/photo-1600210492486-724fe5c67fb0?ixlib=rb-4.0.3&auto=format&fit=crop&w=1474&q=80"
+                        alt="Luxury Villa"
+                        class="w-full h-full object-cover transform group-hover:scale-110 transition duration-700">
+                    <div
+                        class="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition duration-500 flex flex-col justify-end p-8">
+                        <h3
+                            class="text-2xl text-white font-serif mb-2 transform translate-y-4 group-hover:translate-y-0 transition duration-500">
+                            Luxury Villa Construction</h3>
+                        <p
+                            class="text-accent text-sm uppercase tracking-widest transform translate-y-4 group-hover:translate-y-0 transition duration-500 delay-75">
+                            New Build</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Process Section (Split Layout) -->
+    <section id="process" class="py-24 bg-primary relative overflow-hidden">
+        <!-- Decorative Background -->
+        <div class="absolute top-0 right-0 w-1/3 h-full bg-white/5 skew-x-12 transform translate-x-20"></div>
+
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+            <div class="flex flex-col lg:flex-row gap-16 items-center">
+                <!-- Left Column: Content -->
+                <div class="lg:w-1/2">
+                    <h2 class="text-4xl md:text-5xl text-white mb-6">Our Process</h2>
+                    <p class="text-gray-400 text-lg mb-12">Seamless execution from start to finish.</p>
+
+                    <div class="space-y-8">
+                        <!-- Step 1 -->
+                        <div class="flex gap-6 group" data-aos="fade-up" data-aos-delay="0">
+                            <div class="text-accent text-xl font-bold font-serif pt-1">01</div>
+                            <div>
+                                <h4 class="text-xl text-white mb-2 group-hover:text-accent transition">Consultation</h4>
+                                <p class="text-gray-400 text-sm leading-relaxed">We discuss your vision, budget, and
+                                    timeline to understand your needs perfectly.</p>
+                            </div>
+                        </div>
+
+                        <!-- Step 2 -->
+                        <div class="flex gap-6 group" data-aos="fade-up" data-aos-delay="100">
+                            <div class="text-accent text-xl font-bold font-serif pt-1">02</div>
+                            <div>
+                                <h4 class="text-xl text-white mb-2 group-hover:text-accent transition">Planning & Design
+                                </h4>
+                                <p class="text-gray-400 text-sm leading-relaxed">Creating detailed plans and selecting
+                                    materials to bring your concept to life.</p>
+                            </div>
+                        </div>
+
+                        <!-- Step 3 -->
+                        <div class="flex gap-6 group" data-aos="fade-up" data-aos-delay="200">
+                            <div class="text-accent text-xl font-bold font-serif pt-1">03</div>
+                            <div>
+                                <h4 class="text-xl text-white mb-2 group-hover:text-accent transition">Construction</h4>
+                                <p class="text-gray-400 text-sm leading-relaxed">Our skilled team executes the work with
+                                    precision and attention to detail.</p>
+                            </div>
+                        </div>
+
+                        <!-- Step 4 -->
+                        <div class="flex gap-6 group" data-aos="fade-up" data-aos-delay="300">
+                            <div class="text-accent text-xl font-bold font-serif pt-1">04</div>
+                            <div>
+                                <h4 class="text-xl text-white mb-2 group-hover:text-accent transition">Quality Control
+                                </h4>
+                                <p class="text-gray-400 text-sm leading-relaxed">Rigorous inspections to ensure
+                                    everything meets our high standards.</p>
+                            </div>
+                        </div>
+
+                        <!-- Step 5 -->
+                        <div class="flex gap-6 group" data-aos="fade-up" data-aos-delay="400">
+                            <div class="text-accent text-xl font-bold font-serif pt-1">05</div>
+                            <div>
+                                <h4 class="text-xl text-white mb-2 group-hover:text-accent transition">Handover</h4>
+                                <p class="text-gray-400 text-sm leading-relaxed">We present your finished project,
+                                    complete with our 3-year warranty.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Right Column: Image -->
+                <div class="lg:w-1/2" data-aos="fade-left">
+                    <div class="relative">
+                        <div class="absolute -inset-4 border border-accent/30 z-0"></div>
+                        <img src="https://images.unsplash.com/photo-1503387762-592deb58ef4e?ixlib=rb-4.0.3&auto=format&fit=crop&w=1600&q=80"
+                            alt="Construction Team"
+                            class="relative z-10 shadow-2xl grayscale hover:grayscale-0 transition duration-700 ease-in-out w-full h-[600px] object-cover">
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Testimonials (Social Proof) -->
+    <section class="py-24 bg-secondary relative">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="text-center mb-16" data-aos="fade-up">
+                <h2 class="text-4xl md:text-5xl text-white mb-6">Client Satisfaction</h2>
+                <div class="w-20 h-0.5 bg-accent mx-auto"></div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+                <div class="glass-card p-8 text-center" data-aos="fade-up" data-aos-delay="0">
+                    <div class="text-accent text-4xl font-serif mb-4">"</div>
+                    <p class="text-gray-300 mb-6 italic">Garkor transformed our home completely. The attention to detail
+                        in the painting and remodeling was outstanding.</p>
+                    <h4 class="text-white font-bold">John & Sarah M.</h4>
+                    <p class="text-accent text-xs uppercase tracking-widest mt-1">Homeowners</p>
+                </div>
+
+                <div class="glass-card p-8 text-center" data-aos="fade-up" data-aos-delay="100">
+                    <div class="text-accent text-4xl font-serif mb-4">"</div>
+                    <p class="text-gray-300 mb-6 italic">Professional, reliable, and on time. The security system
+                        installation was seamless. Highly recommended.</p>
+                    <h4 class="text-white font-bold">Robert D.</h4>
+                    <p class="text-accent text-xs uppercase tracking-widest mt-1">Business Owner</p>
+                </div>
+
+                <div class="glass-card p-8 text-center" data-aos="fade-up" data-aos-delay="200">
+                    <div class="text-accent text-4xl font-serif mb-4">"</div>
+                    <p class="text-gray-300 mb-6 italic">The 3-year warranty gave us peace of mind. Excellent service
+                        from start to finish.</p>
+                    <h4 class="text-white font-bold">Emily R.</h4>
+                    <p class="text-accent text-xs uppercase tracking-widest mt-1">Interior Designer</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Contact Form -->
+    <section id="contact" class="py-24 bg-primary relative">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="max-w-4xl mx-auto bg-secondary border border-white/10 p-8 md:p-16 shadow-2xl relative overflow-hidden"
+                data-aos="zoom-in">
+                <!-- Gold Accent Line -->
+                <div class="absolute top-0 left-0 w-full h-1 bg-accent"></div>
+
+                <div class="text-center mb-12">
+                    <h2 class="text-3xl md:text-4xl text-white mb-4">Get a Free Quote</h2>
+                    <p class="text-gray-400">Contact us today to discuss your project.</p>
+                </div>
+
+                <form class="space-y-6">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div>
+                            <label class="block text-accent text-xs uppercase tracking-widest mb-2">Name</label>
+                            <input type="text" id="name" required
+                                class="w-full bg-primary border border-white/10 text-white px-4 py-3 focus:outline-none focus:border-accent transition">
+                        </div>
+                        <div>
+                            <label class="block text-accent text-xs uppercase tracking-widest mb-2">Phone</label>
+                            <input type="tel" id="phone" required placeholder="(555) 123-4567"
+                                class="w-full bg-primary border border-white/10 text-white px-4 py-3 focus:outline-none focus:border-accent transition">
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div>
+                            <label class="block text-accent text-xs uppercase tracking-widest mb-2">Service
+                                Needed</label>
+                            <select id="service"
+                                class="w-full bg-primary border border-white/10 text-white px-4 py-3 focus:outline-none focus:border-accent transition appearance-none">
+                                <option>General Remodeling</option>
+                                <option>House Painting</option>
+                                <option>Electric Services</option>
+                                <option>Security Systems</option>
+                                <option>Commercial Services</option>
+                                <option>Other</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-accent text-xs uppercase tracking-widest mb-2">Email</label>
+                            <input type="email" id="email" required
+                                class="w-full bg-primary border border-white/10 text-white px-4 py-3 focus:outline-none focus:border-accent transition">
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-accent text-xs uppercase tracking-widest mb-2">Project Details</label>
+                        <textarea id="details" rows="4"
+                            class="w-full bg-primary border border-white/10 text-white px-4 py-3 focus:outline-none focus:border-accent transition"></textarea>
+                    </div>
+
+                    <div class="pt-6">
+                        <button type="submit" class="w-full btn-gold py-4 font-bold uppercase tracking-widest text-sm">
+                            Submit Request
+                        </button>
+                    </div>
+                </form>
+
+                <div class="mt-12 pt-8 border-t border-white/10 text-center text-gray-400 text-sm space-y-2">
+                    <p><span class="text-accent">Phone:</span> <a href="tel:+17542520827"
+                            class="hover:text-white transition">+1 (754) 252 0827</a></p>
+                    <p><span class="text-accent">Email:</span> <a href="mailto:garkor.com@gmail.com"
+                            class="hover:text-white transition">garkor.com@gmail.com</a></p>
+                    <p><span class="text-accent">Address:</span> 19790 W Dixie Hwy, Miami, FL 33180</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="bg-black py-12 border-t border-white/10">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+            <a href="#" class="text-2xl font-bold tracking-widest text-white font-serif block mb-4">
+                Garkor<span class="text-accent">.</span>
+            </a>
+            <p class="text-gray-500 text-sm mb-8">
+                &copy; 2024 Garkor Corp. All rights reserved.
+            </p>
+        </div>
+    </footer>
+
+    <!-- Toast Notification -->
+    <div id="toast"
+        class="fixed bottom-5 right-5 bg-white border-l-4 border-accent text-gray-800 px-6 py-4 rounded shadow-2xl transform translate-y-20 opacity-0 transition duration-300 z-50 flex items-center gap-3">
+        <svg class="w-6 h-6 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+        </svg>
+        <div>
+            <p class="font-bold font-serif">Request Received</p>
+            <p class="text-sm">We will contact you shortly.</p>
+        </div>
+    </div>
+
+    <script type="module">
+        // Initialize AOS
+        AOS.init({
+            duration: 800,
+            once: true,
+            offset: 100
+        });
+
+        // Phone Masking
+        const phoneInput = document.getElementById('phone');
+        phoneInput.addEventListener('input', (e) => {
+            let x = e.target.value.replace(/\D/g, '').match(/(\d{0,3})(\d{0,3})(\d{0,4})/);
+            e.target.value = !x[2] ? x[1] : '(' + x[1] + ') ' + x[2] + (x[3] ? '-' + x[3] : '');
+        });
+
+        // Firebase Integration
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
+        import { getFirestore, collection, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyDjBgLGw60VDlMkFu3w9DiSwTftH6nTh8E",
+            authDomain: "profit-step.firebaseapp.com",
+            projectId: "profit-step",
+            storageBucket: "profit-step.firebasestorage.app",
+            messagingSenderId: "155664324159",
+            appId: "1:155664324159:web:87900e4aab0a78aa57ca8a"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+        // Toast Function
+        const showToast = (message, isError = false) => {
+            const toast = document.getElementById('toast');
+            const icon = toast.querySelector('svg');
+            const title = toast.querySelector('.font-bold');
+            const text = toast.querySelector('.text-sm');
+
+            if (isError) {
+                toast.classList.replace('border-accent', 'border-red-500');
+                icon.classList.replace('text-accent', 'text-red-500');
+                icon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>';
+                title.innerText = 'Error';
+            } else {
+                toast.classList.replace('border-red-500', 'border-accent');
+                icon.classList.replace('text-red-500', 'text-accent');
+                icon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>';
+                title.innerText = 'Request Received';
+            }
+
+            text.innerText = message;
+            toast.classList.remove('translate-y-20', 'opacity-0');
+
+            setTimeout(() => {
+                toast.classList.add('translate-y-20', 'opacity-0');
+            }, 5000);
+        };
+
+        // Handle Form Submission
+        const form = document.querySelector('form');
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const name = document.getElementById('name').value;
+            const phone = document.getElementById('phone').value;
+            const service = document.getElementById('service').value;
+            const email = document.getElementById('email').value;
+            const details = document.getElementById('details').value;
+
+            const btn = form.querySelector('button');
+            const originalText = btn.innerHTML;
+
+            if (phone.length < 14) {
+                showToast('Please enter a valid phone number.', true);
+                return;
+            }
+
+            try {
+                btn.disabled = true;
+                btn.innerHTML = 'Sending...';
+
+                await addDoc(collection(db, "leads"), {
+                    name,
+                    phone,
+                    email,
+                    service,
+                    details,
+                    status: 'new',
+                    createdAt: serverTimestamp(),
+                    source: 'landing_page_garkor'
+                });
+
+                showToast('Thank you! We will contact you shortly.');
+                form.reset();
+            } catch (error) {
+                console.error("Error adding document: ", error);
+                showToast('Error submitting form. Please try again.', true);
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = originalText;
+            }
+        });
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,646 @@
+import * as functions from 'firebase-functions';
+import * as admin from 'firebase-admin';
+import axios from 'axios';
+import * as crypto from 'crypto';
+
+// Initialize in the file if not already initialized
+if (admin.apps.length === 0) {
+    admin.initializeApp();
+}
+
+const db = admin.firestore();
+
+// Configuration
+// SECURITY: Prefer environment variable, fallback to config, then hardcoded (for dev/ref)
+// Ideally: firebase functions:config:set worker_bot.token="..." worker_bot.password="..."
+const WORKER_BOT_TOKEN = process.env.WORKER_BOT_TOKEN || functions.config().worker_bot?.token;
+const WORKER_PASSWORD = process.env.WORKER_PASSWORD || functions.config().worker_bot?.password || 'work2025';
+const ADMIN_GROUP_ID = process.env.ADMIN_GROUP_ID || functions.config().worker_bot?.admin_group_id;
+
+// Types
+interface TelegramUpdate {
+    message?: {
+        message_id: number;
+        from: {
+            id: number;
+            first_name: string;
+            username?: string;
+        };
+        chat: {
+            id: number;
+        };
+        text?: string;
+        photo?: {
+            file_id: string;
+            file_unique_id: string;
+            width: number;
+            height: number;
+        }[];
+        location?: {
+            latitude: number;
+            longitude: number;
+        };
+    };
+    callback_query?: {
+        id: string;
+        from: {
+            id: number;
+            first_name: string;
+        };
+        message: {
+            chat: {
+                id: number;
+            };
+            message_id: number;
+        };
+        data: string;
+    };
+}
+
+// --- Main Function ---
+
+export const onWorkerBotMessage = functions.https.onRequest(async (req, res) => {
+    // 1. Handle Telegram Webhook
+    if (req.method === 'POST') {
+        try {
+            const update = req.body as TelegramUpdate;
+
+            // Handle Callback Queries (Button Clicks)
+            if (update.callback_query) {
+                await handleCallbackQuery(update.callback_query);
+                res.status(200).send('OK');
+                return;
+            }
+
+            // Handle Messages
+            if (update.message) {
+                await handleMessage(update.message);
+                res.status(200).send('OK');
+                return;
+            }
+
+            res.status(200).send('OK');
+        } catch (error) {
+            console.error('Error in onWorkerBotMessage:', error);
+            res.status(500).send('Internal Server Error');
+        }
+    } else {
+        res.status(405).send('Method Not Allowed');
+    }
+});
+
+// --- Handlers ---
+
+async function handleMessage(message: any) {
+    const chatId = message.chat.id;
+    const text = message.text;
+    const userId = message.from.id;
+    const userName = message.from.first_name;
+
+    // 1. Check Auth
+    const isAuth = await checkAuth(userId);
+
+    if (!isAuth) {
+        if (text === `/login ${WORKER_PASSWORD}` || text === WORKER_PASSWORD) {
+            await registerWorker(userId, userName);
+            await sendMessage(chatId, "✅ Authorization successful! You can now use the bot.\n\nCommands:\n/start - Main Menu\n/help - Instructions");
+            await sendMainMenu(chatId);
+            return;
+        }
+        await sendMessage(chatId, "🔒 Access Denied.\nPlease enter the access password:");
+        return;
+    }
+
+    // 2. Main Logic
+    if (text === '/start') {
+        await sendMainMenu(chatId);
+    } else if (text === '▶️ Start Work') {
+        await sendClientList(chatId);
+    } else if (text === '⏹️ Finish Work') {
+        await handleFinishWorkRequest(chatId, userId);
+    } else if (text === '☕ Break') {
+        await pauseWorkSession(chatId, userId);
+    } else if (text === '▶️ Resume Work') {
+        await resumeWorkSession(chatId, userId);
+    } else if (text === '❌ Cancel') {
+        await handleCancel(chatId, userId);
+    } else if (message.photo) {
+        await handlePhotoUpload(chatId, userId, message.photo);
+    } else if (message.location) {
+        await handleLocation(chatId, userId, message.location);
+    } else if (text === '/me') {
+        await handleMe(chatId, userId);
+    } else if (text && text.startsWith('/name ')) {
+        const newName = text.substring(6).trim();
+        await handleNameChange(chatId, userId, newName);
+    } else if (text && text.length > 0) {
+        // Handle text descriptions if awaiting
+        await handleText(chatId, userId, text);
+    } else if (text === '/help') {
+        await handleHelp(chatId);
+    } else {
+        await sendMessage(chatId, "I didn't understand that. Please use the menu or type /help.");
+    }
+}
+
+async function handleCallbackQuery(query: any) {
+    const chatId = query.message.chat.id;
+    const data = query.data;
+    const userId = query.from.id;
+
+    try {
+        if (data.startsWith('start_client_')) {
+            const clientId = data.split('start_client_')[1];
+            await initWorkSession(chatId, userId, clientId);
+        } else if (data === 'cancel_selection') {
+            await sendMessage(chatId, "Selection cancelled.");
+            await sendMainMenu(chatId);
+        }
+    } catch (error) {
+        console.error('Error in handleCallbackQuery:', error);
+        await sendMessage(chatId, "⚠️ Error processing request.");
+    } finally {
+        // Answer callback to stop loading animation
+        try {
+            await axios.post(`https://api.telegram.org/bot${WORKER_BOT_TOKEN}/answerCallbackQuery`, {
+                callback_query_id: query.id
+            });
+        } catch (e) {
+            console.error('Error answering callback:', e);
+        }
+    }
+}
+
+// --- Core Logic ---
+
+async function checkAuth(userId: number): Promise<boolean> {
+    const doc = await db.collection('employees').doc(String(userId)).get();
+    return doc.exists;
+}
+
+async function registerWorker(userId: number, name: string) {
+    await db.collection('employees').doc(String(userId)).set({
+        telegramId: userId,
+        name: name,
+        role: 'worker',
+        createdAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+}
+
+async function sendMainMenu(chatId: number) {
+    // Check if session is paused or active to decide generic menu
+    const activeSession = await getActiveSession(chatId);
+
+    let keyboard;
+    if (activeSession && activeSession.data().status === 'paused') {
+        keyboard = [
+            [{ text: "▶️ Resume Work" }, { text: "⏹️ Finish Work" }]
+        ];
+    } else if (activeSession && activeSession.data().status === 'active') {
+        keyboard = [
+            [{ text: "☕ Break" }, { text: "⏹️ Finish Work" }]
+        ];
+    } else {
+        keyboard = [
+            [{ text: "▶️ Start Work" }]
+        ];
+    }
+
+    await sendMessage(chatId, "👷‍♂️ *Worker Panel*\nSelect an action:", {
+        keyboard: keyboard,
+        resize_keyboard: true,
+        one_time_keyboard: false
+    });
+}
+
+async function sendClientList(chatId: number) {
+    // Fetch clients from Firestore
+    const snapshot = await db.collection('clients').orderBy('createdAt', 'desc').limit(10).get();
+
+    if (snapshot.empty) {
+        await sendMessage(chatId, "No clients found in CRM.");
+        return;
+    }
+
+    const inlineKeyboard = snapshot.docs.map(doc => {
+        const client = doc.data();
+        return [{ text: client.name, callback_data: `start_client_${doc.id}` }];
+    });
+
+    // Add Cancel Button
+    inlineKeyboard.push([{ text: "❌ Cancel", callback_data: "cancel_selection" }]);
+
+    await sendMessage(chatId, "📍 Select Client/Object:", { inline_keyboard: inlineKeyboard });
+}
+
+async function initWorkSession(chatId: number, userId: number, clientId: string) {
+    // 1. Check if already active
+    const activeSession = await getActiveSession(userId);
+    if (activeSession) {
+        await sendMessage(chatId, "⚠️ You already have an active session! Finish it first.");
+        return;
+    }
+
+    // 2. Get Client Name
+    const clientDoc = await db.collection('clients').doc(clientId).get();
+    const clientName = clientDoc.exists ? clientDoc.data()?.name : 'Unknown Client';
+
+    // 3. Identity Sync
+    const platformUser = await findPlatformUser(userId);
+    let employeeName = 'Worker';
+    let platformUserId = null;
+    let companyId = null;
+
+    if (platformUser) {
+        employeeName = platformUser.displayName || 'Worker';
+        platformUserId = platformUser.id;
+        companyId = platformUser.companyId;
+
+        // Sync local employee record to match platform name
+        await db.collection('employees').doc(String(userId)).set({
+            name: employeeName,
+            telegramId: userId,
+            // We preserve role if it exists, or default to worker
+            updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
+    } else {
+        // Fallback to local employee record
+        const empDoc = await db.collection('employees').doc(String(userId)).get();
+        if (empDoc.exists) employeeName = empDoc.data()?.name || 'Worker';
+    }
+
+    // 4. Create Session (Pending Location)
+    await db.collection('work_sessions').add({
+        employeeId: userId,
+        employeeName: employeeName,
+        platformUserId: platformUserId, // NEW: Link to platform user
+        companyId: companyId,           // NEW: Link to company
+        clientId: clientId,
+        clientName: clientName,
+        startTime: admin.firestore.FieldValue.serverTimestamp(),
+        status: 'active',
+        awaitingLocation: true,
+        awaitingStartPhoto: false
+    });
+
+    await sendMessage(chatId, `📍 Client selected: *${clientName}*\n\nPlease share your **Live Location** or current **Location** to verify attendance.\n(Click the 📎 attachment icon -> Location)`,
+        {
+            keyboard: [[{ text: "📍 Send Location", request_location: true }, { text: "❌ Cancel" }]],
+            resize_keyboard: true
+        }
+    );
+    await sendAdminNotification(`▶️ *Work Started*\n👤 ${employeeName}\n📍 ${clientName}`);
+}
+
+async function handleLocation(chatId: number, userId: number, location: any) {
+    const activeSession = await getActiveSession(userId);
+
+    if (activeSession && activeSession.data().awaitingLocation) {
+        // Save location and move to next step
+        await activeSession.ref.update({
+            startLocation: location, // { latitude, longitude }
+            awaitingLocation: false,
+            awaitingStartPhoto: true
+        });
+
+        await sendMessage(chatId, "✅ Location verified.\n\n📸 Now please send a **photo** of the start condition.", { remove_keyboard: true }); // Remove special location keyboard if any
+    } else {
+        await sendMessage(chatId, "Updated location received.", { remove_keyboard: true });
+    }
+}
+
+async function pauseWorkSession(chatId: number, userId: number) {
+    const activeSession = await getActiveSession(userId);
+    if (!activeSession) {
+        await sendMessage(chatId, "No active session to pause.");
+        await sendMainMenu(chatId);
+        return;
+    }
+
+    // Add a break entry
+    const now = admin.firestore.Timestamp.now();
+    await activeSession.ref.update({
+        status: 'paused',
+        lastBreakStart: now
+    });
+
+    await sendMessage(chatId, "☕ Session paused. Enjoy your break! Press 'Resume' when back.");
+    await sendMainMenu(chatId); // Update buttons
+}
+
+async function resumeWorkSession(chatId: number, userId: number) {
+    const sessionSnapshot = await db.collection('work_sessions')
+        .where('employeeId', '==', userId)
+        .where('status', '==', 'paused') // Look for paused
+        .limit(1)
+        .get();
+
+    if (sessionSnapshot.empty) {
+        await sendMessage(chatId, "No paused session found.");
+        await sendMainMenu(chatId);
+        return;
+    }
+
+    const session = sessionSnapshot.docs[0];
+    const data = session.data();
+    const now = admin.firestore.Timestamp.now();
+
+    // Calculate break duration
+    const breakStart = data.lastBreakStart;
+    let breakDurationMinutes = 0;
+    if (breakStart) {
+        breakDurationMinutes = Math.round((now.toMillis() - breakStart.toMillis()) / 60000);
+    }
+
+    await session.ref.update({
+        status: 'active',
+        lastBreakStart: admin.firestore.FieldValue.delete(), // Remove temp field
+        breaks: admin.firestore.FieldValue.arrayUnion({
+            start: breakStart,
+            end: now,
+            durationMinutes: breakDurationMinutes
+        }),
+        totalBreakMinutes: admin.firestore.FieldValue.increment(breakDurationMinutes)
+    });
+
+    await sendMessage(chatId, `▶️ Work resumed. Break: ${breakDurationMinutes}m.`);
+    await sendMainMenu(chatId);
+}
+
+async function handleFinishWorkRequest(chatId: number, userId: number) {
+    const activeSession = await getActiveSession(userId);
+
+    if (!activeSession) {
+        await sendMessage(chatId, "⚠️ You don't have an active work session.");
+        await sendMainMenu(chatId);
+        return;
+    }
+
+    // Mark as awaiting end photo
+    await activeSession.ref.update({
+        awaitingEndPhoto: true
+    });
+
+    await sendMessage(chatId, "📸 Please send a photo of the finished work to complete the session.");
+}
+
+async function handlePhotoUpload(chatId: number, userId: number, photos: any[]) {
+    // Get highest res photo
+    const photoId = photos[photos.length - 1].file_id;
+
+
+    // Check active session
+    const activeSession = await getActiveSession(userId);
+
+    if (!activeSession) {
+        await sendMessage(chatId, "⚠️ No active session to attach photo to.");
+        return;
+    }
+
+    const sessionData = activeSession.data();
+
+    if (sessionData.awaitingStartPhoto) {
+        // Save Start Photo
+        const photoUrl = await saveTelegramPhoto(photoId, `work_photos/${activeSession.id}/start_${Date.now()}.jpg`);
+
+        await activeSession.ref.update({
+            startPhotoId: photoId,
+            startPhotoUrl: photoUrl,
+            awaitingStartPhoto: false
+        });
+        await sendMessage(chatId, `✅ Work started! Good luck.`);
+        await sendMainMenu(chatId); // Refresh menu to show "Finish/Break"
+
+    } else if (sessionData.awaitingEndPhoto) {
+        // Save End Photo
+        const photoUrl = await saveTelegramPhoto(photoId, `work_photos/${activeSession.id}/end_${Date.now()}.jpg`);
+
+        // Move to description step
+        await activeSession.ref.update({
+            endPhotoId: photoId,
+            endPhotoUrl: photoUrl,
+            awaitingEndPhoto: false,
+            awaitingDescription: true // NEW STEP
+        });
+
+        await sendMessage(chatId, "📝 Photo received. Please type a brief **description** of what was done (or send 'Skip').");
+
+    } else {
+        await sendMessage(chatId, "I'm not expecting a photo right now.");
+    }
+}
+
+async function handleCancel(chatId: number, userId: number) {
+    const activeSession = await getActiveSession(userId);
+    if (activeSession) {
+        const data = activeSession.data();
+        // Only cancel if in a setup phase or stuck
+        if (data.awaitingLocation || data.awaitingStartPhoto) {
+            await activeSession.ref.delete();
+            await sendMessage(chatId, "✅ Pending session cancelled.", { remove_keyboard: true });
+        } else {
+            await sendMessage(chatId, "⚠️ Cannot cancel an active work session. Use 'Finish Work' instead.");
+        }
+    } else {
+        await sendMessage(chatId, "Nothing to cancel.", { remove_keyboard: true });
+    }
+    await sendMainMenu(chatId);
+}
+
+async function handleText(chatId: number, userId: number, text: string) {
+    const activeSession = await getActiveSession(userId);
+    if (!activeSession) return; // Should not happen often if we ignore other text
+
+    if (activeSession.data().awaitingDescription) {
+        // FINALIZE SESSION
+        const sessionData = activeSession.data();
+        const endTime = admin.firestore.Timestamp.now();
+        const startTime = sessionData.startTime;
+
+        // Calculate duration (minus breaks if any)
+        let totalMinutes = Math.round((endTime.toMillis() - startTime.toMillis()) / 60000);
+        if (sessionData.totalBreakMinutes) {
+            totalMinutes -= sessionData.totalBreakMinutes;
+        }
+
+        await activeSession.ref.update({
+            description: text,
+            endTime: endTime,
+            durationMinutes: totalMinutes,
+            status: 'completed',
+            awaitingDescription: false
+        });
+
+        await sendMessage(chatId, `🏁 Work finished!\n\n⏱ Total Time: ${Math.floor(totalMinutes / 60)}h ${totalMinutes % 60}m\n📍 Client: ${sessionData.clientName}\n📝 Desc: ${text}`);
+        await sendAdminNotification(`🏁 *Work Finished*\n👤 ${sessionData.employeeName}\n📍 ${sessionData.clientName}\n⏱ ${Math.floor(totalMinutes / 60)}h ${totalMinutes % 60}m\n📝 ${text}`);
+        await sendMainMenu(chatId);
+    }
+}
+
+async function handleMe(chatId: number, userId: number) {
+    const doc = await db.collection('employees').doc(String(userId)).get();
+    if (!doc.exists) return;
+    const data = doc.data();
+    await sendMessage(chatId, `👤 *Your Profile*\n\nName: **${data?.name}**\nRole: ${data?.role}\nID: \`${userId}\`\n\nTo change name, type:\n\`/name New Name\``);
+}
+
+async function handleNameChange(chatId: number, userId: number, newName: string) {
+    if (!newName || newName.length < 2) {
+        await sendMessage(chatId, "⚠️ Name must be at least 2 characters.");
+        return;
+    }
+    await db.collection('employees').doc(String(userId)).update({
+        name: newName
+    });
+    await sendMessage(chatId, `✅ Name updated to: **${newName}**`);
+}
+
+async function handleHelp(chatId: number) {
+    const helpText = `👷‍♂️ *Worker Bot Manual*
+
+*Commands:*
+/start - Open Main Menu
+/me - Show Profile
+/name [Name] - Change Name
+/help - Show this message
+
+*Workflow:*
+1. **Start Work**: Choose client -> Send Location -> Send Start Photo.
+2. **Break**: Pauses timer.
+3. **Finish Work**: Send End Photo -> Write Report.
+
+*FAQ:*
+- If menu disappears, type /start
+- Send photos as *Photo* (not File)
+`;
+    await sendMessage(chatId, helpText);
+}
+
+async function sendAdminNotification(text: string) {
+    if (!ADMIN_GROUP_ID) return;
+    try {
+        await sendMessage(Number(ADMIN_GROUP_ID), text);
+    } catch (error) {
+        console.error('Failed to notify admin group:', error);
+        // Do not throw, so user flow is not interrupted
+    }
+}
+
+
+// --- Helpers ---
+
+async function saveTelegramPhoto(fileId: string, destinationPath: string): Promise<string | null> {
+    if (!WORKER_BOT_TOKEN) return null;
+    try {
+        // 1. Get File Path from Telegram
+        const fileRes = await axios.get(`https://api.telegram.org/bot${WORKER_BOT_TOKEN}/getFile?file_id=${fileId}`);
+        const filePath = fileRes.data.result.file_path;
+        const fileUrl = `https://api.telegram.org/file/bot${WORKER_BOT_TOKEN}/${filePath}`;
+
+        // 2. Download File
+        const response = await axios({
+            url: fileUrl,
+            method: 'GET',
+            responseType: 'arraybuffer'
+        });
+        const buffer = Buffer.from(response.data, 'binary');
+
+        // 3. Upload to Firebase Storage with Download Token
+        const bucket = admin.storage().bucket();
+        const file = bucket.file(destinationPath);
+        const token = crypto.randomUUID();
+
+        await file.save(buffer, {
+            contentType: 'image/jpeg',
+            metadata: {
+                metadata: {
+                    firebaseStorageDownloadTokens: token
+                }
+            }
+        });
+
+        // 4. Construct Public Download URL
+        const bucketName = bucket.name;
+        const encodedName = encodeURIComponent(destinationPath);
+        const publicUrl = `https://firebasestorage.googleapis.com/v0/b/${bucketName}/o/${encodedName}?alt=media&token=${token}`;
+
+        return publicUrl;
+
+    } catch (error) {
+        console.error('Error saving Telegram photo:', error);
+        return null;
+    }
+}
+
+async function getActiveSession(userId: number) {
+    // Check active OR paused (conceptually active session)
+    // Actually we usually query 'active' or 'paused'.
+    // Let's check 'active' first.
+    let qs = await db.collection('work_sessions')
+        .where('employeeId', '==', userId)
+        .where('status', '==', 'active')
+        .limit(1)
+        .get();
+
+    if (!qs.empty) return qs.docs[0];
+
+    // Check paused
+    qs = await db.collection('work_sessions')
+        .where('employeeId', '==', userId)
+        .where('status', '==', 'paused')
+        .limit(1)
+        .get();
+
+    if (!qs.empty) return qs.docs[0];
+
+    return null;
+}
+
+async function sendMessage(chatId: number, text: string, options: any = {}) {
+    if (!WORKER_BOT_TOKEN) {
+        console.error("Missing WORKER_BOT_TOKEN");
+        return;
+    }
+    try {
+        const body: any = {
+            chat_id: chatId,
+            text: text,
+            parse_mode: 'Markdown',
+            ...options
+        };
+
+        if (options.keyboard) {
+            body.reply_markup = { keyboard: options.keyboard, resize_keyboard: true, one_time_keyboard: false };
+            delete body.keyboard;
+        }
+        if (options.inline_keyboard) {
+            body.reply_markup = { inline_keyboard: options.inline_keyboard };
+            delete body.inline_keyboard;
+        }
+        if (options.remove_keyboard) {
+            body.reply_markup = { remove_keyboard: true };
+            delete body.remove_keyboard;
+        }
+
+        await axios.post(`https://api.telegram.org/bot${WORKER_BOT_TOKEN}/sendMessage`, body);
+    } catch (error: any) {
+        console.error('Error sending Telegram message:', error.response?.data || error.message);
+    }
+}
+
+async function findPlatformUser(telegramId: number): Promise<any | null> {
+    try {
+        const snapshot = await db.collection('users')
+            .where('telegramId', '==', String(telegramId))
+            .limit(1)
+            .get();
+
+        if (!snapshot.empty) {
+            const doc = snapshot.docs[0];
+            return { id: doc.id, ...doc.data() };
+        }
+    } catch (error) {
+        console.error("Error finding platform user:", error);
+    }
+    return null;
+}

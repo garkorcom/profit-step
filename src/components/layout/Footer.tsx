@@ -1,181 +1,163 @@
 import React from 'react';
-import { Box, Container, Typography, Link as MuiLink } from '@mui/material';
+import { Box, Container, Typography, Link as MuiLink, Grid, IconButton, Divider, Stack } from '@mui/material';
 import { Link } from 'react-router-dom';
 import {
-  Home as HomeIcon,
-  People as PeopleIcon,
-  Work as WorkIcon,
-  Task as TaskIcon,
-  Folder as FolderIcon,
-  AdminPanelSettings as AdminIcon,
-  AccountCircle as ProfileIcon,
-  Settings as SettingsIcon,
+  Facebook,
+  Twitter,
+  Instagram,
+  LinkedIn,
+  Email as EmailIcon,
+  Phone as PhoneIcon,
+  LocationOn as LocationIcon
 } from '@mui/icons-material';
 import { useAuth } from '../../auth/AuthContext';
 
-/**
- * Футер с картой сайта
- */
+// Updated Footer for MUI v6+
 const Footer: React.FC = () => {
   const { userProfile } = useAuth();
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const isAdmin = userProfile?.role === 'admin';
 
-  const mainLinks = [
-    { title: 'Главная', path: '/', icon: <HomeIcon sx={{ fontSize: 18 }} /> },
-    { title: 'Мой профиль', path: '/profile', icon: <ProfileIcon sx={{ fontSize: 18 }} /> },
-    { title: 'Настройки', path: '/settings', icon: <SettingsIcon sx={{ fontSize: 18 }} /> },
-  ];
-
-  const moduleLinks = [
-    { title: 'Клиенты', path: '/clients', icon: <PeopleIcon sx={{ fontSize: 18 }} /> },
-    { title: 'Проекты', path: '/projects', icon: <WorkIcon sx={{ fontSize: 18 }} /> },
-    { title: 'Задачи', path: '/tasks', icon: <TaskIcon sx={{ fontSize: 18 }} /> },
-    { title: 'Документы', path: '/documents', icon: <FolderIcon sx={{ fontSize: 18 }} /> },
-  ];
-
-  const adminLinks = [
-    { title: 'Dashboard', path: '/admin/dashboard', icon: <AdminIcon sx={{ fontSize: 18 }} /> },
-    { title: 'Управление командой', path: '/admin/team', icon: <AdminIcon sx={{ fontSize: 18 }} /> },
+  const footerSections = [
+    {
+      title: 'Продукт',
+      links: [
+        { label: 'Возможности', path: '/features' },
+        { label: 'Цены', path: '/pricing' },
+        { label: 'Интеграции', path: '/integrations' },
+        { label: 'Обновления', path: '/changelog' },
+        { label: 'Электрокалькулятор', path: '/estimates/electrical' },
+        { label: 'Сделки (CRM)', path: '/crm/deals' },
+      ]
+    },
+    {
+      title: 'Компания',
+      links: [
+        { label: 'О нас', path: '/about' },
+        { label: 'Карьера', path: '/careers' },
+        { label: 'Блог', path: '/blog' },
+        { label: 'Контакты', path: '/contact' },
+      ]
+    },
+    {
+      title: 'Ресурсы',
+      links: [
+        { label: 'Документация', path: '/docs' },
+        { label: 'Помощь', path: '/help' },
+        { label: 'Сообщество', path: '/community' },
+        { label: 'Статус', path: '/status' },
+      ]
+    }
   ];
 
   return (
     <Box
       component="footer"
       sx={{
-        bgcolor: 'grey.900',
-        color: 'white',
-        py: 6,
-        mt: 8,
+        bgcolor: '#0f172a', // Deep dark blue/slate
+        color: '#94a3b8', // Slate-400 for text
+        pt: 8,
+        pb: 4,
+        mt: 'auto',
+        borderTop: '1px solid #1e293b',
       }}
     >
       <Container maxWidth="lg">
-        <Box
-          sx={{
-            display: 'grid',
-            gridTemplateColumns: {
-              xs: '1fr',
-              sm: 'repeat(2, 1fr)',
-              md: isAdmin ? 'repeat(4, 1fr)' : 'repeat(3, 1fr)',
-            },
-            gap: 4,
-          }}
-        >
-          {/* Основные разделы */}
-          <Box>
-            <Typography variant="h6" gutterBottom sx={{ fontWeight: 600, mb: 2 }}>
-              Навигация
-            </Typography>
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-              {mainLinks.map((link) => (
-                <MuiLink
-                  key={link.path}
-                  component={Link}
-                  to={link.path}
-                  sx={{
-                    color: 'grey.400',
-                    textDecoration: 'none',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 1,
-                    '&:hover': {
-                      color: 'white',
-                    },
-                  }}
-                >
-                  {link.icon}
-                  {link.title}
-                </MuiLink>
-              ))}
-            </Box>
-          </Box>
-
-          {/* Модули */}
-          <Box>
-            <Typography variant="h6" gutterBottom sx={{ fontWeight: 600, mb: 2 }}>
-              Модули
-            </Typography>
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-              {moduleLinks.map((link) => (
-                <MuiLink
-                  key={link.path}
-                  component={Link}
-                  to={link.path}
-                  sx={{
-                    color: 'grey.400',
-                    textDecoration: 'none',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 1,
-                    '&:hover': {
-                      color: 'white',
-                    },
-                  }}
-                >
-                  {link.icon}
-                  {link.title}
-                </MuiLink>
-              ))}
-            </Box>
-          </Box>
-
-          {/* Административные разделы */}
-          {isAdmin && (
-            <Box>
-              <Typography variant="h6" gutterBottom sx={{ fontWeight: 600, mb: 2 }}>
-                Администрирование
+        <Grid container spacing={4} sx={{ mb: 8 }}>
+          {/* Brand & Newsletter */}
+          <Grid size={{ xs: 12, md: 4 }}>
+            <Box sx={{ mb: 4 }}>
+              <Typography variant="h5" sx={{ color: '#f8fafc', fontWeight: 700, mb: 2, letterSpacing: '-0.025em' }}>
+                Profit Step
               </Typography>
-              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                {adminLinks.map((link) => (
+              <Typography variant="body2" sx={{ mb: 3, maxWidth: 300, lineHeight: 1.6 }}>
+                Современная платформа для управления строительным бизнесом. Сметы, проекты и CRM в одном месте.
+              </Typography>
+
+              <Stack direction="row" spacing={1} sx={{ mb: 3 }}>
+                <IconButton size="small" sx={{ color: '#94a3b8', '&:hover': { color: '#38bdf8', bgcolor: 'rgba(56, 189, 248, 0.1)' } }}>
+                  <Twitter fontSize="small" />
+                </IconButton>
+                <IconButton size="small" sx={{ color: '#94a3b8', '&:hover': { color: '#38bdf8', bgcolor: 'rgba(56, 189, 248, 0.1)' } }}>
+                  <Facebook fontSize="small" />
+                </IconButton>
+                <IconButton size="small" sx={{ color: '#94a3b8', '&:hover': { color: '#38bdf8', bgcolor: 'rgba(56, 189, 248, 0.1)' } }}>
+                  <Instagram fontSize="small" />
+                </IconButton>
+                <IconButton size="small" sx={{ color: '#94a3b8', '&:hover': { color: '#38bdf8', bgcolor: 'rgba(56, 189, 248, 0.1)' } }}>
+                  <LinkedIn fontSize="small" />
+                </IconButton>
+              </Stack>
+            </Box>
+          </Grid>
+
+          {/* Links Sections */}
+          {footerSections.map((section) => (
+            <Grid size={{ xs: 6, sm: 4, md: 2 }} key={section.title}>
+              <Typography variant="subtitle2" sx={{ color: '#f8fafc', fontWeight: 600, mb: 3, textTransform: 'uppercase', letterSpacing: '0.05em', fontSize: '0.75rem' }}>
+                {section.title}
+              </Typography>
+              <Stack spacing={2}>
+                {section.links.map((link) => (
                   <MuiLink
                     key={link.path}
                     component={Link}
                     to={link.path}
                     sx={{
-                      color: 'grey.400',
+                      color: 'inherit',
                       textDecoration: 'none',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 1,
+                      fontSize: '0.875rem',
+                      transition: 'color 0.2s',
                       '&:hover': {
-                        color: 'white',
+                        color: '#38bdf8', // Sky-400
                       },
                     }}
                   >
-                    {link.icon}
-                    {link.title}
+                    {link.label}
                   </MuiLink>
                 ))}
+              </Stack>
+            </Grid>
+          ))}
+
+          {/* Contact Info */}
+          <Grid size={{ xs: 12, md: 2 }}>
+            <Typography variant="subtitle2" sx={{ color: '#f8fafc', fontWeight: 600, mb: 3, textTransform: 'uppercase', letterSpacing: '0.05em', fontSize: '0.75rem' }}>
+              Контакты
+            </Typography>
+            <Stack spacing={2}>
+              <Box display="flex" alignItems="center" gap={1}>
+                <EmailIcon sx={{ fontSize: 16 }} />
+                <Typography variant="body2" sx={{ fontSize: '0.875rem' }}>hello@profitstep.com</Typography>
               </Box>
-            </Box>
-          )}
+              <Box display="flex" alignItems="center" gap={1}>
+                <PhoneIcon sx={{ fontSize: 16 }} />
+                <Typography variant="body2" sx={{ fontSize: '0.875rem' }}>+1 (555) 123-4567</Typography>
+              </Box>
+              <Box display="flex" alignItems="start" gap={1}>
+                <LocationIcon sx={{ fontSize: 16, mt: 0.5 }} />
+                <Typography variant="body2" sx={{ fontSize: '0.875rem' }}>
+                  123 Business Ave,<br />Tech City, TC 90210
+                </Typography>
+              </Box>
+            </Stack>
+          </Grid>
+        </Grid>
 
-          {/* О приложении */}
-          <Box>
-            <Typography variant="h6" gutterBottom sx={{ fontWeight: 600, mb: 2 }}>
-              Profit Step
-            </Typography>
-            <Typography variant="body2" sx={{ color: 'grey.400', mb: 1 }}>
-              Система управления проектами и сметами
-            </Typography>
-            <Typography variant="body2" sx={{ color: 'grey.400' }}>
-              Версия: 1.0.0
-            </Typography>
-          </Box>
-        </Box>
+        <Divider sx={{ borderColor: '#1e293b', mb: 4 }} />
 
-        {/* Copyright */}
-        <Box
-          sx={{
-            borderTop: 1,
-            borderColor: 'grey.800',
-            mt: 4,
-            pt: 3,
-            textAlign: 'center',
-          }}
-        >
-          <Typography variant="body2" sx={{ color: 'grey.500' }}>
+        <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, justifyContent: 'space-between', alignItems: 'center', gap: 2 }}>
+          <Typography variant="body2" sx={{ fontSize: '0.875rem' }}>
             © {new Date().getFullYear()} Profit Step. Все права защищены.
           </Typography>
+          <Stack direction="row" spacing={3}>
+            <MuiLink href="#" sx={{ color: 'inherit', textDecoration: 'none', fontSize: '0.875rem', '&:hover': { color: '#f8fafc' } }}>
+              Политика конфиденциальности
+            </MuiLink>
+            <MuiLink href="#" sx={{ color: 'inherit', textDecoration: 'none', fontSize: '0.875rem', '&:hover': { color: '#f8fafc' } }}>
+              Условия использования
+            </MuiLink>
+          </Stack>
         </Box>
       </Container>
     </Box>

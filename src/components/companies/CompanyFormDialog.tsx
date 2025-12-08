@@ -87,7 +87,7 @@ export default function CompanyFormDialog({
   }, [companyToEdit, reset]);
 
   const onSubmit = async (data: FormData) => {
-    if (!userProfile?.companyId) return;
+    if (!userProfile?.companyId || !userProfile?.id) return;
 
     setSaving(true);
     try {
@@ -97,7 +97,14 @@ export default function CompanyFormDialog({
         toast.success(`Компания "${data.name}" обновлена`);
       } else {
         // Создание
-        await createCompany(data, userProfile.companyId);
+        await createCompany(
+          {
+            ...data,
+            ownerId: userProfile.id,
+            status: 'active',
+          },
+          userProfile.companyId
+        );
         toast.success(`Компания "${data.name}" создана`);
       }
 

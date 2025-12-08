@@ -27,7 +27,8 @@ export function useKeyboardShortcuts(shortcuts: Record<string, () => void>) {
         target.isContentEditable
       ) {
         // Разрешаем ESC даже в input
-        if (e.key.toLowerCase() !== 'escape') {
+        // Разрешаем ESC даже в input
+        if (!e.key || e.key.toLowerCase() !== 'escape') {
           return;
         }
       }

@@ -28,8 +28,8 @@ export const createUserProfile = async (
     email: data.email.toLowerCase(),
     displayName: data.displayName,
     companyId: userId, // По умолчанию companyId = userId (для одиночных пользователей)
-    role: 'estimator' as UserRole, // Роль по умолчанию
-    photoURL: data.photoURL,
+    role: 'admin' as UserRole, // Роль по умолчанию для Dev режима
+    photoURL: data.photoURL || null, // Firestore doesn't support undefined
     createdAt: serverTimestamp(),
     onboarded: false,
     status: 'active', // Статус по умолчанию

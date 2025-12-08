@@ -31,6 +31,7 @@ export interface UserProfile {
   // --- Новые поля для управления командой ---
   title?: string;          // Должность (напр., "Ведущий сметчик")
   phone?: string;          // Контактный телефон
+  telegramId?: string;     // Telegram User ID for bot linking
   dob?: Timestamp | string;  // Дата рождения (Date of Birth)
   lastSeen?: Timestamp | string;  // Дата последней активности
   status: UserStatus;      // Статус активности ('active' по умолчанию)

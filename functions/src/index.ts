@@ -545,6 +545,6 @@ export { sendMessage } from './callable/messaging/sendMessage';
 // AI
 export { generateLeadSummary } from './callable/ai/generateLeadSummary';
 export { onWorkerBotMessage } from './triggers/telegram/onWorkerBotMessage';
-export { checkLongSessions } from './scheduled/checkLongSessions';
+export { checkOpenSessions } from './scheduled/checkOpenSessions';
 export { forceFinishAllSessions } from './callable/admin/forceFinishAllSessions';
 export { generateDailyPayroll } from './scheduled/generateDailyPayroll';

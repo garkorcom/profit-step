@@ -163,6 +163,7 @@ export const updateUserExtendedProfile = async (
     title?: string;
     phone?: string;
     telegramId?: string;
+    hourlyRate?: number;
     dob?: Date | null;
   }
 ): Promise<void> => {
@@ -174,6 +175,7 @@ export const updateUserExtendedProfile = async (
     if (data.title !== undefined) updateData.title = data.title;
     if (data.phone !== undefined) updateData.phone = data.phone;
     if (data.telegramId !== undefined) updateData.telegramId = data.telegramId;
+    if (data.hourlyRate !== undefined) updateData.hourlyRate = data.hourlyRate;
     if (data.dob !== undefined) {
       updateData.dob = data.dob ? Timestamp.fromDate(data.dob) : null;
     }

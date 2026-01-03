@@ -36,15 +36,40 @@ export const generateDailyPayroll = functions.pubsub.schedule('0 4 * * *') // Ev
                 return null;
             }
 
-            // 3. Fetch All Employees to get Hourly Rates
-            const employeesSnapshot = await db.collection('employees').get();
+            // 3. Fetch All Employees & Users to get Hourly Rates
+            // MERGE: We check 'users' collection first, then fallback to 'employees' (legacy)
+            const [usersSnapshot, employeesSnapshot] = await Promise.all([
+                db.collection('users').get(),
+                db.collection('employees').get()
+            ]);
+
             const employeeRates: Record<string, number> = {};
 
+            // Priority 1: Users (Platform Profiles)
+            usersSnapshot.docs.forEach(doc => {
+                const data = doc.data();
+                if (data.hourlyRate) {
+                    employeeRates[doc.id] = data.hourlyRate;
+                    // Map by telegramId if exists to support linking
+                    if (data.telegramId) {
+                        employeeRates[data.telegramId] = data.hourlyRate;
+                    }
+                }
+            });
+
+            // Priority 2: Employees (Legacy/Bot-only) - Only set if not already set
             employeesSnapshot.docs.forEach(doc => {
-                // Default to 0 if not set
-                employeeRates[doc.data().telegramId] = doc.data().hourlyRate || 0;
-                // Also support referencing by doc ID if it differs
-                employeeRates[doc.id] = doc.data().hourlyRate || 0;
+                const data = doc.data();
+                const rate = data.hourlyRate || 0;
+
+                // Key by Telegram ID
+                if (!employeeRates[data.telegramId]) {
+                    employeeRates[data.telegramId] = rate;
+                }
+                // Key by Doc ID
+                if (!employeeRates[doc.id]) {
+                    employeeRates[doc.id] = rate;
+                }
             });
 
             // 4. Calculate Paroll & Create Ledger Entries

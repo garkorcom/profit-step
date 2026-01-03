@@ -34,6 +34,7 @@ import {
 import { subDays, startOfDay, endOfDay, eachDayOfInterval, format } from 'date-fns';
 import LocationMap from '../../components/crm/LocationMap';
 import EditSessionDialog from '../../components/crm/EditSessionDialog';
+import EmployeeDetailsDialog from '../../components/crm/EmployeeDetailsDialog'; // Added Import
 
 // --- Components ---
 const StatCard = ({ title, value, icon, color }: { title: string, value: string | number, icon: React.ReactNode, color: string }) => (
@@ -62,6 +63,7 @@ const TimeTrackingPage: React.FC = () => {
     // View
     const [viewMode, setViewMode] = useState<'list' | 'map'>('list');
     const [editingSession, setEditingSession] = useState<WorkSession | null>(null);
+    const [selectedEmployee, setSelectedEmployee] = useState<{ id: string, name: string } | null>(null); // Added State
 
     const handleSaveSession = async (sessionId: string, updates: Partial<WorkSession>) => {
         try {
@@ -493,7 +495,13 @@ const TimeTrackingPage: React.FC = () => {
                                             {formatDate(session.startTime)}
                                         </TableCell>
                                         <TableCell>
-                                            <Box display="flex" alignItems="center" gap={1}>
+                                            <Box
+                                                display="flex"
+                                                alignItems="center"
+                                                gap={1}
+                                                onClick={() => setSelectedEmployee({ id: String(session.employeeId), name: session.employeeName })}
+                                                sx={{ cursor: 'pointer', '&:hover': { textDecoration: 'underline', color: 'primary.main' } }}
+                                            >
                                                 <Avatar sx={{ width: 24, height: 24, fontSize: '0.8rem' }}>
                                                     {session.employeeName?.[0] || '?'}
                                                 </Avatar>
@@ -597,6 +605,13 @@ const TimeTrackingPage: React.FC = () => {
                 session={editingSession}
                 onClose={() => setEditingSession(null)}
                 onSave={handleSaveSession}
+            />
+
+            <EmployeeDetailsDialog
+                open={!!selectedEmployee}
+                onClose={() => setSelectedEmployee(null)}
+                employeeId={selectedEmployee?.id || ''}
+                employeeName={selectedEmployee?.name || ''}
             />
         </Container>
     );

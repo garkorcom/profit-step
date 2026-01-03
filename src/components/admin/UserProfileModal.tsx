@@ -37,6 +37,7 @@ const UserProfileModal: React.FC<UserProfileModalProps> = ({
   const [title, setTitle] = useState('');
   const [phone, setPhone] = useState('');
   const [telegramId, setTelegramId] = useState('');
+  const [hourlyRate, setHourlyRate] = useState('');
   const [dob, setDob] = useState('');
   const [photoURL, setPhotoURL] = useState('');
   const [uploading, setUploading] = useState(false);
@@ -50,6 +51,7 @@ const UserProfileModal: React.FC<UserProfileModalProps> = ({
       setTitle(user.title || '');
       setPhone(user.phone || '');
       setTelegramId(user.telegramId || '');
+      setHourlyRate(user.hourlyRate ? String(user.hourlyRate) : '');
       setPhotoURL(user.photoURL || '');
 
       // Преобразуем дату рождения в формат YYYY-MM-DD для input[type="date"]
@@ -108,6 +110,7 @@ const UserProfileModal: React.FC<UserProfileModalProps> = ({
         title: title.trim() || undefined,
         phone: phone.trim() || undefined,
         telegramId: telegramId.trim() || undefined,
+        hourlyRate: hourlyRate ? parseFloat(hourlyRate) : 0,
         dob: dob ? new Date(dob) : null,
       });
 
@@ -212,6 +215,18 @@ const UserProfileModal: React.FC<UserProfileModalProps> = ({
           margin="normal"
           placeholder="123456789"
           helperText="ID для привязки к боту (можно найти через /me)"
+        />
+
+        <TextField
+          label="Почасовая ставка"
+          fullWidth
+          type="number"
+          value={hourlyRate}
+          onChange={(e) => setHourlyRate(e.target.value)}
+          margin="normal"
+          // InputProps={{ startAdornment: <InputAdornment position="start">$</InputAdornment> }} // Need InputAdornment import
+          placeholder="0.00"
+          helperText="Ставка в час (используется для расчета Payroll)"
         />
 
         <TextField

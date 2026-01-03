@@ -85,6 +85,9 @@ export interface Client {
   // Contacts
   contacts: ClientContact[];
 
+  // Sub-services / Job Types (e.g. Plumbing, Electrical)
+  services?: string[];
+
   // Legacy fields (kept for compatibility, but prefer contacts array)
   email?: string;
   phone?: string;

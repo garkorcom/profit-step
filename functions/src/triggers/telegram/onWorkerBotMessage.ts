@@ -151,10 +151,26 @@ async function handleCallbackQuery(query: any) {
     try {
         if (data.startsWith('start_client_')) {
             const clientId = data.split('start_client_')[1];
-            await initWorkSession(chatId, userId, clientId);
+            await handleClientSelection(chatId, userId, clientId);
+        } else if (data.startsWith('start_service_idx_')) {
+            // Format: start_service_idx_<clientId>_<serviceIndex>
+            const parts = data.split('_');
+            const clientId = parts[3];
+            const serviceIndex = parseInt(parts[4]);
+            await handleServiceSelection(chatId, userId, clientId, serviceIndex);
         } else if (data === 'cancel_selection') {
             await sendMessage(chatId, "Selection cancelled.");
             await sendMainMenu(chatId);
+        }
+        // --- NEW HANDLERS ---
+        else if (data === 'force_finish_work') {
+            await handleFinishWorkRequest(chatId, userId);
+        } else if (data === 'extend_1h') {
+            await extendSession(chatId, userId, 60);
+        } else if (data === 'extend_2h') {
+            await extendSession(chatId, userId, 120);
+        } else if (data === 'still_working') {
+            await extendSession(chatId, userId, 30); // Snooze for 30 mins
         }
     } catch (error) {
         console.error('Error in handleCallbackQuery:', error);
@@ -169,6 +185,20 @@ async function handleCallbackQuery(query: any) {
             console.error('Error answering callback:', e);
         }
     }
+}
+
+async function extendSession(chatId: number, userId: number, minutes: number) {
+    const activeSession = await getActiveSession(userId);
+    if (!activeSession) return;
+
+    const snoozeUntil = admin.firestore.Timestamp.fromMillis(Date.now() + (minutes * 60000));
+
+    await activeSession.ref.update({
+        reminderCount: 0, // Reset counter
+        snoozeUntil: snoozeUntil
+    });
+
+    await sendMessage(chatId, `✅ Reminder snoozed for ${minutes} minutes.`);
 }
 
 // --- Core Logic ---
@@ -233,7 +263,50 @@ async function sendClientList(chatId: number) {
     await sendMessage(chatId, "📍 Select Client/Object:", { inline_keyboard: inlineKeyboard });
 }
 
-async function initWorkSession(chatId: number, userId: number, clientId: string) {
+async function handleClientSelection(chatId: number, userId: number, clientId: string) {
+    const clientDoc = await db.collection('clients').doc(clientId).get();
+    if (!clientDoc.exists) {
+        await sendMessage(chatId, "⚠️ Client not found.");
+        return;
+    }
+    const clientData = clientDoc.data();
+    const services = clientData?.services || [];
+
+    if (services.length > 0) {
+        // Show Service Selection Menu
+        const inlineKeyboard = services.map((service: string, index: number) => {
+            return [{ text: service, callback_data: `start_service_idx_${clientId}_${index}` }];
+        });
+        inlineKeyboard.push([{ text: "🔙 Back", callback_data: "start_client_" + clientId }]); // Loopback or cancel? Better just cancel or re-list. Let's do cancel for simplicity or restart list.
+        // Actually "Back" to client list is better but we need to re-fetch.
+        // Let's just have Cancel.
+        inlineKeyboard.push([{ text: "❌ Cancel", callback_data: "cancel_selection" }]);
+
+        await sendMessage(chatId, `🛠 Select Service for *${clientData?.name}*:`, { inline_keyboard: inlineKeyboard });
+    } else {
+        // No services, start directly
+        await initWorkSession(chatId, userId, clientId);
+    }
+}
+
+async function handleServiceSelection(chatId: number, userId: number, clientId: string, serviceIndex: number) {
+    const clientDoc = await db.collection('clients').doc(clientId).get();
+    if (!clientDoc.exists) {
+        await sendMessage(chatId, "⚠️ Client not found.");
+        return;
+    }
+    const clientData = clientDoc.data();
+    const services = clientData?.services || [];
+
+    if (serviceIndex >= 0 && serviceIndex < services.length) {
+        const serviceName = services[serviceIndex];
+        await initWorkSession(chatId, userId, clientId, serviceName);
+    } else {
+        await sendMessage(chatId, "⚠️ Invalid service selected.");
+    }
+}
+
+async function initWorkSession(chatId: number, userId: number, clientId: string, serviceName?: string) {
     // 1. Check if already active
     const activeSession = await getActiveSession(userId);
     if (activeSession) {
@@ -243,18 +316,24 @@ async function initWorkSession(chatId: number, userId: number, clientId: string)
 
     // 2. Get Client Name
     const clientDoc = await db.collection('clients').doc(clientId).get();
-    const clientName = clientDoc.exists ? clientDoc.data()?.name : 'Unknown Client';
+    let clientName = clientDoc.exists ? clientDoc.data()?.name : 'Unknown Client';
+
+    if (serviceName) {
+        clientName = `${clientName} - ${serviceName}`;
+    }
 
     // 3. Identity Sync
     const platformUser = await findPlatformUser(userId);
     let employeeName = 'Worker';
     let platformUserId = null;
     let companyId = null;
+    let hourlyRate = 0; // Default rate
 
     if (platformUser) {
         employeeName = platformUser.displayName || 'Worker';
         platformUserId = platformUser.id;
         companyId = platformUser.companyId;
+        hourlyRate = platformUser.hourlyRate || 0; // Get rate from platform user
 
         // Sync local employee record to match platform name
         await db.collection('employees').doc(String(userId)).set({
@@ -266,21 +345,27 @@ async function initWorkSession(chatId: number, userId: number, clientId: string)
     } else {
         // Fallback to local employee record
         const empDoc = await db.collection('employees').doc(String(userId)).get();
-        if (empDoc.exists) employeeName = empDoc.data()?.name || 'Worker';
+        if (empDoc.exists) {
+            const empData = empDoc.data();
+            employeeName = empData?.name || 'Worker';
+            hourlyRate = empData?.hourlyRate || 0; // Get rate from employee doc
+        }
     }
 
     // 4. Create Session (Pending Location)
     await db.collection('work_sessions').add({
         employeeId: userId,
         employeeName: employeeName,
-        platformUserId: platformUserId, // NEW: Link to platform user
-        companyId: companyId,           // NEW: Link to company
+        platformUserId: platformUserId, // Link to platform user
+        companyId: companyId,           // Link to company
         clientId: clientId,
         clientName: clientName,
         startTime: admin.firestore.FieldValue.serverTimestamp(),
         status: 'active',
+        service: serviceName || null, // Create field if exists
         awaitingLocation: true,
-        awaitingStartPhoto: false
+        awaitingStartPhoto: false,
+        hourlyRate: hourlyRate // Snapshot rate
     });
 
     await sendMessage(chatId, `📍 Client selected: *${clientName}*\n\nPlease share your **Live Location** or current **Location** to verify attendance.\n(Click the 📎 attachment icon -> Location)`,
@@ -457,22 +542,73 @@ async function handleText(chatId: number, userId: number, text: string) {
         const endTime = admin.firestore.Timestamp.now();
         const startTime = sessionData.startTime;
 
+        let hourlyRate = sessionData.hourlyRate;
+
+        // FAILSAFE: If no snapshot rate (old session), fetch current profile rate
+        if (hourlyRate === undefined || hourlyRate === null) {
+            const platformUser = await findPlatformUser(userId);
+            if (platformUser && platformUser.hourlyRate) {
+                hourlyRate = platformUser.hourlyRate;
+            } else {
+                const empDoc = await db.collection('employees').doc(String(userId)).get();
+                hourlyRate = empDoc.data()?.hourlyRate || 0;
+            }
+            // Update the session with this rate so we have it for history
+            await activeSession.ref.update({ hourlyRate: hourlyRate });
+        }
+
         // Calculate duration (minus breaks if any)
         let totalMinutes = Math.round((endTime.toMillis() - startTime.toMillis()) / 60000);
         if (sessionData.totalBreakMinutes) {
             totalMinutes -= sessionData.totalBreakMinutes;
         }
 
+        // --- Calculate Earnings ---
+        const hours = parseFloat((totalMinutes / 60).toFixed(2));
+        const sessionEarnings = parseFloat((hours * hourlyRate).toFixed(2));
+
+        // --- Calculate Daily Totals ---
+        const now = new Date();
+        const startOfDay = new Date(now);
+        startOfDay.setHours(0, 0, 0, 0);
+        const endOfDay = new Date(now);
+        endOfDay.setHours(23, 59, 59, 999);
+
+        let dailyMinutes = totalMinutes;
+        let dailyEarnings = sessionEarnings;
+
+        try {
+            const todaySessions = await db.collection('work_sessions')
+                .where('employeeId', '==', userId)
+                .where('status', '==', 'completed')
+                .where('endTime', '>=', admin.firestore.Timestamp.fromDate(startOfDay))
+                .where('endTime', '<=', admin.firestore.Timestamp.fromDate(endOfDay))
+                .get();
+
+            todaySessions.docs.forEach(doc => {
+                const d = doc.data();
+                dailyMinutes += (d.durationMinutes || 0);
+                dailyEarnings += (d.sessionEarnings || 0);
+            });
+        } catch (e) {
+            console.error("Error calculating daily totals:", e);
+        }
+
+        const dailyHours = Math.floor(dailyMinutes / 60);
+        const dailyMins = dailyMinutes % 60;
+
         await activeSession.ref.update({
             description: text,
             endTime: endTime,
             durationMinutes: totalMinutes,
+            sessionEarnings: sessionEarnings,
             status: 'completed',
             awaitingDescription: false
         });
 
-        await sendMessage(chatId, `🏁 Work finished!\n\n⏱ Total Time: ${Math.floor(totalMinutes / 60)}h ${totalMinutes % 60}m\n📍 Client: ${sessionData.clientName}\n📝 Desc: ${text}`);
-        await sendAdminNotification(`🏁 *Work Finished*\n👤 ${sessionData.employeeName}\n📍 ${sessionData.clientName}\n⏱ ${Math.floor(totalMinutes / 60)}h ${totalMinutes % 60}m\n📝 ${text}`);
+        await sendMessage(chatId, `🏁 Work finished!\n\n⏱ Session: ${Math.floor(totalMinutes / 60)}h ${totalMinutes % 60}m\n💰 Earned: $${sessionEarnings}\n📅 **Today Total: ${dailyHours}h ${dailyMins}m ($${dailyEarnings.toFixed(2)})**\n📍 Client: ${sessionData.clientName}\n📝 Desc: ${text}`);
+
+        await sendAdminNotification(`🏁 *Work Finished*\n👤 ${sessionData.employeeName}\n📍 ${sessionData.clientName}\n⏱ ${Math.floor(totalMinutes / 60)}h ${totalMinutes % 60}m\n💵 Earned: $${sessionEarnings}\n📝 ${text}`);
         await sendMainMenu(chatId);
     }
 }

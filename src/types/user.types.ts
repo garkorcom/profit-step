@@ -35,6 +35,7 @@ export interface UserProfile {
   dob?: Timestamp | string;  // Дата рождения (Date of Birth)
   lastSeen?: Timestamp | string;  // Дата последней активности
   status: UserStatus;      // Статус активности ('active' по умолчанию)
+  hourlyRate?: number;     // Почасовая ставка (для расчета зарплаты)
 
   // --- Поля для дашбордов ---
   loginCount?: number;     // Количество входов в систему

@@ -17,8 +17,12 @@ import {
     TableHead,
     TableRow,
     Chip,
-    IconButton
+    IconButton,
+    TextField,
+    Stack,
+    Divider
 } from '@mui/material';
+import DeleteIcon from '@mui/icons-material/Delete';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import AddIcon from '@mui/icons-material/Add';
 import EditIcon from '@mui/icons-material/Edit';
@@ -68,6 +72,10 @@ const ClientDetailsPage: React.FC = () => {
     const [error, setError] = useState<string | null>(null);
     const [tabValue, setTabValue] = useState(0);
 
+    // Services State
+    const [newService, setNewService] = useState('');
+    const [addingService, setAddingService] = useState(false);
+
     useEffect(() => {
         const fetchData = async () => {
             if (!id || !userProfile?.companyId) {
@@ -113,6 +121,34 @@ const ClientDetailsPage: React.FC = () => {
 
     const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
         setTabValue(newValue);
+    };
+
+    const handleAddService = async () => {
+        if (!client || !newService.trim()) return;
+        setAddingService(true);
+        try {
+            const updatedServices = [...(client.services || []), newService.trim()];
+            await crmApi.updateClient(client.id, { services: updatedServices });
+            setClient({ ...client, services: updatedServices });
+            setNewService('');
+        } catch (error) {
+            console.error('Error adding service:', error);
+            setError('Failed to add service');
+        } finally {
+            setAddingService(false);
+        }
+    };
+
+    const handleRemoveService = async (serviceToRemove: string) => {
+        if (!client) return;
+        try {
+            const updatedServices = (client.services || []).filter(s => s !== serviceToRemove);
+            await crmApi.updateClient(client.id, { services: updatedServices });
+            setClient({ ...client, services: updatedServices });
+        } catch (error) {
+            console.error('Error removing service:', error);
+            setError('Failed to remove service');
+        }
     };
 
     if (loading) {
@@ -164,6 +200,51 @@ const ClientDetailsPage: React.FC = () => {
                     <Typography><strong>Email:</strong> {client.email || 'N/A'}</Typography>
                     <Typography><strong>Phone:</strong> {client.phone || 'N/A'}</Typography>
                     <Typography><strong>Address:</strong> {client.address || 'N/A'}</Typography>
+                    <Typography><strong>Address:</strong> {client.address || 'N/A'}</Typography>
+
+                    <Divider sx={{ my: 3 }} />
+
+                    <Typography variant="h6" gutterBottom>Services / Job Types</Typography>
+                    <Box sx={{ mb: 2 }}>
+                        {client.services && client.services.length > 0 ? (
+                            <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                                {client.services.map((service, index) => (
+                                    <Chip
+                                        key={index}
+                                        label={service}
+                                        onDelete={() => handleRemoveService(service)}
+                                        color="primary"
+                                        variant="outlined"
+                                    />
+                                ))}
+                            </Stack>
+                        ) : (
+                            <Typography color="textSecondary" variant="body2">No services configured.</Typography>
+                        )}
+                    </Box>
+
+                    <Box display="flex" gap={1} alignItems="flex-start" maxWidth="400px">
+                        <TextField
+                            label="New Service (e.g. Plumbing)"
+                            variant="outlined"
+                            size="small"
+                            fullWidth
+                            value={newService}
+                            onChange={(e) => setNewService(e.target.value)}
+                            onKeyPress={(e) => {
+                                if (e.key === 'Enter') {
+                                    handleAddService();
+                                }
+                            }}
+                        />
+                        <Button
+                            variant="contained"
+                            disabled={!newService.trim() || addingService}
+                            onClick={handleAddService}
+                        >
+                            Add
+                        </Button>
+                    </Box>
                 </Paper>
             </TabPanel>
 

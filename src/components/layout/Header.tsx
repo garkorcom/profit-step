@@ -17,6 +17,7 @@ import {
   ListItemButton,
   ListItemIcon,
   ListItemText,
+  Collapse,
 } from '@mui/material';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../auth/AuthContext';
@@ -36,6 +37,12 @@ import {
   Calculate as CalculateIcon,
   CalendarMonth as CalendarIcon,
   AttachMoney as AttachMoneyIcon,
+  KeyboardArrowDown as KeyboardArrowDownIcon,
+  ExpandLess,
+  ExpandMore,
+  AccessTime as TimeManagementIcon,
+  Campaign as MarketingIcon,
+  Build as ToolsIcon,
 } from '@mui/icons-material';
 
 /**
@@ -45,15 +52,28 @@ const Header: React.FC = () => {
   const { userProfile, signOut } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
+
+  // User Menu State
+  const [anchorElUser, setAnchorElUser] = useState<null | HTMLElement>(null);
+
+  // Nav Menus State
+  const [anchorElTime, setAnchorElTime] = useState<null | HTMLElement>(null);
+  const [anchorElMarketing, setAnchorElMarketing] = useState<null | HTMLElement>(null);
+  const [anchorElSettings, setAnchorElSettings] = useState<null | HTMLElement>(null);
+
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  const handleMenuOpen = (event: React.MouseEvent<HTMLElement>) => {
-    setAnchorEl(event.currentTarget);
+  // Mobile Collapse States
+  const [mobileOpenTime, setMobileOpenTime] = useState(false);
+  const [mobileOpenMarketing, setMobileOpenMarketing] = useState(false);
+  const [mobileOpenSettings, setMobileOpenSettings] = useState(false);
+
+  const handleUserMenuOpen = (event: React.MouseEvent<HTMLElement>) => {
+    setAnchorElUser(event.currentTarget);
   };
 
-  const handleMenuClose = () => {
-    setAnchorEl(null);
+  const handleUserMenuClose = () => {
+    setAnchorElUser(null);
   };
 
   const handleLogout = async () => {
@@ -63,17 +83,17 @@ const Header: React.FC = () => {
     } catch (error) {
       console.error('Logout error:', error);
     }
-    handleMenuClose();
+    handleUserMenuClose();
   };
 
   const handleProfileClick = () => {
     navigate('/profile');
-    handleMenuClose();
+    handleUserMenuClose();
   };
 
   const handleSettingsClick = () => {
     navigate('/settings');
-    handleMenuClose();
+    handleUserMenuClose();
   };
 
   const toggleMobileMenu = () => {
@@ -84,55 +104,122 @@ const Header: React.FC = () => {
     setMobileMenuOpen(false);
   };
 
-  // Навигационные ссылки в зависимости от роли
-  const getNavLinks = () => {
-    if (!userProfile) return [];
+  // --- Handlers for Desktop Dropdowns ---
+  const handleOpenTime = (event: React.MouseEvent<HTMLElement>) => setAnchorElTime(event.currentTarget);
+  const handleCloseTime = () => setAnchorElTime(null);
 
-    const commonLinks = [
-      { path: '/admin/dashboard', label: 'Дашборд', icon: <DashboardIcon sx={{ mr: 0.5 }} /> },
+  const handleOpenMarketing = (event: React.MouseEvent<HTMLElement>) => setAnchorElMarketing(event.currentTarget);
+  const handleCloseMarketing = () => setAnchorElMarketing(null);
+
+  const handleOpenSettings = (event: React.MouseEvent<HTMLElement>) => setAnchorElSettings(event.currentTarget);
+  const handleCloseSettings = () => setAnchorElSettings(null);
+
+  // --- Navigation Structure ---
+  const getNavStructure = () => {
+    if (!userProfile) return { dashboard: [], time: [], marketing: [], settings: [] };
+
+    const isAdmin = userProfile.role === 'admin';
+    // const isManager = userProfile.role === 'manager';
+
+    const dashboardLink = { path: '/admin/dashboard', label: 'Дашборд', icon: <DashboardIcon sx={{ mr: 0.5 }} /> };
+
+    const timeMgmtLinks = [
+      { path: '/crm/calendar', label: 'Календарь', icon: <CalendarIcon sx={{ mr: 0.5 }} /> },
+      { path: '/crm/time-tracking', label: 'Time Tracking', icon: <DescriptionIcon sx={{ mr: 0.5 }} /> },
+      { path: '/crm/finance', label: 'Финансы', icon: <AttachMoneyIcon sx={{ mr: 0.5 }} /> },
     ];
 
-    const crmLinks = [
+    const marketingLinks = [
       { path: '/crm/clients', label: 'Клиенты', icon: <ContactsIcon sx={{ mr: 0.5 }} /> },
       { path: '/crm/deals', label: 'Сделки', icon: <KanbanIcon sx={{ mr: 0.5 }} /> },
+    ];
+
+    // "Settings" group as requested (Team, Companies, Tasks, Calculator)
+    const settingsGroupLinks = [
       { path: '/crm/tasks', label: 'Задачи', icon: <TaskIcon sx={{ mr: 0.5 }} /> },
-      { path: '/crm/calendar', label: 'Календарь', icon: <CalendarIcon sx={{ mr: 0.5 }} /> },
-      { path: '/crm/time-tracking', label: 'Отчеты', icon: <DescriptionIcon sx={{ mr: 0.5 }} /> },
-      { path: '/crm/finance', label: 'Финансы', icon: <AttachMoneyIcon sx={{ mr: 0.5 }} /> },
+      { path: '/crm/gtd', label: 'Lookahead', icon: <TaskIcon sx={{ mr: 0.5 }} /> },
       { path: '/estimates/electrical', label: 'Калькулятор', icon: <CalculateIcon sx={{ mr: 0.5 }} /> },
     ];
 
-    if (userProfile.role === 'admin') {
-      return [
-        ...commonLinks,
-        ...crmLinks,
+    if (isAdmin) {
+      settingsGroupLinks.unshift(
         { path: '/admin/team', label: 'Команда', icon: <PeopleIcon sx={{ mr: 0.5 }} /> },
-        { path: '/admin/companies', label: 'Компании', icon: <BusinessIcon sx={{ mr: 0.5 }} /> },
-      ];
+        { path: '/admin/companies', label: 'Компании', icon: <BusinessIcon sx={{ mr: 0.5 }} /> }
+      );
     }
 
-    if (userProfile.role === 'manager') {
-      return [
-        ...commonLinks,
-        ...crmLinks,
-      ];
-    }
-
-    return commonLinks;
+    return {
+      dashboard: [dashboardLink],
+      time: timeMgmtLinks,
+      marketing: marketingLinks,
+      settings: settingsGroupLinks // Named "settings" in code, label will be "Настройки"
+    };
   };
 
-  const navLinks = getNavLinks();
+  const navStruct = getNavStructure();
+
+  const isActive = (path: string) => location.pathname === path;
+  const isGroupActive = (links: { path: string }[]) => links.some(link => isActive(link.path));
+
+  // Helper to render Desktop Menu
+  const renderDesktopMenu = (
+    label: string,
+    icon: React.ReactNode,
+    items: { path: string, label: string, icon: React.ReactNode }[],
+    anchorEl: HTMLElement | null,
+    onOpen: (e: React.MouseEvent<HTMLElement>) => void,
+    onClose: () => void
+  ) => {
+    if (items.length === 0) return null;
+
+    return (
+      <>
+        <Button
+          onClick={onOpen}
+          endIcon={<KeyboardArrowDownIcon />}
+          startIcon={icon}
+          sx={{
+            color: isGroupActive(items) ? 'primary.main' : 'text.primary',
+            fontWeight: isGroupActive(items) ? 600 : 400,
+            borderBottom: isGroupActive(items) ? 2 : 0,
+            borderColor: 'primary.main',
+            borderRadius: 0,
+            px: 2,
+            '&:hover': { backgroundColor: 'action.hover' },
+          }}
+        >
+          {label}
+        </Button>
+        <Menu
+          anchorEl={anchorEl}
+          open={Boolean(anchorEl)}
+          onClose={onClose}
+        >
+          {items.map((item) => (
+            <MenuItem
+              key={item.path}
+              component={Link}
+              to={item.path}
+              onClick={onClose}
+              selected={isActive(item.path)}
+            >
+              {item.icon}
+              {item.label}
+            </MenuItem>
+          ))}
+        </Menu>
+      </>
+    );
+  };
 
   return (
     <AppBar position="sticky" color="default" elevation={1}>
       <Container maxWidth="xl">
         <Toolbar disableGutters sx={{ justifyContent: 'space-between' }}>
-          {/* Логотип + Бургер-меню (мобильное) */}
+          {/* Logo & Mobile Toggle */}
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            {/* Бургер-кнопка (только на мобильных) */}
             <IconButton
               color="inherit"
-              aria-label="open menu"
               edge="start"
               onClick={toggleMobileMenu}
               sx={{ display: { xs: 'flex', md: 'none' } }}
@@ -140,7 +227,6 @@ const Header: React.FC = () => {
               <MenuIcon />
             </IconButton>
 
-            {/* Логотип */}
             <Link
               to="/admin/dashboard"
               style={{
@@ -158,7 +244,7 @@ const Header: React.FC = () => {
                   fontWeight: 700,
                   color: 'primary.main',
                   letterSpacing: 0.5,
-                  display: { xs: 'none', sm: 'block' }, // Скрываем текст на очень маленьких экранах
+                  display: { xs: 'none', sm: 'block' },
                 }}
               >
                 Profit Step
@@ -166,189 +252,165 @@ const Header: React.FC = () => {
             </Link>
           </Box>
 
-          {/* Центральная навигация */}
+          {/* Desktop Navigation */}
           <Box sx={{ display: { xs: 'none', md: 'flex' }, gap: 1 }}>
-            {navLinks.map((link) => (
+            {/* Dashboard (Single Link) */}
+            {navStruct.dashboard.map(link => (
               <Button
                 key={link.path}
                 component={Link}
                 to={link.path}
                 startIcon={link.icon}
                 sx={{
-                  color: location.pathname === link.path ? 'primary.main' : 'text.primary',
-                  fontWeight: location.pathname === link.path ? 600 : 400,
-                  borderBottom: location.pathname === link.path ? 2 : 0,
+                  color: isActive(link.path) ? 'primary.main' : 'text.primary',
+                  fontWeight: isActive(link.path) ? 600 : 400,
+                  borderBottom: isActive(link.path) ? 2 : 0,
                   borderColor: 'primary.main',
                   borderRadius: 0,
                   px: 2,
-                  '&:hover': {
-                    backgroundColor: 'action.hover',
-                  },
                 }}
               >
                 {link.label}
               </Button>
             ))}
+
+            {/* Groups */}
+            {renderDesktopMenu("Управление временем", <TimeManagementIcon sx={{ mr: 0.5 }} />, navStruct.time, anchorElTime, handleOpenTime, handleCloseTime)}
+            {renderDesktopMenu("Маркетинг", <MarketingIcon sx={{ mr: 0.5 }} />, navStruct.marketing, anchorElMarketing, handleOpenMarketing, handleCloseMarketing)}
+            {renderDesktopMenu("Настройки", <SettingsIcon sx={{ mr: 0.5 }} />, navStruct.settings, anchorElSettings, handleOpenSettings, handleCloseSettings)}
           </Box>
 
-          {/* Меню пользователя */}
+          {/* User Menu */}
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             <Box sx={{ display: { xs: 'none', sm: 'block' }, textAlign: 'right' }}>
               <Typography variant="body2" sx={{ fontWeight: 500 }}>
                 {userProfile?.displayName || 'Пользователь'}
               </Typography>
               <Typography variant="caption" color="text.secondary">
-                {userProfile?.role === 'admin'
-                  ? 'Администратор'
-                  : userProfile?.role === 'manager'
-                    ? 'Менеджер'
-                    : userProfile?.role === 'estimator'
-                      ? 'Сметчик'
-                      : 'Гость'}
+                {userProfile?.role === 'admin' ? 'Администратор' : 'Сотрудник'}
               </Typography>
             </Box>
 
-            <IconButton onClick={handleMenuOpen} size="small">
-              <Avatar
-                src={userProfile?.photoURL || undefined}
-                alt={userProfile?.displayName || 'User'}
-                sx={{ width: 40, height: 40 }}
-              >
+            <IconButton onClick={handleUserMenuOpen} size="small">
+              <Avatar src={userProfile?.photoURL || undefined} sx={{ width: 40, height: 40 }}>
                 {userProfile?.displayName?.charAt(0).toUpperCase() || 'U'}
               </Avatar>
             </IconButton>
 
             <Menu
-              anchorEl={anchorEl}
-              open={Boolean(anchorEl)}
-              onClose={handleMenuClose}
-              anchorOrigin={{
-                vertical: 'bottom',
-                horizontal: 'right',
-              }}
-              transformOrigin={{
-                vertical: 'top',
-                horizontal: 'right',
-              }}
-              PaperProps={{
-                sx: { mt: 1, minWidth: 200 },
-              }}
+              anchorEl={anchorElUser}
+              open={Boolean(anchorElUser)}
+              onClose={handleUserMenuClose}
+              anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+              transformOrigin={{ vertical: 'top', horizontal: 'right' }}
             >
               <MenuItem onClick={handleProfileClick}>
-                <PersonIcon sx={{ mr: 1 }} />
-                Профиль
+                <PersonIcon sx={{ mr: 1 }} /> Профиль
               </MenuItem>
               <MenuItem onClick={handleSettingsClick}>
-                <SettingsIcon sx={{ mr: 1 }} />
-                Настройки
+                <SettingsIcon sx={{ mr: 1 }} /> Настройки профиля
               </MenuItem>
               <Divider />
               <MenuItem onClick={handleLogout} sx={{ color: 'error.main' }}>
-                <LogoutIcon sx={{ mr: 1 }} />
-                Выйти
+                <LogoutIcon sx={{ mr: 1 }} /> Выйти
               </MenuItem>
             </Menu>
           </Box>
         </Toolbar>
       </Container>
 
-      {/* Мобильное меню (Drawer) */}
+      {/* Mobile Drawer */}
       <Drawer
         anchor="left"
         open={mobileMenuOpen}
         onClose={handleMobileMenuClose}
         sx={{
           display: { xs: 'block', md: 'none' },
-          '& .MuiDrawer-paper': {
-            width: 280,
-          },
+          '& .MuiDrawer-paper': { width: 280 },
         }}
       >
-        {/* Заголовок Drawer */}
         <Box sx={{ p: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Typography variant="h6" sx={{ fontWeight: 600, color: 'primary.main' }}>
-            Profit Step
-          </Typography>
-          <IconButton onClick={handleMobileMenuClose}>
-            <CloseIcon />
-          </IconButton>
+          <Typography variant="h6" sx={{ color: 'primary.main' }}>Profit Step</Typography>
+          <IconButton onClick={handleMobileMenuClose}><CloseIcon /></IconButton>
         </Box>
         <Divider />
-
-        {/* Навигационные ссылки */}
         <List>
-          {navLinks.map((link) => (
+          {/* Dashboard */}
+          {navStruct.dashboard.map(link => (
             <ListItem key={link.path} disablePadding>
-              <ListItemButton
-                component={Link}
-                to={link.path}
-                onClick={handleMobileMenuClose}
-                selected={location.pathname === link.path}
-                sx={{
-                  '&.Mui-selected': {
-                    backgroundColor: 'primary.light',
-                    color: 'primary.main',
-                    '&:hover': {
-                      backgroundColor: 'primary.light',
-                    },
-                  },
-                }}
-              >
-                <ListItemIcon sx={{ color: location.pathname === link.path ? 'primary.main' : 'inherit' }}>
-                  {link.icon}
-                </ListItemIcon>
+              <ListItemButton component={Link} to={link.path} onClick={handleMobileMenuClose} selected={isActive(link.path)}>
+                <ListItemIcon>{link.icon}</ListItemIcon>
                 <ListItemText primary={link.label} />
               </ListItemButton>
             </ListItem>
           ))}
+
+          {/* Time Management */}
+          <ListItemButton onClick={() => setMobileOpenTime(!mobileOpenTime)}>
+            <ListItemIcon><TimeManagementIcon /></ListItemIcon>
+            <ListItemText primary="Управление временем" />
+            {mobileOpenTime ? <ExpandLess /> : <ExpandMore />}
+          </ListItemButton>
+          <Collapse in={mobileOpenTime} timeout="auto" unmountOnExit>
+            <List component="div" disablePadding>
+              {navStruct.time.map(link => (
+                <ListItemButton key={link.path} sx={{ pl: 4 }} component={Link} to={link.path} onClick={handleMobileMenuClose} selected={isActive(link.path)}>
+                  <ListItemIcon>{link.icon}</ListItemIcon>
+                  <ListItemText primary={link.label} />
+                </ListItemButton>
+              ))}
+            </List>
+          </Collapse>
+
+          {/* Marketing */}
+          <ListItemButton onClick={() => setMobileOpenMarketing(!mobileOpenMarketing)}>
+            <ListItemIcon><MarketingIcon /></ListItemIcon>
+            <ListItemText primary="Маркетинг" />
+            {mobileOpenMarketing ? <ExpandLess /> : <ExpandMore />}
+          </ListItemButton>
+          <Collapse in={mobileOpenMarketing} timeout="auto" unmountOnExit>
+            <List component="div" disablePadding>
+              {navStruct.marketing.map(link => (
+                <ListItemButton key={link.path} sx={{ pl: 4 }} component={Link} to={link.path} onClick={handleMobileMenuClose} selected={isActive(link.path)}>
+                  <ListItemIcon>{link.icon}</ListItemIcon>
+                  <ListItemText primary={link.label} />
+                </ListItemButton>
+              ))}
+            </List>
+          </Collapse>
+
+          {/* Settings */}
+          <ListItemButton onClick={() => setMobileOpenSettings(!mobileOpenSettings)}>
+            <ListItemIcon><SettingsIcon /></ListItemIcon>
+            <ListItemText primary="Настройки" />
+            {mobileOpenSettings ? <ExpandLess /> : <ExpandMore />}
+          </ListItemButton>
+          <Collapse in={mobileOpenSettings} timeout="auto" unmountOnExit>
+            <List component="div" disablePadding>
+              {navStruct.settings.map(link => (
+                <ListItemButton key={link.path} sx={{ pl: 4 }} component={Link} to={link.path} onClick={handleMobileMenuClose} selected={isActive(link.path)}>
+                  <ListItemIcon>{link.icon}</ListItemIcon>
+                  <ListItemText primary={link.label} />
+                </ListItemButton>
+              ))}
+            </List>
+          </Collapse>
         </List>
-
         <Divider />
-
-        {/* Профиль и настройки */}
+        {/* User Actions */}
         <List>
-          <ListItem disablePadding>
-            <ListItemButton
-              onClick={() => {
-                navigate('/profile');
-                handleMobileMenuClose();
-              }}
-            >
-              <ListItemIcon>
-                <PersonIcon />
-              </ListItemIcon>
-              <ListItemText primary="Профиль" />
-            </ListItemButton>
-          </ListItem>
-          <ListItem disablePadding>
-            <ListItemButton
-              onClick={() => {
-                navigate('/settings');
-                handleMobileMenuClose();
-              }}
-            >
-              <ListItemIcon>
-                <SettingsIcon />
-              </ListItemIcon>
-              <ListItemText primary="Настройки" />
-            </ListItemButton>
-          </ListItem>
-          <Divider />
-          <ListItem disablePadding>
-            <ListItemButton
-              onClick={async () => {
-                await signOut();
-                navigate('/login');
-                handleMobileMenuClose();
-              }}
-              sx={{ color: 'error.main' }}
-            >
-              <ListItemIcon sx={{ color: 'error.main' }}>
-                <LogoutIcon />
-              </ListItemIcon>
-              <ListItemText primary="Выйти" />
-            </ListItemButton>
-          </ListItem>
+          <ListItemButton onClick={handleProfileClick}>
+            <ListItemIcon><PersonIcon /></ListItemIcon>
+            <ListItemText primary="Профиль" />
+          </ListItemButton>
+          <ListItemButton onClick={handleSettingsClick}>
+            <ListItemIcon><SettingsIcon /></ListItemIcon>
+            <ListItemText primary="Настройки профиля" />
+          </ListItemButton>
+          <ListItemButton onClick={handleLogout} sx={{ color: 'error.main' }}>
+            <ListItemIcon sx={{ color: 'error.main' }}><LogoutIcon /></ListItemIcon>
+            <ListItemText primary="Выйти" />
+          </ListItemButton>
         </List>
       </Drawer>
     </AppBar>

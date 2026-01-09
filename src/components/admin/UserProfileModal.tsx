@@ -15,6 +15,7 @@ import {
 import { PhotoCamera as PhotoCameraIcon } from '@mui/icons-material';
 import { UserProfile } from '../../types/user.types';
 import { uploadUserAvatar, updateUserExtendedProfile } from '../../api/userManagementApi';
+import { useAuth } from '../../auth/AuthContext';
 
 interface UserProfileModalProps {
   open: boolean;
@@ -33,6 +34,7 @@ const UserProfileModal: React.FC<UserProfileModalProps> = ({
   onClose,
   onSuccess,
 }) => {
+  const { currentUser } = useAuth();
   const [displayName, setDisplayName] = useState('');
   const [title, setTitle] = useState('');
   const [phone, setPhone] = useState('');
@@ -227,6 +229,7 @@ const UserProfileModal: React.FC<UserProfileModalProps> = ({
           // InputProps={{ startAdornment: <InputAdornment position="start">$</InputAdornment> }} // Need InputAdornment import
           placeholder="0.00"
           helperText="Ставка в час (используется для расчета Payroll)"
+          disabled={!currentUser}
         />
 
         <TextField

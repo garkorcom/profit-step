@@ -1,7 +1,7 @@
 import React from 'react';
 import { useDraggable } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
-import { Card, CardContent, Typography, Box, Chip, Avatar, IconButton } from '@mui/material';
+import { Card, CardContent, Typography, Box, Chip, Avatar, IconButton, Tooltip } from '@mui/material';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import { Task } from '../../types/task.types';
 
@@ -50,9 +50,11 @@ const TaskCard: React.FC<TaskCardProps> = ({ task, onClick }) => {
             >
                 <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
                     <Box display="flex" justifyContent="space-between" alignItems="flex-start" mb={1}>
-                        <Typography variant="subtitle2" sx={{ fontWeight: 600, lineHeight: 1.2 }}>
-                            {task.title}
-                        </Typography>
+                        <Tooltip title={task.title}>
+                            <Typography variant="subtitle2" noWrap sx={{ fontWeight: 600, lineHeight: 1.2, maxWidth: 200 }}>
+                                {task.title}
+                            </Typography>
+                        </Tooltip>
                     </Box>
 
                     <Box display="flex" justifyContent="space-between" alignItems="center">

@@ -4,9 +4,9 @@ import {
     TableRow, Chip, CircularProgress, Grid, Card, CardContent, FormControl, InputLabel, Select,
     MenuItem, Avatar, Tooltip, IconButton, Tabs, Tab, Button, Link as MuiLink, TextField
 } from '@mui/material';
-import { collection, query, orderBy, getDocs, where, Timestamp, doc, updateDoc } from 'firebase/firestore';
-import { db, functions } from '../../firebase/firebase'; // Added functions
-import { httpsCallable } from 'firebase/functions'; // Added httpsCallable
+import { collection, query, orderBy, getDocs, where, Timestamp, doc, updateDoc, addDoc } from 'firebase/firestore';
+import { db, functions } from '../../firebase/firebase';
+import { httpsCallable } from 'firebase/functions';
 import { WorkSession } from '../../types/timeTracking.types';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import GroupIcon from '@mui/icons-material/Group';
@@ -18,7 +18,9 @@ import ListIcon from '@mui/icons-material/List';
 import DownloadIcon from '@mui/icons-material/Download';
 import LocationOnIcon from '@mui/icons-material/LocationOn';
 import EditIcon from '@mui/icons-material/Edit';
-import StopCircleIcon from '@mui/icons-material/StopCircle'; // Added Icon
+import StopCircleIcon from '@mui/icons-material/StopCircle';
+import AddIcon from '@mui/icons-material/Add';
+import DeleteIcon from '@mui/icons-material/Delete';
 import {
     BarChart,
     Bar,
@@ -33,8 +35,9 @@ import {
 } from 'recharts';
 import { subDays, startOfDay, endOfDay, eachDayOfInterval, format } from 'date-fns';
 import LocationMap from '../../components/crm/LocationMap';
-import EditSessionDialog from '../../components/crm/EditSessionDialog';
-import EmployeeDetailsDialog from '../../components/crm/EmployeeDetailsDialog'; // Added Import
+import CorrectionSessionDialog from '../../components/crm/CorrectionSessionDialog';
+import CreateSessionDialog from '../../components/crm/CreateSessionDialog';
+import EmployeeDetailsDialog from '../../components/crm/EmployeeDetailsDialog';
 
 // --- Components ---
 const StatCard = ({ title, value, icon, color }: { title: string, value: string | number, icon: React.ReactNode, color: string }) => (
@@ -62,28 +65,75 @@ const TimeTrackingPage: React.FC = () => {
 
     // View
     const [viewMode, setViewMode] = useState<'list' | 'map'>('list');
-    const [editingSession, setEditingSession] = useState<WorkSession | null>(null);
-    const [selectedEmployee, setSelectedEmployee] = useState<{ id: string, name: string } | null>(null); // Added State
 
-    const handleSaveSession = async (sessionId: string, updates: Partial<WorkSession>) => {
+    // Dialogs
+    const [selectedEmployee, setSelectedEmployee] = useState<{ id: string, name: string } | null>(null);
+    const [isCreateSessionOpen, setIsCreateSessionOpen] = useState(false);
+
+    // Correction State
+    const [correctionSession, setCorrectionSession] = useState<WorkSession | null>(null);
+
+    // Data Refresh
+    const [refreshKey, setRefreshKey] = useState(0);
+
+    const handleCorrection = async (correction: Partial<WorkSession>) => {
         try {
-            const sessionRef = doc(db, 'work_sessions', sessionId);
-            await updateDoc(sessionRef, updates);
-            setSessions(prev => prev.map(s => s.id === sessionId ? { ...s, ...updates } : s));
+            // New logic: Create a NEW document for the correction
+            // The correction object already contains type='correction', relatedSessionId, etc.
+            await addDoc(collection(db, 'work_sessions'), correction);
+            setRefreshKey(prev => prev + 1); // Trigger refresh to see the new correction entry
+            alert("Correction saved successfully as a new ledger entry.");
         } catch (error) {
-            console.error("Error updating session:", error);
-            alert("Failed to update session");
+            console.error("Error saving correction:", error);
+            alert("Failed to save correction");
+        }
+    };
+
+    const handleVoidSession = async (session: WorkSession) => {
+        if (!window.confirm("ARE YOU SURE you want to DELETE/VOID this session?\n\nThis will create a negative correction entry to cancel out the time and earnings. The action is irreversible.")) {
+            return;
+        }
+
+        try {
+            // Create a "Void" correction
+            // It subtracts the entire duration and earnings
+            const voidCorrection: Partial<WorkSession> = {
+                type: 'correction', // or 'void'? sticking to 'correction' for compatibility but could use a status
+                relatedSessionId: session.id,
+                startTime: Timestamp.now(),
+                employeeId: session.employeeId,
+                employeeName: session.employeeName,
+                clientId: session.clientId,
+                clientName: session.clientName,
+
+                // Negate values
+                durationMinutes: -(session.durationMinutes || 0),
+                sessionEarnings: -(session.sessionEarnings || 0),
+                hourlyRate: session.hourlyRate, // Rate doesn't matter much for void, but keep it for reference
+
+                status: 'completed', // Void entry is completed
+                description: `VOID: ${session.description || '-'}`,
+                correctionNote: 'Session Voided (Deleted) by Admin',
+            };
+
+            await addDoc(collection(db, 'work_sessions'), voidCorrection);
+            setRefreshKey(prev => prev + 1);
+            alert("Session successfully voided.");
+        } catch (error) {
+            console.error("Error voiding session:", error);
+            alert("Failed to void session");
         }
     };
 
     const handleExportCSV = () => {
         // Use filtered sessions for export
         const dataToExport = filteredSessions;
-        const headers = ["Date", "Employee", "Client", "Start Time", "End Time", "Duration (m)", "Breaks (m)", "Description", "Status"];
+        const headers = ["Date", "Type", "Employee", "Client", "Start Time", "End Time", "Duration (m)", "Breaks (m)", "Description", "Status", "Hourly Rate", "Earnings"];
         const csvContent = [
             headers.join(","),
             ...dataToExport.map(s => [
                 s.startTime ? new Date(s.startTime.seconds * 1000).toLocaleDateString() : '',
+                s.type || 'regular',
                 `"${s.employeeName}"`,
                 `"${s.clientName}"`,
                 s.startTime ? new Date(s.startTime.seconds * 1000).toLocaleTimeString() : '',
@@ -91,7 +141,9 @@ const TimeTrackingPage: React.FC = () => {
                 s.durationMinutes || 0,
                 s.totalBreakMinutes || 0,
                 `"${s.description || ''}"`,
-                s.status
+                s.status,
+                s.hourlyRate || 0,
+                s.sessionEarnings || 0
             ].join(","))
         ].join("\n");
 
@@ -118,7 +170,7 @@ const TimeTrackingPage: React.FC = () => {
             const result = await forceFinishFn();
             const data = result.data as any;
             alert(data.message);
-            window.location.reload();
+            setRefreshKey(prev => prev + 1); // Refresh instead of reload
         } catch (error: any) {
             console.error("Error stopping sessions:", error);
             alert("Error: " + error.message);
@@ -156,7 +208,7 @@ const TimeTrackingPage: React.FC = () => {
         };
 
         fetchSessions();
-    }, [startDate, endDate]);
+    }, [startDate, endDate, refreshKey]);
 
     // --- Filtering & Stats ---
 
@@ -183,7 +235,10 @@ const TimeTrackingPage: React.FC = () => {
         const dailyMinutes: Record<string, number> = {};
 
         filteredSessions.forEach(session => {
-            // Total Duration
+            // Stats should handle Corrections appropriately. 
+            // Corrections add/subtract duration.
+            // If type is 'correction', durationMinutes is the Delta.
+
             if (session.durationMinutes) {
                 totalMinutes += session.durationMinutes;
 
@@ -192,14 +247,21 @@ const TimeTrackingPage: React.FC = () => {
                 clientDuration[client] = (clientDuration[client] || 0) + session.durationMinutes;
 
                 // Daily Activity
-                if (session.endTime) {
-                    const dateKey = new Date(session.endTime.seconds * 1000).toLocaleDateString();
-                    dailyMinutes[dateKey] = (dailyMinutes[dateKey] || 0) + session.durationMinutes;
+                // For corrections, apply to the date of the correction (accounting view)
+                if (session.startTime) {
+                    const dateKey = new Date(session.startTime.seconds * 1000).toLocaleDateString();
+                    // Actually, usually we map daily activity by End Time, but for corrections StartTime is the relevant one
+                    // If regular session, use EndTime if exists, else StartTime
+                    const timeRef = session.endTime || session.startTime;
+                    if (timeRef) {
+                        const dateKey = new Date(timeRef.seconds * 1000).toLocaleDateString();
+                        dailyMinutes[dateKey] = (dailyMinutes[dateKey] || 0) + session.durationMinutes;
+                    }
                 }
             }
 
-            // Active Count
-            if (session.status === 'active') {
+            // Active Count (Only regular active sessions)
+            if (session.status === 'active' && session.type !== 'correction' && session.type !== 'manual_adjustment') {
                 activeSessionsCount++;
             }
 
@@ -237,10 +299,12 @@ const TimeTrackingPage: React.FC = () => {
 
     // --- Helpers ---
     const formatDuration = (minutes?: number) => {
-        if (!minutes) return '-';
-        const h = Math.floor(minutes / 60);
-        const m = minutes % 60;
-        return `${h}h ${m}m`;
+        if (!minutes && minutes !== 0) return '-';
+        const isNegative = minutes < 0;
+        const absM = Math.abs(minutes);
+        const h = Math.floor(absM / 60);
+        const m = absM % 60;
+        return `${isNegative ? '-' : ''}${h}h ${m}m`;
     };
 
     const formatDate = (timestamp?: Timestamp) => {
@@ -253,7 +317,10 @@ const TimeTrackingPage: React.FC = () => {
         return new Date(timestamp.seconds * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     };
 
-    const getStatusColor = (status: string) => {
+    const getStatusColor = (status: string, type?: string) => {
+        if (type === 'correction') return 'warning';
+        if (type === 'manual_adjustment') return 'info';
+
         switch (status) {
             case 'active': return 'success';
             case 'completed': return 'default';
@@ -279,6 +346,15 @@ const TimeTrackingPage: React.FC = () => {
             <Box display="flex" justifyContent="space-between" alignItems="center" mb={4}>
                 <Typography variant="h4" fontWeight="bold">Time Tracking</Typography>
                 <Box display="flex" gap={2}>
+                    {/* Add Session Button */}
+                    <Button
+                        startIcon={<AddIcon />}
+                        variant="contained"
+                        color="success"
+                        onClick={() => setIsCreateSessionOpen(true)}
+                    >
+                        Add Session
+                    </Button>
                     <Button
                         startIcon={<DownloadIcon />}
                         variant="outlined"
@@ -307,8 +383,8 @@ const TimeTrackingPage: React.FC = () => {
 
             {/* Filters Bar */}
             <Paper sx={{ p: 2, mb: 4 }}>
-                <Grid container spacing={2} alignItems="center">
-                    <Grid size={{ xs: 12, md: 3 }}>
+                <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center' }}>
+                    <Box sx={{ flex: '1 1 200px' }}>
                         <TextField
                             label="Start Date"
                             type="date"
@@ -318,8 +394,8 @@ const TimeTrackingPage: React.FC = () => {
                             onChange={(e) => setStartDate(e.target.value ? new Date(e.target.value) : new Date())}
                             InputLabelProps={{ shrink: true }}
                         />
-                    </Grid>
-                    <Grid size={{ xs: 12, md: 3 }}>
+                    </Box>
+                    <Box sx={{ flex: '1 1 200px' }}>
                         <TextField
                             label="End Date"
                             type="date"
@@ -329,8 +405,8 @@ const TimeTrackingPage: React.FC = () => {
                             onChange={(e) => setEndDate(e.target.value ? new Date(e.target.value) : new Date())}
                             InputLabelProps={{ shrink: true }}
                         />
-                    </Grid>
-                    <Grid size={{ xs: 12, md: 2 }}>
+                    </Box>
+                    <Box sx={{ flex: '1 1 150px' }}>
                         <FormControl fullWidth size="small">
                             <InputLabel>Status</InputLabel>
                             <Select
@@ -344,85 +420,87 @@ const TimeTrackingPage: React.FC = () => {
                                 <MenuItem value="paused">Paused</MenuItem>
                             </Select>
                         </FormControl>
-                    </Grid>
-                    <Grid size={{ xs: 12, md: 2 }}>
-                        <FormControl fullWidth size="small">
-                            <InputLabel>Employee</InputLabel>
-                            <Select
-                                value={filterEmployee}
-                                label="Employee"
-                                onChange={(e) => setFilterEmployee(e.target.value)}
-                                displayEmpty
-                            >
-                                <MenuItem value="">All Employees</MenuItem>
-                                {uniqueEmployees.map(name => (
-                                    <MenuItem key={name} value={name}>{name}</MenuItem>
-                                ))}
-                            </Select>
-                        </FormControl>
-                    </Grid>
-                    <Grid size={{ xs: 12, md: 2 }}>
-                        <FormControl fullWidth size="small">
-                            <InputLabel>Client / Project</InputLabel>
-                            <Select
-                                value={filterClient}
-                                label="Client / Project"
-                                onChange={(e) => setFilterClient(e.target.value)}
-                                displayEmpty
-                            >
-                                <MenuItem value="">All Clients</MenuItem>
-                                {uniqueClients.map(name => (
-                                    <MenuItem key={name} value={name}>{name}</MenuItem>
-                                ))}
-                            </Select>
-                        </FormControl>
-                    </Grid>
-                </Grid>
+                    </Box>
+                    <Box sx={{ flex: '1 1 150px' }}>
+                        <TextField
+                            select
+                            label="Employee"
+                            fullWidth
+                            size="small"
+                            value={filterEmployee}
+                            onChange={(e) => setFilterEmployee(e.target.value)}
+                            InputLabelProps={{ shrink: true }}
+                            SelectProps={{ displayEmpty: true }}
+                        >
+                            <MenuItem value="">All Employees</MenuItem>
+                            {uniqueEmployees.map(name => (
+                                <MenuItem key={name} value={name}>{name}</MenuItem>
+                            ))}
+                        </TextField>
+                    </Box>
+                    <Box sx={{ flex: '1 1 150px' }}>
+                        <TextField
+                            select
+                            label="Client / Project"
+                            fullWidth
+                            size="small"
+                            value={filterClient}
+                            onChange={(e) => setFilterClient(e.target.value)}
+                            InputLabelProps={{ shrink: true }}
+                            SelectProps={{ displayEmpty: true }}
+                        >
+                            <MenuItem value="">All Clients</MenuItem>
+                            {uniqueClients.map(name => (
+                                <MenuItem key={name} value={name}>{name}</MenuItem>
+                            ))}
+                        </TextField>
+                    </Box>
+                </Box>
             </Paper>
 
             {/* Dashboard Cards */}
-            <Grid container spacing={3} mb={4}>
-                <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+            <Box sx={{ display: 'flex', gap: 3, mb: 4, flexWrap: 'wrap' }}>
+                <Box sx={{ flex: 1, minWidth: 200 }}>
                     <StatCard
                         title="Total Hours"
                         value={stats.totalHours}
                         icon={<AccessTimeIcon />}
                         color="#1976d2"
                     />
-                </Grid>
-                <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+                </Box>
+                <Box sx={{ flex: 1, minWidth: 200 }}>
                     <StatCard
                         title="Active Employees"
                         value={stats.activeSessions}
                         icon={<GroupIcon />}
                         color="#2e7d32"
                     />
-                </Grid>
-                <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+                </Box>
+                <Box sx={{ flex: 1, minWidth: 200 }}>
                     <StatCard
                         title="Total Breaks"
                         value={`${Math.floor(stats.totalBreakMinutes / 60)}h ${stats.totalBreakMinutes % 60}m`}
                         icon={<CoffeeIcon />}
                         color="#ed6c02"
                     />
-                </Grid>
-                <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+                </Box>
+                <Box sx={{ flex: 1, minWidth: 200 }}>
                     <StatCard
                         title="Total Sessions"
                         value={stats.sessionCount}
                         icon={<TodayIcon />}
                         color="#9c27b0"
                     />
-                </Grid>
-            </Grid>
+                </Box>
+            </Box>
 
             {/* Charts (Only in List Mode for now) */}
             {viewMode === 'list' && (
-                <Grid container spacing={3} mb={4}>
-                    <Grid size={{ xs: 12, md: 8 }}>
+                <Box sx={{ display: 'flex', gap: 3, mb: 4, flexWrap: 'wrap' }}>
+                    <Box sx={{ width: { xs: '100%', md: 'calc(66.6% - 12px)' }, minWidth: 0 }}>
                         <Paper sx={{ p: 3, height: 400 }}>
                             <Typography variant="h6" gutterBottom>Daily Activity (Hours)</Typography>
-                            <ResponsiveContainer width="100%" height="100%">
+                            <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                                 <BarChart data={stats.dailyActivity}>
                                     <CartesianGrid strokeDasharray="3 3" />
                                     <XAxis dataKey="date" />
@@ -432,12 +510,12 @@ const TimeTrackingPage: React.FC = () => {
                                 </BarChart>
                             </ResponsiveContainer>
                         </Paper>
-                    </Grid>
+                    </Box>
 
-                    <Grid size={{ xs: 12, md: 4 }}>
+                    <Box sx={{ width: { xs: '100%', md: 'calc(33.3% - 12px)' }, minWidth: 0 }}>
                         <Paper sx={{ p: 3, height: 400 }}>
                             <Typography variant="h6" gutterBottom>Client Distribution</Typography>
-                            <ResponsiveContainer width="100%" height="100%">
+                            <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                                 <PieChart>
                                     <Pie
                                         data={stats.clientDistribution}
@@ -458,8 +536,8 @@ const TimeTrackingPage: React.FC = () => {
                                 </PieChart>
                             </ResponsiveContainer>
                         </Paper>
-                    </Grid>
-                </Grid>
+                    </Box>
+                </Box>
             )}
 
             {/* Map Mode */}
@@ -469,8 +547,8 @@ const TimeTrackingPage: React.FC = () => {
 
             {/* List Mode Table */}
             {viewMode === 'list' && (
-                <TableContainer component={Paper}>
-                    <Table>
+                <TableContainer component={Paper} sx={{ overflowX: 'auto' }}>
+                    <Table sx={{ minWidth: 800 }}>
                         <TableHead>
                             <TableRow>
                                 <TableCell>Date</TableCell>
@@ -489,122 +567,141 @@ const TimeTrackingPage: React.FC = () => {
                                     <TableCell colSpan={8} align="center">No work sessions found for this period</TableCell>
                                 </TableRow>
                             ) : (
-                                filteredSessions.map((session) => (
-                                    <TableRow key={session.id} hover>
-                                        <TableCell>
-                                            {formatDate(session.startTime)}
-                                        </TableCell>
-                                        <TableCell>
-                                            <Box
-                                                display="flex"
-                                                alignItems="center"
-                                                gap={1}
-                                                onClick={() => setSelectedEmployee({ id: String(session.employeeId), name: session.employeeName })}
-                                                sx={{ cursor: 'pointer', '&:hover': { textDecoration: 'underline', color: 'primary.main' } }}
-                                            >
-                                                <Avatar sx={{ width: 24, height: 24, fontSize: '0.8rem' }}>
-                                                    {session.employeeName?.[0] || '?'}
-                                                </Avatar>
-                                                <Typography variant="body2">{session.employeeName}</Typography>
-                                            </Box>
-                                        </TableCell>
-                                        <TableCell>
-                                            <Typography variant="body2" fontWeight="medium">
-                                                {session.clientName}
-                                            </Typography>
-                                            {session.startLocation && (
-                                                <MuiLink
-                                                    href={`https://www.google.com/maps?q=${session.startLocation.latitude},${session.startLocation.longitude}`}
-                                                    target="_blank"
-                                                    underline="hover"
-                                                    sx={{ display: 'flex', alignItems: 'center', fontSize: '0.75rem', color: 'gray' }}
+                                filteredSessions.map((session) => {
+                                    const isCorrection = session.type === 'correction';
+                                    return (
+                                        <TableRow key={session.id} hover sx={isCorrection ? { bgcolor: '#fff3e0' } : undefined}>
+                                            <TableCell>
+                                                {formatDate(session.startTime)}
+                                                {isCorrection && <Typography variant="caption" display="block" color="textSecondary">Correction</Typography>}
+                                            </TableCell>
+                                            <TableCell>
+                                                <Box
+                                                    display="flex"
+                                                    alignItems="center"
+                                                    gap={1}
+                                                    onClick={() => setSelectedEmployee({ id: String(session.employeeId), name: session.employeeName })}
+                                                    sx={{ cursor: 'pointer', '&:hover': { textDecoration: 'underline', color: 'primary.main' }, maxWidth: 200 }}
                                                 >
-                                                    <LocationOnIcon fontSize="inherit" sx={{ mr: 0.5 }} /> Map
-                                                </MuiLink>
-                                            )}
-                                        </TableCell>
-                                        <TableCell>
-                                            <Typography variant="body2">
-                                                {formatTime(session.startTime)} - {session.status === 'active' ? 'Now' : formatTime(session.endTime)}
-                                            </Typography>
-                                            {session.breaks && session.breaks.length > 0 && (
-                                                <Tooltip title={`${session.breaks.length} breaks taken`}>
-                                                    <Typography variant="caption" color="text.secondary" sx={{ display: 'flex', alignItems: 'center' }}>
-                                                        <AccessTimeIcon fontSize="inherit" sx={{ mr: 0.5 }} />
-                                                        Break: {formatDuration(session.totalBreakMinutes)}
+                                                    <Avatar sx={{ width: 24, height: 24, fontSize: '0.8rem' }}>
+                                                        {session.employeeName?.[0] || '?'}
+                                                    </Avatar>
+                                                    <Tooltip title={session.employeeName}>
+                                                        <Typography variant="body2" noWrap>{session.employeeName}</Typography>
+                                                    </Tooltip>
+                                                </Box>
+                                            </TableCell>
+                                            <TableCell>
+                                                <Tooltip title={session.clientName}>
+                                                    <Typography variant="body2" fontWeight="medium" noWrap sx={{ maxWidth: 200 }}>
+                                                        {session.clientName}
                                                     </Typography>
                                                 </Tooltip>
-                                            )}
-                                        </TableCell>
-                                        <TableCell sx={{ fontWeight: 'bold' }}>
-                                            {formatDuration(session.durationMinutes)}
-                                        </TableCell>
-                                        <TableCell>
-                                            {session.description ? (
-                                                <Tooltip title={session.description}>
-                                                    <Typography variant="body2" noWrap sx={{ maxWidth: 200 }}>
-                                                        {session.description}
-                                                    </Typography>
-                                                </Tooltip>
-                                            ) : (
-                                                <Typography variant="caption" color="text.secondary">-</Typography>
-                                            )}
-                                        </TableCell>
-                                        <TableCell>
-                                            <Chip
-                                                label={session.status === 'paused' ? 'On Break' : session.status}
-                                                color={getStatusColor(session.status)}
-                                                size="small"
-                                                variant="outlined"
-                                            />
-                                        </TableCell>
-                                        <TableCell align="right">
-                                            <Box display="flex" justifyContent="flex-end" gap={0.5}>
-                                                {session.startPhotoUrl ? (
-                                                    <MuiLink href={session.startPhotoUrl} target="_blank">
-                                                        <Chip icon={<PhotoCameraIcon />} label="Start" size="small" clickable color="primary" variant="outlined" />
+                                                {session.startLocation && (
+                                                    <MuiLink
+                                                        href={`https://www.google.com/maps?q=${session.startLocation.latitude},${session.startLocation.longitude}`}
+                                                        target="_blank"
+                                                        underline="hover"
+                                                        sx={{ display: 'flex', alignItems: 'center', fontSize: '0.75rem', color: 'gray' }}
+                                                    >
+                                                        <LocationOnIcon fontSize="inherit" sx={{ mr: 0.5 }} /> Map
                                                     </MuiLink>
-                                                ) : session.startPhotoId && (
-                                                    <Tooltip title="Photo ID only (Old)">
-                                                        <Chip icon={<PhotoCameraIcon />} label="Start" size="small" />
+                                                )}
+                                            </TableCell>
+                                            <TableCell>
+                                                <Typography variant="body2">
+                                                    {isCorrection ? '-' : `${formatTime(session.startTime)} - ${session.status === 'active' ? 'Now' : formatTime(session.endTime)}`}
+                                                </Typography>
+                                                {session.breaks && session.breaks.length > 0 && (
+                                                    <Tooltip title={`${session.breaks.length} breaks taken`}>
+                                                        <Typography variant="caption" color="text.secondary" sx={{ display: 'flex', alignItems: 'center' }}>
+                                                            <AccessTimeIcon fontSize="inherit" sx={{ mr: 0.5 }} />
+                                                            Break: {formatDuration(session.totalBreakMinutes)}
+                                                        </Typography>
                                                     </Tooltip>
                                                 )}
-
-                                                {session.endPhotoUrl ? (
-                                                    <MuiLink href={session.endPhotoUrl} target="_blank">
-                                                        <Chip icon={<PhotoCameraIcon />} label="End" size="small" clickable color="primary" variant="outlined" />
-                                                    </MuiLink>
-                                                ) : session.endPhotoId && (
-                                                    <Tooltip title="Photo ID only (Old)">
-                                                        <Chip icon={<PhotoCameraIcon />} label="End" size="small" />
+                                            </TableCell>
+                                            <TableCell sx={{ fontWeight: 'bold' }}>
+                                                {formatDuration(session.durationMinutes)}
+                                            </TableCell>
+                                            <TableCell>
+                                                {session.description ? (
+                                                    <Tooltip title={isCorrection ? (session.correctionNote || session.description) : session.description}>
+                                                        <Typography variant="body2" noWrap sx={{ maxWidth: 200 }}>
+                                                            {isCorrection ? (session.correctionNote || session.description) : session.description}
+                                                        </Typography>
                                                     </Tooltip>
+                                                ) : (
+                                                    <Typography variant="caption" color="text.secondary">-</Typography>
                                                 )}
+                                            </TableCell>
+                                            <TableCell>
+                                                <Chip
+                                                    label={isCorrection ? 'Correction' : (session.status === 'paused' ? 'On Break' : session.status)}
+                                                    color={getStatusColor(session.status, session.type) as any}
+                                                    size="small"
+                                                    variant="outlined"
+                                                />
+                                            </TableCell>
+                                            <TableCell align="right">
+                                                <Box display="flex" justifyContent="flex-end" gap={0.5}>
+                                                    {/* Hide photo icons for corrections usually, as they are manual */}
+                                                    {!isCorrection && (
+                                                        <>
+                                                            {session.startPhotoUrl ? (
+                                                                <MuiLink href={session.startPhotoUrl} target="_blank">
+                                                                    <Chip icon={<PhotoCameraIcon />} label="Start" size="small" clickable color="primary" variant="outlined" />
+                                                                </MuiLink>
+                                                            ) : session.startPhotoId && (
+                                                                <Tooltip title="Photo ID only (Old)">
+                                                                    <Chip icon={<PhotoCameraIcon />} label="Start" size="small" />
+                                                                </Tooltip>
+                                                            )}
 
-                                                <IconButton size="small" onClick={() => {
-                                                    const sevenDaysAgo = subDays(new Date(), 7);
-                                                    if (session.startTime.toDate() < sevenDaysAgo) {
-                                                        alert("⚠️ You cannot edit sessions older than 7 days.");
-                                                        return;
-                                                    }
-                                                    setEditingSession(session);
-                                                }}>
-                                                    <EditIcon fontSize="small" />
-                                                </IconButton>
-                                            </Box>
-                                        </TableCell>
-                                    </TableRow>
-                                ))
+                                                            {session.endPhotoUrl ? (
+                                                                <MuiLink href={session.endPhotoUrl} target="_blank">
+                                                                    <Chip icon={<PhotoCameraIcon />} label="End" size="small" clickable color="primary" variant="outlined" />
+                                                                </MuiLink>
+                                                            ) : session.endPhotoId && (
+                                                                <Tooltip title="Photo ID only (Old)">
+                                                                    <Chip icon={<PhotoCameraIcon />} label="End" size="small" />
+                                                                </Tooltip>
+                                                            )}
+                                                        </>
+                                                    )}
+
+                                                    <IconButton size="small" onClick={() => {
+                                                        // "Editing" a correction? Maybe not allowed or just creates another correction.
+                                                        // For now, allow correcting regular sessions OR corrections (creates another correction)
+                                                        setCorrectionSession(session);
+                                                    }}>
+                                                        <EditIcon fontSize="small" />
+                                                    </IconButton>
+                                                    <IconButton size="small" color="error" onClick={() => handleVoidSession(session)}>
+                                                        <DeleteIcon fontSize="small" />
+                                                    </IconButton>
+                                                </Box>
+                                            </TableCell>
+                                        </TableRow>
+                                    );
+                                })
                             )}
                         </TableBody>
                     </Table>
                 </TableContainer>
             )}
 
-            <EditSessionDialog
-                open={!!editingSession}
-                session={editingSession}
-                onClose={() => setEditingSession(null)}
-                onSave={handleSaveSession}
+            <CorrectionSessionDialog
+                open={!!correctionSession}
+                session={correctionSession}
+                onClose={() => setCorrectionSession(null)}
+                onSave={handleCorrection}
+            />
+
+            <CreateSessionDialog
+                open={isCreateSessionOpen}
+                onClose={() => setIsCreateSessionOpen(false)}
+                onSessionCreated={() => setRefreshKey(prev => prev + 1)}
             />
 
             <EmployeeDetailsDialog

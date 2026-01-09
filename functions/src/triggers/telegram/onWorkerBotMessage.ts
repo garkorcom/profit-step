@@ -36,6 +36,15 @@ interface TelegramUpdate {
             width: number;
             height: number;
         }[];
+        document?: {
+            file_id: string;
+            file_name?: string;
+            mime_type?: string;
+        };
+        video?: {
+            file_id: string;
+            mime_type?: string;
+        };
         location?: {
             latitude: number;
             longitude: number;
@@ -118,14 +127,18 @@ async function handleMessage(message: any) {
         await sendClientList(chatId);
     } else if (text === '⏹️ Finish Work') {
         await handleFinishWorkRequest(chatId, userId);
+    } else if (text === '/finish_day' || text === '🏁 Finish Day') {
+        await handleFinishDay(chatId, userId);
     } else if (text === '☕ Break') {
         await pauseWorkSession(chatId, userId);
     } else if (text === '▶️ Resume Work') {
         await resumeWorkSession(chatId, userId);
     } else if (text === '❌ Cancel') {
         await handleCancel(chatId, userId);
-    } else if (message.photo) {
-        await handlePhotoUpload(chatId, userId, message.photo);
+    } else if (text === '⏩ Skip') {
+        await handleSkipMedia(chatId, userId);
+    } else if (message.photo || message.document || message.video) {
+        await handleMediaUpload(chatId, userId, message);
     } else if (message.location) {
         await handleLocation(chatId, userId, message.location);
     } else if (text === '/me') {
@@ -133,6 +146,8 @@ async function handleMessage(message: any) {
     } else if (text && text.startsWith('/name ')) {
         const newName = text.substring(6).trim();
         await handleNameChange(chatId, userId, newName);
+    } else if (text === '/tasks' || text === '📋 Tasks') {
+        await sendTasksMenu(chatId, userId);
     } else if (text && text.length > 0) {
         // Handle text descriptions if awaiting
         await handleText(chatId, userId, text);
@@ -171,6 +186,13 @@ async function handleCallbackQuery(query: any) {
             await extendSession(chatId, userId, 120);
         } else if (data === 'still_working') {
             await extendSession(chatId, userId, 30); // Snooze for 30 mins
+        }
+        // --- GTD TASKS HANDLERS ---
+        else if (data === 'tasks_back') {
+            await sendTasksMenu(chatId, userId);
+        } else if (data.startsWith('tasks:')) {
+            const status = data.split(':')[1];
+            await sendTaskList(chatId, userId, status);
         }
     } catch (error) {
         console.error('Error in handleCallbackQuery:', error);
@@ -232,7 +254,8 @@ async function sendMainMenu(chatId: number) {
         ];
     } else {
         keyboard = [
-            [{ text: "▶️ Start Work" }]
+            [{ text: "▶️ Start Work" }],
+            [{ text: "📋 Tasks" }]
         ];
     }
 
@@ -309,9 +332,11 @@ async function handleServiceSelection(chatId: number, userId: number, clientId: 
 async function initWorkSession(chatId: number, userId: number, clientId: string, serviceName?: string) {
     // 1. Check if already active
     const activeSession = await getActiveSession(userId);
+    let autoSwitchMsg = '';
+
     if (activeSession) {
-        await sendMessage(chatId, "⚠️ You already have an active session! Finish it first.");
-        return;
+        // AUTO-SWITCH: Finish the active session automatically
+        autoSwitchMsg = await autoFinishActiveSession(activeSession, chatId, userId);
     }
 
     // 2. Get Client Name
@@ -368,7 +393,7 @@ async function initWorkSession(chatId: number, userId: number, clientId: string,
         hourlyRate: hourlyRate // Snapshot rate
     });
 
-    await sendMessage(chatId, `📍 Client selected: *${clientName}*\n\nPlease share your **Live Location** or current **Location** to verify attendance.\n(Click the 📎 attachment icon -> Location)`,
+    await sendMessage(chatId, `${autoSwitchMsg}📍 Client selected: *${clientName}*\n\nPlease share your **Live Location** or current **Location** to verify attendance.\n(Click the 📎 attachment icon -> Location)`,
         {
             keyboard: [[{ text: "📍 Send Location", request_location: true }, { text: "❌ Cancel" }]],
             resize_keyboard: true
@@ -466,52 +491,108 @@ async function handleFinishWorkRequest(chatId: number, userId: number) {
         awaitingEndPhoto: true
     });
 
-    await sendMessage(chatId, "📸 Please send a photo of the finished work to complete the session.");
+    await sendMessage(chatId, "📸 Please send a photo (or file/video) of the finished work to complete the session.\n\nOr click Skip if not applicable.", {
+        keyboard: [[{ text: "⏩ Skip" }]],
+        resize_keyboard: true
+    });
 }
 
-async function handlePhotoUpload(chatId: number, userId: number, photos: any[]) {
-    // Get highest res photo
-    const photoId = photos[photos.length - 1].file_id;
+async function handleSkipMedia(chatId: number, userId: number) {
+    const activeSession = await getActiveSession(userId);
 
+    if (!activeSession) {
+        await sendMessage(chatId, "⚠️ No active session.", { remove_keyboard: true });
+        return;
+    }
+
+    const sessionData = activeSession.data();
+
+    if (sessionData.awaitingEndPhoto) {
+        // Skip End Media
+        await activeSession.ref.update({
+            awaitingEndPhoto: false,
+            awaitingDescription: true,
+            skippedEndPhoto: true
+        });
+
+        await sendMessage(chatId, "⏩ Media skipped.\nPlease type a brief **description** of what was done (or type 'Skip').", { remove_keyboard: true });
+    } else if (sessionData.awaitingStartPhoto) {
+        // Skip Start Media (if we want to allow this too, user mainly asked for end of day, but good to have)
+        await activeSession.ref.update({
+            awaitingStartPhoto: false,
+            skippedStartPhoto: true
+        });
+        await sendMessage(chatId, `✅ Work started! (Media skipped)`, { remove_keyboard: true });
+        await sendMainMenu(chatId);
+    } else {
+        await sendMessage(chatId, "⚠️ Nothing to skip right now.");
+    }
+}
+
+async function handleMediaUpload(chatId: number, userId: number, message: any) {
+    // Determine file_id and extension
+    let fileId: string | undefined;
+    let extension = 'jpg'; // Default
+
+    if (message.photo) {
+        fileId = message.photo[message.photo.length - 1].file_id;
+        extension = 'jpg';
+    } else if (message.document) {
+        fileId = message.document.file_id;
+        // Try to get extension from filename or mimetype
+        if (message.document.file_name) {
+            const parts = message.document.file_name.split('.');
+            if (parts.length > 1) extension = parts.pop()!;
+        } else if (message.document.mime_type) {
+            extension = message.document.mime_type.split('/')[1];
+        }
+    } else if (message.video) {
+        fileId = message.video.file_id;
+        extension = 'mp4';
+    }
+
+    if (!fileId) return;
 
     // Check active session
     const activeSession = await getActiveSession(userId);
 
     if (!activeSession) {
-        await sendMessage(chatId, "⚠️ No active session to attach photo to.");
+        await sendMessage(chatId, "⚠️ No active session to attach media to.");
         return;
     }
 
     const sessionData = activeSession.data();
 
     if (sessionData.awaitingStartPhoto) {
-        // Save Start Photo
-        const photoUrl = await saveTelegramPhoto(photoId, `work_photos/${activeSession.id}/start_${Date.now()}.jpg`);
+        // Save Start Media
+        const url = await saveTelegramFile(fileId, `work_photos/${activeSession.id}/start_${Date.now()}.${extension}`);
 
         await activeSession.ref.update({
-            startPhotoId: photoId,
-            startPhotoUrl: photoUrl,
+            startPhotoId: fileId,
+            startPhotoUrl: url,
+            startMediaType: message.video ? 'video' : (message.document ? 'document' : 'photo'),
             awaitingStartPhoto: false
         });
-        await sendMessage(chatId, `✅ Work started! Good luck.`);
-        await sendMainMenu(chatId); // Refresh menu to show "Finish/Break"
+        await sendMessage(chatId, `✅ Work started! Good luck.`, { remove_keyboard: true });
+        await sendMainMenu(chatId);
 
     } else if (sessionData.awaitingEndPhoto) {
-        // Save End Photo
-        const photoUrl = await saveTelegramPhoto(photoId, `work_photos/${activeSession.id}/end_${Date.now()}.jpg`);
+        // Save End Media
+        const url = await saveTelegramFile(fileId, `work_photos/${activeSession.id}/end_${Date.now()}.${extension}`);
 
         // Move to description step
         await activeSession.ref.update({
-            endPhotoId: photoId,
-            endPhotoUrl: photoUrl,
+            endPhotoId: fileId,
+            endPhotoUrl: url,
+            endMediaType: message.video ? 'video' : (message.document ? 'document' : 'photo'),
             awaitingEndPhoto: false,
-            awaitingDescription: true // NEW STEP
+            awaitingDescription: true
         });
 
-        await sendMessage(chatId, "📝 Photo received. Please type a brief **description** of what was done (or send 'Skip').");
+        await sendMessage(chatId, "📝 Media received. Please type a brief **description** of what was done.", { remove_keyboard: true });
 
     } else {
-        await sendMessage(chatId, "I'm not expecting a photo right now.");
+        await sendMessage(chatId, "I'm not expecting media right now.");
     }
 }
 
@@ -568,34 +649,10 @@ async function handleText(chatId: number, userId: number, text: string) {
         const sessionEarnings = parseFloat((hours * hourlyRate).toFixed(2));
 
         // --- Calculate Daily Totals ---
-        const now = new Date();
-        const startOfDay = new Date(now);
-        startOfDay.setHours(0, 0, 0, 0);
-        const endOfDay = new Date(now);
-        endOfDay.setHours(23, 59, 59, 999);
+        const dailyStats = await calculateDailyStats(userId, totalMinutes, sessionEarnings);
+        const dailyHours = Math.floor(dailyStats.minutes / 60);
+        const dailyMins = dailyStats.minutes % 60;
 
-        let dailyMinutes = totalMinutes;
-        let dailyEarnings = sessionEarnings;
-
-        try {
-            const todaySessions = await db.collection('work_sessions')
-                .where('employeeId', '==', userId)
-                .where('status', '==', 'completed')
-                .where('endTime', '>=', admin.firestore.Timestamp.fromDate(startOfDay))
-                .where('endTime', '<=', admin.firestore.Timestamp.fromDate(endOfDay))
-                .get();
-
-            todaySessions.docs.forEach(doc => {
-                const d = doc.data();
-                dailyMinutes += (d.durationMinutes || 0);
-                dailyEarnings += (d.sessionEarnings || 0);
-            });
-        } catch (e) {
-            console.error("Error calculating daily totals:", e);
-        }
-
-        const dailyHours = Math.floor(dailyMinutes / 60);
-        const dailyMins = dailyMinutes % 60;
 
         await activeSession.ref.update({
             description: text,
@@ -606,11 +663,26 @@ async function handleText(chatId: number, userId: number, text: string) {
             awaitingDescription: false
         });
 
-        await sendMessage(chatId, `🏁 Work finished!\n\n⏱ Session: ${Math.floor(totalMinutes / 60)}h ${totalMinutes % 60}m\n💰 Earned: $${sessionEarnings}\n📅 **Today Total: ${dailyHours}h ${dailyMins}m ($${dailyEarnings.toFixed(2)})**\n📍 Client: ${sessionData.clientName}\n📝 Desc: ${text}`);
+        await sendMessage(chatId, `🏁 Work finished!\n\n⏱ Session: ${Math.floor(totalMinutes / 60)}h ${totalMinutes % 60}m\n💰 Earned: $${sessionEarnings}\n📅 **Today Total: ${dailyHours}h ${dailyMins}m ($${dailyStats.earnings.toFixed(2)})**\n📍 Client: ${sessionData.clientName}\n📝 Desc: ${text}`);
 
         await sendAdminNotification(`🏁 *Work Finished*\n👤 ${sessionData.employeeName}\n📍 ${sessionData.clientName}\n⏱ ${Math.floor(totalMinutes / 60)}h ${totalMinutes % 60}m\n💵 Earned: $${sessionEarnings}\n📝 ${text}`);
         await sendMainMenu(chatId);
     }
+}
+
+async function handleFinishDay(chatId: number, userId: number) {
+    let msg = '';
+    const activeSession = await getActiveSession(userId);
+    if (activeSession) {
+        msg = await autoFinishActiveSession(activeSession, chatId, userId);
+    }
+
+    // Calculate Daily Stats
+    const stats = await calculateDailyStats(userId);
+    const h = Math.floor(stats.minutes / 60);
+    const m = stats.minutes % 60;
+
+    await sendMessage(chatId, `${msg}📅 *Daily Summary*\n\n⏱ Total Time: ${h}h ${m}m\n💰 Earned: $${stats.earnings.toFixed(2)}\n\nGood job!`);
 }
 
 async function handleMe(chatId: number, userId: number) {
@@ -665,7 +737,7 @@ async function sendAdminNotification(text: string) {
 
 // --- Helpers ---
 
-async function saveTelegramPhoto(fileId: string, destinationPath: string): Promise<string | null> {
+async function saveTelegramFile(fileId: string, destinationPath: string): Promise<string | null> {
     if (!WORKER_BOT_TOKEN) return null;
     try {
         // 1. Get File Path from Telegram
@@ -681,13 +753,21 @@ async function saveTelegramPhoto(fileId: string, destinationPath: string): Promi
         });
         const buffer = Buffer.from(response.data, 'binary');
 
-        // 3. Upload to Firebase Storage with Download Token
+        // 3. Determine Content Type
+        const ext = destinationPath.split('.').pop()?.toLowerCase();
+        let contentType = 'application/octet-stream';
+        if (ext === 'jpg' || ext === 'jpeg') contentType = 'image/jpeg';
+        if (ext === 'png') contentType = 'image/png';
+        if (ext === 'mp4') contentType = 'video/mp4';
+        if (ext === 'pdf') contentType = 'application/pdf';
+
+        // 4. Upload to Firebase Storage with Download Token
         const bucket = admin.storage().bucket();
         const file = bucket.file(destinationPath);
         const token = crypto.randomUUID();
 
         await file.save(buffer, {
-            contentType: 'image/jpeg',
+            contentType: contentType,
             metadata: {
                 metadata: {
                     firebaseStorageDownloadTokens: token
@@ -695,7 +775,7 @@ async function saveTelegramPhoto(fileId: string, destinationPath: string): Promi
             }
         });
 
-        // 4. Construct Public Download URL
+        // 5. Construct Public Download URL
         const bucketName = bucket.name;
         const encodedName = encodeURIComponent(destinationPath);
         const publicUrl = `https://firebasestorage.googleapis.com/v0/b/${bucketName}/o/${encodedName}?alt=media&token=${token}`;
@@ -703,7 +783,7 @@ async function saveTelegramPhoto(fileId: string, destinationPath: string): Promi
         return publicUrl;
 
     } catch (error) {
-        console.error('Error saving Telegram photo:', error);
+        console.error('Error saving Telegram file:', error);
         return null;
     }
 }
@@ -714,22 +794,101 @@ async function getActiveSession(userId: number) {
     // Let's check 'active' first.
     let qs = await db.collection('work_sessions')
         .where('employeeId', '==', userId)
-        .where('status', '==', 'active')
+        .where('status', '==', 'active') // Query for active sessions
+        .orderBy('startTime', 'desc')
         .limit(1)
         .get();
 
-    if (!qs.empty) return qs.docs[0];
+    if (!qs.empty) {
+        return qs.docs[0];
+    }
 
-    // Check paused
+    // If no active, check for paused
     qs = await db.collection('work_sessions')
         .where('employeeId', '==', userId)
-        .where('status', '==', 'paused')
+        .where('status', '==', 'paused') // Query for paused sessions
+        .orderBy('startTime', 'desc')
         .limit(1)
         .get();
 
-    if (!qs.empty) return qs.docs[0];
+    if (!qs.empty) {
+        return qs.docs[0];
+    }
 
     return null;
+}
+
+async function calculateDailyStats(userId: number, currentSessionMinutes = 0, currentSessionEarnings = 0) {
+    const now = new Date();
+    const startOfDay = new Date(now);
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(now);
+    endOfDay.setHours(23, 59, 59, 999);
+
+    let dailyMinutes = currentSessionMinutes;
+    let dailyEarnings = currentSessionEarnings;
+
+    try {
+        const todaySessions = await db.collection('work_sessions')
+            .where('employeeId', '==', userId)
+            .where('status', '==', 'completed')
+            .where('endTime', '>=', admin.firestore.Timestamp.fromDate(startOfDay))
+            .where('endTime', '<=', admin.firestore.Timestamp.fromDate(endOfDay))
+            .get();
+
+        todaySessions.docs.forEach(doc => {
+            const d = doc.data();
+            dailyMinutes += (d.durationMinutes || 0);
+            dailyEarnings += (d.sessionEarnings || 0);
+        });
+    } catch (e) {
+        console.error("Error calculating daily totals:", e);
+    }
+
+    return { minutes: dailyMinutes, earnings: dailyEarnings };
+}
+
+async function autoFinishActiveSession(activeSession: FirebaseFirestore.QueryDocumentSnapshot, chatId: number, userId: number): Promise<string> {
+    const sessionData = activeSession.data();
+    const endTime = admin.firestore.Timestamp.now();
+    const startTime = sessionData.startTime;
+
+    // Determine hourly rate (snapshot or fallback)
+    let hourlyRate = sessionData.hourlyRate;
+    if (hourlyRate === undefined || hourlyRate === null) {
+        // Fallback fetch if missing
+        const empDoc = await db.collection('employees').doc(String(userId)).get();
+        hourlyRate = empDoc.data()?.hourlyRate || 0;
+        await activeSession.ref.update({ hourlyRate: hourlyRate });
+    }
+
+    // Calculate duration
+    let totalMinutes = Math.round((endTime.toMillis() - startTime.toMillis()) / 60000);
+    if (sessionData.totalBreakMinutes) {
+        totalMinutes -= sessionData.totalBreakMinutes;
+    }
+    // Safety check just in case
+    if (totalMinutes < 0) totalMinutes = 0;
+
+    // Calculate Earnings
+    const hours = parseFloat((totalMinutes / 60).toFixed(2));
+    const sessionEarnings = parseFloat((hours * hourlyRate).toFixed(2));
+
+    await activeSession.ref.update({
+        description: `Auto-switched to new task (Bot)`,
+        endTime: endTime,
+        durationMinutes: totalMinutes,
+        sessionEarnings: sessionEarnings,
+        status: 'completed',
+        awaitingDescription: false,
+        awaitingEndPhoto: false,
+        awaitingLocation: false
+    });
+
+    // Notify admin
+    await sendAdminNotification(`🔄 *Auto-Switch*\n👤 ${sessionData.employeeName}\n📍 Closed: ${sessionData.clientName}\n⏱ ${Math.floor(totalMinutes / 60)}h ${totalMinutes % 60}m\n💵 Earned: $${sessionEarnings}`);
+
+    return `⚠️ Previous session closed (${sessionData.clientName}).\n⏱ ${Math.floor(totalMinutes / 60)}h ${totalMinutes % 60}m  |  💵 Earned: $${sessionEarnings}\n\n`;
 }
 
 async function sendMessage(chatId: number, text: string, options: any = {}) {
@@ -779,4 +938,157 @@ async function findPlatformUser(telegramId: number): Promise<any | null> {
         console.error("Error finding platform user:", error);
     }
     return null;
+}
+
+// --- GTD Tasks Functions ---
+
+const GTD_COLUMNS = [
+    { id: 'inbox', title: '📥 Inbox', emoji: '📥' },
+    { id: 'next_action', title: '▶️ Next', emoji: '▶️' },
+    { id: 'projects', title: '📂 Projects', emoji: '📂' },
+    { id: 'waiting', title: '⏳ Waiting', emoji: '⏳' },
+    { id: 'someday', title: '💭 Someday', emoji: '💭' },
+    { id: 'done', title: '✅ Done', emoji: '✅' }
+];
+
+const PRIORITY_EMOJI: Record<string, string> = {
+    high: '🔴',
+    medium: '🟠',
+    low: '🔵',
+    none: '⚪'
+};
+
+async function sendTasksMenu(chatId: number, telegramId: number) {
+    const platformUser = await findPlatformUser(telegramId);
+
+    if (!platformUser) {
+        await sendMessage(chatId, "❌ *No linked account*\n\nTo view tasks, link your Telegram to your platform account.\n\nGo to Profile → Settings → Link Telegram");
+        return;
+    }
+
+    try {
+        // Fetch all tasks for this user
+        const tasksSnapshot = await db.collection('users')
+            .doc(platformUser.id)
+            .collection('gtd_tasks')
+            .get();
+
+        // Count by status
+        const counts: Record<string, number> = {};
+        GTD_COLUMNS.forEach(col => { counts[col.id] = 0; });
+
+        tasksSnapshot.forEach(doc => {
+            const status = doc.data().status;
+            if (counts[status] !== undefined) {
+                counts[status]++;
+            }
+        });
+
+        const totalTasks = tasksSnapshot.size;
+
+        // Build inline keyboard (2 columns)
+        const inlineKeyboard: any[][] = [];
+        for (let i = 0; i < GTD_COLUMNS.length; i += 2) {
+            const row: any[] = [];
+            row.push({
+                text: `${GTD_COLUMNS[i].emoji} ${GTD_COLUMNS[i].id === 'next_action' ? 'Next' : GTD_COLUMNS[i].title.split(' ')[1]} (${counts[GTD_COLUMNS[i].id]})`,
+                callback_data: `tasks:${GTD_COLUMNS[i].id}`
+            });
+            if (GTD_COLUMNS[i + 1]) {
+                row.push({
+                    text: `${GTD_COLUMNS[i + 1].emoji} ${GTD_COLUMNS[i + 1].id === 'next_action' ? 'Next' : GTD_COLUMNS[i + 1].title.split(' ')[1]} (${counts[GTD_COLUMNS[i + 1].id]})`,
+                    callback_data: `tasks:${GTD_COLUMNS[i + 1].id}`
+                });
+            }
+            inlineKeyboard.push(row);
+        }
+
+        await sendMessage(chatId, `📋 *Your Tasks* (${totalTasks} total)\n\nTap a column to view:`, {
+            inline_keyboard: inlineKeyboard
+        });
+
+    } catch (error) {
+        console.error('Error fetching tasks:', error);
+        await sendMessage(chatId, "⚠️ Error loading tasks. Please try again.");
+    }
+}
+
+async function sendTaskList(chatId: number, telegramId: number, status: string) {
+    const platformUser = await findPlatformUser(telegramId);
+
+    if (!platformUser) {
+        await sendMessage(chatId, "❌ Account not linked.");
+        return;
+    }
+
+    try {
+        // Fetch tasks with this status
+        const tasksSnapshot = await db.collection('users')
+            .doc(platformUser.id)
+            .collection('gtd_tasks')
+            .where('status', '==', status)
+            .orderBy('createdAt', 'desc')
+            .limit(10)
+            .get();
+
+        const column = GTD_COLUMNS.find(c => c.id === status);
+        const columnTitle = column?.title || status;
+
+        if (tasksSnapshot.empty) {
+            await sendMessage(chatId, `${columnTitle}\n\n_No tasks in this column_`, {
+                inline_keyboard: [[{ text: '◀️ Back', callback_data: 'tasks_back' }]]
+            });
+            return;
+        }
+
+        // Build task list
+        let taskList = `${columnTitle}\n\n`;
+        let index = 1;
+
+        for (const doc of tasksSnapshot.docs) {
+            const task = doc.data();
+            const priority = PRIORITY_EMOJI[task.priority || 'none'];
+            const title = task.title || 'Untitled';
+
+            // Get client name if exists
+            let clientNote = '';
+            if (task.clientId) {
+                try {
+                    const clientDoc = await db.collection('clients').doc(task.clientId).get();
+                    if (clientDoc.exists) {
+                        clientNote = ` · ${clientDoc.data()?.name}`;
+                    }
+                } catch (e) {
+                    // Ignore client fetch errors
+                }
+            }
+
+            // Format due date if exists
+            let dueNote = '';
+            if (task.dueDate) {
+                const dueDate = task.dueDate.toDate();
+                const today = new Date();
+                const isOverdue = dueDate < today;
+                const dateStr = dueDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                dueNote = isOverdue ? ` ⚠️ ${dateStr}` : ` 📅 ${dateStr}`;
+            }
+
+            taskList += `${index}. ${priority} ${title}${clientNote}${dueNote}\n`;
+            index++;
+        }
+
+        if (tasksSnapshot.size >= 10) {
+            taskList += `\n_...and more. View all in web app._`;
+        }
+
+        await sendMessage(chatId, taskList, {
+            inline_keyboard: [[{ text: '◀️ Back to Menu', callback_data: 'tasks_back' }]]
+        });
+
+    } catch (error) {
+        console.error('Error fetching task list:', error);
+        await sendMessage(chatId, "⚠️ Error loading tasks.", {
+            inline_keyboard: [[{ text: '◀️ Back', callback_data: 'tasks_back' }]]
+        });
+    }
 }

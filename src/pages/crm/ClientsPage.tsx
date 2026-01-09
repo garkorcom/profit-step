@@ -15,7 +15,8 @@ import {
     IconButton,
     CircularProgress,
     Alert,
-    Container
+    Container,
+    Tooltip
 } from '@mui/material';
 import {
     Add as AddIcon,
@@ -122,9 +123,13 @@ const ClientsPage: React.FC = () => {
                             clients.map((client) => (
                                 <TableRow key={client.id} hover>
                                     <TableCell>
-                                        <Typography variant="subtitle2">{client.name}</Typography>
+                                        <Tooltip title={client.name}>
+                                            <Typography variant="subtitle2" noWrap sx={{ maxWidth: 200 }}>
+                                                {client.name}
+                                            </Typography>
+                                        </Tooltip>
                                         {client.industry && (
-                                            <Typography variant="caption" color="text.secondary">
+                                            <Typography variant="caption" color="text.secondary" noWrap sx={{ maxWidth: 200, display: 'block' }}>
                                                 {client.industry}
                                             </Typography>
                                         )}
@@ -139,9 +144,11 @@ const ClientsPage: React.FC = () => {
                                     </TableCell>
                                     <TableCell>
                                         {client.email && (
-                                            <Typography variant="body2" display="block">
-                                                {client.email}
-                                            </Typography>
+                                            <Tooltip title={client.email}>
+                                                <Typography variant="body2" display="block" noWrap sx={{ maxWidth: 200 }}>
+                                                    {client.email}
+                                                </Typography>
+                                            </Tooltip>
                                         )}
                                         {client.phone && (
                                             <Typography variant="body2" color="text.secondary">

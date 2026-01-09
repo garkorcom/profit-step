@@ -26,6 +26,7 @@ import CalendarPage from '../pages/crm/CalendarPage';
 import LeadDetailsPage from '../pages/crm/LeadDetailsPage';
 import TimeTrackingPage from '../pages/crm/TimeTrackingPage';
 import FinancePage from '../pages/crm/FinancePage';
+import GTDPage from '../pages/crm/GTDPage';
 
 /**
  * Компонент для защиты маршрутов
@@ -139,6 +140,7 @@ const AppRouter: React.FC = () => {
         <Route path="/crm/calendar" element={<CalendarPage />} />
         <Route path="/crm/leads/:id" element={<LeadDetailsPage />} />
         <Route path="/crm/tasks" element={<TasksPage />} />
+        <Route path="/crm/gtd" element={<GTDPage />} />
         <Route path="/crm/scheduler" element={<div>Scheduler (Coming Soon)</div>} />
         <Route path="/crm/time-tracking" element={<TimeTrackingPage />} />
         <Route path="/crm/finance" element={<FinancePage />} />

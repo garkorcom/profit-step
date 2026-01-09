@@ -87,7 +87,13 @@ const EmployeeDetailsDialog: React.FC<EmployeeDetailsDialogProps> = ({ open, onC
 
         try {
             setLoading(true);
-            await updateEmployeeRate(employeeId, rateNum, currentUser.uid, isPlatformUser);
+            await updateEmployeeRate(
+                employeeId,
+                rateNum,
+                currentUser.uid,
+                isPlatformUser,
+                currentUser.displayName || 'Admin'
+            );
             setCurrentRate(rateNum);
 
             // Refresh history
@@ -140,6 +146,7 @@ const EmployeeDetailsDialog: React.FC<EmployeeDetailsDialogProps> = ({ open, onC
                                 InputProps={{
                                     startAdornment: <InputAdornment position="start">$</InputAdornment>,
                                 }}
+                                disabled={!currentUser}
                             />
                             <Button
                                 variant="contained"
@@ -165,9 +172,9 @@ const EmployeeDetailsDialog: React.FC<EmployeeDetailsDialogProps> = ({ open, onC
                         <Table size="small">
                             <TableHead>
                                 <TableRow>
-                                    <TableCell>Effective Date</TableCell>
-                                    <TableCell>Rate</TableCell>
-                                    <TableCell>Set By (Admin ID)</TableCell>
+                                    <TableCell>Changed At</TableCell>
+                                    <TableCell>Change</TableCell>
+                                    <TableCell>Changed By</TableCell>
                                 </TableRow>
                             </TableHead>
                             <TableBody>
@@ -180,9 +187,21 @@ const EmployeeDetailsDialog: React.FC<EmployeeDetailsDialogProps> = ({ open, onC
                                         <TableRow key={entry.id}>
                                             <TableCell>{formatDate(entry.effectiveDate)}</TableCell>
                                             <TableCell>
-                                                <Chip label={`$${entry.rate}`} size="small" color="primary" variant="outlined" />
+                                                <Box display="flex" alignItems="center" gap={1}>
+                                                    {entry.previousRate !== undefined && (
+                                                        <Chip label={`$${entry.previousRate}`} size="small" variant="outlined" style={{ opacity: 0.6 }} />
+                                                    )}
+                                                    {entry.previousRate !== undefined && <span>→</span>}
+                                                    <Chip label={`$${entry.rate}`} size="small" color="primary" variant="outlined" />
+                                                </Box>
                                             </TableCell>
-                                            <TableCell sx={{ fontSize: '0.75rem', color: 'gray' }}>{entry.setBy}</TableCell>
+                                            <TableCell sx={{ fontSize: '0.85rem' }}>
+                                                {entry.setByName ? (
+                                                    <Typography variant="body2">{entry.setByName}</Typography>
+                                                ) : (
+                                                    <Typography variant="caption" color="text.secondary" title={entry.setBy}>ID: {entry.setBy?.substring(0, 8)}...</Typography>
+                                                )}
+                                            </TableCell>
                                         </TableRow>
                                     ))
                                 )}

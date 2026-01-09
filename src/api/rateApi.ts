@@ -15,8 +15,10 @@ import { db } from '../firebase/firebase';
 export interface RateHistoryEntry {
     id: string;
     rate: number;
+    previousRate?: number;
     effectiveDate: Timestamp;
     setBy: string; // Admin ID
+    setByName?: string; // Admin Name
     setAt: Timestamp;
 }
 
@@ -34,28 +36,38 @@ export const updateEmployeeRate = async (
     personId: string,
     newRate: number,
     adminId: string,
-    isPlatformUser: boolean = false
+    isPlatformUser: boolean = false,
+    adminName: string = 'Admin' // New param
 ): Promise<void> => {
     const collectionName = isPlatformUser ? 'users' : 'employees';
     const personRef = doc(db, collectionName, personId);
 
     try {
-        // 1. Update current rate in the main document
+        // 1. Get current rate for history
+        const docSnap = await getDoc(personRef);
+        let previousRate = 0;
+        if (docSnap.exists()) {
+            previousRate = docSnap.data().hourlyRate || 0;
+        }
+
+        // 2. Update current rate in the main document
         await updateDoc(personRef, {
             hourlyRate: newRate,
             updatedAt: serverTimestamp()
         });
 
-        // 2. Add entry to rate_history subcollection
+        // 3. Add entry to rate_history subcollection
         const historyRef = collection(personRef, 'rate_history');
         await addDoc(historyRef, {
             rate: newRate,
+            previousRate: previousRate,
             effectiveDate: serverTimestamp(), // Effective immediately
             setBy: adminId,
+            setByName: adminName,
             setAt: serverTimestamp()
         });
 
-        console.log(`✅ Rate updated for ${personId} to ${newRate}`);
+        console.log(`✅ Rate updated for ${personId} to ${newRate} (was ${previousRate})`);
     } catch (error) {
         console.error("Error updating employee rate:", error);
         throw error;

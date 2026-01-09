@@ -100,9 +100,11 @@ const LeadCardContent = ({ lead, columnColor, onDelete }: { lead: Lead, columnCo
                 <Box display="flex" justifyContent="space-between" alignItems="start" mb={1}>
                     <Box display="flex" alignItems="center" gap={1}>
                         <Avatar sx={{ width: 24, height: 24, fontSize: '0.75rem', bgcolor: columnColor }}>{initials}</Avatar>
-                        <Typography variant="subtitle2" fontWeight="bold">
-                            {lead.name}
-                        </Typography>
+                        <Tooltip title={lead.name}>
+                            <Typography variant="subtitle2" fontWeight="bold" noWrap sx={{ maxWidth: 140 }}>
+                                {lead.name}
+                            </Typography>
+                        </Tooltip>
                     </Box>
                     {lead.value && lead.value > 0 && (
                         <Typography variant="caption" sx={{ color: 'success.main', fontWeight: 'bold' }}>

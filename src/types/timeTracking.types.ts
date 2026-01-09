@@ -2,7 +2,7 @@ import { Timestamp } from 'firebase/firestore';
 
 export interface WorkSession {
     id: string;
-    employeeId: number;
+    employeeId: number | string;
     employeeName: string;
     clientId: string;
     clientName: string;
@@ -26,4 +26,11 @@ export interface WorkSession {
         latitude: number;
         longitude: number;
     };
+    hourlyRate?: number;
+    sessionEarnings?: number;
+    type?: 'regular' | 'correction' | 'manual_adjustment';
+    relatedSessionId?: string;
+    correctionNote?: string;
+    isVoided?: boolean;
+    voidReason?: string;
 }

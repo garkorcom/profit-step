@@ -548,3 +548,4 @@ export { onWorkerBotMessage } from './triggers/telegram/onWorkerBotMessage';
 export { checkOpenSessions } from './scheduled/checkOpenSessions';
 export { forceFinishAllSessions } from './callable/admin/forceFinishAllSessions';
 export { generateDailyPayroll } from './scheduled/generateDailyPayroll';
+export { onWorkSessionCreate } from './triggers/workSessions/onWorkSessionCreate';

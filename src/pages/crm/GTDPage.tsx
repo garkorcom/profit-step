@@ -4,7 +4,7 @@ import GTDBoard from '../../components/gtd/GTDBoard';
 
 const GTDPage: React.FC = () => {
     return (
-        <Container maxWidth="xl" sx={{ height: '100vh', display: 'flex', flexDirection: 'column', py: 2 }}>
+        <Container maxWidth={false} sx={{ height: '100vh', display: 'flex', flexDirection: 'column', py: 2 }}>
             <Box mb={2} display="flex" justifyContent="space-between" alignItems="center">
                 <Box>
                     <Typography variant="h4" fontWeight="bold">Lookahead Schedule</Typography>

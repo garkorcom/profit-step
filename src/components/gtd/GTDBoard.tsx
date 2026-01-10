@@ -13,6 +13,7 @@ import FilterListIcon from '@mui/icons-material/FilterList';
 import KeyboardIcon from '@mui/icons-material/Keyboard';
 import GTDColumn from './GTDColumn';
 import GTDEditDialog from './GTDEditDialog';
+import { useActiveSession } from '../../hooks/useActiveSession';
 
 // Mock initial data structure
 const initialData: Record<GTDStatus, GTDTask[]> = {
@@ -25,7 +26,15 @@ const initialData: Record<GTDStatus, GTDTask[]> = {
 };
 
 const GTDBoard: React.FC = () => {
-    const { currentUser } = useAuth();
+    const { currentUser, userProfile } = useAuth();
+    const effectiveUserId = useMemo(() => {
+        if (userProfile?.telegramId && !isNaN(Number(userProfile.telegramId))) {
+            return Number(userProfile.telegramId);
+        }
+        return currentUser?.uid;
+    }, [currentUser, userProfile]);
+
+    const { activeSession } = useActiveSession(effectiveUserId);
     const theme = useTheme();
     const isMobile = useMediaQuery(theme.breakpoints.down('md'));
 
@@ -35,6 +44,40 @@ const GTDBoard: React.FC = () => {
     const [clients, setClients] = useState<Client[]>([]);
     const [selectedProjectId, setSelectedProjectId] = useState<string>('all');
     const [selectedClientId, setSelectedClientId] = useState<string>('all');
+
+    const handleStopSession = async () => {
+        if (!activeSession) return;
+
+        try {
+            const sessionRef = doc(db, 'work_sessions', activeSession.id);
+            const endTime = Timestamp.now();
+            // @ts-ignore
+            const startTime = activeSession.startTime;
+            let diffArr = 0;
+            if (startTime) {
+                diffArr = endTime.toMillis() - startTime.toMillis();
+            }
+            const durationMinutes = Math.round(diffArr / 1000 / 60);
+
+            // @ts-ignore
+            const rate = activeSession.hourlyRate || 0;
+            const hours = durationMinutes / 60;
+            const earnings = parseFloat((hours * rate).toFixed(2));
+
+            await updateDoc(sessionRef, {
+                status: 'completed',
+                endTime: endTime,
+                durationMinutes: durationMinutes,
+                sessionEarnings: earnings
+            });
+
+            setSessionStartMessage(`⏹️ Session stopped`);
+            setSessionSnackbarOpen(true);
+        } catch (error) {
+            console.error("Error stopping session:", error);
+            alert("Failed to stop session");
+        }
+    };
     const [showShortcutHint, setShowShortcutHint] = useState(false);
 
     // Mobile-specific state
@@ -200,7 +243,7 @@ const GTDBoard: React.FC = () => {
             const sessionsRef = collection(db, 'work_sessions');
             const q = query(
                 sessionsRef,
-                where('employeeId', '==', currentUser.uid),
+                where('employeeId', '==', effectiveUserId),
                 where('status', '==', 'active')
             );
             const snapshot = await getDocs(q);
@@ -219,7 +262,7 @@ const GTDBoard: React.FC = () => {
                 if (startTime) {
                     diffArr = endTime.toMillis() - startTime.toMillis();
                 }
-                const durationMinutes = Math.floor(diffArr / 1000 / 60); // Simple calculation, ignoring breaks for this quick switch
+                const durationMinutes = Math.round(diffArr / 1000 / 60); // Consistent with Bot calculation
 
                 const rate = activeData.hourlyRate || 0;
                 const hours = durationMinutes / 60;
@@ -240,7 +283,7 @@ const GTDBoard: React.FC = () => {
 
             // 2. Create new active session
             await addDoc(collection(db, 'work_sessions'), {
-                employeeId: currentUser.uid,
+                employeeId: effectiveUserId,
                 employeeName: currentUser.displayName || 'Unknown',
                 startTime: Timestamp.now(),
                 status: 'active',
@@ -397,6 +440,8 @@ const GTDBoard: React.FC = () => {
                             onTaskClick={setEditingTask}
                             onAddTask={handleAddTask}
                             onStartSession={handleStartSession}
+                            activeSession={activeSession}
+                            onStopSession={handleStopSession}
                         />
                     ) : (
                         // Desktop: Show all columns
@@ -410,6 +455,8 @@ const GTDBoard: React.FC = () => {
                                 onTaskClick={setEditingTask}
                                 onAddTask={handleAddTask}
                                 onStartSession={handleStartSession}
+                                activeSession={activeSession}
+                                onStopSession={handleStopSession}
                             />
                         ))
                     )}

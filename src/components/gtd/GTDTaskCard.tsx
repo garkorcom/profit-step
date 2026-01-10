@@ -6,8 +6,10 @@ import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import FlagIcon from '@mui/icons-material/Flag';
 import PersonIcon from '@mui/icons-material/Person';
 import { GTDTask, PRIORITY_COLORS, GTDPriority } from '../../types/gtd.types';
+import { WorkSessionData } from '../../hooks/useActiveSession';
 
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
+import StopIcon from '@mui/icons-material/Stop';
 
 interface GTDTaskCardProps {
     task: GTDTask;
@@ -15,6 +17,8 @@ interface GTDTaskCardProps {
     clientName?: string;
     onClick: (task: GTDTask) => void;
     onStartSession?: (task: GTDTask) => void;
+    activeSession?: WorkSessionData | null;
+    onStopSession?: (task: GTDTask) => void;
 }
 
 const PRIORITY_LABELS: Record<GTDPriority, string> = {
@@ -24,10 +28,13 @@ const PRIORITY_LABELS: Record<GTDPriority, string> = {
     none: ''
 };
 
-const GTDTaskCard: React.FC<GTDTaskCardProps> = ({ task, index, clientName, onClick, onStartSession }) => {
+const GTDTaskCard: React.FC<GTDTaskCardProps> = ({ task, index, clientName, onClick, onStartSession, activeSession, onStopSession }) => {
     const isDone = task.status === 'done';
     const priorityColor = PRIORITY_COLORS[task.priority || 'none'];
     const hasPriority = task.priority && task.priority !== 'none';
+
+    // Check if this task is active
+    const isActive = activeSession && activeSession.relatedTaskId === task.id;
 
     const handlePlayClick = (e: React.MouseEvent) => {
         e.stopPropagation();
@@ -35,6 +42,13 @@ const GTDTaskCard: React.FC<GTDTaskCardProps> = ({ task, index, clientName, onCl
             onStartSession(task);
         }
     };
+
+    const handleStopClick = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        if (onStopSession) {
+            onStopSession(task);
+        }
+    }
 
     return (
         <Draggable draggableId={task.id} index={index}>
@@ -45,17 +59,17 @@ const GTDTaskCard: React.FC<GTDTaskCardProps> = ({ task, index, clientName, onCl
                     {...provided.dragHandleProps}
                     sx={{
                         mb: 1.5,
-                        backgroundColor: snapshot.isDragging ? '#f0f9ff' : isDone ? '#f9fafb' : 'white',
-                        boxShadow: snapshot.isDragging ? 4 : 1,
+                        backgroundColor: isActive ? '#f0fdf4' : (snapshot.isDragging ? '#f0f9ff' : isDone ? '#f9fafb' : 'white'),
+                        boxShadow: snapshot.isDragging ? 4 : (isActive ? 3 : 1),
                         cursor: 'grab',
-                        borderLeft: hasPriority ? `4px solid ${priorityColor}` : 'none',
+                        borderLeft: isActive ? '4px solid #22c55e' : (hasPriority ? `4px solid ${priorityColor}` : 'none'),
                         opacity: isDone ? 0.7 : 1,
                         transition: 'all 0.2s ease-in-out',
                         transform: snapshot.isDragging ? 'rotate(3deg)' : 'none',
                         '&:hover': {
                             boxShadow: 3,
                             transform: 'translateY(-2px)',
-                            backgroundColor: isDone ? '#f3f4f6' : '#fafafa'
+                            backgroundColor: isActive ? '#dcfce7' : (isDone ? '#f3f4f6' : '#fafafa')
                         }
                     }}
                     onClick={() => onClick(task)}
@@ -75,25 +89,47 @@ const GTDTaskCard: React.FC<GTDTaskCardProps> = ({ task, index, clientName, onCl
                                 {task.title}
                             </Typography>
                             <Box display="flex" gap={0.5} sx={{ mt: -0.5, mr: -0.5 }}>
-                                {!isDone && onStartSession && (
-                                    <IconButton
-                                        size="small"
-                                        className="play-button"
-                                        onClick={handlePlayClick}
-                                        sx={{
-                                            opacity: 0.7, // Visible by default for mobile
-                                            transition: 'all 0.2s',
-                                            color: 'success.main',
-                                            '&:hover': {
-                                                opacity: 1,
-                                                bgcolor: 'success.light',
-                                                transform: 'scale(1.1)'
-                                            }
-                                        }}
-                                        title="Start Timer"
-                                    >
-                                        <PlayArrowIcon sx={{ fontSize: 18 }} />
-                                    </IconButton>
+                                {!isDone && (
+                                    <>
+                                        {isActive && onStopSession ? (
+                                            <IconButton
+                                                size="small"
+                                                onClick={handleStopClick}
+                                                sx={{
+                                                    transition: 'all 0.2s',
+                                                    color: 'error.main',
+                                                    '&:hover': {
+                                                        bgcolor: 'error.light',
+                                                        transform: 'scale(1.1)'
+                                                    }
+                                                }}
+                                                title="Stop Timer"
+                                            >
+                                                <StopIcon sx={{ fontSize: 18 }} />
+                                            </IconButton>
+                                        ) : (
+                                            onStartSession && (
+                                                <IconButton
+                                                    size="small"
+                                                    className="play-button"
+                                                    onClick={handlePlayClick}
+                                                    sx={{
+                                                        opacity: 0.7, // Visible by default for mobile
+                                                        transition: 'all 0.2s',
+                                                        color: 'success.main',
+                                                        '&:hover': {
+                                                            opacity: 1,
+                                                            bgcolor: 'success.light',
+                                                            transform: 'scale(1.1)'
+                                                        }
+                                                    }}
+                                                    title="Start Timer"
+                                                >
+                                                    <PlayArrowIcon sx={{ fontSize: 18 }} />
+                                                </IconButton>
+                                            )
+                                        )}
+                                    </>
                                 )}
                                 <IconButton
                                     size="small"
@@ -112,7 +148,7 @@ const GTDTaskCard: React.FC<GTDTaskCardProps> = ({ task, index, clientName, onCl
                             {hasPriority && (
                                 <Chip
                                     icon={<FlagIcon sx={{ fontSize: 14, color: `${priorityColor} !important` }} />}
-                                    label={PRIORITY_LABELS[task.priority]}
+                                    label={PRIORITY_LABELS[task.priority!] || 'Priority'}
                                     size="small"
                                     sx={{
                                         height: 20,

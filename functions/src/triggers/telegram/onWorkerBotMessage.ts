@@ -146,6 +146,9 @@ async function handleMessage(message: any) {
     } else if (text && text.startsWith('/name ')) {
         const newName = text.substring(6).trim();
         await handleNameChange(chatId, userId, newName);
+    } else if (text && text.startsWith('/timezone ')) {
+        const timezone = text.substring(10).trim();
+        await handleTimezone(chatId, userId, timezone);
     } else if (text === '/tasks' || text === '📋 Tasks') {
         await sendTasksMenu(chatId, userId);
     } else if (text && text.length > 0) {
@@ -280,6 +283,9 @@ async function sendClientList(chatId: number) {
         return [{ text: client.name, callback_data: `start_client_${doc.id}` }];
     });
 
+    // Add "No Project" Button
+    inlineKeyboard.push([{ text: "🚫 No Project", callback_data: "start_client_no_project" }]);
+
     // Add Cancel Button
     inlineKeyboard.push([{ text: "❌ Cancel", callback_data: "cancel_selection" }]);
 
@@ -287,6 +293,24 @@ async function sendClientList(chatId: number) {
 }
 
 async function handleClientSelection(chatId: number, userId: number, clientId: string) {
+    if (clientId === 'no_project') {
+        const noProjectRef = db.collection('clients').doc('no_project');
+        const noProjectDoc = await noProjectRef.get();
+
+        if (!noProjectDoc.exists) {
+            // Auto-create "No Project" client
+            await noProjectRef.set({
+                name: 'No Project',
+                status: 'active',
+                createdAt: admin.firestore.FieldValue.serverTimestamp()
+            });
+        }
+
+        // Start session directly (no services)
+        await initWorkSession(chatId, userId, 'no_project');
+        return;
+    }
+
     const clientDoc = await db.collection('clients').doc(clientId).get();
     if (!clientDoc.exists) {
         await sendMessage(chatId, "⚠️ Client not found.");
@@ -666,7 +690,16 @@ async function handleText(chatId: number, userId: number, text: string) {
         await sendMessage(chatId, `🏁 Work finished!\n\n⏱ Session: ${Math.floor(totalMinutes / 60)}h ${totalMinutes % 60}m\n💰 Earned: $${sessionEarnings}\n📅 **Today Total: ${dailyHours}h ${dailyMins}m ($${dailyStats.earnings.toFixed(2)})**\n📍 Client: ${sessionData.clientName}\n📝 Desc: ${text}`);
 
         await sendAdminNotification(`🏁 *Work Finished*\n👤 ${sessionData.employeeName}\n📍 ${sessionData.clientName}\n⏱ ${Math.floor(totalMinutes / 60)}h ${totalMinutes % 60}m\n💵 Earned: $${sessionEarnings}\n📝 ${text}`);
-        await sendMainMenu(chatId);
+
+        // Prompt to finish day
+        await sendMessage(chatId, "Is your workday finished?", {
+            keyboard: [
+                [{ text: "🏁 Finish Day" }],
+                [{ text: "/start" }]
+            ],
+            resize_keyboard: true,
+            one_time_keyboard: true
+        });
     }
 }
 
@@ -678,7 +711,7 @@ async function handleFinishDay(chatId: number, userId: number) {
     }
 
     // Calculate Daily Stats
-    const stats = await calculateDailyStats(userId);
+    const stats = await calculateDailyStats(userId, 0, 0, chatId);
     const h = Math.floor(stats.minutes / 60);
     const m = stats.minutes % 60;
 
@@ -703,13 +736,47 @@ async function handleNameChange(chatId: number, userId: number, newName: string)
     await sendMessage(chatId, `✅ Name updated to: **${newName}**`);
 }
 
+/**
+ * Sets or updates user's timezone preference.
+ * Used for accurate daily statistics calculation.
+ * 
+ * @param chatId - Telegram chat ID for responses
+ * @param userId - Telegram user ID
+ * @param timezone - IANA timezone string (e.g., 'America/New_York')
+ */
+async function handleTimezone(chatId: number, userId: number, timezone: string) {
+    if (!timezone) {
+        await sendMessage(chatId, "⚠️ Usage: /timezone [Timezone]\nExample: `/timezone America/New_York`");
+        return;
+    }
+
+    // Validate timezone string
+    try {
+        Intl.DateTimeFormat(undefined, { timeZone: timezone });
+    } catch (e) {
+        await sendMessage(chatId, "⚠️ Invalid timezone. Try 'America/New_York' or 'Europe/Kyiv'.");
+        return;
+    }
+
+    const platformUser = await findPlatformUser(userId);
+    if (platformUser) {
+        await db.collection('users').doc(platformUser.id).update({ timezone: timezone });
+    }
+    // Also update local employee record as backup/primary for unlinked
+    await db.collection('employees').doc(String(userId)).set({ timezone: timezone }, { merge: true });
+
+    await sendMessage(chatId, `✅ Timezone set to: **${timezone}**`);
+}
+
 async function handleHelp(chatId: number) {
     const helpText = `👷‍♂️ *Worker Bot Manual*
 
 *Commands:*
 /start - Open Main Menu
 /me - Show Profile
+/me - Show Profile
 /name [Name] - Change Name
+/timezone [Zone] - Set Timezone (e.g. America/New_York)
 /help - Show this message
 
 *Workflow:*
@@ -788,13 +855,17 @@ async function saveTelegramFile(fileId: string, destinationPath: string): Promis
     }
 }
 
+/**
+ * Gets the user's currently active or paused work session.
+ * 
+ * @param userId - Telegram user ID
+ * @returns Active session document or null if none found
+ */
 async function getActiveSession(userId: number) {
-    // Check active OR paused (conceptually active session)
-    // Actually we usually query 'active' or 'paused'.
-    // Let's check 'active' first.
+    // Check for active sessions first
     let qs = await db.collection('work_sessions')
         .where('employeeId', '==', userId)
-        .where('status', '==', 'active') // Query for active sessions
+        .where('status', '==', 'active')
         .orderBy('startTime', 'desc')
         .limit(1)
         .get();
@@ -803,10 +874,10 @@ async function getActiveSession(userId: number) {
         return qs.docs[0];
     }
 
-    // If no active, check for paused
+    // Check for paused sessions if no active found
     qs = await db.collection('work_sessions')
         .where('employeeId', '==', userId)
-        .where('status', '==', 'paused') // Query for paused sessions
+        .where('status', '==', 'paused')
         .orderBy('startTime', 'desc')
         .limit(1)
         .get();
@@ -818,31 +889,85 @@ async function getActiveSession(userId: number) {
     return null;
 }
 
-async function calculateDailyStats(userId: number, currentSessionMinutes = 0, currentSessionEarnings = 0) {
+/**
+ * Calculates daily work statistics for a user.
+ * 
+ * Searches for completed sessions using BOTH:
+ * - Telegram ID (number) - for bot-created sessions
+ * - Firebase UID (string) - for Web UI-created sessions
+ * 
+ * Uses user's configured timezone to determine "today" boundaries.
+ * Falls back to UTC if timezone not configured.
+ * 
+ * @param userId - Telegram user ID
+ * @param currentSessionMinutes - Minutes from currently active session (if any)
+ * @param currentSessionEarnings - Earnings from currently active session (if any)
+ * @param chatId - Chat ID for error messages (optional)
+ * @returns Object with total minutes and earnings for today
+ */
+async function calculateDailyStats(userId: number, currentSessionMinutes = 0, currentSessionEarnings = 0, chatId: number | null = null) {
+    let timezone = 'UTC';
+    let platformUserId: string | null = null;
+
+    // Fetch user's timezone preference
+    try {
+        const platformUser = await findPlatformUser(userId);
+        if (platformUser) {
+            platformUserId = platformUser.id;
+            if (platformUser.timezone) {
+                timezone = platformUser.timezone;
+            }
+        }
+
+        // Fallback to employees collection for timezone
+        if (timezone === 'UTC') {
+            const empDoc = await db.collection('employees').doc(String(userId)).get();
+            if (empDoc.exists && empDoc.data()?.timezone) {
+                timezone = empDoc.data()?.timezone;
+            }
+        }
+    } catch (e) {
+        console.error("Error fetching user timezone:", e);
+    }
+
     const now = new Date();
-    const startOfDay = new Date(now);
-    startOfDay.setHours(0, 0, 0, 0);
-    const endOfDay = new Date(now);
-    endOfDay.setHours(23, 59, 59, 999);
+    const searchStart = new Date(now.getTime() - 48 * 60 * 60 * 1000); // 48h lookback for timezone safety
 
     let dailyMinutes = currentSessionMinutes;
     let dailyEarnings = currentSessionEarnings;
 
+    // Build array of IDs to search (supports legacy sessions with different ID types)
+    const searchIds: any[] = [userId];
+    if (platformUserId) searchIds.push(platformUserId);
+
     try {
-        const todaySessions = await db.collection('work_sessions')
-            .where('employeeId', '==', userId)
+        const potentialSessions = await db.collection('work_sessions')
+            .where('employeeId', 'in', searchIds)
             .where('status', '==', 'completed')
-            .where('endTime', '>=', admin.firestore.Timestamp.fromDate(startOfDay))
-            .where('endTime', '<=', admin.firestore.Timestamp.fromDate(endOfDay))
+            .where('endTime', '>=', admin.firestore.Timestamp.fromDate(searchStart))
+            .orderBy('endTime', 'desc')
             .get();
 
-        todaySessions.docs.forEach(doc => {
+        // Filter sessions by "today" in user's timezone
+        const todayString = now.toLocaleDateString('en-US', { timeZone: timezone });
+
+        potentialSessions.docs.forEach(doc => {
             const d = doc.data();
-            dailyMinutes += (d.durationMinutes || 0);
-            dailyEarnings += (d.sessionEarnings || 0);
+            if (!d.endTime) return;
+
+            const sDate = d.endTime.toDate();
+            const sDateStr = sDate.toLocaleDateString('en-US', { timeZone: timezone });
+
+            if (sDateStr === todayString) {
+                dailyMinutes += (d.durationMinutes || 0);
+                dailyEarnings += (d.sessionEarnings || 0);
+            }
         });
-    } catch (e) {
+    } catch (e: any) {
         console.error("Error calculating daily totals:", e);
+        if (chatId) {
+            await sendMessage(chatId, `⚠️ Daily Stats Error: ${e.message}`);
+        }
     }
 
     return { minutes: dailyMinutes, earnings: dailyEarnings };

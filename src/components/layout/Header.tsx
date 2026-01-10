@@ -44,12 +44,14 @@ import {
   Campaign as MarketingIcon,
   Build as ToolsIcon,
 } from '@mui/icons-material';
+import { useActiveSession } from '../../hooks/useActiveSession';
+import ActiveSessionIndicator from './ActiveSessionIndicator';
 
 /**
  * Header компонент с навигацией и меню пользователя
  */
 const Header: React.FC = () => {
-  const { userProfile, signOut } = useAuth();
+  const { userProfile, currentUser, signOut } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -127,6 +129,7 @@ const Header: React.FC = () => {
       { path: '/crm/calendar', label: 'Календарь', icon: <CalendarIcon sx={{ mr: 0.5 }} /> },
       { path: '/crm/time-tracking', label: 'Time Tracking', icon: <DescriptionIcon sx={{ mr: 0.5 }} /> },
       { path: '/crm/finance', label: 'Финансы', icon: <AttachMoneyIcon sx={{ mr: 0.5 }} /> },
+      { path: '/crm/gtd', label: 'Lookahead', icon: <TaskIcon sx={{ mr: 0.5 }} /> },
     ];
 
     const marketingLinks = [
@@ -137,7 +140,7 @@ const Header: React.FC = () => {
     // "Settings" group as requested (Team, Companies, Tasks, Calculator)
     const settingsGroupLinks = [
       { path: '/crm/tasks', label: 'Задачи', icon: <TaskIcon sx={{ mr: 0.5 }} /> },
-      { path: '/crm/gtd', label: 'Lookahead', icon: <TaskIcon sx={{ mr: 0.5 }} /> },
+      // { path: '/crm/gtd', label: 'Lookahead', icon: <TaskIcon sx={{ mr: 0.5 }} /> }, // Moved
       { path: '/estimates/electrical', label: 'Калькулятор', icon: <CalculateIcon sx={{ mr: 0.5 }} /> },
     ];
 
@@ -280,6 +283,11 @@ const Header: React.FC = () => {
             {renderDesktopMenu("Настройки", <SettingsIcon sx={{ mr: 0.5 }} />, navStruct.settings, anchorElSettings, handleOpenSettings, handleCloseSettings)}
           </Box>
 
+          {/* Active Session Indicator */}
+          {userProfile && currentUser && (
+            <SessionWrapper userId={(userProfile.telegramId && !isNaN(Number(userProfile.telegramId))) ? Number(userProfile.telegramId) : currentUser.uid} />
+          )}
+
           {/* User Menu */}
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             <Box sx={{ display: { xs: 'none', sm: 'block' }, textAlign: 'right' }}>
@@ -418,3 +426,14 @@ const Header: React.FC = () => {
 };
 
 export default Header;
+
+// Helper component to use hook inside Header (since Header uses hook too, but conditional logic is cleaner here)
+// Actually Header is a functional component so I can just use hook at top level.
+// Wait, I can't put hook in conditional.
+// I'll put hook in Header execution body.
+
+const SessionWrapper: React.FC<{ userId: string | number }> = ({ userId }) => {
+  const { activeSession } = useActiveSession(userId);
+  if (!activeSession) return null;
+  return <ActiveSessionIndicator session={activeSession} />;
+};

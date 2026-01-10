@@ -7,6 +7,7 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import { GTDTask, GTDStatus } from '../../types/gtd.types';
 import { Client } from '../../types/crm.types';
 import GTDTaskCard from './GTDTaskCard';
+import { WorkSessionData } from '../../hooks/useActiveSession';
 
 interface GTDColumnProps {
     columnId: GTDStatus;
@@ -16,6 +17,8 @@ interface GTDColumnProps {
     onTaskClick: (task: GTDTask) => void;
     onAddTask?: (title: string, columnId: GTDStatus) => void;
     onStartSession?: (task: GTDTask) => void;
+    activeSession?: WorkSessionData | null;
+    onStopSession?: (task: GTDTask) => void;
 }
 
 // Column specific colors
@@ -28,7 +31,7 @@ const COLUMN_STYLES: Record<GTDStatus, { bg: string; headerBg: string; icon?: Re
     done: { bg: '#d1fae5', headerBg: '#a7f3d0', icon: <CheckCircleIcon sx={{ fontSize: 18, color: '#059669', mr: 0.5 }} /> }
 };
 
-const GTDColumn: React.FC<GTDColumnProps> = ({ columnId, title, tasks, clientsMap, onTaskClick, onAddTask, onStartSession }) => {
+const GTDColumn: React.FC<GTDColumnProps> = ({ columnId, title, tasks, clientsMap, onTaskClick, onAddTask, onStartSession, activeSession, onStopSession }) => {
     const [newTitle, setNewTitle] = useState('');
     const [isAdding, setIsAdding] = useState(false);
     const isDone = columnId === 'done';
@@ -54,8 +57,10 @@ const GTDColumn: React.FC<GTDColumnProps> = ({ columnId, title, tasks, clientsMa
             data-column-id={columnId}
             elevation={0}
             sx={{
-                width: 280,
+                width: '100%',
                 minWidth: 280,
+                maxWidth: 450,
+                flex: '1 0 280px',
                 height: '100%',
                 display: 'flex',
                 flexDirection: 'column',
@@ -119,6 +124,8 @@ const GTDColumn: React.FC<GTDColumnProps> = ({ columnId, title, tasks, clientsMa
                                 clientName={task.clientId ? clientsMap[task.clientId]?.name : undefined}
                                 onClick={onTaskClick}
                                 onStartSession={onStartSession}
+                                activeSession={activeSession}
+                                onStopSession={onStopSession}
                             />
                         ))}
                         {provided.placeholder}
@@ -126,7 +133,8 @@ const GTDColumn: React.FC<GTDColumnProps> = ({ columnId, title, tasks, clientsMa
                 )}
             </Droppable>
 
-            {/* Quick Add - Available for ALL columns */}\n            <Box px={1} pb={1} sx={{ flexShrink: 0 }}>
+            {/* Quick Add - Available for ALL columns */}
+            <Box px={1} pb={1} sx={{ flexShrink: 0 }}>
                 {isAdding ? (
                     <Box>
                         <TextField

@@ -42,6 +42,7 @@ export interface UserProfile {
   invitedBy?: string;      // userId пользователя, который пригласил
   signupMethod?: 'email' | 'google'; // Метод регистрации
   avatarUpdatedAt?: Timestamp | string; // Когда обновлен аватар
+  timezone?: string;       // Часовой пояс (напр., 'America/New_York')
 }
 
 /**

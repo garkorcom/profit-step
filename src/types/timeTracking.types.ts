@@ -33,4 +33,5 @@ export interface WorkSession {
     correctionNote?: string;
     isVoided?: boolean;
     voidReason?: string;
+    relatedTaskId?: string; // Links to GTD Task
 }

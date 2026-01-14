@@ -1,3 +1,24 @@
+/**
+ * @fileoverview GTDBoard — главный компонент Kanban-доски для GTD задач
+ * 
+ * АРХИТЕКТУРА:
+ * - Использует глобальную коллекцию Firestore: `gtd_tasks`
+ * - Подписка на real-time обновления через onSnapshot
+ * - Drag-and-drop через @hello-pangea/dnd
+ * - Интеграция с Time Tracking (запуск сессий из задач)
+ * 
+ * ДОСТУП К ЗАДАЧАМ:
+ * Пользователь видит задачи где он:
+ * 1. Владелец (ownerId === currentUser.uid), ИЛИ
+ * 2. Назначенный исполнитель (assigneeId === currentUser.uid)
+ * 
+ * ФИЛЬТРЫ:
+ * - По клиенту (clientId)
+ * - По исполнителю (assigneeId)
+ * 
+ * @module components/gtd/GTDBoard
+ */
+
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Box, Snackbar, Alert, Fab, Tab, Tabs, Badge, Dialog, DialogTitle, DialogContent, TextField, DialogActions, Button, useMediaQuery, useTheme } from '@mui/material';
 import { DragDropContext, DropResult } from '@hello-pangea/dnd';
@@ -15,18 +36,39 @@ import GTDColumn from './GTDColumn';
 import GTDEditDialog from './GTDEditDialog';
 import { useActiveSession } from '../../hooks/useActiveSession';
 
-// Mock initial data structure
+/**
+ * Начальное состояние колонок доски
+ * Каждый статус инициализируется пустым массивом задач
+ */
 const initialData: Record<GTDStatus, GTDTask[]> = {
     inbox: [],
     next_action: [],
     waiting: [],
     projects: [],
     someday: [],
-    done: [] // technically not a column in board usually, but needed for type safety
+    done: []
 };
 
+/**
+ * GTDBoard — основной компонент Kanban-доски
+ * 
+ * Функционал:
+ * - Отображение задач по колонкам (статусам)
+ * - Drag-and-drop между колонками
+ * - Создание задач с выбором клиента и исполнителя
+ * - Фильтрация по клиенту и исполнителю
+ * - Запуск рабочих сессий (Time Tracking) из задач
+ * - Адаптивный дизайн (tabs на мобильных)
+ */
 const GTDBoard: React.FC = () => {
+    // ==================== АУТЕНТИФИКАЦИЯ ====================
     const { currentUser, userProfile } = useAuth();
+
+    /**
+     * Эффективный ID пользователя для Time Tracking
+     * Приоритет: telegramId (если есть) → Firebase UID
+     * Нужно для совместимости с Telegram Bot сессиями
+     */
     const effectiveUserId = useMemo(() => {
         if (userProfile?.telegramId && !isNaN(Number(userProfile.telegramId))) {
             return Number(userProfile.telegramId);
@@ -34,16 +76,18 @@ const GTDBoard: React.FC = () => {
         return currentUser?.uid;
     }, [currentUser, userProfile]);
 
-    const { activeSession } = useActiveSession(effectiveUserId);
+    // ==================== ХУКИ ====================
+    const { activeSession } = useActiveSession(effectiveUserId); // Текущая активная сессия
     const theme = useTheme();
-    const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+    const isMobile = useMediaQuery(theme.breakpoints.down('md')); // Адаптивность
 
-    const [columns, setColumns] = useState(initialData);
-    const [editingTask, setEditingTask] = useState<GTDTask | null>(null);
-    const [users, setUsers] = useState<UserProfile[]>([]);
-    const [clients, setClients] = useState<Client[]>([]);
-    const [selectedClientId, setSelectedClientId] = useState<string>('all');
-    const [selectedAssigneeId, setSelectedAssigneeId] = useState<string>('all');
+    // ==================== СОСТОЯНИЕ ====================
+    const [columns, setColumns] = useState(initialData);           // Задачи по колонкам
+    const [editingTask, setEditingTask] = useState<GTDTask | null>(null); // Редактируемая задача
+    const [users, setUsers] = useState<UserProfile[]>([]);         // Пользователи для dropdown
+    const [clients, setClients] = useState<Client[]>([]);          // Клиенты для dropdown
+    const [selectedClientId, setSelectedClientId] = useState<string>('all');    // Фильтр по клиенту
+    const [selectedAssigneeId, setSelectedAssigneeId] = useState<string>('all'); // Фильтр по assignee
 
     const handleStopSession = async () => {
         if (!activeSession) return;
@@ -80,33 +124,46 @@ const GTDBoard: React.FC = () => {
     };
     const [showShortcutHint, setShowShortcutHint] = useState(false);
 
-    // Mobile-specific state
-    const [selectedTab, setSelectedTab] = useState(0);
-    const [showFilters, setShowFilters] = useState(false);
+    // ==================== МОБИЛЬНОЕ СОСТОЯНИЕ ====================
+    const [selectedTab, setSelectedTab] = useState(0);    // Активная вкладка (мобильный)
+    const [showFilters, setShowFilters] = useState(false); // Показать фильтры (мобильный)
+
+    // ==================== QUICK ADD DIALOG ====================
     const [quickAddOpen, setQuickAddOpen] = useState(false);
     const [quickAddTitle, setQuickAddTitle] = useState('');
     const [quickAddClientId, setQuickAddClientId] = useState<string>('');
     const [quickAddAssigneeId, setQuickAddAssigneeId] = useState<string>('');
 
-    // Create clients lookup map for quick access
+    /**
+     * Lookup-таблица клиентов по ID
+     * Используется для быстрого доступа к данным клиента при создании сессий
+     */
     const clientsMap = useMemo(() => {
         const map: Record<string, Client> = {};
         clients.forEach(c => { map[c.id] = c; });
         return map;
     }, [clients]);
 
-    // Fetch users and clients
+    /**
+     * Загрузка пользователей и клиентов для dropdown'ов
+     * 
+     * Пользователи: из коллекции /users, сортировка по displayName
+     * Клиенты: из коллекции /clients, сортировка по name
+     * 
+     * ВАЖНО: Правила Firestore должны разрешать чтение этих коллекций
+     */
     useEffect(() => {
         const fetchData = async () => {
             try {
-                // Fetch users for assignee dropdown
+                // Загрузка пользователей для dropdown "Assignee"
                 const usersSnap = await getDocs(collection(db, 'users'));
                 const fetchedUsers = usersSnap.docs.map(d => ({ id: d.id, ...d.data() } as UserProfile));
+                // Фильтруем пользователей без displayName и сортируем
                 setUsers(fetchedUsers.filter(u => u.displayName).sort((a, b) =>
                     (a.displayName || '').localeCompare(b.displayName || '')
                 ));
 
-                // Fetch clients
+                // Загрузка клиентов для dropdown "Client"
                 const clientQ = query(collection(db, 'clients'), orderBy('name'));
                 const clientSnap = await getDocs(clientQ);
                 setClients(clientSnap.docs.map(d => ({ id: d.id, ...d.data() } as Client)));

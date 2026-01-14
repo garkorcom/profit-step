@@ -1,16 +1,53 @@
+/**
+ * @fileoverview Типы и константы для GTD (Getting Things Done) модуля
+ * 
+ * GTD — методология личной продуктивности, реализованная в виде Kanban-доски.
+ * Задачи хранятся в глобальной коллекции `gtd_tasks` и поддерживают:
+ * - Назначение исполнителя (assignee) — задача видна как владельцу, так и assignee
+ * - Привязку к клиенту (clientId) — для интеграции с CRM
+ * - Приоритеты и контексты — для фильтрации и организации
+ * 
+ * @module types/gtd.types
+ */
+
 import { Timestamp } from 'firebase/firestore';
 
+/**
+ * Возможные статусы задачи (колонки на Kanban-доске)
+ * 
+ * - inbox: Входящие — новые, ещё не обработанные задачи
+ * - next_action: Следующие действия — задачи готовые к выполнению
+ * - waiting: Ожидание — задачи, заблокированные внешними факторами
+ * - projects: Проекты — многошаговые задачи
+ * - someday: Когда-нибудь — идеи на будущее
+ * - done: Выполнено — завершённые задачи
+ */
 export type GTDStatus = 'inbox' | 'next_action' | 'waiting' | 'projects' | 'someday' | 'done';
 
+/**
+ * Приоритеты задач
+ * - high: Высокий (красный) — срочные задачи
+ * - medium: Средний (оранжевый) — важные, но не срочные
+ * - low: Низкий (синий) — можно отложить
+ * - none: Без приоритета — по умолчанию
+ */
 export type GTDPriority = 'high' | 'medium' | 'low' | 'none';
 
+/**
+ * Цвета для визуального отображения приоритетов
+ * Используются в Chip компонентах и индикаторах на карточках
+ */
 export const PRIORITY_COLORS: Record<GTDPriority, string> = {
-    high: '#ef4444',    // Red
-    medium: '#f59e0b',  // Orange
-    low: '#3b82f6',     // Blue
-    none: 'transparent'
+    high: '#ef4444',    // Красный — высокий приоритет
+    medium: '#f59e0b',  // Оранжевый — средний приоритет
+    low: '#3b82f6',     // Синий — низкий приоритет
+    none: 'transparent' // Без цвета — нет приоритета
 };
 
+/**
+ * Интерфейс проекта (deprecated, сохранён для обратной совместимости)
+ * @deprecated Используйте clientId вместо projectId
+ */
 export interface Project {
     id: string;
     name: string;
@@ -18,30 +55,99 @@ export interface Project {
     status?: string;
 }
 
+/**
+ * Основной интерфейс задачи GTD
+ * 
+ * Задачи хранятся в глобальной коллекции Firestore: `gtd_tasks/{taskId}`
+ * 
+ * ВАЖНО: Задача видна пользователю если он:
+ * 1. Владелец (ownerId === currentUser.uid), ИЛИ
+ * 2. Назначенный исполнитель (assigneeId === currentUser.uid)
+ * 
+ * @example
+ * // Создание новой задачи
+ * const newTask: Partial<GTDTask> = {
+ *   ownerId: currentUser.uid,
+ *   title: 'Позвонить клиенту',
+ *   status: 'inbox',
+ *   priority: 'high',
+ *   clientId: 'client123',
+ *   assigneeId: 'user456'
+ * };
+ */
 export interface GTDTask {
+    /** Уникальный ID задачи (Firestore document ID) */
     id: string;
-    ownerId: string;         // Creator of the task
-    ownerName?: string;      // Creator display name
-    assigneeId?: string;     // Who should do it (user UID or telegramId)
-    assigneeName?: string;   // Assignee display name
+
+    /** 
+     * ID владельца задачи (создателя)
+     * Совпадает с Firebase Auth UID пользователя
+     */
+    ownerId: string;
+
+    /** Отображаемое имя владельца (для UI, избегаем лишних запросов) */
+    ownerName?: string;
+
+    /** 
+     * ID исполнителя (кому назначена задача)
+     * Может быть Firebase UID или telegramId
+     * Если указан — исполнитель видит задачу в своём GTD
+     */
+    assigneeId?: string;
+
+    /** Отображаемое имя исполнителя */
+    assigneeName?: string;
+
+    /** Название задачи */
     title: string;
+
+    /** Текущий статус (в какой колонке находится) */
     status: GTDStatus;
+
+    /** Приоритет задачи */
     priority: GTDPriority;
-    context: string;         // e.g., '@home', '@work', '@computer'
-    clientId?: string;       // Link to client from /clients collection
-    clientName?: string;     // Client name for display
+
+    /** 
+     * Контекст выполнения (GTD концепция)
+     * Примеры: '@home', '@work', '@computer', '@phone', '@errands'
+     * Позволяет фильтровать задачи по месту/инструменту
+     */
+    context: string;
+
+    /** 
+     * ID клиента из коллекции /clients
+     * Используется для интеграции с CRM и Time Tracking
+     */
+    clientId?: string;
+
+    /** Название клиента (денормализовано для быстрого отображения) */
+    clientName?: string;
+
+    /** Дополнительные заметки к задаче */
     description?: string;
+
+    /** Дедлайн задачи */
     dueDate?: Timestamp;
+
+    /** Дата создания */
     createdAt: Timestamp;
+
+    /** Дата последнего обновления */
     updatedAt?: Timestamp;
-    order?: number;          // For manual sorting if needed later
+
+    /** Порядок сортировки внутри колонки (для будущего drag-and-drop) */
+    order?: number;
 }
 
+/**
+ * Конфигурация колонок Kanban-доски
+ * Определяет порядок и названия колонок в UI
+ */
 export const GTD_COLUMNS: { id: GTDStatus; title: string }[] = [
-    { id: 'inbox', title: 'Inbox' },
-    { id: 'next_action', title: 'Next Actions' },
-    { id: 'projects', title: 'Projects' },
-    { id: 'waiting', title: 'Waiting For' },
-    { id: 'someday', title: 'Someday / Maybe' },
-    { id: 'done', title: 'Done ✓' }
+    { id: 'inbox', title: 'Inbox' },           // Входящие
+    { id: 'next_action', title: 'Next Actions' }, // Следующие действия
+    { id: 'projects', title: 'Projects' },     // Проекты (многошаговые)
+    { id: 'waiting', title: 'Waiting For' },   // Ожидание
+    { id: 'someday', title: 'Someday / Maybe' }, // Когда-нибудь
+    { id: 'done', title: 'Done ✓' }            // Выполнено
 ];

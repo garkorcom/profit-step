@@ -8,6 +8,7 @@ import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import PhotoCameraIcon from '@mui/icons-material/PhotoCamera';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
+import LockIcon from '@mui/icons-material/Lock';
 import { WorkSession } from '../../types/timeTracking.types';
 import { formatDuration, formatDate, formatTime, getStatusColor } from '../../utils/dateFormatters';
 
@@ -17,6 +18,54 @@ interface TimeTrackingTableProps {
     onDeleteSession: (session: WorkSession) => void;
     onEmployeeClick: (employee: { id: string; name: string }) => void;
 }
+
+/**
+ * Gets the start of a day (midnight)
+ */
+const getStartOfDay = (date: Date): Date => {
+    const d = new Date(date);
+    d.setHours(0, 0, 0, 0);
+    return d;
+};
+
+/**
+ * Checks if a session can still be edited (today or yesterday)
+ * Sessions from day-before-yesterday and earlier cannot be edited
+ */
+const canEditSession = (session: WorkSession): boolean => {
+    // Cannot edit correction entries
+    if (session.type === 'correction') return false;
+
+    // Cannot edit if already finalized/processed
+    if (session.finalizationStatus === 'finalized' || session.finalizationStatus === 'processed') {
+        return false;
+    }
+
+    // Check if session is from today or yesterday
+    if (!session.startTime) return false;
+
+    const sessionDate = new Date(session.startTime.seconds * 1000);
+    const today = getStartOfDay(new Date());
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+
+    return sessionDate >= yesterday;
+};
+
+/**
+ * Gets row background color based on session state
+ */
+const getRowStyle = (session: WorkSession): { bgcolor?: string } => {
+    // RED for auto-closed or manually edited sessions
+    if (session.autoClosed || session.isManuallyEdited) {
+        return { bgcolor: '#ffebee' }; // Light red (MUI red[50])
+    }
+    // Orange for correction entries
+    if (session.type === 'correction') {
+        return { bgcolor: '#fff3e0' }; // Light orange
+    }
+    return {};
+};
 
 /**
  * Sessions data table with actions
@@ -50,12 +99,17 @@ const TimeTrackingTable: React.FC<TimeTrackingTableProps> = ({
                     ) : (
                         sessions.map((session) => {
                             const isCorrection = session.type === 'correction';
+                            const isEditable = canEditSession(session);
+                            const rowStyle = getRowStyle(session);
+
                             return (
-                                <TableRow key={session.id} hover sx={isCorrection ? { bgcolor: '#fff3e0' } : undefined}>
+                                <TableRow key={session.id} hover sx={rowStyle}>
                                     {/* Date */}
                                     <TableCell>
                                         {formatDate(session.startTime)}
                                         {isCorrection && <Typography variant="caption" display="block" color="textSecondary">Correction</Typography>}
+                                        {session.autoClosed && <Typography variant="caption" display="block" color="error">Auto-Closed</Typography>}
+                                        {session.isManuallyEdited && !session.autoClosed && <Typography variant="caption" display="block" color="error">Edited</Typography>}
                                     </TableCell>
 
                                     {/* Employee */}
@@ -126,16 +180,43 @@ const TimeTrackingTable: React.FC<TimeTrackingTableProps> = ({
                                         ) : (
                                             <Typography variant="caption" color="text.secondary">-</Typography>
                                         )}
+                                        {/* Show edit note if edited */}
+                                        {session.editNote && (
+                                            <Tooltip title={`Edit reason: ${session.editNote}`}>
+                                                <Typography variant="caption" display="block" color="error" sx={{ fontStyle: 'italic' }}>
+                                                    ✏️ {session.editNote.slice(0, 30)}...
+                                                </Typography>
+                                            </Tooltip>
+                                        )}
                                     </TableCell>
 
                                     {/* Status */}
                                     <TableCell>
-                                        <Chip
-                                            label={isCorrection ? 'Correction' : (session.status === 'paused' ? 'On Break' : session.status)}
-                                            color={getStatusColor(session.status, session.type) as any}
-                                            size="small"
-                                            variant="outlined"
-                                        />
+                                        <Box display="flex" flexDirection="column" gap={0.5}>
+                                            <Chip
+                                                label={isCorrection ? 'Correction' : (session.status === 'paused' ? 'On Break' : session.status)}
+                                                color={getStatusColor(session.status, session.type) as any}
+                                                size="small"
+                                                variant="outlined"
+                                            />
+                                            {/* Additional status chips */}
+                                            {session.autoClosed && (
+                                                <Chip
+                                                    label="Auto-Closed"
+                                                    color="error"
+                                                    size="small"
+                                                    variant="filled"
+                                                />
+                                            )}
+                                            {session.isManuallyEdited && !session.autoClosed && (
+                                                <Chip
+                                                    label="Edited"
+                                                    color="error"
+                                                    size="small"
+                                                    variant="outlined"
+                                                />
+                                            )}
+                                        </Box>
                                     </TableCell>
 
                                     {/* Actions */}
@@ -165,9 +246,20 @@ const TimeTrackingTable: React.FC<TimeTrackingTableProps> = ({
                                                 </>
                                             )}
 
-                                            <IconButton size="small" onClick={() => onEditSession(session)}>
-                                                <EditIcon fontSize="small" />
-                                            </IconButton>
+                                            {/* Edit Button - disabled if outside 48h window */}
+                                            <Tooltip title={isEditable ? "Edit session" : "Correction window expired (48h)"}>
+                                                <span>
+                                                    <IconButton
+                                                        size="small"
+                                                        onClick={() => onEditSession(session)}
+                                                        disabled={!isEditable}
+                                                        color={isEditable ? "default" : "default"}
+                                                    >
+                                                        {isEditable ? <EditIcon fontSize="small" /> : <LockIcon fontSize="small" />}
+                                                    </IconButton>
+                                                </span>
+                                            </Tooltip>
+
                                             <IconButton size="small" color="error" onClick={() => onDeleteSession(session)}>
                                                 <DeleteIcon fontSize="small" />
                                             </IconButton>

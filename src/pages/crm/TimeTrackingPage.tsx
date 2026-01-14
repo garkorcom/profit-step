@@ -24,7 +24,7 @@ import {
 
 // Dialogs
 import LocationMap from '../../components/crm/LocationMap';
-import CorrectionSessionDialog from '../../components/crm/CorrectionSessionDialog';
+import EditSessionDialog from '../../components/crm/EditSessionDialog';
 import CreateSessionDialog from '../../components/crm/CreateSessionDialog';
 import EmployeeDetailsDialog from '../../components/crm/EmployeeDetailsDialog';
 
@@ -52,21 +52,21 @@ const TimeTrackingPage: React.FC = () => {
     // Dialogs
     const [selectedEmployee, setSelectedEmployee] = useState<{ id: string, name: string } | null>(null);
     const [isCreateSessionOpen, setIsCreateSessionOpen] = useState(false);
-    const [correctionSession, setCorrectionSession] = useState<WorkSession | null>(null);
+    const [editSession, setEditSession] = useState<WorkSession | null>(null);
 
     // Refresh trigger
     const [refreshKey, setRefreshKey] = useState(0);
 
     // --- Handlers ---
 
-    const handleCorrection = async (correction: Partial<WorkSession>) => {
+    const handleEditSession = async (sessionId: string, updates: Partial<WorkSession>) => {
         try {
-            await addDoc(collection(db, 'work_sessions'), correction);
+            await updateDoc(doc(db, 'work_sessions', sessionId), updates);
             setRefreshKey(prev => prev + 1);
-            alert("Correction saved successfully as a new ledger entry.");
+            setEditSession(null);
         } catch (error) {
-            console.error("Error saving correction:", error);
-            alert("Failed to save correction");
+            console.error("Error saving session edit:", error);
+            alert("Failed to save changes");
         }
     };
 
@@ -196,10 +196,43 @@ const TimeTrackingPage: React.FC = () => {
     );
 
     const filteredSessions = useMemo(() => {
+        // Helper to check if session is from today or yesterday (awaiting review)
+        const isAwaitingReview = (session: WorkSession): boolean => {
+            if (!session.startTime) return false;
+            if (session.finalizationStatus === 'finalized' || session.finalizationStatus === 'processed') return false;
+            if (session.type === 'correction') return false;
+
+            const sessionDate = new Date(session.startTime.seconds * 1000);
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const yesterday = new Date(today);
+            yesterday.setDate(yesterday.getDate() - 1);
+
+            return sessionDate >= yesterday;
+        };
+
         return sessions.filter(s => {
             const matchEmployee = filterEmployee ? s.employeeName === filterEmployee : true;
             const matchClient = filterClient ? s.clientName === filterClient : true;
-            const matchStatus = filterStatus !== 'all' ? s.status === filterStatus : true;
+
+            // Enhanced status filtering
+            let matchStatus = true;
+            if (filterStatus !== 'all') {
+                switch (filterStatus) {
+                    case 'awaiting_review':
+                        matchStatus = isAwaitingReview(s);
+                        break;
+                    case 'auto_closed':
+                        matchStatus = s.autoClosed === true;
+                        break;
+                    case 'edited':
+                        matchStatus = s.isManuallyEdited === true;
+                        break;
+                    default:
+                        matchStatus = s.status === filterStatus;
+                }
+            }
+
             return matchEmployee && matchClient && matchStatus;
         });
     }, [sessions, filterEmployee, filterClient, filterStatus]);
@@ -335,18 +368,18 @@ const TimeTrackingPage: React.FC = () => {
             {viewMode === 'list' && (
                 <TimeTrackingTable
                     sessions={filteredSessions}
-                    onEditSession={(session) => setCorrectionSession(session)}
+                    onEditSession={(session) => setEditSession(session)}
                     onDeleteSession={handleVoidSession}
                     onEmployeeClick={(emp) => setSelectedEmployee(emp)}
                 />
             )}
 
             {/* Dialogs */}
-            <CorrectionSessionDialog
-                open={!!correctionSession}
-                session={correctionSession}
-                onClose={() => setCorrectionSession(null)}
-                onSave={handleCorrection}
+            <EditSessionDialog
+                open={!!editSession}
+                session={editSession}
+                onClose={() => setEditSession(null)}
+                onSave={handleEditSession}
             />
 
             <CreateSessionDialog

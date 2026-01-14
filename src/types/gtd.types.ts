@@ -20,18 +20,21 @@ export interface Project {
 
 export interface GTDTask {
     id: string;
-    userId: string;
+    ownerId: string;         // Creator of the task
+    ownerName?: string;      // Creator display name
+    assigneeId?: string;     // Who should do it (user UID or telegramId)
+    assigneeName?: string;   // Assignee display name
     title: string;
     status: GTDStatus;
     priority: GTDPriority;
-    context: string; // e.g., '@home', '@work', '@computer'
-    projectId?: string; // Link to business project
-    clientId?: string; // Link to client from /clients collection
+    context: string;         // e.g., '@home', '@work', '@computer'
+    clientId?: string;       // Link to client from /clients collection
+    clientName?: string;     // Client name for display
     description?: string;
     dueDate?: Timestamp;
     createdAt: Timestamp;
-    updatedAt: Timestamp;
-    order?: number; // For manual sorting if needed later
+    updatedAt?: Timestamp;
+    order?: number;          // For manual sorting if needed later
 }
 
 export const GTD_COLUMNS: { id: GTDStatus; title: string }[] = [

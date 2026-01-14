@@ -1,16 +1,16 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Box, Snackbar, Alert, Fab, Tab, Tabs, Badge, Dialog, DialogTitle, DialogContent, TextField, DialogActions, Button, useMediaQuery, useTheme } from '@mui/material';
 import { DragDropContext, DropResult } from '@hello-pangea/dnd';
-import { collection, query, where, onSnapshot, orderBy, doc, updateDoc, addDoc, deleteDoc, Timestamp, getDocs } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, orderBy, doc, updateDoc, addDoc, deleteDoc, Timestamp, getDocs, or } from 'firebase/firestore';
 import { db } from '../../firebase/firebase';
 import { useAuth } from '../../auth/AuthContext';
-import { GTDTask, GTD_COLUMNS, GTDStatus, Project, GTDPriority } from '../../types/gtd.types';
+import { GTDTask, GTD_COLUMNS, GTDStatus, GTDPriority } from '../../types/gtd.types';
 import { Client } from '../../types/crm.types';
+import { UserProfile } from '../../types/user.types';
 import { FormControl, Select, MenuItem, InputLabel, Typography, Tooltip, IconButton } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import PersonIcon from '@mui/icons-material/Person';
 import FilterListIcon from '@mui/icons-material/FilterList';
-import KeyboardIcon from '@mui/icons-material/Keyboard';
 import GTDColumn from './GTDColumn';
 import GTDEditDialog from './GTDEditDialog';
 import { useActiveSession } from '../../hooks/useActiveSession';
@@ -40,10 +40,10 @@ const GTDBoard: React.FC = () => {
 
     const [columns, setColumns] = useState(initialData);
     const [editingTask, setEditingTask] = useState<GTDTask | null>(null);
-    const [projects, setProjects] = useState<Project[]>([]);
+    const [users, setUsers] = useState<UserProfile[]>([]);
     const [clients, setClients] = useState<Client[]>([]);
-    const [selectedProjectId, setSelectedProjectId] = useState<string>('all');
     const [selectedClientId, setSelectedClientId] = useState<string>('all');
+    const [selectedAssigneeId, setSelectedAssigneeId] = useState<string>('all');
 
     const handleStopSession = async () => {
         if (!activeSession) return;
@@ -85,6 +85,8 @@ const GTDBoard: React.FC = () => {
     const [showFilters, setShowFilters] = useState(false);
     const [quickAddOpen, setQuickAddOpen] = useState(false);
     const [quickAddTitle, setQuickAddTitle] = useState('');
+    const [quickAddClientId, setQuickAddClientId] = useState<string>('');
+    const [quickAddAssigneeId, setQuickAddAssigneeId] = useState<string>('');
 
     // Create clients lookup map for quick access
     const clientsMap = useMemo(() => {
@@ -93,27 +95,39 @@ const GTDBoard: React.FC = () => {
         return map;
     }, [clients]);
 
-    // Fetch projects and clients
+    // Fetch users and clients
     useEffect(() => {
         const fetchData = async () => {
-            const projQ = query(collection(db, 'projects'), orderBy('name'));
-            const projSnap = await getDocs(projQ);
-            setProjects(projSnap.docs.map(d => ({ id: d.id, ...d.data() } as Project)));
+            try {
+                // Fetch users for assignee dropdown
+                const usersSnap = await getDocs(collection(db, 'users'));
+                const fetchedUsers = usersSnap.docs.map(d => ({ id: d.id, ...d.data() } as UserProfile));
+                setUsers(fetchedUsers.filter(u => u.displayName).sort((a, b) =>
+                    (a.displayName || '').localeCompare(b.displayName || '')
+                ));
 
-            const clientQ = query(collection(db, 'clients'), orderBy('name'));
-            const clientSnap = await getDocs(clientQ);
-            setClients(clientSnap.docs.map(d => ({ id: d.id, ...d.data() } as Client)));
+                // Fetch clients
+                const clientQ = query(collection(db, 'clients'), orderBy('name'));
+                const clientSnap = await getDocs(clientQ);
+                setClients(clientSnap.docs.map(d => ({ id: d.id, ...d.data() } as Client)));
+            } catch (error) {
+                console.error('Error fetching data:', error);
+            }
         };
         fetchData();
     }, []);
 
-    // 1. Subscribe to tasks
+    // 1. Subscribe to tasks from GLOBAL collection
     useEffect(() => {
         if (!currentUser) return;
 
+        // Query tasks where user is owner OR assignee
         const q = query(
-            collection(db, 'users', currentUser.uid, 'gtd_tasks'),
-            orderBy('createdAt', 'desc') // Newest on top usually
+            collection(db, 'gtd_tasks'),
+            or(
+                where('ownerId', '==', currentUser.uid),
+                where('assigneeId', '==', currentUser.uid)
+            )
         );
 
         const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -126,6 +140,13 @@ const GTDBoard: React.FC = () => {
                 if (newColumns[task.status]) {
                     newColumns[task.status].push(task);
                 }
+            });
+
+            // Sort each column by createdAt desc
+            Object.keys(newColumns).forEach(key => {
+                newColumns[key as GTDStatus].sort((a, b) =>
+                    (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)
+                );
             });
 
             setColumns(newColumns);
@@ -164,11 +185,11 @@ const GTDBoard: React.FC = () => {
         };
         setColumns(newState);
 
-        // Firestore Update
+        // Firestore Update - now using global collection
         if (currentUser) {
             try {
-                const taskRef = doc(db, 'users', currentUser.uid, 'gtd_tasks', draggableId);
-                await updateDoc(taskRef, { status: destColId });
+                const taskRef = doc(db, 'gtd_tasks', draggableId);
+                await updateDoc(taskRef, { status: destColId, updatedAt: Timestamp.now() });
 
                 // Feature: Prompt for context if moving to Next Action and no context set
                 if (destColId === 'next_action' && !movedTask.context) {
@@ -176,25 +197,30 @@ const GTDBoard: React.FC = () => {
                 }
             } catch (error) {
                 console.error("Error moving task:", error);
-                // Revert on error (optional, logic complex for now just log)
             }
         }
     };
 
-    // 3. Task Actions
-    const handleAddTask = async (title: string, columnId: GTDStatus) => {
+    // 3. Task Actions - now with client and assignee support
+    const handleAddTask = async (title: string, columnId: GTDStatus, clientId?: string, assigneeId?: string) => {
         if (!currentUser) return;
         try {
+            const selectedClient = clients.find(c => c.id === clientId);
+            const selectedAssignee = users.find(u => u.id === assigneeId);
+
             const newTask: Partial<GTDTask> = {
                 title,
                 status: columnId,
                 priority: 'none' as GTDPriority,
                 createdAt: Timestamp.now(),
-                userId: currentUser.uid,
+                ownerId: currentUser.uid,
+                ownerName: currentUser.displayName || 'Unknown',
                 context: '',
-                description: ''
+                description: '',
+                ...(clientId && { clientId, clientName: selectedClient?.name || '' }),
+                ...(assigneeId && { assigneeId, assigneeName: selectedAssignee?.displayName || '' })
             };
-            await addDoc(collection(db, 'users', currentUser.uid, 'gtd_tasks'), newTask);
+            await addDoc(collection(db, 'gtd_tasks'), newTask);
         } catch (error) {
             console.error("Error adding task:", error);
         }
@@ -222,13 +248,13 @@ const GTDBoard: React.FC = () => {
 
     const handleUpdateTask = async (taskId: string, updates: Partial<GTDTask>) => {
         if (!currentUser) return;
-        const taskRef = doc(db, 'users', currentUser.uid, 'gtd_tasks', taskId);
-        await updateDoc(taskRef, updates);
+        const taskRef = doc(db, 'gtd_tasks', taskId);
+        await updateDoc(taskRef, { ...updates, updatedAt: Timestamp.now() });
     };
 
     const handleDeleteTask = async (taskId: string) => {
         if (!currentUser) return;
-        const taskRef = doc(db, 'users', currentUser.uid, 'gtd_tasks', taskId);
+        const taskRef = doc(db, 'gtd_tasks', taskId);
         await deleteDoc(taskRef);
     };
 
@@ -288,9 +314,8 @@ const GTDBoard: React.FC = () => {
                 startTime: Timestamp.now(),
                 status: 'active',
                 description: task.title,
-                projectId: task.projectId || '',
                 clientId: task.clientId || '',
-                clientName: task.clientId ? (clientsMap[task.clientId]?.name || '') : '',
+                clientName: task.clientName || '',
                 type: 'regular',
                 relatedTaskId: task.id // Link back to task
             });
@@ -303,15 +328,15 @@ const GTDBoard: React.FC = () => {
         }
     };
 
-    // Filter columns by project AND client
+    // Filter columns by client AND assignee
     const filteredColumns = { ...columns };
     Object.keys(filteredColumns).forEach(key => {
         let tasks = filteredColumns[key as GTDStatus];
-        if (selectedProjectId !== 'all') {
-            tasks = tasks.filter(t => t.projectId === selectedProjectId);
-        }
         if (selectedClientId !== 'all') {
             tasks = tasks.filter(t => t.clientId === selectedClientId);
+        }
+        if (selectedAssigneeId !== 'all') {
+            tasks = tasks.filter(t => t.assigneeId === selectedAssigneeId);
         }
         filteredColumns[key as GTDStatus] = tasks;
     });
@@ -320,8 +345,10 @@ const GTDBoard: React.FC = () => {
     const handleQuickAdd = () => {
         if (!quickAddTitle.trim()) return;
         const targetColumn = GTD_COLUMNS[selectedTab]?.id || 'inbox';
-        handleAddTask(quickAddTitle, targetColumn);
+        handleAddTask(quickAddTitle, targetColumn, quickAddClientId || undefined, quickAddAssigneeId || undefined);
         setQuickAddTitle('');
+        setQuickAddClientId('');
+        setQuickAddAssigneeId('');
         setQuickAddOpen(false);
     };
 
@@ -340,7 +367,7 @@ const GTDBoard: React.FC = () => {
                         <Badge
                             color="primary"
                             variant="dot"
-                            invisible={selectedProjectId === 'all' && selectedClientId === 'all'}
+                            invisible={selectedClientId === 'all' && selectedAssigneeId === 'all'}
                         >
                             <FilterListIcon />
                         </Badge>
@@ -348,20 +375,6 @@ const GTDBoard: React.FC = () => {
                 </Box>
             ) : (
                 <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap' }}>
-                    <FormControl size="small" sx={{ minWidth: 200, bgcolor: 'background.paper' }}>
-                        <InputLabel>Filter by Project</InputLabel>
-                        <Select
-                            value={selectedProjectId}
-                            label="Filter by Project"
-                            onChange={(e) => setSelectedProjectId(e.target.value)}
-                        >
-                            <MenuItem value="all"><em>All Projects</em></MenuItem>
-                            {projects.map(p => (
-                                <MenuItem key={p.id} value={p.id}>{p.name}</MenuItem>
-                            ))}
-                        </Select>
-                    </FormControl>
-
                     <FormControl size="small" sx={{ minWidth: 200, bgcolor: 'background.paper' }}>
                         <InputLabel>Filter by Client</InputLabel>
                         <Select
@@ -378,6 +391,42 @@ const GTDBoard: React.FC = () => {
                             ))}
                         </Select>
                     </FormControl>
+
+                    <FormControl size="small" sx={{ minWidth: 200, bgcolor: 'background.paper' }}>
+                        <InputLabel>Filter by Assignee</InputLabel>
+                        <Select
+                            value={selectedAssigneeId}
+                            label="Filter by Assignee"
+                            onChange={(e) => setSelectedAssigneeId(e.target.value)}
+                        >
+                            <MenuItem value="all"><em>All Assignees</em></MenuItem>
+                            {users.map(u => (
+                                <MenuItem key={u.id} value={u.id}>{u.displayName}</MenuItem>
+                            ))}
+                        </Select>
+                    </FormControl>
+
+                    {/* Clear Filters Button */}
+                    {(selectedClientId !== 'all' || selectedAssigneeId !== 'all') && (
+                        <Button
+                            size="small"
+                            variant="outlined"
+                            onClick={() => { setSelectedClientId('all'); setSelectedAssigneeId('all'); }}
+                            sx={{ height: 40 }}
+                        >
+                            Clear Filters
+                        </Button>
+                    )}
+
+                    {/* Desktop FAB for adding tasks */}
+                    <Button
+                        variant="contained"
+                        startIcon={<AddIcon />}
+                        onClick={() => setQuickAddOpen(true)}
+                        sx={{ ml: 'auto', height: 40 }}
+                    >
+                        Add Task
+                    </Button>
                 </Box>
             )}
 
@@ -385,17 +434,17 @@ const GTDBoard: React.FC = () => {
             {isMobile && showFilters && (
                 <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', py: 1, bgcolor: '#f5f5f5', borderRadius: 1, px: 1 }}>
                     <FormControl size="small" sx={{ flex: 1, minWidth: 120, bgcolor: 'white' }}>
-                        <InputLabel>Project</InputLabel>
-                        <Select value={selectedProjectId} label="Project" onChange={(e) => setSelectedProjectId(e.target.value)}>
-                            <MenuItem value="all"><em>All</em></MenuItem>
-                            {projects.map(p => <MenuItem key={p.id} value={p.id}>{p.name}</MenuItem>)}
-                        </Select>
-                    </FormControl>
-                    <FormControl size="small" sx={{ flex: 1, minWidth: 120, bgcolor: 'white' }}>
                         <InputLabel>Client</InputLabel>
                         <Select value={selectedClientId} label="Client" onChange={(e) => setSelectedClientId(e.target.value)}>
                             <MenuItem value="all"><em>All</em></MenuItem>
                             {clients.map(c => <MenuItem key={c.id} value={c.id}>{c.name}</MenuItem>)}
+                        </Select>
+                    </FormControl>
+                    <FormControl size="small" sx={{ flex: 1, minWidth: 120, bgcolor: 'white' }}>
+                        <InputLabel>Assignee</InputLabel>
+                        <Select value={selectedAssigneeId} label="Assignee" onChange={(e) => setSelectedAssigneeId(e.target.value)}>
+                            <MenuItem value="all"><em>All</em></MenuItem>
+                            {users.map(u => <MenuItem key={u.id} value={u.id}>{u.displayName}</MenuItem>)}
                         </Select>
                     </FormControl>
                 </Box>
@@ -463,7 +512,7 @@ const GTDBoard: React.FC = () => {
                 </DragDropContext>
             </Box>
 
-            {/* FAB - Quick Add (always visible on mobile) */}
+            {/* FAB - Quick Add (mobile only, desktop has button in header) */}
             {isMobile && (
                 <Fab
                     color="primary"
@@ -480,27 +529,57 @@ const GTDBoard: React.FC = () => {
                 </Fab>
             )}
 
-            {/* Quick Add Dialog (Mobile) */}
+            {/* Quick Add Dialog */}
             <Dialog
                 open={quickAddOpen}
                 onClose={() => setQuickAddOpen(false)}
                 fullWidth
-                maxWidth="xs"
+                maxWidth="sm"
                 PaperProps={{ sx: { borderRadius: 3 } }}
             >
                 <DialogTitle sx={{ pb: 1 }}>
                     Add to {activeColumn?.title || 'Inbox'}
                 </DialogTitle>
-                <DialogContent sx={{ pt: 0 }}>
+                <DialogContent sx={{ pt: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
                     <TextField
                         autoFocus
                         fullWidth
                         placeholder="Task title..."
                         value={quickAddTitle}
                         onChange={(e) => setQuickAddTitle(e.target.value)}
-                        onKeyDown={(e) => e.key === 'Enter' && handleQuickAdd()}
+                        onKeyDown={(e) => e.key === 'Enter' && quickAddTitle.trim() && handleQuickAdd()}
                         sx={{ mt: 1 }}
                     />
+                    <Box sx={{ display: 'flex', gap: 2 }}>
+                        <FormControl fullWidth size="small">
+                            <InputLabel>Client (optional)</InputLabel>
+                            <Select
+                                value={quickAddClientId}
+                                label="Client (optional)"
+                                onChange={(e) => setQuickAddClientId(e.target.value)}
+                            >
+                                <MenuItem value=""><em>No Client</em></MenuItem>
+                                {clients.map(c => (
+                                    <MenuItem key={c.id} value={c.id}>
+                                        {c.name} {c.type === 'company' ? '🏢' : '👤'}
+                                    </MenuItem>
+                                ))}
+                            </Select>
+                        </FormControl>
+                        <FormControl fullWidth size="small">
+                            <InputLabel>Assignee (optional)</InputLabel>
+                            <Select
+                                value={quickAddAssigneeId}
+                                label="Assignee (optional)"
+                                onChange={(e) => setQuickAddAssigneeId(e.target.value)}
+                            >
+                                <MenuItem value=""><em>No Assignee</em></MenuItem>
+                                {users.map(u => (
+                                    <MenuItem key={u.id} value={u.id}>{u.displayName}</MenuItem>
+                                ))}
+                            </Select>
+                        </FormControl>
+                    </Box>
                 </DialogContent>
                 <DialogActions>
                     <Button onClick={() => setQuickAddOpen(false)}>Cancel</Button>

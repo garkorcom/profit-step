@@ -61,9 +61,9 @@ const FinancePage: React.FC = () => {
             const start = startOfDay(startDate);
             const end = endOfDay(endDate);
 
-            // We now query 'work_sessions' instead of 'payroll_ledger'
-            // We want ALL sessions that fall within this range based on their timestamp
-            // For regular sessions, use startTime or endTime. For adjustments, use startTime.
+            // Query work_sessions within the date range
+            // Note: We fetch all and filter client-side for finalizationStatus
+            // to avoid needing a composite index and to handle legacy data
             const q = query(
                 collection(db, 'work_sessions'),
                 where('startTime', '>=', Timestamp.fromDate(start)),
@@ -72,9 +72,42 @@ const FinancePage: React.FC = () => {
             );
 
             const snapshot = await getDocs(q);
-            const fetchedSessions = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as WorkSession));
+            const allSessions = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as WorkSession));
 
-            setEntries(fetchedSessions);
+            // Filter to only show finalized or processed sessions (or legacy sessions without status)
+            // Sessions from today/yesterday are still within edit window and won't appear
+            const getStartOfDay = (date: Date): Date => {
+                const d = new Date(date);
+                d.setHours(0, 0, 0, 0);
+                return d;
+            };
+
+            const today = getStartOfDay(new Date());
+            const dayBeforeYesterday = new Date(today);
+            dayBeforeYesterday.setDate(dayBeforeYesterday.getDate() - 2);
+            dayBeforeYesterday.setHours(23, 59, 59, 999); // End of day-before-yesterday
+
+            const finalizedSessions = allSessions.filter(session => {
+                // Always show corrections and manual adjustments
+                if (session.type === 'correction' || session.type === 'manual_adjustment') {
+                    return true;
+                }
+
+                // If explicitly finalized or processed, show it
+                if (session.finalizationStatus === 'finalized' || session.finalizationStatus === 'processed') {
+                    return true;
+                }
+
+                // For legacy data without finalizationStatus, check if from day-before-yesterday or earlier
+                if (!session.finalizationStatus || session.finalizationStatus === 'pending') {
+                    const sessionDate = new Date((session.startTime?.seconds || 0) * 1000);
+                    return sessionDate <= dayBeforeYesterday;
+                }
+
+                return false;
+            });
+
+            setEntries(finalizedSessions);
         } catch (error) {
             console.error("Error fetching ledger:", error);
         } finally {

@@ -7,8 +7,9 @@ import {
 import FlagIcon from '@mui/icons-material/Flag';
 import PersonIcon from '@mui/icons-material/Person';
 import { useForm, Controller } from 'react-hook-form';
-import { GTDTask, GTDStatus, GTD_COLUMNS, Project, GTDPriority, PRIORITY_COLORS } from '../../types/gtd.types';
+import { GTDTask, GTDStatus, GTD_COLUMNS, GTDPriority, PRIORITY_COLORS } from '../../types/gtd.types';
 import { Client } from '../../types/crm.types';
+import { UserProfile } from '../../types/user.types';
 import { Timestamp, collection, getDocs, query, orderBy } from 'firebase/firestore';
 import { db } from '../../firebase/firebase';
 
@@ -24,8 +25,8 @@ interface FormData {
     title: string;
     description: string;
     context: string;
-    projectId: string;
     clientId: string;
+    assigneeId: string;
     status: GTDStatus;
     priority: GTDPriority;
     dueDate: string; // YYYY-MM-DD
@@ -43,15 +44,15 @@ const PRIORITY_OPTIONS: { value: GTDPriority; label: string; color: string }[] =
 const GTDEditDialog: React.FC<GTDEditDialogProps> = ({ open, onClose, task, onSave, onDelete }) => {
     const { control, handleSubmit, reset, setValue, watch } = useForm<FormData>();
     const currentContext = watch('context');
-    const [projects, setProjects] = React.useState<Project[]>([]);
+    const [users, setUsers] = React.useState<UserProfile[]>([]);
     const [clients, setClients] = React.useState<Client[]>([]);
 
     useEffect(() => {
         const fetchData = async () => {
-            // Fetch projects
-            const projQ = query(collection(db, 'projects'), orderBy('name'));
-            const projSnap = await getDocs(projQ);
-            setProjects(projSnap.docs.map(d => ({ id: d.id, ...d.data() } as Project)));
+            // Fetch users for assignee dropdown
+            const usersQ = query(collection(db, 'users'), orderBy('displayName'));
+            const usersSnap = await getDocs(usersQ);
+            setUsers(usersSnap.docs.map(d => ({ id: d.id, ...d.data() } as UserProfile)));
 
             // Fetch clients
             const clientQ = query(collection(db, 'clients'), orderBy('name'));
@@ -67,8 +68,8 @@ const GTDEditDialog: React.FC<GTDEditDialogProps> = ({ open, onClose, task, onSa
                 title: task.title,
                 description: task.description || '',
                 context: task.context || '',
-                projectId: task.projectId || '',
                 clientId: task.clientId || '',
+                assigneeId: task.assigneeId || '',
                 status: task.status,
                 priority: task.priority || 'none',
                 dueDate: task.dueDate ? new Date(task.dueDate.seconds * 1000).toISOString().split('T')[0] : ''
@@ -78,6 +79,9 @@ const GTDEditDialog: React.FC<GTDEditDialogProps> = ({ open, onClose, task, onSa
 
     const onSubmit = async (data: FormData) => {
         if (!task) return;
+
+        const selectedClient = clients.find(c => c.id === data.clientId);
+        const selectedAssignee = users.find(u => u.id === data.assigneeId);
 
         // Build updates object, filtering out empty optional fields
         const updates: Record<string, any> = {
@@ -89,8 +93,14 @@ const GTDEditDialog: React.FC<GTDEditDialogProps> = ({ open, onClose, task, onSa
         };
 
         // Only include optional fields if they have a value
-        if (data.projectId) updates.projectId = data.projectId;
-        if (data.clientId) updates.clientId = data.clientId;
+        if (data.clientId) {
+            updates.clientId = data.clientId;
+            updates.clientName = selectedClient?.name || '';
+        }
+        if (data.assigneeId) {
+            updates.assigneeId = data.assigneeId;
+            updates.assigneeName = selectedAssignee?.displayName || '';
+        }
         if (data.dueDate) updates.dueDate = Timestamp.fromDate(new Date(data.dueDate));
 
         await onSave(task.id, updates as Partial<GTDTask>);
@@ -137,16 +147,17 @@ const GTDEditDialog: React.FC<GTDEditDialogProps> = ({ open, onClose, task, onSa
 
 
 
+                        {/* Assignee Selector */}
                         <Controller
-                            name="projectId"
+                            name="assigneeId"
                             control={control}
                             render={({ field }) => (
                                 <FormControl fullWidth size="small">
-                                    <InputLabel>Project (Optional)</InputLabel>
-                                    <Select {...field} label="Project (Optional)" displayEmpty>
+                                    <InputLabel>Assignee (Optional)</InputLabel>
+                                    <Select {...field} label="Assignee (Optional)" displayEmpty>
                                         <MenuItem value=""><em>None</em></MenuItem>
-                                        {projects.map(p => (
-                                            <MenuItem key={p.id} value={p.id}>{p.name}</MenuItem>
+                                        {users.map(u => (
+                                            <MenuItem key={u.id} value={u.id}>{u.displayName}</MenuItem>
                                         ))}
                                     </Select>
                                 </FormControl>

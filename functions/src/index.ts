@@ -545,7 +545,12 @@ export { sendMessage } from './callable/messaging/sendMessage';
 // AI
 export { generateLeadSummary } from './callable/ai/generateLeadSummary';
 export { onWorkerBotMessage } from './triggers/telegram/onWorkerBotMessage';
-export { checkOpenSessions } from './scheduled/checkOpenSessions';
+
+// Scheduled: Session Management
+export { finalizeExpiredSessions } from './scheduled/finalizeExpiredSessions';
+export { sendSessionReminders } from './scheduled/sendSessionReminders';
+
 export { forceFinishAllSessions } from './callable/admin/forceFinishAllSessions';
+export { closePayrollPeriod } from './callable/payroll/closePayrollPeriod';
 export { generateDailyPayroll } from './scheduled/generateDailyPayroll';
 export { onWorkSessionCreate } from './triggers/workSessions/onWorkSessionCreate';

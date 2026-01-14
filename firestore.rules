@@ -46,16 +46,9 @@ service cloud.firestore {
       }
 
       // ЧТЕНИЕ:
-      // Разрешено, если:
-      // 1. Это мой профиль, ИЛИ
-      // 2. Я из той же компании (для просмотра коллег)
-      // ЧТЕНИЕ:
-      // Разрешено, если:
-      // 1. Это мой профиль, ИЛИ
-      // 2. Я из той же компании (для просмотра коллег)
-      allow read: if isSignedIn() &&
-                   (request.auth.uid == userId ||
-                    requestingUserCompanyId() == targetUserCompanyId());
+      // Разрешено всем аутентифицированным пользователям
+      // (нужно для dropdown выбора assignee в GTD и других местах)
+      allow read: if isSignedIn();
 
       // СОЗДАНИЕ:
       // Разрешаем создание своего профиля (для AuthContext и seedLocalDb)
@@ -291,6 +284,27 @@ service cloud.firestore {
       allow create: if true;
       allow read: if isSignedIn();
       allow update, delete: if false;
+    }
+
+    // GTD Tasks (Global collection for shared task management)
+    match /gtd_tasks/{taskId} {
+      // Read: user is owner or assignee
+      allow read: if isSignedIn() && 
+                  (resource.data.ownerId == request.auth.uid || 
+                   resource.data.assigneeId == request.auth.uid);
+      
+      // Create: any authenticated user can create tasks
+      allow create: if isSignedIn() && 
+                    request.resource.data.ownerId == request.auth.uid;
+      
+      // Update: owner or assignee can update
+      allow update: if isSignedIn() && 
+                    (resource.data.ownerId == request.auth.uid || 
+                     resource.data.assigneeId == request.auth.uid);
+      
+      // Delete: only owner can delete
+      allow delete: if isSignedIn() && 
+                    resource.data.ownerId == request.auth.uid;
     }
 
     // Work Sessions (Time Tracking)

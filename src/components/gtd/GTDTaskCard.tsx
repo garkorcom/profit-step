@@ -5,6 +5,7 @@ import EditIcon from '@mui/icons-material/Edit';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import FlagIcon from '@mui/icons-material/Flag';
 import PersonIcon from '@mui/icons-material/Person';
+import DragIndicatorIcon from '@mui/icons-material/DragIndicator';
 import { GTDTask, PRIORITY_COLORS, GTDPriority } from '../../types/gtd.types';
 import { WorkSessionData } from '../../hooks/useActiveSession';
 
@@ -76,6 +77,20 @@ const GTDTaskCard: React.FC<GTDTaskCardProps> = ({ task, index, clientName, onCl
                 >
                     <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
                         <Box display="flex" justifyContent="space-between" alignItems="flex-start">
+                            {/* Drag Handle - shows on hover */}
+                            <Box
+                                sx={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    mr: 0.5,
+                                    ml: -0.5,
+                                    opacity: 0.4,
+                                    transition: 'opacity 0.2s',
+                                    '&:hover': { opacity: 0.8 }
+                                }}
+                            >
+                                <DragIndicatorIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
+                            </Box>
                             <Typography
                                 variant="body2"
                                 fontWeight="medium"

@@ -74,9 +74,12 @@ const TimeTrackingFilters: React.FC<TimeTrackingFiltersProps> = ({
                             onChange={(e) => onStatusChange(e.target.value)}
                         >
                             <MenuItem value="all">All Statuses</MenuItem>
-                            <MenuItem value="active">Active</MenuItem>
-                            <MenuItem value="completed">Completed</MenuItem>
-                            <MenuItem value="paused">Paused</MenuItem>
+                            <MenuItem value="active">🟢 Active</MenuItem>
+                            <MenuItem value="completed">✅ Completed</MenuItem>
+                            <MenuItem value="paused">⏸️ Paused</MenuItem>
+                            <MenuItem value="awaiting_review">⏳ Awaiting Review</MenuItem>
+                            <MenuItem value="auto_closed">🔴 Auto-Closed</MenuItem>
+                            <MenuItem value="edited">🔴 Edited</MenuItem>
                         </Select>
                     </FormControl>
                 </Box>

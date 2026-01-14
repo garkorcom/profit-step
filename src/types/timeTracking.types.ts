@@ -34,4 +34,29 @@ export interface WorkSession {
     isVoided?: boolean;
     voidReason?: string;
     relatedTaskId?: string; // Links to GTD Task
+
+    // === LIFECYCLE MANAGEMENT ===
+    finalizationStatus?: 'pending' | 'finalized' | 'processed';
+    finalizedAt?: Timestamp;        // When session became immutable (48h after start)
+
+    // === AUTO-CLOSE ===
+    autoClosed?: boolean;           // True if closed by 48h auto-close rule
+
+    // === MANUAL EDIT TRACKING ===
+    isManuallyEdited?: boolean;     // True if admin corrected this session
+    editedAt?: Timestamp;           // When the edit was made
+    editedBy?: string;              // Admin UID who edited
+    editNote?: string;              // Reason for the edit
+
+    // === ORIGINAL VALUES (audit trail for edits) ===
+    originalStartTime?: Timestamp;
+    originalEndTime?: Timestamp;
+    originalHourlyRate?: number;
+    originalClientId?: string;
+    originalClientName?: string;
+
+    // === PAYROLL INTEGRATION (future) ===
+    payrollPeriod?: string;         // "2026-01" - month for payroll
+    payrollEntryId?: string;        // Link to payroll entry after processing
+    processedAt?: Timestamp;        // When transferred to payroll
 }

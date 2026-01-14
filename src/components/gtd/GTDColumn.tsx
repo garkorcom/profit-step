@@ -116,18 +116,22 @@ const GTDColumn: React.FC<GTDColumnProps> = ({ columnId, title, tasks, clientsMa
                             minHeight: 80
                         }}
                     >
-                        {tasks.map((task, index) => (
-                            <GTDTaskCard
-                                key={task.id}
-                                task={task}
-                                index={index}
-                                clientName={task.clientId ? clientsMap[task.clientId]?.name : undefined}
-                                onClick={onTaskClick}
-                                onStartSession={onStartSession}
-                                activeSession={activeSession}
-                                onStopSession={onStopSession}
-                            />
-                        ))}
+                        {tasks.map((task, index) => {
+                            // Don't show timer in Done or Someday columns
+                            const showTimer = columnId !== 'done' && columnId !== 'someday';
+                            return (
+                                <GTDTaskCard
+                                    key={task.id}
+                                    task={task}
+                                    index={index}
+                                    clientName={task.clientId ? clientsMap[task.clientId]?.name : undefined}
+                                    onClick={onTaskClick}
+                                    onStartSession={showTimer ? onStartSession : undefined}
+                                    activeSession={showTimer ? activeSession : undefined}
+                                    onStopSession={showTimer ? onStopSession : undefined}
+                                />
+                            );
+                        })}
                         {provided.placeholder}
                     </Box>
                 )}

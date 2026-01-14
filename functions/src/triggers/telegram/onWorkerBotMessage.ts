@@ -127,8 +127,6 @@ async function handleMessage(message: any) {
         await sendClientList(chatId);
     } else if (text === '⏹️ Finish Work') {
         await handleFinishWorkRequest(chatId, userId);
-    } else if (text === '/finish_day' || text === '🏁 Finish Day') {
-        await handleFinishDay(chatId, userId);
     } else if (text === '☕ Break') {
         await pauseWorkSession(chatId, userId);
     } else if (text === '▶️ Resume Work') {
@@ -691,31 +689,9 @@ async function handleText(chatId: number, userId: number, text: string) {
 
         await sendAdminNotification(`🏁 *Work Finished*\n👤 ${sessionData.employeeName}\n📍 ${sessionData.clientName}\n⏱ ${Math.floor(totalMinutes / 60)}h ${totalMinutes % 60}m\n💵 Earned: $${sessionEarnings}\n📝 ${text}`);
 
-        // Prompt to finish day
-        await sendMessage(chatId, "Is your workday finished?", {
-            keyboard: [
-                [{ text: "🏁 Finish Day" }],
-                [{ text: "/start" }]
-            ],
-            resize_keyboard: true,
-            one_time_keyboard: true
-        });
+        // Return to main menu after finishing
+        await sendMainMenu(chatId);
     }
-}
-
-async function handleFinishDay(chatId: number, userId: number) {
-    let msg = '';
-    const activeSession = await getActiveSession(userId);
-    if (activeSession) {
-        msg = await autoFinishActiveSession(activeSession, chatId, userId);
-    }
-
-    // Calculate Daily Stats
-    const stats = await calculateDailyStats(userId, 0, 0, chatId);
-    const h = Math.floor(stats.minutes / 60);
-    const m = stats.minutes % 60;
-
-    await sendMessage(chatId, `${msg}📅 *Daily Summary*\n\n⏱ Total Time: ${h}h ${m}m\n💰 Earned: $${stats.earnings.toFixed(2)}\n\nGood job!`);
 }
 
 async function handleMe(chatId: number, userId: number) {

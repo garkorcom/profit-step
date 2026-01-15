@@ -2,6 +2,7 @@ import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
 import axios from 'axios';
 import * as crypto from 'crypto';
+import { VertexAI } from '@google-cloud/vertexai';
 
 // Initialize in the file if not already initialized
 if (admin.apps.length === 0) {
@@ -45,6 +46,12 @@ interface TelegramUpdate {
             file_id: string;
             mime_type?: string;
         };
+        voice?: {
+            file_id: string;
+            duration: number;
+            mime_type?: string;
+            file_size?: number;
+        };
         location?: {
             latitude: number;
             longitude: number;
@@ -83,6 +90,23 @@ export const onWorkerBotMessage = functions.https.onRequest(async (req, res) => 
 
             // Handle Messages
             if (update.message) {
+                // IDEMPOTENCY: Prevent duplicate processing on poor network
+                const msgId = `tg_${update.message.from.id}_${update.message.message_id}`;
+                const processedRef = db.collection('processed_messages').doc(msgId);
+                const already = await processedRef.get();
+
+                if (already.exists) {
+                    console.log(`⏭️ Skipping duplicate message: ${msgId}`);
+                    res.status(200).send('OK');
+                    return;
+                }
+
+                // Mark as processed BEFORE handling (to prevent race conditions)
+                await processedRef.set({
+                    processedAt: admin.firestore.FieldValue.serverTimestamp(),
+                    userId: update.message.from.id
+                });
+
                 await handleMessage(update.message);
                 res.status(200).send('OK');
                 return;
@@ -137,6 +161,8 @@ async function handleMessage(message: any) {
         await handleSkipMedia(chatId, userId);
     } else if (message.photo || message.document || message.video) {
         await handleMediaUpload(chatId, userId, message);
+    } else if (message.voice) {
+        await handleVoiceMessage(chatId, userId, message);
     } else if (message.location) {
         await handleLocation(chatId, userId, message.location);
     } else if (text === '/me') {
@@ -691,6 +717,138 @@ async function handleText(chatId: number, userId: number, text: string) {
 
         // Return to main menu after finishing
         await sendMainMenu(chatId);
+    }
+}
+
+/**
+ * Handles voice messages from workers.
+ * Uses Gemini 1.5 Flash to transcribe and extract structured data.
+ */
+async function handleVoiceMessage(chatId: number, userId: number, message: any) {
+    const activeSession = await getActiveSession(userId);
+
+    if (!activeSession) {
+        await sendMessage(chatId, "⚠️ Нет активной сессии для голосового сообщения.");
+        return;
+    }
+
+    const sessionData = activeSession.data();
+    const fileId = message.voice.file_id;
+
+    // Determine context: start or end of shift
+    const context = sessionData.awaitingEndVoice ? 'END_SHIFT' : 'START_SHIFT';
+
+    await sendMessage(chatId, "🎙 Принял, расшифровываю...");
+
+    try {
+        // 1. Download voice file from Telegram
+        const fileRes = await axios.get(`https://api.telegram.org/bot${WORKER_BOT_TOKEN}/getFile?file_id=${fileId}`);
+        const filePath = fileRes.data.result.file_path;
+        const downloadUrl = `https://api.telegram.org/file/bot${WORKER_BOT_TOKEN}/${filePath}`;
+
+        const audioResponse = await axios.get(downloadUrl, { responseType: 'arraybuffer' });
+        const audioBase64 = Buffer.from(audioResponse.data).toString('base64');
+
+        // 2. Save voice to Storage (optional, for history)
+        const voiceStoragePath = `work_voices/${activeSession.id}/${context.toLowerCase()}_${Date.now()}.ogg`;
+        const bucket = admin.storage().bucket();
+        const file = bucket.file(voiceStoragePath);
+        await file.save(Buffer.from(audioResponse.data), { contentType: 'audio/ogg' });
+        const voiceUrl = `gs://${bucket.name}/${voiceStoragePath}`;
+
+        // 3. Send to Gemini 1.5 Flash for transcription
+        const vertexAI = new VertexAI({
+            project: process.env.GCLOUD_PROJECT || 'profit-step',
+            location: 'us-central1'
+        });
+
+        const model = vertexAI.preview.getGenerativeModel({
+            model: 'gemini-1.5-flash-001',
+            generationConfig: { responseMimeType: 'application/json' }
+        });
+
+        const systemPrompt = `
+Ты — опытный прораб-секретарь на стройке. Слушай голосовые сообщения рабочих и превращай их в структурированный отчет JSON.
+
+Контекст: "${context}"
+Язык: Русский
+
+ИНСТРУКЦИИ:
+1. Убери слова-паразиты ("эээ", "ну", "короче").
+2. Сформулируй четкое, профессиональное описание.
+3. Если START_SHIFT: извлеки planned_task и location.
+4. Если END_SHIFT: извлеки work_done, issues (проблемы, нехватка материалов).
+
+ФОРМАТ JSON:
+{
+  "summary": "Краткое описание в 3-5 слов",
+  "description": "Полное описание работ",
+  "issues": "Текст проблемы или null",
+  "location_detected": "Локация или null"
+}`;
+
+        const request = {
+            contents: [{
+                role: 'user' as const,
+                parts: [
+                    { text: systemPrompt },
+                    { inlineData: { mimeType: 'audio/ogg', data: audioBase64 } }
+                ]
+            }]
+        };
+
+        const result = await model.generateContent(request);
+        const responseText = result.response.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+
+        let aiData;
+        try {
+            aiData = JSON.parse(responseText);
+        } catch (e) {
+            console.error('Failed to parse AI response:', responseText);
+            aiData = { summary: 'Голосовое получено', description: responseText, issues: null };
+        }
+
+        // 4. Update session with AI data
+        const updates: Record<string, any> = {
+            aiTranscribedAt: admin.firestore.FieldValue.serverTimestamp(),
+        };
+
+        if (context === 'START_SHIFT') {
+            updates.plannedTaskSummary = aiData.summary;
+            updates.plannedTaskDescription = aiData.description;
+            updates.locationDetected = aiData.location_detected;
+            updates.voiceStartUrl = voiceUrl;
+            updates.awaitingStartVoice = false;
+
+            // Continue to normal flow
+            await sendMessage(chatId, `📝 Записал задачу: *${aiData.summary}*\n\n_${aiData.description}_`);
+            await sendMainMenu(chatId);
+        } else {
+            // END_SHIFT context
+            updates.resultSummary = aiData.summary;
+            updates.resultDescription = aiData.description;
+            updates.issuesReported = aiData.issues;
+            updates.voiceEndUrl = voiceUrl;
+            updates.awaitingEndVoice = false;
+            updates.description = aiData.description; // Use AI description as main description
+
+            // Notify admin if issues detected
+            if (aiData.issues) {
+                await sendAdminNotification(`⚠️ *Проблема от рабочего*\n👤 ${sessionData.employeeName}\n📍 ${sessionData.clientName}\n🔴 ${aiData.issues}`);
+            }
+
+            await sendMessage(chatId, `✅ Записал: *${aiData.summary}*\n${aiData.issues ? `⚠️ Проблема: ${aiData.issues}` : ''}\n\nОтдыхай!`);
+
+            // Now finalize the session (move to description step or complete)
+            updates.awaitingDescription = true;
+            await sendMessage(chatId, "📝 Хочешь добавить текстовое описание? (Или напиши 'Skip')");
+        }
+
+        await activeSession.ref.update(updates);
+
+    } catch (error: any) {
+        console.error('Error transcribing voice:', error);
+        await sendMessage(chatId, "⚠️ Ошибка расшифровки. Попробуй ещё раз или напиши текстом.");
     }
 }
 

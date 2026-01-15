@@ -374,7 +374,8 @@ const GTDBoard: React.FC = () => {
                 clientId: task.clientId || '',
                 clientName: task.clientName || '',
                 type: 'regular',
-                relatedTaskId: task.id // Link back to task
+                relatedTaskId: task.id, // Link back to task
+                relatedTaskTitle: task.title // Snapshot task title for display
             });
 
             setSessionStartMessage(`${closedSessionMsg}⏱️ Session started: ${task.title}`);

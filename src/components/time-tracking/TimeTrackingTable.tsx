@@ -9,6 +9,8 @@ import PhotoCameraIcon from '@mui/icons-material/PhotoCamera';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 import LockIcon from '@mui/icons-material/Lock';
+import StopIcon from '@mui/icons-material/Stop';
+import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import { WorkSession } from '../../types/timeTracking.types';
 import { formatDuration, formatDate, formatTime, getStatusColor } from '../../utils/dateFormatters';
 
@@ -17,6 +19,9 @@ interface TimeTrackingTableProps {
     onEditSession: (session: WorkSession) => void;
     onDeleteSession: (session: WorkSession) => void;
     onEmployeeClick: (employee: { id: string; name: string }) => void;
+    isAdmin?: boolean;
+    onAdminStopSession?: (session: WorkSession) => void;
+    onAdminStartSession?: (session: WorkSession) => void;
 }
 
 /**
@@ -74,7 +79,10 @@ const TimeTrackingTable: React.FC<TimeTrackingTableProps> = ({
     sessions,
     onEditSession,
     onDeleteSession,
-    onEmployeeClick
+    onEmployeeClick,
+    isAdmin,
+    onAdminStopSession,
+    onAdminStartSession
 }) => {
     return (
         <TableContainer component={Paper} sx={{ overflowX: 'auto' }}>
@@ -193,12 +201,38 @@ const TimeTrackingTable: React.FC<TimeTrackingTableProps> = ({
                                     {/* Status */}
                                     <TableCell>
                                         <Box display="flex" flexDirection="column" gap={0.5}>
-                                            <Chip
-                                                label={isCorrection ? 'Correction' : (session.status === 'paused' ? 'On Break' : session.status)}
-                                                color={getStatusColor(session.status, session.type) as any}
-                                                size="small"
-                                                variant="outlined"
-                                            />
+                                            <Box display="flex" alignItems="center" gap={0.5}>
+                                                <Chip
+                                                    label={isCorrection ? 'Correction' : (session.status === 'paused' ? 'On Break' : session.status)}
+                                                    color={getStatusColor(session.status, session.type) as any}
+                                                    size="small"
+                                                    variant="outlined"
+                                                />
+                                                {/* Admin Stop Button for active sessions */}
+                                                {isAdmin && session.status === 'active' && onAdminStopSession && (
+                                                    <Tooltip title="Остановить (Admin)">
+                                                        <IconButton
+                                                            size="small"
+                                                            color="error"
+                                                            onClick={() => onAdminStopSession(session)}
+                                                        >
+                                                            <StopIcon fontSize="small" />
+                                                        </IconButton>
+                                                    </Tooltip>
+                                                )}
+                                                {/* Admin Play Button for completed sessions */}
+                                                {isAdmin && session.status === 'completed' && !isCorrection && onAdminStartSession && (
+                                                    <Tooltip title="Запустить за сотрудника (Admin)">
+                                                        <IconButton
+                                                            size="small"
+                                                            color="success"
+                                                            onClick={() => onAdminStartSession(session)}
+                                                        >
+                                                            <PlayArrowIcon fontSize="small" />
+                                                        </IconButton>
+                                                    </Tooltip>
+                                                )}
+                                            </Box>
                                             {/* Additional status chips */}
                                             {session.autoClosed && (
                                                 <Chip
@@ -215,6 +249,37 @@ const TimeTrackingTable: React.FC<TimeTrackingTableProps> = ({
                                                     size="small"
                                                     variant="outlined"
                                                 />
+                                            )}
+                                            {session.stoppedByAdmin && (
+                                                <Tooltip title={session.adminStopReason || 'Stopped by admin'}>
+                                                    <Chip
+                                                        label="Admin Stop"
+                                                        color="warning"
+                                                        size="small"
+                                                        variant="outlined"
+                                                    />
+                                                </Tooltip>
+                                            )}
+                                            {session.startedByAdmin && (
+                                                <Tooltip title={session.adminStartReason || 'Started by admin'}>
+                                                    <Chip
+                                                        label="Admin Start"
+                                                        color="info"
+                                                        size="small"
+                                                        variant="outlined"
+                                                    />
+                                                </Tooltip>
+                                            )}
+                                            {session.requiresAdminReview && (
+                                                <Tooltip title="Сессия была забыта открытой. Требуется подтверждение реального времени работы">
+                                                    <Chip
+                                                        label="⚠️ Needs Review"
+                                                        color="warning"
+                                                        size="small"
+                                                        variant="filled"
+                                                        sx={{ fontWeight: 'bold' }}
+                                                    />
+                                                </Tooltip>
                                             )}
                                         </Box>
                                     </TableCell>

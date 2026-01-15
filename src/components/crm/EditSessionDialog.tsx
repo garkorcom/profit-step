@@ -9,6 +9,8 @@ import WarningIcon from '@mui/icons-material/Warning';
 import { WorkSession } from '../../types/timeTracking.types';
 import { Timestamp, collection, getDocs } from 'firebase/firestore';
 import { db } from '../../firebase/firebase';
+import { getFunctions, httpsCallable } from 'firebase/functions';
+import toast from 'react-hot-toast';
 
 interface Client {
     id: string;
@@ -156,59 +158,41 @@ const EditSessionDialog: React.FC<EditSessionDialogProps> = ({
 
         setSaving(true);
         try {
-            // Calculate new duration and earnings
-            const startObj = startTime ? new Date(startTime) : null;
-            const endObj = endTime ? new Date(endTime) : null;
+            // Use Cloud Function with server-side validation
+            const functions = getFunctions();
+            const updateWorkSession = httpsCallable(functions, 'updateWorkSession');
 
-            let durationMinutes = session.durationMinutes || 0;
-            if (startObj && endObj) {
-                const diffMs = endObj.getTime() - startObj.getTime();
-                durationMinutes = Math.max(0, Math.floor(diffMs / 1000 / 60));
-            }
-
-            const rate = hourlyRate ? parseFloat(hourlyRate) : (session.hourlyRate || 0);
-            const sessionEarnings = parseFloat(((durationMinutes / 60) * rate).toFixed(2));
-
-            // Build update object
-            const updates: Partial<WorkSession> = {
-                // Updated values
+            const result = await updateWorkSession({
+                sessionId: session.id,
+                newStartTime: startTime ? new Date(startTime).toISOString() : new Date(session.startTime.seconds * 1000).toISOString(),
+                newEndTime: endTime ? new Date(endTime).toISOString() : (session.endTime ? new Date(session.endTime.seconds * 1000).toISOString() : new Date().toISOString()),
+                editNote: editNote.trim(),
                 clientId: clientId,
                 clientName: clientName,
                 description: description,
-                hourlyRate: rate,
-                durationMinutes: durationMinutes,
-                sessionEarnings: sessionEarnings,
+            });
 
-                // Edit tracking
-                isManuallyEdited: true,
-                editedAt: Timestamp.now(),
-                editedBy: currentUserId || 'admin',
-                editNote: editNote,
-            };
+            const data = result.data as { success: boolean; message: string; durationMinutes?: number; sessionEarnings?: number };
 
-            // Add start/end times if provided
-            if (startObj) {
-                updates.startTime = Timestamp.fromDate(startObj);
+            if (data.success) {
+                toast.success(data.message || 'Сессия обновлена');
+                onClose();
+                // Notify parent to refresh (onSave is now just for refresh trigger)
+                await onSave(session.id, {});
             }
-            if (endObj) {
-                updates.endTime = Timestamp.fromDate(endObj);
-                updates.status = 'completed';
-            }
-
-            // Store original values only on first edit
-            if (!session.isManuallyEdited) {
-                updates.originalStartTime = session.startTime;
-                updates.originalEndTime = session.endTime;
-                updates.originalHourlyRate = session.hourlyRate;
-                updates.originalClientId = session.clientId;
-                updates.originalClientName = session.clientName;
-            }
-
-            await onSave(session.id, updates);
-            onClose();
-        } catch (error) {
+        } catch (error: any) {
             console.error("Error saving edit:", error);
-            alert("Failed to save changes");
+            // Parse Cloud Function error message
+            const errorMessage = error.message || 'Ошибка сохранения';
+            if (errorMessage.includes('14')) {
+                toast.error('Смена не может превышать 14 часов');
+            } else if (errorMessage.includes('Пересечение')) {
+                toast.error(errorMessage);
+            } else if (errorMessage.includes('processed')) {
+                toast.error('Нельзя редактировать обработанную сессию');
+            } else {
+                toast.error(errorMessage);
+            }
         } finally {
             setSaving(false);
         }

@@ -1,5 +1,7 @@
 import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
+import { toZonedTime, fromZonedTime } from 'date-fns-tz';
+import { subDays, endOfDay } from 'date-fns';
 import axios from 'axios';
 
 const db = admin.firestore();
@@ -7,36 +9,52 @@ const db = admin.firestore();
 // Config
 const WORKER_BOT_TOKEN = process.env.WORKER_BOT_TOKEN || functions.config().worker_bot?.token;
 
+// Florida timezone - all our objects are in Florida
+const TIME_ZONE = 'America/New_York';
+
 /**
- * Scheduled function that runs daily at 1:00 AM to finalize sessions.
+ * Scheduled function that runs daily at 1:00 AM Florida time to finalize sessions.
  * 
- * Logic:
- * - Sessions from "day before yesterday" and earlier are finalized
- * - Edit window: "today" and "yesterday" = can edit
- * - Example: Today is Wednesday → Monday sessions get finalized
+ * TIMEZONE-AWARE LOGIC:
+ * - Google Cloud servers run in UTC
+ * - We calculate "end of day-before-yesterday" in Florida time
+ * - Convert that to UTC for Firestore query
  * 
- * Benefits:
- * - Runs once per day instead of every hour (24x less server load)
- * - Predictable finalization time
- * - Simple date-based logic
+ * Example (Winter, EST = UTC-5):
+ * - Script runs Wednesday 1:00 AM Florida = Wednesday 6:00 AM UTC
+ * - Target: End of Monday in Florida = Monday 23:59:59 EST = Tuesday 04:59:59 UTC
+ * - Query finds sessions started before Tuesday 05:00 UTC
  */
 export const finalizeExpiredSessions = functions.pubsub
     .schedule('0 1 * * *') // Every day at 1:00 AM
-    .timeZone('America/New_York')
+    .timeZone(TIME_ZONE)
     .onRun(async (context) => {
-        // Calculate the cutoff date: end of day-before-yesterday
-        const now = new Date();
-        const dayBeforeYesterday = new Date(now);
-        dayBeforeYesterday.setDate(dayBeforeYesterday.getDate() - 2);
-        dayBeforeYesterday.setHours(23, 59, 59, 999); // End of that day
+        // 1. Get current time in UTC
+        const nowUtc = new Date();
+
+        // 2. Convert to Florida time to understand "what day is it there"
+        const nowInFlorida = toZonedTime(nowUtc, TIME_ZONE);
+
+        // 3. Go back 2 days from Florida time
+        // If today is Wednesday 1:00 AM Florida, targetDate = Monday
+        const twoDaysAgoFlorida = subDays(nowInFlorida, 2);
+
+        // 4. Find END of that day (23:59:59.999) in Florida
+        const endOfTwoDaysAgoFlorida = endOfDay(twoDaysAgoFlorida);
+
+        // 5. Convert this cutoff back to UTC for Firestore query
+        const cutoffTimestamp = fromZonedTime(endOfTwoDaysAgoFlorida, TIME_ZONE);
 
         console.log(`🔒 [finalizeExpiredSessions] Running daily finalization...`);
-        console.log(`📅 Finalizing sessions from ${dayBeforeYesterday.toDateString()} and earlier`);
+        console.log(`📅 Server Now (UTC): ${nowUtc.toISOString()}`);
+        console.log(`📅 Florida Now: ${nowInFlorida.toString()}`);
+        console.log(`📅 Cutoff Target (Florida): ${endOfTwoDaysAgoFlorida.toString()}`);
+        console.log(`📅 Query Cutoff (UTC): ${cutoffTimestamp.toISOString()}`);
 
         try {
-            // Find sessions that started on or before day-before-yesterday
+            // Find sessions that started BEFORE this cutoff
             const snapshot = await db.collection('work_sessions')
-                .where('startTime', '<=', admin.firestore.Timestamp.fromDate(dayBeforeYesterday))
+                .where('startTime', '<=', admin.firestore.Timestamp.fromDate(cutoffTimestamp))
                 .get();
 
             if (snapshot.empty) {
@@ -72,19 +90,15 @@ export const finalizeExpiredSessions = functions.pubsub
 
                 // Auto-close if still active or paused
                 if (session.status === 'active' || session.status === 'paused') {
-                    const startTime = session.startTime.toDate();
-                    const newEndTime = new Date(startTime.getTime() + (1 * 60 * 60 * 1000)); // startTime + 1 hour
-                    const durationMinutes = 60;
-                    const hourlyRate = session.hourlyRate || 0;
-                    const sessionEarnings = parseFloat(((durationMinutes / 60) * hourlyRate).toFixed(2));
-
+                    // IMPORTANT: Don't auto-calculate earnings! 
+                    // Worker may have worked 10 hours but forgot to stop.
+                    // Require admin to confirm actual duration.
                     Object.assign(updates, {
-                        status: 'completed',
-                        endTime: admin.firestore.Timestamp.fromDate(newEndTime),
-                        durationMinutes,
-                        sessionEarnings,
+                        status: 'auto_closed',
                         autoClosed: true,
-                        description: (session.description || '') + ' [Auto-closed]',
+                        requiresAdminReview: true,
+                        autoClosedAt: admin.firestore.FieldValue.serverTimestamp(),
+                        description: (session.description || '') + ' [⚠️ Requires Admin Review]',
                     });
 
                     autoClosedCount++;
@@ -94,11 +108,10 @@ export const finalizeExpiredSessions = functions.pubsub
                     if (chatId && typeof chatId === 'number') {
                         const clientName = session.clientName || 'Unknown';
                         notifications.push(sendMessage(chatId,
-                            `🔒 *Session Auto-Closed*\n\n` +
-                            `Your session "${clientName}" from ${startTime.toLocaleDateString()} was left open.\n\n` +
-                            `It has been automatically closed.\n` +
-                            `⏱ Credited: 1 hour\n\n` +
-                            `💡 Contact an administrator if you need adjustments.`
+                            `⚠️ *Session Requires Review*\n\n` +
+                            `Your session "${clientName}" from ${session.startTime.toDate().toLocaleDateString()} was left open.\n\n` +
+                            `It has been flagged for admin review.\n` +
+                            `💡 Please contact your administrator to confirm the actual work duration.`
                         ));
                     }
                 }
@@ -139,4 +152,3 @@ async function sendMessage(chatId: number, text: string) {
         console.error('Error sending Telegram message:', error.message);
     }
 }
-

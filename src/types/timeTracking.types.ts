@@ -59,4 +59,30 @@ export interface WorkSession {
     payrollPeriod?: string;         // "2026-01" - month for payroll
     payrollEntryId?: string;        // Link to payroll entry after processing
     processedAt?: Timestamp;        // When transferred to payroll
+
+    // === ADMIN SESSION CONTROL ===
+    stoppedByAdmin?: boolean;       // True if session was stopped by admin
+    adminStopReason?: string;       // Reason for admin stop
+    adminStopperId?: string;        // UID of admin who stopped
+
+    startedByAdmin?: boolean;       // True if session was started by admin
+    adminStartReason?: string;      // Reason for admin start
+    adminStarterId?: string;        // UID of admin who started
+
+    // === ADMIN REVIEW ===
+    requiresAdminReview?: boolean;  // True if auto-closed session needs admin confirmation
+
+    // === TASK LINKING ===
+    relatedTaskTitle?: string;      // Snapshot of task title for display
+
+    // === AI VOICE TRANSCRIPTION ===
+    plannedTaskSummary?: string;     // AI: "Шпаклевка стен" (short)
+    plannedTaskDescription?: string; // AI: Full task description
+    resultSummary?: string;          // AI: "Стены готовы" (short)
+    resultDescription?: string;      // AI: Full result description
+    issuesReported?: string;         // AI: Problems detected (blocker)
+    locationDetected?: string;       // AI: Location mentioned in voice
+    voiceStartUrl?: string;          // URL to start voice file
+    voiceEndUrl?: string;            // URL to end voice file
+    aiTranscribedAt?: Timestamp;     // When AI processed the voice
 }

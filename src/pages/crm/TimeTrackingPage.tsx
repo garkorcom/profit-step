@@ -10,9 +10,11 @@ import ListIcon from '@mui/icons-material/ViewList';
 import MapIcon from '@mui/icons-material/Map';
 
 import { subDays, startOfDay, endOfDay, eachDayOfInterval, format } from 'date-fns';
-import { collection, query, where, getDocs, orderBy, addDoc, updateDoc, doc, Timestamp } from 'firebase/firestore';
+import { collection, query, where, getDocs, orderBy, addDoc, updateDoc, doc, Timestamp, getDoc } from 'firebase/firestore';
 import { db } from '../../firebase/firebase';
 import { WorkSession } from '../../types/timeTracking.types';
+import { useAuth } from '../../auth/AuthContext';
+import toast from 'react-hot-toast';
 
 // Extracted Components
 import {
@@ -27,6 +29,8 @@ import LocationMap from '../../components/crm/LocationMap';
 import EditSessionDialog from '../../components/crm/EditSessionDialog';
 import CreateSessionDialog from '../../components/crm/CreateSessionDialog';
 import EmployeeDetailsDialog from '../../components/crm/EmployeeDetailsDialog';
+import AdminStopSessionDialog from '../../components/time-tracking/AdminStopSessionDialog';
+import AdminStartSessionDialog from '../../components/time-tracking/AdminStartSessionDialog';
 
 /**
  * Time Tracking Page
@@ -53,6 +57,12 @@ const TimeTrackingPage: React.FC = () => {
     const [selectedEmployee, setSelectedEmployee] = useState<{ id: string, name: string } | null>(null);
     const [isCreateSessionOpen, setIsCreateSessionOpen] = useState(false);
     const [editSession, setEditSession] = useState<WorkSession | null>(null);
+    const [adminStopSession, setAdminStopSession] = useState<WorkSession | null>(null);
+    const [adminStartSession, setAdminStartSession] = useState<WorkSession | null>(null);
+
+    // Auth
+    const { currentUser, userProfile } = useAuth();
+    const isAdmin = userProfile?.role === 'admin';
 
     // Refresh trigger
     const [refreshKey, setRefreshKey] = useState(0);
@@ -148,6 +158,75 @@ const TimeTrackingPage: React.FC = () => {
 
         setRefreshKey(prev => prev + 1);
         alert(`Stopped ${activeSessions.length} sessions.`);
+    };
+
+    // Admin: Stop a specific session
+    const handleAdminStopSession = async (session: WorkSession, reason: string, endTime: Date) => {
+        try {
+            const endTs = Timestamp.fromDate(endTime);
+            const startTime = session.startTime;
+            const durMs = endTs.toMillis() - startTime.toMillis();
+            const durationMinutes = Math.max(0, Math.round(durMs / 60000));
+
+            const rate = session.hourlyRate || 0;
+            const sessionEarnings = parseFloat(((durationMinutes / 60) * rate).toFixed(2));
+
+            await updateDoc(doc(db, 'work_sessions', session.id), {
+                status: 'completed',
+                endTime: endTs,
+                durationMinutes,
+                sessionEarnings,
+                stoppedByAdmin: true,
+                adminStopReason: reason,
+                adminStopperId: currentUser?.uid
+            });
+
+            toast.success(`Сессия остановлена: ${session.employeeName}`, { icon: '⏹️' });
+            setRefreshKey(prev => prev + 1);
+            setAdminStopSession(null);
+        } catch (error) {
+            console.error('Error stopping session:', error);
+            toast.error('Ошибка остановки сессии');
+        }
+    };
+
+    // Admin: Start a session for employee
+    const handleAdminStartSession = async (
+        employeeId: string | number,
+        employeeName: string,
+        clientId: string,
+        clientName: string,
+        reason: string,
+        startTime: Date
+    ) => {
+        try {
+            // Get employee hourly rate
+            let hourlyRate = 0;
+            const employeeDoc = await getDoc(doc(db, 'employees', String(employeeId)));
+            if (employeeDoc.exists()) {
+                hourlyRate = employeeDoc.data().hourlyRate || 0;
+            }
+
+            await addDoc(collection(db, 'work_sessions'), {
+                employeeId,
+                employeeName,
+                clientId,
+                clientName,
+                startTime: Timestamp.fromDate(startTime),
+                status: 'active',
+                hourlyRate,
+                startedByAdmin: true,
+                adminStartReason: reason,
+                adminStarterId: currentUser?.uid
+            });
+
+            toast.success(`Сессия запущена: ${employeeName}`, { icon: '▶️' });
+            setRefreshKey(prev => prev + 1);
+            setAdminStartSession(null);
+        } catch (error) {
+            console.error('Error starting session:', error);
+            toast.error('Ошибка запуска сессии');
+        }
     };
 
     // --- Data Fetching ---
@@ -371,15 +450,18 @@ const TimeTrackingPage: React.FC = () => {
                     onEditSession={(session) => setEditSession(session)}
                     onDeleteSession={handleVoidSession}
                     onEmployeeClick={(emp) => setSelectedEmployee(emp)}
+                    isAdmin={isAdmin}
+                    onAdminStopSession={(session) => setAdminStopSession(session)}
+                    onAdminStartSession={(session) => setAdminStartSession(session)}
                 />
             )}
 
-            {/* Dialogs */}
             <EditSessionDialog
                 open={!!editSession}
                 session={editSession}
                 onClose={() => setEditSession(null)}
                 onSave={handleEditSession}
+                currentUserId={currentUser?.uid}
             />
 
             <CreateSessionDialog
@@ -393,6 +475,24 @@ const TimeTrackingPage: React.FC = () => {
                 onClose={() => setSelectedEmployee(null)}
                 employeeId={selectedEmployee?.id || ''}
                 employeeName={selectedEmployee?.name || ''}
+            />
+
+            {/* Admin Dialogs */}
+            <AdminStopSessionDialog
+                open={!!adminStopSession}
+                session={adminStopSession}
+                onClose={() => setAdminStopSession(null)}
+                onConfirm={handleAdminStopSession}
+            />
+
+            <AdminStartSessionDialog
+                open={!!adminStartSession}
+                preselectedEmployee={adminStartSession ? {
+                    id: adminStartSession.employeeId,
+                    name: adminStartSession.employeeName
+                } : undefined}
+                onClose={() => setAdminStartSession(null)}
+                onConfirm={handleAdminStartSession}
             />
         </Container>
     );

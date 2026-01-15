@@ -2,7 +2,7 @@ import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
 import axios from 'axios';
 import * as crypto from 'crypto';
-import { VertexAI } from '@google-cloud/vertexai';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 
 // Initialize in the file if not already initialized
 if (admin.apps.length === 0) {
@@ -556,24 +556,45 @@ async function handleSkipMedia(chatId: number, userId: number) {
     const sessionData = activeSession.data();
 
     if (sessionData.awaitingEndPhoto) {
-        // Skip End Media
+        // Skip End Photo → go to voice
         await activeSession.ref.update({
             awaitingEndPhoto: false,
-            awaitingDescription: true,
+            awaitingEndVoice: true,
             skippedEndPhoto: true
         });
-
-        await sendMessage(chatId, "⏩ Media skipped.\nPlease type a brief **description** of what was done (or type 'Skip').", { remove_keyboard: true });
+        await sendMessage(chatId,
+            "⏩ Фото пропущено.\\n\\n🎙 Запиши голосовое: *Что успел сделать?*",
+            { keyboard: [[{ text: "⏩ Skip" }]], resize_keyboard: true }
+        );
+    } else if (sessionData.awaitingEndVoice) {
+        // Skip End Voice → go to text description
+        await activeSession.ref.update({
+            awaitingEndVoice: false,
+            awaitingDescription: true,
+            skippedEndVoice: true
+        });
+        await sendMessage(chatId, "⏩ Голосовое пропущено.\\n📝 Напиши коротко что сделал:", { remove_keyboard: true });
     } else if (sessionData.awaitingStartPhoto) {
-        // Skip Start Media (if we want to allow this too, user mainly asked for end of day, but good to have)
+        // Skip Start Photo → go to voice
         await activeSession.ref.update({
             awaitingStartPhoto: false,
+            awaitingStartVoice: true,
             skippedStartPhoto: true
         });
-        await sendMessage(chatId, `✅ Work started! (Media skipped)`, { remove_keyboard: true });
+        await sendMessage(chatId,
+            "⏩ Фото пропущено.\\n\\n🎙 Запиши голосовое: *Что планируешь делать?*",
+            { keyboard: [[{ text: "⏩ Skip" }]], resize_keyboard: true }
+        );
+    } else if (sessionData.awaitingStartVoice) {
+        // Skip Start Voice → session started
+        await activeSession.ref.update({
+            awaitingStartVoice: false,
+            skippedStartVoice: true
+        });
+        await sendMessage(chatId, "✅ Смена началась! Удачи!", { remove_keyboard: true });
         await sendMainMenu(chatId);
     } else {
-        await sendMessage(chatId, "⚠️ Nothing to skip right now.");
+        await sendMessage(chatId, "⚠️ Нечего пропускать.");
     }
 }
 
@@ -619,25 +640,42 @@ async function handleMediaUpload(chatId: number, userId: number, message: any) {
             startPhotoId: fileId,
             startPhotoUrl: url,
             startMediaType: message.video ? 'video' : (message.document ? 'document' : 'photo'),
-            awaitingStartPhoto: false
+            awaitingStartPhoto: false,
+            awaitingStartVoice: true  // NEW: Ask for voice about plans
         });
-        await sendMessage(chatId, `✅ Work started! Good luck.`, { remove_keyboard: true });
-        await sendMainMenu(chatId);
+
+        await sendMessage(chatId,
+            "📸 Фото принято!\\n\\n" +
+            "🎙 *Запиши голосовое:* Что планируешь сегодня делать?\\n" +
+            "_Например: 'Буду красить стены в 203 номере'_",
+            {
+                keyboard: [[{ text: "⏩ Skip" }]],
+                resize_keyboard: true
+            }
+        );
 
     } else if (sessionData.awaitingEndPhoto) {
         // Save End Media
         const url = await saveTelegramFile(fileId, `work_photos/${activeSession.id}/end_${Date.now()}.${extension}`);
 
-        // Move to description step
+        // Move to voice step instead of text description
         await activeSession.ref.update({
             endPhotoId: fileId,
             endPhotoUrl: url,
             endMediaType: message.video ? 'video' : (message.document ? 'document' : 'photo'),
             awaitingEndPhoto: false,
-            awaitingDescription: true
+            awaitingEndVoice: true  // NEW: Ask for voice about results
         });
 
-        await sendMessage(chatId, "📝 Media received. Please type a brief **description** of what was done.", { remove_keyboard: true });
+        await sendMessage(chatId,
+            "📸 Фото принято!\\n\\n" +
+            "🎙 *Запиши голосовое:* Что успел сделать? Были ли проблемы?\\n" +
+            "_Например: 'Всё покрасил, но не хватило грунтовки'_",
+            {
+                keyboard: [[{ text: "⏩ Skip" }]],
+                resize_keyboard: true
+            }
+        );
 
     } else {
         await sendMessage(chatId, "I'm not expecting media right now.");
@@ -721,6 +759,65 @@ async function handleText(chatId: number, userId: number, text: string) {
 }
 
 /**
+ * Helper to call Google AI (Generative Language API) with model fallback.
+ * Uses the already-enabled Generative Language API instead of Vertex AI.
+ */
+async function transcribeAudioWithRetry(audioBase64: string, systemPrompt: string): Promise<string> {
+    // Get API key from Firebase config or environment
+    const apiKey = process.env.GEMINI_API_KEY || functions.config().gemini?.api_key;
+
+    if (!apiKey) {
+        throw new Error('GEMINI_API_KEY not configured. Set it via: firebase functions:config:set gemini.api_key="YOUR_KEY"');
+    }
+
+    const genAI = new GoogleGenerativeAI(apiKey);
+
+    // Fallback Strategy (Updated for current availability):
+    // 1. gemini-2.0-flash (Latest)
+    // 2. gemini-1.5-flash-latest
+    // 3. gemini-1.5-pro-latest  
+    // 4. gemini-pro (Legacy alias)
+    const models = ['gemini-2.0-flash', 'gemini-1.5-flash-latest', 'gemini-1.5-pro-latest', 'gemini-pro'];
+
+    const errors: string[] = [];
+
+    for (const modelName of models) {
+        console.log(`🤖 Trying ${modelName} via Google AI...`);
+        try {
+            const model = genAI.getGenerativeModel({
+                model: modelName,
+                generationConfig: { responseMimeType: 'application/json' }
+            });
+
+            const result = await model.generateContent([
+                { text: systemPrompt },
+                {
+                    inlineData: {
+                        mimeType: 'audio/ogg',
+                        data: audioBase64
+                    }
+                }
+            ]);
+
+            const text = result.response.text();
+
+            if (text) {
+                console.log(`✅ Success with ${modelName}`);
+                return text;
+            }
+        } catch (error: any) {
+            const errMsg = `[${modelName}] Failed: ${error.message}`;
+            console.warn(errMsg);
+            errors.push(errMsg);
+            // Continue to next model
+        }
+    }
+
+    console.error('❌ All Gemini attempts failed:', errors);
+    throw new Error(`All models failed. Last error: ${errors[errors.length - 1]}`);
+}
+
+/**
  * Handles voice messages from workers.
  * Uses Gemini 1.5 Flash to transcribe and extract structured data.
  */
@@ -748,6 +845,7 @@ async function handleVoiceMessage(chatId: number, userId: number, message: any) 
 
         const audioResponse = await axios.get(downloadUrl, { responseType: 'arraybuffer' });
         const audioBase64 = Buffer.from(audioResponse.data).toString('base64');
+        console.log(`🎙 Audio downloaded. Size: ${audioResponse.data.length} bytes. Base64 length: ${audioBase64.length}`);
 
         // 2. Save voice to Storage (optional, for history)
         const voiceStoragePath = `work_voices/${activeSession.id}/${context.toLowerCase()}_${Date.now()}.ogg`;
@@ -756,16 +854,7 @@ async function handleVoiceMessage(chatId: number, userId: number, message: any) 
         await file.save(Buffer.from(audioResponse.data), { contentType: 'audio/ogg' });
         const voiceUrl = `gs://${bucket.name}/${voiceStoragePath}`;
 
-        // 3. Send to Gemini 1.5 Flash for transcription
-        const vertexAI = new VertexAI({
-            project: process.env.GCLOUD_PROJECT || 'profit-step',
-            location: 'us-central1'
-        });
 
-        const model = vertexAI.preview.getGenerativeModel({
-            model: 'gemini-1.5-flash-001',
-            generationConfig: { responseMimeType: 'application/json' }
-        });
 
         const systemPrompt = `
 Ты — опытный прораб-секретарь на стройке. Слушай голосовые сообщения рабочих и превращай их в структурированный отчет JSON.
@@ -787,26 +876,20 @@ async function handleVoiceMessage(chatId: number, userId: number, message: any) 
   "location_detected": "Локация или null"
 }`;
 
-        const request = {
-            contents: [{
-                role: 'user' as const,
-                parts: [
-                    { text: systemPrompt },
-                    { inlineData: { mimeType: 'audio/ogg', data: audioBase64 } }
-                ]
-            }]
-        };
-
-        const result = await model.generateContent(request);
-        const responseText = result.response.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+        // 3. Send to Gemini 1.5 Flash for transcription (with Region Fallback)
+        console.log(`🎙 Sending audio to Gemini. Project: ${process.env.GCLOUD_PROJECT || 'profit-step'}`);
 
         let aiData;
         try {
+            const responseText = await transcribeAudioWithRetry(audioBase64, systemPrompt);
             aiData = JSON.parse(responseText);
-        } catch (e) {
-            console.error('Failed to parse AI response:', responseText);
-            aiData = { summary: 'Голосовое получено', description: responseText, issues: null };
+        } catch (err: any) {
+            console.error('❌ Transcription completely failed:', err);
+            await sendMessage(chatId, "⚠️ Ошибка сервиса AI. Попробуйте еще раз или напишите текстом.");
+            return;
         }
+
+
 
         // 4. Update session with AI data
         const updates: Record<string, any> = {
@@ -848,7 +931,7 @@ async function handleVoiceMessage(chatId: number, userId: number, message: any) 
 
     } catch (error: any) {
         console.error('Error transcribing voice:', error);
-        await sendMessage(chatId, "⚠️ Ошибка расшифровки. Попробуй ещё раз или напиши текстом.");
+        await sendMessage(chatId, `⚠️ Ошибка расшифровки: ${error.message}. Попробуй ещё раз или напиши текстом.`);
     }
 }
 

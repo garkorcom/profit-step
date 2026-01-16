@@ -7,7 +7,7 @@ import {
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import WarningIcon from '@mui/icons-material/Warning';
 import { WorkSession } from '../../types/timeTracking.types';
-import { Timestamp, collection, getDocs } from 'firebase/firestore';
+import { Timestamp, collection, getDocs, query, where } from 'firebase/firestore';
 import { db } from '../../firebase/firebase';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import toast from 'react-hot-toast';
@@ -124,26 +124,64 @@ const EditSessionDialog: React.FC<EditSessionDialogProps> = ({
 
     // Initialize form when session changes
     useEffect(() => {
-        if (session) {
-            setClientId(session.clientId || '');
-            setClientName(session.clientName || '');
-            setDescription(session.description || '');
-            setHourlyRate(session.hourlyRate ? String(session.hourlyRate) : '');
+        const initializeForm = async () => {
+            if (session) {
+                setClientId(session.clientId || '');
+                setClientName(session.clientName || '');
+                setDescription(session.description || '');
 
-            if (session.startTime) {
-                setStartTime(new Date(session.startTime.seconds * 1000).toISOString().slice(0, 16));
-            } else {
-                setStartTime('');
-            }
+                // Set hourlyRate, with fallback to fetch from users collection
+                if (session.hourlyRate) {
+                    setHourlyRate(String(session.hourlyRate));
+                } else {
+                    // Try to fetch from users collection by employeeId (telegramId)
+                    // Sessions from Telegram bot store telegramId as employeeId
+                    try {
+                        const usersQuery = query(
+                            collection(db, 'users'),
+                            where('telegramId', '==', session.employeeId)
+                        );
+                        const snapshot = await getDocs(usersQuery);
+                        if (!snapshot.empty) {
+                            const userRate = snapshot.docs[0].data().hourlyRate;
+                            setHourlyRate(userRate ? String(userRate) : '');
+                        } else {
+                            // Fallback: try odooId for web-created sessions
+                            const odooQuery = query(
+                                collection(db, 'users'),
+                                where('odooId', '==', session.employeeId)
+                            );
+                            const odooSnapshot = await getDocs(odooQuery);
+                            if (!odooSnapshot.empty) {
+                                const userRate = odooSnapshot.docs[0].data().hourlyRate;
+                                setHourlyRate(userRate ? String(userRate) : '');
+                            } else {
+                                setHourlyRate('');
+                            }
+                        }
+                    } catch (err) {
+                        console.error('Error fetching user hourly rate:', err);
+                        setHourlyRate('');
+                    }
+                }
 
-            if (session.endTime) {
-                setEndTime(new Date(session.endTime.seconds * 1000).toISOString().slice(0, 16));
-            } else {
-                // Default to current time if no end time (convenience for editing active sessions)
-                setEndTime(new Date().toISOString().slice(0, 16));
+                if (session.startTime) {
+                    setStartTime(new Date(session.startTime.seconds * 1000).toISOString().slice(0, 16));
+                } else {
+                    setStartTime('');
+                }
+
+                if (session.endTime) {
+                    setEndTime(new Date(session.endTime.seconds * 1000).toISOString().slice(0, 16));
+                } else {
+                    // Default to current time if no end time (convenience for editing active sessions)
+                    setEndTime(new Date().toISOString().slice(0, 16));
+                }
+                setEditNote('');
             }
-            setEditNote('');
-        }
+        };
+
+        initializeForm();
     }, [session]);
 
     const handleClientChange = (newClientId: string) => {

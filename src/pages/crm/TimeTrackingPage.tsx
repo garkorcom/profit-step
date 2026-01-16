@@ -10,7 +10,7 @@ import ListIcon from '@mui/icons-material/ViewList';
 import MapIcon from '@mui/icons-material/Map';
 
 import { subDays, startOfDay, endOfDay, eachDayOfInterval, format } from 'date-fns';
-import { collection, query, where, getDocs, orderBy, addDoc, updateDoc, doc, Timestamp, getDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs, orderBy, addDoc, updateDoc, doc, Timestamp } from 'firebase/firestore';
 import { db } from '../../firebase/firebase';
 import { WorkSession } from '../../types/timeTracking.types';
 import { useAuth } from '../../auth/AuthContext';
@@ -200,11 +200,15 @@ const TimeTrackingPage: React.FC = () => {
         startTime: Date
     ) => {
         try {
-            // Get employee hourly rate
+            // Get employee hourly rate from users collection by odooId
             let hourlyRate = 0;
-            const employeeDoc = await getDoc(doc(db, 'employees', String(employeeId)));
-            if (employeeDoc.exists()) {
-                hourlyRate = employeeDoc.data().hourlyRate || 0;
+            const usersQuery = query(
+                collection(db, 'users'),
+                where('odooId', '==', employeeId)
+            );
+            const userSnapshot = await getDocs(usersQuery);
+            if (!userSnapshot.empty) {
+                hourlyRate = userSnapshot.docs[0].data().hourlyRate || 0;
             }
 
             await addDoc(collection(db, 'work_sessions'), {

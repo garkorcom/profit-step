@@ -45,6 +45,24 @@ export const PRIORITY_COLORS: Record<GTDPriority, string> = {
 };
 
 /**
+ * Элемент чек-листа внутри задачи
+ * Хранится как массив в поле GTDTask.checklistItems
+ */
+export interface ChecklistItem {
+    /** Уникальный ID элемента (nanoid) */
+    id: string;
+    /** Текст элемента */
+    text: string;
+    /** Флаг завершения */
+    completed: boolean;
+    /** Дата создания */
+    createdAt: Timestamp;
+    /** Дата завершения (если completed) */
+    completedAt?: Timestamp;
+}
+
+
+/**
  * Интерфейс проекта (deprecated, сохранён для обратной совместимости)
  * @deprecated Используйте clientId вместо projectId
  */
@@ -156,6 +174,9 @@ export interface GTDTask {
     /** Флаг напоминания (для будущих уведомлений) */
     reminderEnabled?: boolean;
     reminderTime?: Timestamp;
+
+    /** Элементы чек-листа */
+    checklistItems?: ChecklistItem[];
 }
 
 /**

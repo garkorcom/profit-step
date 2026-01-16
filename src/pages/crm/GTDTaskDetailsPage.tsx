@@ -19,9 +19,10 @@ import ChatBubbleOutlineIcon from '@mui/icons-material/ChatBubbleOutline';
 
 import { doc, updateDoc, Timestamp, onSnapshot, collection, addDoc, query, orderBy } from 'firebase/firestore';
 import { db } from '../../firebase/firebase';
-import { GTDTask, GTDStatus, GTD_COLUMNS, PRIORITY_COLORS } from '../../types/gtd.types';
+import { GTDTask, GTDStatus, GTD_COLUMNS, PRIORITY_COLORS, ChecklistItem } from '../../types/gtd.types';
 import { useAuth } from '../../auth/AuthContext';
 import { useSessionManager } from '../../hooks/useSessionManager';
+import TaskChecklist from '../../components/gtd/TaskChecklist';
 
 /**
  * Full Task Page - Notion-Style Layout
@@ -168,6 +169,15 @@ const GTDTaskDetailsPage: React.FC = () => {
             stopSession();
         }
     };
+
+    const handleChecklistUpdate = async (items: ChecklistItem[]) => {
+        if (!taskId) return;
+        await updateDoc(doc(db, 'gtd_tasks', taskId), {
+            checklistItems: items,
+            updatedAt: Timestamp.now()
+        });
+    };
+
 
     const formatDate = (timestamp: Timestamp | undefined) => {
         if (!timestamp) return '—';
@@ -402,10 +412,11 @@ const GTDTaskDetailsPage: React.FC = () => {
                                         Чек-лист
                                     </Typography>
                                 </Box>
-                                <Box sx={{ bgcolor: '#f8fafc', p: 2, borderRadius: 2, border: '1px dashed #cbd5e1' }}>
-                                    <Typography variant="body2" color="text.disabled" textAlign="center">
-                                        Интерактивный чек-лист будет добавлен в следующей версии
-                                    </Typography>
+                                <Box sx={{ bgcolor: '#f8fafc', p: 2, borderRadius: 2, border: '1px solid #e2e8f0' }}>
+                                    <TaskChecklist
+                                        items={task.checklistItems || []}
+                                        onUpdate={handleChecklistUpdate}
+                                    />
                                 </Box>
                             </Box>
 

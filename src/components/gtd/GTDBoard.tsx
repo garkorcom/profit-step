@@ -84,6 +84,7 @@ const GTDBoard: React.FC = () => {
     const [selectedDateFilter, setSelectedDateFilter] = useState<string>('all'); // Фильтр по due date
 
     const [showShortcutHint, setShowShortcutHint] = useState(false);
+    const [taskSaveSnackbar, setTaskSaveSnackbar] = useState(false); // Toast for task save confirmation
 
     // ==================== МОБИЛЬНОЕ СОСТОЯНИЕ ====================
     const [selectedTab, setSelectedTab] = useState(0);    // Активная вкладка (мобильный)
@@ -502,7 +503,10 @@ const GTDBoard: React.FC = () => {
                     open={!!editingTask}
                     onClose={() => setEditingTask(null)}
                     task={editingTask}
-                    onSave={updateTask}
+                    onSave={async (taskId, data) => {
+                        await updateTask(taskId, data);
+                        setTaskSaveSnackbar(true);
+                    }}
                     onDelete={deleteTask}
                 />
             )}
@@ -515,6 +519,18 @@ const GTDBoard: React.FC = () => {
             >
                 <Alert onClose={() => setSessionSnackbarOpen(false)} severity="success" variant="filled">
                     {sessionStartMessage}
+                </Alert>
+            </Snackbar>
+
+            {/* Toast for task save */}
+            <Snackbar
+                open={taskSaveSnackbar}
+                autoHideDuration={3000}
+                onClose={() => setTaskSaveSnackbar(false)}
+                anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+            >
+                <Alert onClose={() => setTaskSaveSnackbar(false)} severity="success" variant="filled">
+                    ✓ Задача сохранена
                 </Alert>
             </Snackbar>
         </Box>

@@ -116,33 +116,47 @@ const GTDEditDialog: React.FC<GTDEditDialogProps> = ({ open, onClose, task, onSa
         const selectedClient = clients.find(c => c.id === data.clientId);
         const selectedAssignee = users.find(u => u.id === data.assigneeId);
 
-        // Build updates object
+        // Build updates object - avoid undefined values (Firestore doesn't accept them)
         const updates: Partial<GTDTask> = {
             title: data.title,
             description: data.description || '',
             context: data.context || '',
             status: data.status,
             priority: data.priority || 'none',
-            clientId: data.clientId || undefined,
-            clientName: selectedClient?.name || undefined,
-            assigneeId: data.assigneeId || undefined,
-            assigneeName: selectedAssignee?.displayName || undefined,
-            estimatedDurationMinutes: Number(data.estimatedDurationMinutes) || undefined,
             updatedAt: Timestamp.now()
         };
 
-        if (data.dueDate) updates.dueDate = Timestamp.fromDate(new Date(data.dueDate));
-        else updates.dueDate = undefined; // Partial update ignores undefined
-
-        if (data.startDate) updates.startDate = Timestamp.fromDate(new Date(data.startDate));
+        // Only set optional fields if they have values
+        if (data.clientId) {
+            updates.clientId = data.clientId;
+            updates.clientName = selectedClient?.name || '';
+        }
+        if (data.assigneeId) {
+            updates.assigneeId = data.assigneeId;
+            updates.assigneeName = selectedAssignee?.displayName || '';
+        }
+        if (data.estimatedDurationMinutes) {
+            updates.estimatedDurationMinutes = Number(data.estimatedDurationMinutes);
+        }
+        if (data.dueDate) {
+            updates.dueDate = Timestamp.fromDate(new Date(data.dueDate));
+        }
+        if (data.startDate) {
+            updates.startDate = Timestamp.fromDate(new Date(data.startDate));
+        }
 
         // Auto-set completedAt if done
         if (data.status === 'done' && task.status !== 'done') {
             updates.completedAt = Timestamp.now();
         }
 
-        await onSave(task.id, updates);
-        onClose();
+        try {
+            await onSave(task.id, updates);
+            onClose();
+        } catch (error) {
+            console.error('Error saving task:', error);
+            alert('Ошибка сохранения задачи. Проверьте консоль.');
+        }
     };
 
     const handleDelete = async () => {

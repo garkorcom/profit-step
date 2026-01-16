@@ -15,20 +15,26 @@ const initialData: Record<GTDStatus, GTDTask[]> = {
     done: []
 };
 
-export const useGTDTasks = (currentUser: any) => {
+export const useGTDTasks = (currentUser: any, showAllTasks: boolean = false) => {
     const [columns, setColumns] = useState(initialData);
 
     // Subscribe to tasks
     useEffect(() => {
         if (!currentUser) return;
 
-        const q = query(
-            collection(db, 'gtd_tasks'),
-            or(
-                where('ownerId', '==', currentUser.uid),
-                where('assigneeId', '==', currentUser.uid)
+        // Query based on showAllTasks flag
+        const q = showAllTasks
+            ? query(
+                collection(db, 'gtd_tasks'),
+                orderBy('createdAt', 'desc')
             )
-        );
+            : query(
+                collection(db, 'gtd_tasks'),
+                or(
+                    where('ownerId', '==', currentUser.uid),
+                    where('assigneeId', '==', currentUser.uid)
+                )
+            );
 
         const unsubscribe = onSnapshot(q, (snapshot) => {
             const newColumns = { ...initialData };
@@ -58,7 +64,7 @@ export const useGTDTasks = (currentUser: any) => {
         });
 
         return () => unsubscribe();
-    }, [currentUser]);
+    }, [currentUser, showAllTasks]);
 
     const moveTask = async (result: DropResult) => {
         const { destination, source, draggableId } = result;

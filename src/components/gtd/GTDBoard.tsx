@@ -54,14 +54,16 @@ const GTDBoard: React.FC = () => {
     // ==================== АУТЕНТИФИКАЦИЯ ====================
     const { currentUser, userProfile } = useAuth();
 
-    // ==================== ХУКИ ====================
+    // ==================== СОСТОЯНИЕ ОТОБРАЖЕНИЯ ЗАДАЧ ====================
+    const [showAllTasks, setShowAllTasks] = useState(false); // false = мои задачи, true = все
+
     const {
         columns,
         moveTask,
         addTask,
         updateTask,
         deleteTask
-    } = useGTDTasks(currentUser);
+    } = useGTDTasks(currentUser, showAllTasks);
 
     const {
         activeSession,
@@ -255,6 +257,17 @@ const GTDBoard: React.FC = () => {
                 </Box>
             ) : (
                 <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap' }}>
+                    {/* Toggle: My Tasks / All Tasks */}
+                    <ToggleButtonGroup
+                        value={showAllTasks}
+                        exclusive
+                        onChange={(_, val) => val !== null && setShowAllTasks(val)}
+                        size="small"
+                    >
+                        <ToggleButton value={false}>Мои</ToggleButton>
+                        <ToggleButton value={true}>Все</ToggleButton>
+                    </ToggleButtonGroup>
+
                     <FormControl size="small" sx={{ minWidth: 200, bgcolor: 'background.paper' }}>
                         <InputLabel>Filter by Client</InputLabel>
                         <Select

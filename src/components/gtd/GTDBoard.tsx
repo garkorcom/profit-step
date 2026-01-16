@@ -241,15 +241,28 @@ const GTDBoard: React.FC = () => {
         <Box sx={{ height: 'calc(100vh - 100px)', display: 'flex', flexDirection: 'column', p: { xs: 1, md: 2 }, gap: 1, position: 'relative' }}>
             {/* Filter Bar - Desktop: visible, Mobile: toggle button */}
             {isMobile ? (
-                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <Typography variant="subtitle1" fontWeight="bold">
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
+                    {/* Mobile toggle: Мои / Все */}
+                    <ToggleButtonGroup
+                        value={showAllTasks}
+                        exclusive
+                        onChange={(_, val) => val !== null && setShowAllTasks(val)}
+                        size="small"
+                        sx={{ '& .MuiToggleButton-root': { px: 1.5, py: 0.5, fontSize: '0.75rem' } }}
+                    >
+                        <ToggleButton value={false}>Мои</ToggleButton>
+                        <ToggleButton value={true}>Все</ToggleButton>
+                    </ToggleButtonGroup>
+
+                    <Typography variant="subtitle1" fontWeight="bold" sx={{ flex: 1, textAlign: 'center' }}>
                         {activeColumn?.title} ({filteredColumns[activeColumn?.id]?.length || 0})
                     </Typography>
+
                     <IconButton onClick={() => setShowFilters(!showFilters)}>
                         <Badge
                             color="primary"
                             variant="dot"
-                            invisible={selectedClientId === 'all' && selectedAssigneeId === 'all' && selectedDateFilter === 'all'}
+                            invisible={selectedClientId === 'all' && selectedAssigneeId === 'all' && selectedDateFilter === 'all' && !showAllTasks}
                         >
                             <FilterListIcon />
                         </Badge>

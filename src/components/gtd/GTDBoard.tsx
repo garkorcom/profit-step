@@ -20,7 +20,8 @@
  */
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { Box, Snackbar, Alert, Fab, Tab, Tabs, Badge, Dialog, DialogTitle, DialogContent, TextField, DialogActions, Button, useMediaQuery, useTheme } from '@mui/material';
+import { Box, Snackbar, Alert, Fab, Tab, Tabs, Badge, Dialog, DialogTitle, DialogContent, TextField, DialogActions, Button, useMediaQuery, useTheme, Chip } from '@mui/material';
+import { startOfDay, endOfDay, addDays, startOfWeek, endOfWeek, isBefore, isAfter, isWithinInterval } from 'date-fns';
 import { DragDropContext, DropResult } from '@hello-pangea/dnd';
 import { collection, query, orderBy, getDocs } from 'firebase/firestore';
 import { db } from '../../firebase/firebase';
@@ -28,7 +29,8 @@ import { useAuth } from '../../auth/AuthContext';
 import { GTDTask, GTD_COLUMNS, GTDStatus } from '../../types/gtd.types';
 import { Client } from '../../types/crm.types';
 import { UserProfile } from '../../types/user.types';
-import { FormControl, Select, MenuItem, InputLabel, Typography, IconButton } from '@mui/material';
+import { FormControl, Select, MenuItem, InputLabel, Typography, IconButton, ToggleButtonGroup, ToggleButton } from '@mui/material';
+import EventIcon from '@mui/icons-material/Event';
 import AddIcon from '@mui/icons-material/Add';
 import PersonIcon from '@mui/icons-material/Person';
 import FilterListIcon from '@mui/icons-material/FilterList';
@@ -79,6 +81,7 @@ const GTDBoard: React.FC = () => {
     const [clients, setClients] = useState<Client[]>([]);          // Клиенты для dropdown
     const [selectedClientId, setSelectedClientId] = useState<string>('all');    // Фильтр по клиенту
     const [selectedAssigneeId, setSelectedAssigneeId] = useState<string>('all'); // Фильтр по assignee
+    const [selectedDateFilter, setSelectedDateFilter] = useState<string>('all'); // Фильтр по due date
 
     const [showShortcutHint, setShowShortcutHint] = useState(false);
 
@@ -164,18 +167,58 @@ const GTDBoard: React.FC = () => {
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, []);
 
-    // Filter columns by client AND assignee
-    const filteredColumns = { ...columns };
-    Object.keys(filteredColumns).forEach(key => {
-        let tasks = filteredColumns[key as GTDStatus];
-        if (selectedClientId !== 'all') {
-            tasks = tasks.filter(t => t.clientId === selectedClientId);
-        }
-        if (selectedAssigneeId !== 'all') {
-            tasks = tasks.filter(t => t.assigneeId === selectedAssigneeId);
-        }
-        filteredColumns[key as GTDStatus] = tasks;
-    });
+    // Filter columns by client, assignee, AND due date
+    const filteredColumns = useMemo(() => {
+        const result = { ...columns };
+        const today = startOfDay(new Date());
+        const tomorrow = startOfDay(addDays(new Date(), 1));
+        const weekEnd = endOfWeek(new Date(), { weekStartsOn: 1 });
+
+        Object.keys(result).forEach(key => {
+            let tasks = result[key as GTDStatus];
+
+            // Client filter
+            if (selectedClientId !== 'all') {
+                tasks = tasks.filter(t => t.clientId === selectedClientId);
+            }
+
+            // Assignee filter
+            if (selectedAssigneeId !== 'all') {
+                tasks = tasks.filter(t => t.assigneeId === selectedAssigneeId);
+            }
+
+            // Due Date filter
+            if (selectedDateFilter !== 'all') {
+                tasks = tasks.filter(t => {
+                    if (!t.dueDate) {
+                        return selectedDateFilter === 'no_date';
+                    }
+                    const dueDateRaw = t.dueDate as any;
+                    const dueDate = dueDateRaw?.toDate
+                        ? startOfDay(dueDateRaw.toDate())
+                        : startOfDay(new Date(dueDateRaw));
+
+                    switch (selectedDateFilter) {
+                        case 'today':
+                            return dueDate.getTime() === today.getTime();
+                        case 'tomorrow':
+                            return dueDate.getTime() === tomorrow.getTime();
+                        case 'this_week':
+                            return isWithinInterval(dueDate, { start: today, end: weekEnd });
+                        case 'overdue':
+                            return isBefore(dueDate, today);
+                        case 'no_date':
+                            return false; // Already handled above
+                        default:
+                            return true;
+                    }
+                });
+            }
+
+            result[key as GTDStatus] = tasks;
+        });
+        return result;
+    }, [columns, selectedClientId, selectedAssigneeId, selectedDateFilter]);
 
     // Quick add from FAB
     const handleQuickAdd = () => {
@@ -203,7 +246,7 @@ const GTDBoard: React.FC = () => {
                         <Badge
                             color="primary"
                             variant="dot"
-                            invisible={selectedClientId === 'all' && selectedAssigneeId === 'all'}
+                            invisible={selectedClientId === 'all' && selectedAssigneeId === 'all' && selectedDateFilter === 'all'}
                         >
                             <FilterListIcon />
                         </Badge>
@@ -242,12 +285,29 @@ const GTDBoard: React.FC = () => {
                         </Select>
                     </FormControl>
 
+                    <FormControl size="small" sx={{ minWidth: 160, bgcolor: 'background.paper' }}>
+                        <InputLabel>Due Date</InputLabel>
+                        <Select
+                            value={selectedDateFilter}
+                            label="Due Date"
+                            onChange={(e) => setSelectedDateFilter(e.target.value)}
+                            startAdornment={selectedDateFilter !== 'all' ? <EventIcon sx={{ mr: 1, color: 'primary.main' }} /> : null}
+                        >
+                            <MenuItem value="all"><em>All Dates</em></MenuItem>
+                            <MenuItem value="today">📅 Today</MenuItem>
+                            <MenuItem value="tomorrow">📆 Tomorrow</MenuItem>
+                            <MenuItem value="this_week">🗓️ This Week</MenuItem>
+                            <MenuItem value="overdue">⚠️ Overdue</MenuItem>
+                            <MenuItem value="no_date">❓ No Due Date</MenuItem>
+                        </Select>
+                    </FormControl>
+
                     {/* Clear Filters Button */}
-                    {(selectedClientId !== 'all' || selectedAssigneeId !== 'all') && (
+                    {(selectedClientId !== 'all' || selectedAssigneeId !== 'all' || selectedDateFilter !== 'all') && (
                         <Button
                             size="small"
                             variant="outlined"
-                            onClick={() => { setSelectedClientId('all'); setSelectedAssigneeId('all'); }}
+                            onClick={() => { setSelectedClientId('all'); setSelectedAssigneeId('all'); setSelectedDateFilter('all'); }}
                             sx={{ height: 40 }}
                         >
                             Clear Filters
@@ -281,6 +341,17 @@ const GTDBoard: React.FC = () => {
                         <Select value={selectedAssigneeId} label="Assignee" onChange={(e) => setSelectedAssigneeId(e.target.value)}>
                             <MenuItem value="all"><em>All</em></MenuItem>
                             {users.map(u => <MenuItem key={u.id} value={u.id}>{u.displayName}</MenuItem>)}
+                        </Select>
+                    </FormControl>
+                    <FormControl size="small" sx={{ flex: 1, minWidth: 100, bgcolor: 'white' }}>
+                        <InputLabel>Due</InputLabel>
+                        <Select value={selectedDateFilter} label="Due" onChange={(e) => setSelectedDateFilter(e.target.value)}>
+                            <MenuItem value="all"><em>All</em></MenuItem>
+                            <MenuItem value="today">Today</MenuItem>
+                            <MenuItem value="tomorrow">Tomorrow</MenuItem>
+                            <MenuItem value="this_week">Week</MenuItem>
+                            <MenuItem value="overdue">Overdue</MenuItem>
+                            <MenuItem value="no_date">No Date</MenuItem>
                         </Select>
                     </FormControl>
                 </Box>

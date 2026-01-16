@@ -80,7 +80,22 @@ export const updateWorkSession = functions.https.onCall(async (data: UpdateSessi
 
         const sessionData = sessionDoc.data()!;
 
-        // 5. Lifecycle Check
+        // 5. Permission Check - Editor must be session owner OR admin/owner
+        const editorDoc = await db.collection('users').doc(editorUid).get();
+        const editorData = editorDoc.data();
+        const editorRole = editorData?.role || 'worker';
+        const isAdmin = editorRole === 'admin' || editorRole === 'owner';
+        const isSessionOwner = String(sessionData.employeeId) === editorUid ||
+            String(sessionData.employeeId) === String(editorData?.telegramId);
+
+        if (!isAdmin && !isSessionOwner) {
+            throw new functions.https.HttpsError(
+                'permission-denied',
+                'Вы можете редактировать только свои сессии. Обратитесь к администратору.'
+            );
+        }
+
+        // 6. Lifecycle Check
         if (sessionData.finalizationStatus === 'processed') {
             throw new functions.https.HttpsError(
                 'failed-precondition',
@@ -88,7 +103,7 @@ export const updateWorkSession = functions.https.onCall(async (data: UpdateSessi
             );
         }
 
-        // 6. Overlap Detection (TIMEZONE-AWARE)
+        // 7. Overlap Detection (TIMEZONE-AWARE)
         // Convert start time to Florida, find day boundaries, convert back to UTC
         const startInFlorida = toZonedTime(start, TIME_ZONE);
         const floridaDayStart = startOfDay(startInFlorida);

@@ -139,7 +139,8 @@ const EditSessionDialog: React.FC<EditSessionDialogProps> = ({
             if (session.endTime) {
                 setEndTime(new Date(session.endTime.seconds * 1000).toISOString().slice(0, 16));
             } else {
-                setEndTime('');
+                // Default to current time if no end time (convenience for editing active sessions)
+                setEndTime(new Date().toISOString().slice(0, 16));
             }
             setEditNote('');
         }

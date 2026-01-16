@@ -27,6 +27,7 @@ import LeadDetailsPage from '../pages/crm/LeadDetailsPage';
 import TimeTrackingPage from '../pages/crm/TimeTrackingPage';
 import FinancePage from '../pages/crm/FinancePage';
 import GTDPage from '../pages/crm/GTDPage';
+import GTDTaskDetailsPage from '../pages/crm/GTDTaskDetailsPage';
 import PayrollPeriodsPage from '../pages/crm/PayrollPeriodsPage';
 
 /**
@@ -142,6 +143,7 @@ const AppRouter: React.FC = () => {
         <Route path="/crm/leads/:id" element={<LeadDetailsPage />} />
         <Route path="/crm/tasks" element={<TasksPage />} />
         <Route path="/crm/gtd" element={<GTDPage />} />
+        <Route path="/crm/gtd/:taskId" element={<GTDTaskDetailsPage />} />
         <Route path="/crm/scheduler" element={<div>Scheduler (Coming Soon)</div>} />
         <Route path="/crm/time-tracking" element={<TimeTrackingPage />} />
         <Route path="/crm/finance" element={<FinancePage />} />

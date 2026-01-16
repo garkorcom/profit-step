@@ -1,5 +1,6 @@
 import React from 'react';
-import { Card, CardContent, Typography, Box, Chip, IconButton } from '@mui/material';
+import { useNavigate } from 'react-router-dom';
+import { Card, CardContent, Typography, Box, Chip, IconButton, Link } from '@mui/material';
 import { Draggable } from '@hello-pangea/dnd';
 import EditIcon from '@mui/icons-material/Edit';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
@@ -30,12 +31,19 @@ const PRIORITY_LABELS: Record<GTDPriority, string> = {
 };
 
 const GTDTaskCard: React.FC<GTDTaskCardProps> = ({ task, index, clientName, onClick, onStartSession, activeSession, onStopSession }) => {
+    const navigate = useNavigate();
     const isDone = task.status === 'done';
     const priorityColor = PRIORITY_COLORS[task.priority || 'none'];
     const hasPriority = task.priority && task.priority !== 'none';
 
     // Check if this task is active
     const isActive = activeSession && activeSession.relatedTaskId === task.id;
+
+    const handleTitleClick = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        e.preventDefault();
+        navigate(`/crm/gtd/${task.id}`);
+    };
 
     const handlePlayClick = (e: React.MouseEvent) => {
         e.stopPropagation();
@@ -92,13 +100,18 @@ const GTDTaskCard: React.FC<GTDTaskCardProps> = ({ task, index, clientName, onCl
                                 <DragIndicatorIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
                             </Box>
                             <Typography
+                                component={Link}
+                                href={`/crm/gtd/${task.id}`}
                                 variant="body2"
                                 fontWeight="medium"
+                                onClick={handleTitleClick}
                                 sx={{
                                     textDecoration: isDone ? 'line-through' : 'none',
                                     color: isDone ? 'text.secondary' : 'text.primary',
                                     flex: 1,
-                                    pr: 1
+                                    pr: 1,
+                                    cursor: 'pointer',
+                                    '&:hover': { color: 'primary.main', textDecoration: 'underline' }
                                 }}
                             >
                                 {task.title}

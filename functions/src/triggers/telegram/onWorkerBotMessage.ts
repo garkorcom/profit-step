@@ -856,24 +856,38 @@ async function handleVoiceMessage(chatId: number, userId: number, message: any) 
 
 
 
+        const empDoc = await db.collection('employees').doc(String(userId)).get();
+        const userTimezone = empDoc.data()?.timezone || 'UTC';
+        const currentDate = new Date().toLocaleDateString('ru-RU', { timeZone: userTimezone });
+
         const systemPrompt = `
 Ты — опытный прораб-секретарь на стройке. Слушай голосовые сообщения рабочих и превращай их в структурированный отчет JSON.
 
 Контекст: "${context}"
 Язык: Русский
+Текущая дата: ${currentDate} (Часовой пояс: ${userTimezone})
 
 ИНСТРУКЦИИ:
-1. Убери слова-паразиты ("эээ", "ну", "короче").
-2. Сформулируй четкое, профессиональное описание.
+1. Убери слова-паразиты.
+2. Сформулируй четкое описание.
 3. Если START_SHIFT: извлеки planned_task и location.
-4. Если END_SHIFT: извлеки work_done, issues (проблемы, нехватка материалов).
+4. Если END_SHIFT: извлеки сделанное (summary, description), проблемы (issues).
+5. ВАЖНО: Если слышишь намерения на будущее ("надо купить", "завтра сделаю", "нужно"), ОБЯЗАТЕЛЬНО извлеки это в массив tasks.
 
 ФОРМАТ JSON:
 {
-  "summary": "Краткое описание в 3-5 слов",
+  "summary": "Краткое описание (3-5 слов)",
   "description": "Полное описание работ",
   "issues": "Текст проблемы или null",
-  "location_detected": "Локация или null"
+  "location_detected": "Локация или null",
+  "tasks": [
+    {
+      "title": "Название задачи",
+      "dueDate": "YYYY-MM-DD" (или null),
+      "priority": "high" | "medium" | "low",
+      "estimatedDurationMinutes": "number (минуты)" (например, 120 для 2 часов)
+    }
+  ]
 }`;
 
         // 3. Send to Gemini 1.5 Flash for transcription (with Region Fallback)
@@ -882,7 +896,10 @@ async function handleVoiceMessage(chatId: number, userId: number, message: any) 
         let aiData;
         try {
             const responseText = await transcribeAudioWithRetry(audioBase64, systemPrompt);
-            aiData = JSON.parse(responseText);
+            // Cleanup markdown code blocks if present
+            const cleanText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
+            aiData = JSON.parse(cleanText);
+            console.log('🤖 AI Data:', JSON.stringify(aiData, null, 2));
         } catch (err: any) {
             console.error('❌ Transcription completely failed:', err);
             await sendMessage(chatId, "⚠️ Ошибка сервиса AI. Попробуйте еще раз или напишите текстом.");
@@ -915,12 +932,64 @@ async function handleVoiceMessage(chatId: number, userId: number, message: any) 
             updates.awaitingEndVoice = false;
             updates.description = aiData.description; // Use AI description as main description
 
+            // --- PROCESS TASKS (NEW) ---
+            let newTasksCount = 0;
+            if (aiData.tasks && Array.isArray(aiData.tasks) && aiData.tasks.length > 0) {
+                const platformUser = await findPlatformUser(userId);
+                if (platformUser) {
+                    const batch = db.batch();
+                    const now = admin.firestore.Timestamp.now();
+
+                    for (const task of aiData.tasks) {
+                        const taskRef = db.collection('gtd_tasks').doc(); // GLOBAL collection
+                        let dueDate = null;
+                        if (task.dueDate) {
+                            // Try to parse YYYY-MM-DD
+                            try {
+                                const d = new Date(task.dueDate);
+                                if (!isNaN(d.getTime())) {
+                                    dueDate = admin.firestore.Timestamp.fromDate(d);
+                                }
+                            } catch (e) { }
+                        }
+
+                        batch.set(taskRef, {
+                            ownerId: platformUser.id,
+                            ownerName: platformUser.displayName || 'Worker',
+                            title: task.title || 'Новая задача',
+                            description: `🎙 Создано из голосового отчета.\nКонтекст: ${aiData.summary}\n[Аудио](${voiceUrl})`,
+                            status: 'inbox',
+                            priority: task.priority || 'medium', // Default to medium per plan
+                            clientId: sessionData.clientId || null,
+                            clientName: sessionData.clientName || null,
+                            sourceAudioUrl: voiceUrl,
+                            context: '@bot',
+                            dueDate: dueDate,
+                            estimatedDurationMinutes: task.estimatedDurationMinutes || null,
+                            createdAt: now,
+                            updatedAt: now
+                        });
+                        newTasksCount++;
+                    }
+                    await batch.commit();
+                    console.log(`✅ Created ${newTasksCount} tasks for user ${platformUser.id}`);
+                }
+            }
+
             // Notify admin if issues detected
             if (aiData.issues) {
                 await sendAdminNotification(`⚠️ *Проблема от рабочего*\n👤 ${sessionData.employeeName}\n📍 ${sessionData.clientName}\n🔴 ${aiData.issues}`);
             }
 
-            await sendMessage(chatId, `✅ Записал: *${aiData.summary}*\n${aiData.issues ? `⚠️ Проблема: ${aiData.issues}` : ''}\n\nОтдыхай!`);
+            let responseMsg = `✅ Записал: *${aiData.summary}*`;
+            if (newTasksCount > 0) {
+                responseMsg += `\n📥 Создано задач: ${newTasksCount}`;
+            }
+            if (aiData.issues) {
+                responseMsg += `\n⚠️ Проблема: ${aiData.issues}`;
+            }
+
+            await sendMessage(chatId, responseMsg + `\n\nОтдыхай!`);
 
             // Now finalize the session (move to description step or complete)
             updates.awaitingDescription = true;
@@ -1310,9 +1379,9 @@ async function sendTasksMenu(chatId: number, telegramId: number) {
 
     try {
         // Fetch all tasks for this user
-        const tasksSnapshot = await db.collection('users')
-            .doc(platformUser.id)
-            .collection('gtd_tasks')
+        // Fetch all tasks for this user (GLOBAL collection)
+        const tasksSnapshot = await db.collection('gtd_tasks')
+            .where('ownerId', '==', platformUser.id)
             .get();
 
         // Count by status
@@ -1365,9 +1434,9 @@ async function sendTaskList(chatId: number, telegramId: number, status: string) 
 
     try {
         // Fetch tasks with this status
-        const tasksSnapshot = await db.collection('users')
-            .doc(platformUser.id)
-            .collection('gtd_tasks')
+        // Fetch tasks with this status (GLOBAL collection)
+        const tasksSnapshot = await db.collection('gtd_tasks')
+            .where('ownerId', '==', platformUser.id)
             .where('status', '==', status)
             .orderBy('createdAt', 'desc')
             .limit(10)

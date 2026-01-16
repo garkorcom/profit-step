@@ -19,35 +19,23 @@
  * @module components/gtd/GTDBoard
  */
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Box, Snackbar, Alert, Fab, Tab, Tabs, Badge, Dialog, DialogTitle, DialogContent, TextField, DialogActions, Button, useMediaQuery, useTheme } from '@mui/material';
 import { DragDropContext, DropResult } from '@hello-pangea/dnd';
-import { collection, query, where, onSnapshot, orderBy, doc, updateDoc, addDoc, deleteDoc, Timestamp, getDocs, or } from 'firebase/firestore';
+import { collection, query, orderBy, getDocs } from 'firebase/firestore';
 import { db } from '../../firebase/firebase';
 import { useAuth } from '../../auth/AuthContext';
-import { GTDTask, GTD_COLUMNS, GTDStatus, GTDPriority } from '../../types/gtd.types';
+import { GTDTask, GTD_COLUMNS, GTDStatus } from '../../types/gtd.types';
 import { Client } from '../../types/crm.types';
 import { UserProfile } from '../../types/user.types';
-import { FormControl, Select, MenuItem, InputLabel, Typography, Tooltip, IconButton } from '@mui/material';
+import { FormControl, Select, MenuItem, InputLabel, Typography, IconButton } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import PersonIcon from '@mui/icons-material/Person';
 import FilterListIcon from '@mui/icons-material/FilterList';
 import GTDColumn from './GTDColumn';
 import GTDEditDialog from './GTDEditDialog';
-import { useActiveSession } from '../../hooks/useActiveSession';
-
-/**
- * Начальное состояние колонок доски
- * Каждый статус инициализируется пустым массивом задач
- */
-const initialData: Record<GTDStatus, GTDTask[]> = {
-    inbox: [],
-    next_action: [],
-    waiting: [],
-    projects: [],
-    someday: [],
-    done: []
-};
+import { useGTDTasks } from '../../hooks/useGTDTasks';
+import { useSessionManager } from '../../hooks/useSessionManager';
 
 /**
  * GTDBoard — основной компонент Kanban-доски
@@ -64,64 +52,34 @@ const GTDBoard: React.FC = () => {
     // ==================== АУТЕНТИФИКАЦИЯ ====================
     const { currentUser, userProfile } = useAuth();
 
-    /**
-     * Эффективный ID пользователя для Time Tracking
-     * Приоритет: telegramId (если есть) → Firebase UID
-     * Нужно для совместимости с Telegram Bot сессиями
-     */
-    const effectiveUserId = useMemo(() => {
-        if (userProfile?.telegramId && !isNaN(Number(userProfile.telegramId))) {
-            return Number(userProfile.telegramId);
-        }
-        return currentUser?.uid;
-    }, [currentUser, userProfile]);
-
     // ==================== ХУКИ ====================
-    const { activeSession } = useActiveSession(effectiveUserId); // Текущая активная сессия
+    const {
+        columns,
+        moveTask,
+        addTask,
+        updateTask,
+        deleteTask
+    } = useGTDTasks(currentUser);
+
+    const {
+        activeSession,
+        startSession,
+        stopSession,
+        sessionSnackbarOpen,
+        sessionStartMessage,
+        setSessionSnackbarOpen
+    } = useSessionManager(currentUser?.uid, currentUser?.displayName || undefined, userProfile?.telegramId);
+
     const theme = useTheme();
     const isMobile = useMediaQuery(theme.breakpoints.down('md')); // Адаптивность
 
     // ==================== СОСТОЯНИЕ ====================
-    const [columns, setColumns] = useState(initialData);           // Задачи по колонкам
     const [editingTask, setEditingTask] = useState<GTDTask | null>(null); // Редактируемая задача
     const [users, setUsers] = useState<UserProfile[]>([]);         // Пользователи для dropdown
     const [clients, setClients] = useState<Client[]>([]);          // Клиенты для dropdown
     const [selectedClientId, setSelectedClientId] = useState<string>('all');    // Фильтр по клиенту
     const [selectedAssigneeId, setSelectedAssigneeId] = useState<string>('all'); // Фильтр по assignee
 
-    const handleStopSession = async () => {
-        if (!activeSession) return;
-
-        try {
-            const sessionRef = doc(db, 'work_sessions', activeSession.id);
-            const endTime = Timestamp.now();
-            // @ts-ignore
-            const startTime = activeSession.startTime;
-            let diffArr = 0;
-            if (startTime) {
-                diffArr = endTime.toMillis() - startTime.toMillis();
-            }
-            const durationMinutes = Math.round(diffArr / 1000 / 60);
-
-            // @ts-ignore
-            const rate = activeSession.hourlyRate || 0;
-            const hours = durationMinutes / 60;
-            const earnings = parseFloat((hours * rate).toFixed(2));
-
-            await updateDoc(sessionRef, {
-                status: 'completed',
-                endTime: endTime,
-                durationMinutes: durationMinutes,
-                sessionEarnings: earnings
-            });
-
-            setSessionStartMessage(`⏹️ Session stopped`);
-            setSessionSnackbarOpen(true);
-        } catch (error) {
-            console.error("Error stopping session:", error);
-            alert("Failed to stop session");
-        }
-    };
     const [showShortcutHint, setShowShortcutHint] = useState(false);
 
     // ==================== МОБИЛЬНОЕ СОСТОЯНИЕ ====================
@@ -146,11 +104,6 @@ const GTDBoard: React.FC = () => {
 
     /**
      * Загрузка пользователей и клиентов для dropdown'ов
-     * 
-     * Пользователи: из коллекции /users, сортировка по displayName
-     * Клиенты: из коллекции /clients, сортировка по name
-     * 
-     * ВАЖНО: Правила Firestore должны разрешать чтение этих коллекций
      */
     useEffect(() => {
         const fetchData = async () => {
@@ -174,113 +127,21 @@ const GTDBoard: React.FC = () => {
         fetchData();
     }, []);
 
-    // 1. Subscribe to tasks from GLOBAL collection
-    useEffect(() => {
-        if (!currentUser) return;
-
-        // Query tasks where user is owner OR assignee
-        const q = query(
-            collection(db, 'gtd_tasks'),
-            or(
-                where('ownerId', '==', currentUser.uid),
-                where('assigneeId', '==', currentUser.uid)
-            )
-        );
-
-        const unsubscribe = onSnapshot(q, (snapshot) => {
-            const newColumns = { ...initialData };
-            // Reset arrays to empty before populating
-            Object.keys(newColumns).forEach(key => newColumns[key as GTDStatus] = []);
-
-            snapshot.docs.forEach(doc => {
-                const task = { id: doc.id, ...doc.data() } as GTDTask;
-                if (newColumns[task.status]) {
-                    newColumns[task.status].push(task);
-                }
-            });
-
-            // Sort each column by createdAt desc
-            Object.keys(newColumns).forEach(key => {
-                newColumns[key as GTDStatus].sort((a, b) =>
-                    (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)
-                );
-            });
-
-            setColumns(newColumns);
-        });
-
-        return () => unsubscribe();
-    }, [currentUser]);
-
     // 2. Drag & Drop Handler
     const onDragEnd = async (result: DropResult) => {
-        const { destination, source, draggableId } = result;
-
-        if (!destination) return;
-        if (
-            destination.droppableId === source.droppableId &&
-            destination.index === source.index
-        ) {
-            return;
-        }
-
-        const sourceColId = source.droppableId as GTDStatus;
-        const destColId = destination.droppableId as GTDStatus;
-
-        // Optimistic Update
-        const sourceList = [...columns[sourceColId]];
-        const destList = sourceColId === destColId ? sourceList : [...columns[destColId]];
-
-        const [movedTask] = sourceList.splice(source.index, 1);
-        movedTask.status = destColId; // Update status immediately
-        destList.splice(destination.index, 0, movedTask);
-
-        const newState = {
-            ...columns,
-            [sourceColId]: sourceList,
-            [destColId]: destList
-        };
-        setColumns(newState);
-
-        // Firestore Update - now using global collection
-        if (currentUser) {
-            try {
-                const taskRef = doc(db, 'gtd_tasks', draggableId);
-                await updateDoc(taskRef, { status: destColId, updatedAt: Timestamp.now() });
-
-                // Feature: Prompt for context if moving to Next Action and no context set
-                if (destColId === 'next_action' && !movedTask.context) {
-                    setEditingTask(movedTask); // Open edit dialog specifically to add context
-                }
-            } catch (error) {
-                console.error("Error moving task:", error);
+        const moveResult = await moveTask(result);
+        if (moveResult) {
+            const { movedTask, destColId } = moveResult;
+            // Feature: Prompt for context if moving to Next Action and no context set
+            if (destColId === 'next_action' && !movedTask.context) {
+                setEditingTask(movedTask);
             }
         }
     };
 
-    // 3. Task Actions - now with client and assignee support
-    const handleAddTask = async (title: string, columnId: GTDStatus, clientId?: string, assigneeId?: string) => {
-        if (!currentUser) return;
-        try {
-            const selectedClient = clients.find(c => c.id === clientId);
-            const selectedAssignee = users.find(u => u.id === assigneeId);
-
-            const newTask: Partial<GTDTask> = {
-                title,
-                status: columnId,
-                priority: 'none' as GTDPriority,
-                createdAt: Timestamp.now(),
-                ownerId: currentUser.uid,
-                ownerName: currentUser.displayName || 'Unknown',
-                context: '',
-                description: '',
-                ...(clientId && { clientId, clientName: selectedClient?.name || '' }),
-                ...(assigneeId && { assigneeId, assigneeName: selectedAssignee?.displayName || '' })
-            };
-            await addDoc(collection(db, 'gtd_tasks'), newTask);
-        } catch (error) {
-            console.error("Error adding task:", error);
-        }
+    // 3. Task Actions
+    const handleAddTaskWrapper = async (title: string, columnId: GTDStatus, clientId?: string, assigneeId?: string) => {
+        await addTask(title, columnId, clients, users, clientId, assigneeId);
     };
 
     // Keyboard shortcuts
@@ -303,89 +164,6 @@ const GTDBoard: React.FC = () => {
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, []);
 
-    const handleUpdateTask = async (taskId: string, updates: Partial<GTDTask>) => {
-        if (!currentUser) return;
-        const taskRef = doc(db, 'gtd_tasks', taskId);
-        await updateDoc(taskRef, { ...updates, updatedAt: Timestamp.now() });
-    };
-
-    const handleDeleteTask = async (taskId: string) => {
-        if (!currentUser) return;
-        const taskRef = doc(db, 'gtd_tasks', taskId);
-        await deleteDoc(taskRef);
-    };
-
-    // 4. Start Session from Task
-    const [sessionSnackbarOpen, setSessionSnackbarOpen] = useState(false);
-    const [sessionStartMessage, setSessionStartMessage] = useState('');
-
-    const handleStartSession = async (task: GTDTask) => {
-        if (!currentUser) return;
-        try {
-            // 1. Check/Close existing active session
-            const sessionsRef = collection(db, 'work_sessions');
-            const q = query(
-                sessionsRef,
-                where('employeeId', '==', effectiveUserId),
-                where('status', '==', 'active')
-            );
-            const snapshot = await getDocs(q);
-
-            let closedSessionMsg = '';
-
-            if (!snapshot.empty) {
-                const activeSessionDoc = snapshot.docs[0];
-                const activeData = activeSessionDoc.data();
-
-                // Calculate stats for closing
-                const endTime = Timestamp.now();
-                const startTime = activeData.startTime;
-
-                let diffArr = 0;
-                if (startTime) {
-                    diffArr = endTime.toMillis() - startTime.toMillis();
-                }
-                const durationMinutes = Math.round(diffArr / 1000 / 60); // Consistent with Bot calculation
-
-                const rate = activeData.hourlyRate || 0;
-                const hours = durationMinutes / 60;
-                const earnings = parseFloat((hours * rate).toFixed(2));
-
-                await updateDoc(activeSessionDoc.ref, {
-                    status: 'completed',
-                    endTime: endTime,
-                    durationMinutes: durationMinutes,
-                    sessionEarnings: earnings,
-                    // Append note about auto-switch if description allows? 
-                    // Or just leave description as is. User wanted "Auto-switched" if empty.
-                    // For now, let's trust the existing description or just close it.
-                    // If description is empty? usually not allowed in UI but might be in Bot.
-                });
-                closedSessionMsg = 'Previous session closed. ';
-            }
-
-            // 2. Create new active session
-            await addDoc(collection(db, 'work_sessions'), {
-                employeeId: effectiveUserId,
-                employeeName: currentUser.displayName || 'Unknown',
-                startTime: Timestamp.now(),
-                status: 'active',
-                description: task.title,
-                clientId: task.clientId || '',
-                clientName: task.clientName || '',
-                type: 'regular',
-                relatedTaskId: task.id, // Link back to task
-                relatedTaskTitle: task.title // Snapshot task title for display
-            });
-
-            setSessionStartMessage(`${closedSessionMsg}⏱️ Session started: ${task.title}`);
-            setSessionSnackbarOpen(true);
-        } catch (error) {
-            console.error("Error starting session:", error);
-            alert("Failed to start session");
-        }
-    };
-
     // Filter columns by client AND assignee
     const filteredColumns = { ...columns };
     Object.keys(filteredColumns).forEach(key => {
@@ -403,7 +181,7 @@ const GTDBoard: React.FC = () => {
     const handleQuickAdd = () => {
         if (!quickAddTitle.trim()) return;
         const targetColumn = GTD_COLUMNS[selectedTab]?.id || 'inbox';
-        handleAddTask(quickAddTitle, targetColumn, quickAddClientId || undefined, quickAddAssigneeId || undefined);
+        handleAddTaskWrapper(quickAddTitle, targetColumn, quickAddClientId || undefined, quickAddAssigneeId || undefined);
         setQuickAddTitle('');
         setQuickAddClientId('');
         setQuickAddAssigneeId('');
@@ -545,10 +323,10 @@ const GTDBoard: React.FC = () => {
                             tasks={filteredColumns[activeColumn?.id] || []}
                             clientsMap={clientsMap}
                             onTaskClick={setEditingTask}
-                            onAddTask={handleAddTask}
-                            onStartSession={handleStartSession}
+                            onAddTask={handleAddTaskWrapper}
+                            onStartSession={startSession}
                             activeSession={activeSession}
-                            onStopSession={handleStopSession}
+                            onStopSession={stopSession}
                         />
                     ) : (
                         // Desktop: Show all columns
@@ -560,10 +338,10 @@ const GTDBoard: React.FC = () => {
                                 tasks={filteredColumns[column.id]}
                                 clientsMap={clientsMap}
                                 onTaskClick={setEditingTask}
-                                onAddTask={handleAddTask}
-                                onStartSession={handleStartSession}
+                                onAddTask={handleAddTaskWrapper}
+                                onStartSession={startSession}
                                 activeSession={activeSession}
-                                onStopSession={handleStopSession}
+                                onStopSession={stopSession}
                             />
                         ))
                     )}
@@ -653,8 +431,8 @@ const GTDBoard: React.FC = () => {
                     open={!!editingTask}
                     onClose={() => setEditingTask(null)}
                     task={editingTask}
-                    onSave={handleUpdateTask}
-                    onDelete={handleDeleteTask}
+                    onSave={updateTask}
+                    onDelete={deleteTask}
                 />
             )}
 

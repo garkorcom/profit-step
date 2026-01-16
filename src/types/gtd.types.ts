@@ -137,6 +137,25 @@ export interface GTDTask {
 
     /** Порядок сортировки внутри колонки (для будущего drag-and-drop) */
     order?: number;
+
+    /** Ссылка на исходное аудио (если создано через бота) */
+    sourceAudioUrl?: string;
+
+    /** Дата, когда планируется начать работу */
+    startDate?: Timestamp;
+
+    /** Дата фактического завершения (устанавливается при переходе в done) */
+    completedAt?: Timestamp;
+
+    /** Планируемая длительность (в минутах) */
+    estimatedDurationMinutes?: number;
+
+    /** Фактические трудозатраты (в минутах) */
+    actualDurationMinutes?: number;
+
+    /** Флаг напоминания (для будущих уведомлений) */
+    reminderEnabled?: boolean;
+    reminderTime?: Timestamp;
 }
 
 /**

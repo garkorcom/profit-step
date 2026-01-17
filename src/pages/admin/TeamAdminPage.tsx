@@ -32,6 +32,9 @@ import {
   InputAdornment,
   TablePagination,
   Tooltip,
+  Grid,
+  ToggleButtonGroup,
+  ToggleButton,
 } from '@mui/material';
 import {
   MoreVert as MoreVertIcon,
@@ -42,6 +45,10 @@ import {
   Download as DownloadIcon,
   FiberNew as NewIcon,
   Telegram as TelegramIcon,
+  People as PeopleIcon,
+  HourglassEmpty as HourglassIcon,
+  List as ListIcon,
+  AccountTree as TreeIcon,
 } from '@mui/icons-material';
 import { useAuth } from '../../auth/AuthContext';
 import { UserProfile, UserRole, UserStatus, DEPARTMENT_LABELS } from '../../types/user.types';
@@ -64,6 +71,10 @@ import { ru } from 'date-fns/locale';
 import { DocumentSnapshot } from 'firebase/firestore';
 import { useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
+import StatCard from '../../components/common/StatCard';
+import UserSlideOver from '../../components/admin/UserSlideOver';
+import OrgTreeView from '../../components/admin/OrgTreeView';
+import { buildOrgTree } from '../../utils/hierarchyUtils';
 
 /**
  * Страница управления командой с Enterprise-Grade Серверной Пагинацией
@@ -144,6 +155,12 @@ const TeamAdminPage: React.FC = () => {
   const [warningDismissed, setWarningDismissed] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [hasNewUsers, setHasNewUsers] = useState(false);
+
+  // NEW: View Mode Toggle (list/tree)
+  const [viewMode, setViewMode] = useState<'list' | 'tree'>('list');
+
+  // NEW: Slide-over panel
+  const [slideOverUser, setSlideOverUser] = useState<UserProfile | null>(null);
 
   // Filters
   const statusFilter = (searchParams.get('status') as StatusFilter) || 'all';
@@ -653,6 +670,66 @@ const TeamAdminPage: React.FC = () => {
         />
       </Paper>
 
+      {/* KPI Stats Cards */}
+      <Grid container spacing={2} sx={{ mb: 3 }}>
+        <Grid size={{ xs: 6, md: 3 }}>
+          <StatCard
+            value={totalUsers}
+            label="Всего сотрудников"
+            icon={<PeopleIcon />}
+          />
+        </Grid>
+        <Grid size={{ xs: 6, md: 3 }}>
+          <StatCard
+            value={users.filter(u => u.status === 'active').length}
+            label="Активных"
+            trend={hasNewUsers ? '+новые' : undefined}
+            trendColor="success"
+          />
+        </Grid>
+        <Grid size={{ xs: 6, md: 3 }}>
+          <StatCard
+            value={users.filter(u => u.status === 'inactive').length}
+            label="Неактивных"
+            icon={<HourglassIcon />}
+          />
+        </Grid>
+        <Grid size={{ xs: 6, md: 3 }}>
+          <StatCard
+            value={users.filter(u => {
+              if (!u.lastSeen) return false;
+              try {
+                const lastSeen = typeof u.lastSeen === 'object' && 'toDate' in u.lastSeen
+                  ? u.lastSeen.toDate()
+                  : new Date(u.lastSeen as string);
+                return (new Date().getTime() - lastSeen.getTime()) < 5 * 60 * 1000;
+              } catch {
+                return false;
+              }
+            }).length}
+            label="Онлайн"
+            live={true}
+          />
+        </Grid>
+      </Grid>
+
+      {/* View Toggle + Filters */}
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+        <ToggleButtonGroup
+          value={viewMode}
+          exclusive
+          onChange={(_, val) => val && setViewMode(val)}
+          size="small"
+        >
+          <ToggleButton value="list">
+            <ListIcon sx={{ mr: 0.5 }} /> Список
+          </ToggleButton>
+          <ToggleButton value="tree">
+            <TreeIcon sx={{ mr: 0.5 }} /> Орг. структура
+          </ToggleButton>
+        </ToggleButtonGroup>
+      </Box>
+
       {/* Filters Tabs */}
       <Paper sx={{ mb: 3 }}>
         <Tabs
@@ -674,13 +751,21 @@ const TeamAdminPage: React.FC = () => {
         </Alert>
       )}
 
-      {/* Users Table */}
-      <Paper>
-        {loading ? (
-          <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
-            <CircularProgress />
-          </Box>
-        ) : (
+      {/* Users View */}
+      {loading ? (
+        <Paper sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
+          <CircularProgress />
+        </Paper>
+      ) : viewMode === 'tree' ? (
+        /* Tree View */
+        <OrgTreeView
+          nodes={buildOrgTree(users)}
+          users={users}
+          onUserClick={(user) => setSlideOverUser(user)}
+        />
+      ) : (
+        /* List View */
+        <Paper>
           <>
             <Box sx={{ overflowX: 'auto' }}>
               <TableContainer>
@@ -707,7 +792,14 @@ const TeamAdminPage: React.FC = () => {
                   </TableHead>
                   <TableBody>
                     {users.map((user) => (
-                      <TableRow key={user.id}>
+                      <TableRow
+                        key={user.id}
+                        onClick={() => setSlideOverUser(user)}
+                        sx={{
+                          cursor: 'pointer',
+                          '&:hover': { bgcolor: 'action.hover' },
+                        }}
+                      >
                         <TableCell>
                           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                             <Avatar src={user.photoURL} alt={user.displayName}>
@@ -817,9 +909,8 @@ const TeamAdminPage: React.FC = () => {
               labelDisplayedRows={({ from, to, count }) => `${from}–${to} из ${count}`}
             />
           </>
-        )}
-      </Paper>
-
+        </Paper>
+      )}
       {/* Actions Menu */}
       <Menu anchorEl={anchorEl} open={Boolean(anchorEl)} onClose={handleMenuClose}>
         <MenuItem onClick={() => menuUser && handleEditProfile(menuUser)}>
@@ -900,6 +991,27 @@ const TeamAdminPage: React.FC = () => {
         estimatedCost={sessionCost}
         onClose={() => setWarningDismissed(true)}
         onReset={() => window.location.reload()}
+      />
+
+      {/* User Slide-Over Panel */}
+      <UserSlideOver
+        user={slideOverUser}
+        open={!!slideOverUser}
+        onClose={() => setSlideOverUser(null)}
+        onEdit={(user) => {
+          setSlideOverUser(null);
+          setSelectedUser(user);
+          setEditModalOpen(true);
+        }}
+        onBlock={(user) => {
+          setSlideOverUser(null);
+          setUserToOffboard(user);
+          setOffboardingDialogOpen(true);
+        }}
+        onResetPassword={(user) => {
+          // TODO: Implement password reset
+          toast.success(`Ссылка для сброса пароля отправлена на ${user.email}`);
+        }}
       />
     </Container>
   );

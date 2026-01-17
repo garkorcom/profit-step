@@ -36,6 +36,7 @@ import PersonIcon from '@mui/icons-material/Person';
 import FilterListIcon from '@mui/icons-material/FilterList';
 import GTDColumn from './GTDColumn';
 import GTDEditDialog from './GTDEditDialog';
+import GTDQuickAddDialog from './GTDQuickAddDialog';
 import { useGTDTasks } from '../../hooks/useGTDTasks';
 import { useSessionManager } from '../../hooks/useSessionManager';
 
@@ -94,9 +95,6 @@ const GTDBoard: React.FC = () => {
 
     // ==================== QUICK ADD DIALOG ====================
     const [quickAddOpen, setQuickAddOpen] = useState(false);
-    const [quickAddTitle, setQuickAddTitle] = useState('');
-    const [quickAddClientId, setQuickAddClientId] = useState<string>('');
-    const [quickAddAssigneeId, setQuickAddAssigneeId] = useState<string>('');
 
     /**
      * Lookup-таблица клиентов по ID
@@ -223,18 +221,7 @@ const GTDBoard: React.FC = () => {
         return result;
     }, [columns, selectedClientId, selectedAssigneeId, selectedDateFilter]);
 
-    // Quick add from FAB
-    const handleQuickAdd = () => {
-        if (!quickAddTitle.trim()) return;
-        const targetColumn = GTD_COLUMNS[selectedTab]?.id || 'inbox';
-        handleAddTaskWrapper(quickAddTitle, targetColumn, quickAddClientId || undefined, quickAddAssigneeId || undefined);
-        setQuickAddTitle('');
-        setQuickAddClientId('');
-        setQuickAddAssigneeId('');
-        setQuickAddOpen(false);
-    };
-
-    // Mobile: active column based on tab
+    // Active column (for mobile tabs and Quick Add target)
     const activeColumn = GTD_COLUMNS[selectedTab];
 
     return (
@@ -463,65 +450,17 @@ const GTDBoard: React.FC = () => {
                 </Fab>
             )}
 
-            {/* Quick Add Dialog */}
-            <Dialog
+            {/* Quick Add Dialog - New Mobile-First Design */}
+            <GTDQuickAddDialog
                 open={quickAddOpen}
                 onClose={() => setQuickAddOpen(false)}
-                fullWidth
-                maxWidth="sm"
-                PaperProps={{ sx: { borderRadius: 3 } }}
-            >
-                <DialogTitle sx={{ pb: 1 }}>
-                    Add to {activeColumn?.title || 'Inbox'}
-                </DialogTitle>
-                <DialogContent sx={{ pt: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
-                    <TextField
-                        autoFocus
-                        fullWidth
-                        placeholder="Task title..."
-                        value={quickAddTitle}
-                        onChange={(e) => setQuickAddTitle(e.target.value)}
-                        onKeyDown={(e) => e.key === 'Enter' && quickAddTitle.trim() && handleQuickAdd()}
-                        sx={{ mt: 1 }}
-                    />
-                    <Box sx={{ display: 'flex', gap: 2 }}>
-                        <FormControl fullWidth size="small">
-                            <InputLabel>Client (optional)</InputLabel>
-                            <Select
-                                value={quickAddClientId}
-                                label="Client (optional)"
-                                onChange={(e) => setQuickAddClientId(e.target.value)}
-                            >
-                                <MenuItem value=""><em>No Client</em></MenuItem>
-                                {clients.map(c => (
-                                    <MenuItem key={c.id} value={c.id}>
-                                        {c.name} {c.type === 'company' ? '🏢' : '👤'}
-                                    </MenuItem>
-                                ))}
-                            </Select>
-                        </FormControl>
-                        <FormControl fullWidth size="small">
-                            <InputLabel>Assignee (optional)</InputLabel>
-                            <Select
-                                value={quickAddAssigneeId}
-                                label="Assignee (optional)"
-                                onChange={(e) => setQuickAddAssigneeId(e.target.value)}
-                            >
-                                <MenuItem value=""><em>No Assignee</em></MenuItem>
-                                {users.map(u => (
-                                    <MenuItem key={u.id} value={u.id}>{u.displayName}</MenuItem>
-                                ))}
-                            </Select>
-                        </FormControl>
-                    </Box>
-                </DialogContent>
-                <DialogActions>
-                    <Button onClick={() => setQuickAddOpen(false)}>Cancel</Button>
-                    <Button variant="contained" onClick={handleQuickAdd} disabled={!quickAddTitle.trim()}>
-                        Add
-                    </Button>
-                </DialogActions>
-            </Dialog>
+                onAdd={(title, columnId, clientId, assigneeId, priority) => {
+                    handleAddTaskWrapper(title, columnId, clientId, assigneeId);
+                }}
+                targetColumn={activeColumn?.id || 'inbox'}
+                clients={clients}
+                users={users}
+            />
 
             {/* Edit Dialog */}
             {editingTask && (

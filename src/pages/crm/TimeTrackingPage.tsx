@@ -46,7 +46,7 @@ const TimeTrackingPage: React.FC = () => {
     // Filters
     const [startDate, setStartDate] = useState<Date>(subDays(startOfDay(new Date()), 6));
     const [endDate, setEndDate] = useState<Date>(endOfDay(new Date()));
-    const [filterEmployee, setFilterEmployee] = useState('');
+    const [filterEmployeeId, setFilterEmployeeId] = useState('');
     const [filterClient, setFilterClient] = useState('');
     const [filterStatus, setFilterStatus] = useState('all');
 
@@ -268,10 +268,18 @@ const TimeTrackingPage: React.FC = () => {
 
     // --- Computed Values ---
 
-    const uniqueEmployees = useMemo(() =>
-        Array.from(new Set(sessions.map(s => s.employeeName))).sort(),
-        [sessions]
-    );
+    // Group employees by ID to avoid duplicates from name variations
+    const uniqueEmployees = useMemo(() => {
+        const empMap = new Map<string, string>();
+        sessions.forEach(s => {
+            if (s.employeeId && !empMap.has(String(s.employeeId))) {
+                empMap.set(String(s.employeeId), s.employeeName);
+            }
+        });
+        return Array.from(empMap.entries())
+            .map(([id, name]) => ({ id, name }))
+            .sort((a, b) => a.name.localeCompare(b.name));
+    }, [sessions]);
 
     const uniqueClients = useMemo(() =>
         Array.from(new Set(sessions.map(s => s.clientName))).sort(),
@@ -295,7 +303,7 @@ const TimeTrackingPage: React.FC = () => {
         };
 
         return sessions.filter(s => {
-            const matchEmployee = filterEmployee ? s.employeeName === filterEmployee : true;
+            const matchEmployee = filterEmployeeId ? String(s.employeeId) === filterEmployeeId : true;
             const matchClient = filterClient ? s.clientName === filterClient : true;
 
             // Enhanced status filtering
@@ -318,7 +326,7 @@ const TimeTrackingPage: React.FC = () => {
 
             return matchEmployee && matchClient && matchStatus;
         });
-    }, [sessions, filterEmployee, filterClient, filterStatus]);
+    }, [sessions, filterEmployeeId, filterClient, filterStatus]);
 
     const stats = useMemo(() => {
         let totalMinutes = 0;
@@ -415,14 +423,14 @@ const TimeTrackingPage: React.FC = () => {
                 startDate={startDate}
                 endDate={endDate}
                 filterStatus={filterStatus}
-                filterEmployee={filterEmployee}
+                filterEmployeeId={filterEmployeeId}
                 filterClient={filterClient}
                 uniqueEmployees={uniqueEmployees}
                 uniqueClients={uniqueClients}
                 onStartDateChange={setStartDate}
                 onEndDateChange={setEndDate}
                 onStatusChange={setFilterStatus}
-                onEmployeeChange={setFilterEmployee}
+                onEmployeeIdChange={setFilterEmployeeId}
                 onClientChange={setFilterClient}
             />
 

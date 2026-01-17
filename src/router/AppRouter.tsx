@@ -29,6 +29,7 @@ import FinancePage from '../pages/crm/FinancePage';
 import GTDPage from '../pages/crm/GTDPage';
 import GTDTaskDetailsPage from '../pages/crm/GTDTaskDetailsPage';
 import PayrollPeriodsPage from '../pages/crm/PayrollPeriodsPage';
+import RolesPage from '../pages/admin/RolesPage';
 
 /**
  * Компонент для защиты маршрутов
@@ -105,6 +106,9 @@ const AppRouter: React.FC = () => {
 
         {/* Управление командой */}
         <Route path="/admin/team" element={<TeamAdminPage />} />
+
+        {/* Роли и права доступа */}
+        <Route path="/admin/roles" element={<RolesPage />} />
 
         {/* Компании (Клиенты) */}
         <Route path="/admin/companies" element={<CompaniesPage />} />

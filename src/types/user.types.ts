@@ -15,6 +15,20 @@ export type UserRole = 'superadmin' | 'company_admin' | 'admin' | 'manager' | 'u
 export type UserStatus = 'active' | 'inactive';
 
 /**
+ * Отделы компании
+ */
+export type Department = 'sales' | 'procurement' | 'accounting' | 'construction' | 'management' | 'other';
+
+export const DEPARTMENT_LABELS: Record<Department, string> = {
+  sales: 'Продажи',
+  procurement: 'Снабжение',
+  accounting: 'Бухгалтерия',
+  construction: 'Строительство',
+  management: 'Руководство',
+  other: 'Другое',
+};
+
+/**
  * Профиль пользователя в Firestore
  * Путь: users/{userId}
  */
@@ -30,8 +44,24 @@ export interface UserProfile {
 
   // --- Новые поля для управления командой ---
   title?: string;          // Должность (напр., "Ведущий сметчик")
+  department?: Department; // Отдел (Продажи, Снабжение и т.д.)
   phone?: string;          // Контактный телефон
   telegramId?: string;     // Telegram User ID for bot linking
+  reportsTo?: string;      // UID руководителя
+
+  /**
+   * Цепочка руководителей от пользователя до топ-менеджера
+   * [self, directManager, managerOfManager, ..., topManager]
+   * Используется для быстрых запросов иерархии в Firestore
+   */
+  hierarchyPath?: string[];
+
+  /**
+   * Количество прямых подчинённых (денормализовано для быстрого UI)
+   * Пересчитывается Cloud Function при изменении reportsTo
+   */
+  subordinateCount?: number;
+
   dob?: Timestamp | string;  // Дата рождения (Date of Birth)
   lastSeen?: Timestamp | string;  // Дата последней активности
   status: UserStatus;      // Статус активности ('active' по умолчанию)

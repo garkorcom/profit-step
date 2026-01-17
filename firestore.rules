@@ -287,20 +287,40 @@ service cloud.firestore {
     }
 
     // GTD Tasks (Global collection for shared task management)
+    // S-01: Hierarchical visibility - managers can see subordinates' tasks
     match /gtd_tasks/{taskId} {
-      // Read: user is owner or assignee
+      // Helper: check if requesting user is manager of task owner
+      function isManagerOfOwner() {
+        let ownerData = get(/databases/$(database)/documents/users/$(resource.data.ownerId)).data;
+        // hierarchyPath contains [self, manager1, manager2, ..., topManager]
+        // If requesting user's UID is in owner's hierarchyPath, they're a manager
+        return 'hierarchyPath' in ownerData && 
+               ownerData.hierarchyPath.hasAny([request.auth.uid]);
+      }
+      
+      function isManagerOfAssignee() {
+        let assigneeData = get(/databases/$(database)/documents/users/$(resource.data.assigneeId)).data;
+        return 'hierarchyPath' in assigneeData && 
+               assigneeData.hierarchyPath.hasAny([request.auth.uid]);
+      }
+      
+      // Read: user is owner, assignee, OR manager in hierarchy
       allow read: if isSignedIn() && 
                   (resource.data.ownerId == request.auth.uid || 
-                   resource.data.assigneeId == request.auth.uid);
+                   resource.data.assigneeId == request.auth.uid ||
+                   isManagerOfOwner() ||
+                   isManagerOfAssignee());
       
       // Create: any authenticated user can create tasks
       allow create: if isSignedIn() && 
                     request.resource.data.ownerId == request.auth.uid;
       
-      // Update: owner or assignee can update
+      // Update: owner, assignee, or their manager can update
       allow update: if isSignedIn() && 
                     (resource.data.ownerId == request.auth.uid || 
-                     resource.data.assigneeId == request.auth.uid);
+                     resource.data.assigneeId == request.auth.uid ||
+                     isManagerOfOwner() ||
+                     isManagerOfAssignee());
       
       // Delete: only owner can delete
       allow delete: if isSignedIn() && 

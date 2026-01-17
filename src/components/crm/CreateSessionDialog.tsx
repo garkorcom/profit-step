@@ -57,7 +57,7 @@ const CreateSessionDialog: React.FC<CreateSessionDialogProps> = ({ open, onClose
                 const data = doc.data();
                 return {
                     id: doc.id,
-                    name: data.name || data.email || 'Unknown',
+                    name: data.displayName || data.name || 'Unknown',
                     photoUrl: data.photoUrl,
                     hourlyRate: data.hourlyRate || 0
                 };

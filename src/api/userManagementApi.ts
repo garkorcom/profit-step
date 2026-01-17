@@ -161,8 +161,10 @@ export const updateUserExtendedProfile = async (
   data: {
     displayName?: string;
     title?: string;
+    department?: string;
     phone?: string;
     telegramId?: string;
+    reportsTo?: string;
     hourlyRate?: number;
     dob?: Date | null;
   }
@@ -173,8 +175,10 @@ export const updateUserExtendedProfile = async (
 
     if (data.displayName !== undefined) updateData.displayName = data.displayName;
     if (data.title !== undefined) updateData.title = data.title;
+    if (data.department !== undefined) updateData.department = data.department;
     if (data.phone !== undefined) updateData.phone = data.phone;
     if (data.telegramId !== undefined) updateData.telegramId = data.telegramId;
+    if (data.reportsTo !== undefined) updateData.reportsTo = data.reportsTo;
     if (data.hourlyRate !== undefined) updateData.hourlyRate = data.hourlyRate;
     if (data.dob !== undefined) {
       updateData.dob = data.dob ? Timestamp.fromDate(data.dob) : null;

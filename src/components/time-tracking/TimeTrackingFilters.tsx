@@ -6,14 +6,14 @@ interface TimeTrackingFiltersProps {
     startDate: Date;
     endDate: Date;
     filterStatus: string;
-    filterEmployee: string;
+    filterEmployeeId: string;  // Employee ID for filtering
     filterClient: string;
-    uniqueEmployees: string[];
+    uniqueEmployees: Array<{ id: string; name: string }>;
     uniqueClients: string[];
     onStartDateChange: (date: Date) => void;
     onEndDateChange: (date: Date) => void;
     onStatusChange: (status: string) => void;
-    onEmployeeChange: (employee: string) => void;
+    onEmployeeIdChange: (employeeId: string) => void;
     onClientChange: (client: string) => void;
 }
 
@@ -25,14 +25,14 @@ const TimeTrackingFilters: React.FC<TimeTrackingFiltersProps> = ({
     startDate,
     endDate,
     filterStatus,
-    filterEmployee,
+    filterEmployeeId,
     filterClient,
     uniqueEmployees,
     uniqueClients,
     onStartDateChange,
     onEndDateChange,
     onStatusChange,
-    onEmployeeChange,
+    onEmployeeIdChange,
     onClientChange
 }) => {
     return (
@@ -91,14 +91,14 @@ const TimeTrackingFilters: React.FC<TimeTrackingFiltersProps> = ({
                         label="Employee"
                         fullWidth
                         size="small"
-                        value={filterEmployee}
-                        onChange={(e) => onEmployeeChange(e.target.value)}
+                        value={filterEmployeeId}
+                        onChange={(e) => onEmployeeIdChange(e.target.value)}
                         InputLabelProps={{ shrink: true }}
                         SelectProps={{ displayEmpty: true }}
                     >
                         <MenuItem value="">All Employees</MenuItem>
-                        {uniqueEmployees.map(name => (
-                            <MenuItem key={name} value={name}>{name}</MenuItem>
+                        {uniqueEmployees.map(emp => (
+                            <MenuItem key={emp.id} value={emp.id}>{emp.name}</MenuItem>
                         ))}
                     </TextField>
                 </Box>

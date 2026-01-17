@@ -41,9 +41,10 @@ import {
   Refresh as RefreshIcon,
   Download as DownloadIcon,
   FiberNew as NewIcon,
+  Telegram as TelegramIcon,
 } from '@mui/icons-material';
 import { useAuth } from '../../auth/AuthContext';
-import { UserProfile, UserRole, UserStatus } from '../../types/user.types';
+import { UserProfile, UserRole, UserStatus, DEPARTMENT_LABELS } from '../../types/user.types';
 import {
   updateUserRole,
   deactivateUser,
@@ -52,10 +53,10 @@ import {
   getCompanyUsersPaginated,
   GetPaginatedUsersParams,
 } from '../../api/userManagementApi';
-import UserProfileModal from '../../components/admin/UserProfileModal';
+import UserFormDialog from '../../components/admin/UserFormDialog';
 import InviteUserDialog from '../../components/admin/InviteUserDialog';
-import CreateUserDialog from '../../components/admin/CreateUserDialog';
 import CostWarningDialog from '../../components/admin/CostWarningDialog';
+import OffboardingWizard from '../../components/admin/OffboardingWizard';
 import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts';
 import { costProtectionBreaker } from '../../utils/circuitBreaker';
 import { formatDistanceToNow } from 'date-fns';
@@ -132,10 +133,12 @@ const TeamAdminPage: React.FC = () => {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [userToDelete, setUserToDelete] = useState<UserProfile | null>(null);
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
-  const [createUserDialogOpen, setCreateUserDialogOpen] = useState(false);
+  const [userFormDialogOpen, setUserFormDialogOpen] = useState(false);
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [menuUser, setMenuUser] = useState<UserProfile | null>(null);
   const [addUserMenuAnchor, setAddUserMenuAnchor] = useState<null | HTMLElement>(null);
+  const [offboardingDialogOpen, setOffboardingDialogOpen] = useState(false);
+  const [userToOffboard, setUserToOffboard] = useState<UserProfile | null>(null);
 
   // Priority 2 UX Improvements
   const [warningDismissed, setWarningDismissed] = useState(false);
@@ -438,17 +441,13 @@ const TeamAdminPage: React.FC = () => {
   );
 
   const handleDeactivate = useCallback(
-    async (user: UserProfile) => {
-      try {
-        await deactivateUser(user.id);
-        handleMenuClose();
-        loadUsers(page, 'initial');
-      } catch (err: any) {
-        console.error('Error deactivating user:', err);
-        setError('Не удалось деактивировать пользователя');
-      }
+    (user: UserProfile) => {
+      // Открываем Offboarding Wizard вместо прямой деактивации
+      setUserToOffboard(user);
+      setOffboardingDialogOpen(true);
+      handleMenuClose();
     },
-    [page, loadUsers]
+    []
   );
 
   const handleActivate = useCallback(
@@ -618,7 +617,7 @@ const TeamAdminPage: React.FC = () => {
           >
             <MenuItem
               onClick={() => {
-                setCreateUserDialogOpen(true);
+                setUserFormDialogOpen(true);
                 setAddUserMenuAnchor(null);
               }}
             >
@@ -692,6 +691,12 @@ const TeamAdminPage: React.FC = () => {
                       <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>
                         Должность
                       </TableCell>
+                      <TableCell sx={{ display: { xs: 'none', lg: 'table-cell' } }}>
+                        Бот
+                      </TableCell>
+                      <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>
+                        Отдел
+                      </TableCell>
                       <TableCell>Роль</TableCell>
                       <TableCell sx={{ display: { xs: 'none', sm: 'table-cell' } }}>
                         Последний вход
@@ -719,6 +724,34 @@ const TeamAdminPage: React.FC = () => {
 
                         <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>
                           {user.title || '—'}
+                        </TableCell>
+
+                        <TableCell sx={{ display: { xs: 'none', lg: 'table-cell' } }}>
+                          {user.telegramId ? (
+                            <Tooltip title={`Telegram ID: ${user.telegramId}`}>
+                              <Chip
+                                icon={<TelegramIcon />}
+                                label="Связан"
+                                size="small"
+                                color="info"
+                                variant="outlined"
+                              />
+                            </Tooltip>
+                          ) : (
+                            <Typography variant="body2" color="text.disabled">—</Typography>
+                          )}
+                        </TableCell>
+
+                        <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>
+                          {user.department ? (
+                            <Chip
+                              label={DEPARTMENT_LABELS[user.department] || user.department}
+                              size="small"
+                              variant="outlined"
+                            />
+                          ) : (
+                            <Typography variant="body2" color="text.disabled">—</Typography>
+                          )}
                         </TableCell>
 
                         <TableCell>
@@ -758,7 +791,7 @@ const TeamAdminPage: React.FC = () => {
 
                     {users.length === 0 && (
                       <TableRow>
-                        <TableCell colSpan={6} align="center">
+                        <TableCell colSpan={8} align="center">
                           <Typography color="text.secondary">
                             {debouncedSearch
                               ? 'Пользователи не найдены'
@@ -807,12 +840,13 @@ const TeamAdminPage: React.FC = () => {
         </MenuItem>
       </Menu>
 
-      {/* Edit Profile Modal */}
-      <UserProfileModal
-        open={editModalOpen}
-        user={selectedUser}
+      {/* User Form Dialog (Create/Edit) */}
+      <UserFormDialog
+        open={editModalOpen || userFormDialogOpen}
+        user={editModalOpen ? selectedUser : null}
         onClose={() => {
           setEditModalOpen(false);
+          setUserFormDialogOpen(false);
           setSelectedUser(null);
         }}
         onSuccess={() => {
@@ -846,10 +880,14 @@ const TeamAdminPage: React.FC = () => {
         }}
       />
 
-      {/* Create User Dialog */}
-      <CreateUserDialog
-        open={createUserDialogOpen}
-        onClose={() => setCreateUserDialogOpen(false)}
+      {/* Offboarding Wizard */}
+      <OffboardingWizard
+        open={offboardingDialogOpen}
+        user={userToOffboard}
+        onClose={() => {
+          setOffboardingDialogOpen(false);
+          setUserToOffboard(null);
+        }}
         onSuccess={() => {
           loadUsers(page, 'initial');
         }}

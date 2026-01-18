@@ -9,7 +9,7 @@
  * - adminDeleteUser: Безопасное удаление пользователя администратором
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.updateWorkSession = exports.onWorkSessionCreate = exports.generateDailyPayroll = exports.closePayrollPeriod = exports.forceFinishAllSessions = exports.sendSessionReminders = exports.finalizeExpiredSessions = exports.onWorkerBotMessage = exports.generateLeadSummary = exports.sendMessage = exports.onTelegramMessage = exports.onWhatsAppMessage = exports.onLeadCreate = exports.updateCompanyMemberCount_v2 = exports.trackUserActivation_v2 = exports.logUserUpdates_v2 = exports.incrementLoginCount_v2 = exports.inviteUser = exports.adminDeleteUser = exports.onUserDelete = exports.onUserCreate = exports.admin_createUserWithPassword = exports.logPaginationMetrics = exports.logInvitationAccepted = exports.logInvitationSent = exports.logUserDeleted = exports.logUserCreated = exports.brevoWebhookHandler = exports.trackFirstInvite = exports.initializeUserActivation = exports.aggregateEngagementMetrics = exports.aggregateGrowthMetrics = exports.processAvatar = void 0;
+exports.updateWorkSession = exports.onWorkSessionCreate = exports.generateDailyPayroll = exports.closePayrollPeriod = exports.forceFinishAllSessions = exports.sendSessionReminders = exports.finalizeExpiredSessions = exports.onWorkerBotMessage = exports.estimateTask = exports.generateLeadSummary = exports.sendMessage = exports.onTelegramMessage = exports.onWhatsAppMessage = exports.onLeadCreate = exports.updateCompanyMemberCount_v2 = exports.trackUserActivation_v2 = exports.logUserUpdates_v2 = exports.incrementLoginCount_v2 = exports.inviteUser = exports.adminDeleteUser = exports.onUserDelete = exports.onUserCreate = exports.admin_createUserWithPassword = exports.logPaginationMetrics = exports.logInvitationAccepted = exports.logInvitationSent = exports.logUserDeleted = exports.logUserCreated = exports.brevoWebhookHandler = exports.trackFirstInvite = exports.initializeUserActivation = exports.aggregateEngagementMetrics = exports.aggregateGrowthMetrics = exports.processAvatar = void 0;
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 const crypto = require("crypto");
@@ -426,6 +426,8 @@ Object.defineProperty(exports, "sendMessage", { enumerable: true, get: function 
 // AI
 var generateLeadSummary_1 = require("./callable/ai/generateLeadSummary");
 Object.defineProperty(exports, "generateLeadSummary", { enumerable: true, get: function () { return generateLeadSummary_1.generateLeadSummary; } });
+var estimateTask_1 = require("./callable/ai/estimateTask");
+Object.defineProperty(exports, "estimateTask", { enumerable: true, get: function () { return estimateTask_1.estimateTask; } });
 var onWorkerBotMessage_1 = require("./triggers/telegram/onWorkerBotMessage");
 Object.defineProperty(exports, "onWorkerBotMessage", { enumerable: true, get: function () { return onWorkerBotMessage_1.onWorkerBotMessage; } });
 // Scheduled: Session Management

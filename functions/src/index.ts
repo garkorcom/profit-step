@@ -544,6 +544,7 @@ export { sendMessage } from './callable/messaging/sendMessage';
 
 // AI
 export { generateLeadSummary } from './callable/ai/generateLeadSummary';
+export { estimateTask } from './callable/ai/estimateTask';
 export { onWorkerBotMessage } from './triggers/telegram/onWorkerBotMessage';
 
 // Scheduled: Session Management

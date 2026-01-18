@@ -50,7 +50,11 @@ import {
     AccessTime as TimeIcon,
     Mic as MicIcon,
     Clear as ClearIcon,
+    AutoAwesome as AutoAwesomeIcon,
+    Warning as WarningIcon,
 } from '@mui/icons-material';
+import { estimateTask } from '../../api/aiApi';
+import { AIEstimateResponse } from '../../types/aiEstimate.types';
 import { format, addDays, startOfWeek, isToday, isTomorrow } from 'date-fns';
 import { ru } from 'date-fns/locale';
 
@@ -155,6 +159,12 @@ const GTDQuickAddDialog: React.FC<GTDQuickAddDialogProps> = ({
     // Priority (minimal, still available)
     const [priority, setPriority] = useState<GTDPriority>('none');
 
+    // AI Estimation State
+    const [aiLoading, setAiLoading] = useState(false);
+    const [aiEstimate, setAiEstimate] = useState<AIEstimateResponse | null>(null);
+    const [selectedMaterials, setSelectedMaterials] = useState<string[]>([]);
+    const [selectedTools, setSelectedTools] = useState<string[]>([]);
+
     // Quick dates memoized
     const quickDates = useMemo(() => getQuickDates(), []);
 
@@ -205,6 +215,61 @@ const GTDQuickAddDialog: React.FC<GTDQuickAddDialogProps> = ({
         setHours('8');
         setCost(String(8 * 3 * HOURLY_RATE));
         setShowSuggestion(false);
+    };
+
+    // AI Estimation Handler
+    const handleAIEstimate = async () => {
+        if (!description.trim()) return;
+
+        // Get selected employee's role and rate
+        const selectedEmployee = users.find(u => u.id === assigneeId);
+        const employeeRole = selectedEmployee?.title || selectedEmployee?.role || 'Worker';
+        const employeeRate = selectedEmployee?.hourlyRate || HOURLY_RATE;
+
+        setAiLoading(true);
+        setAiEstimate(null);
+
+        try {
+            const estimate = await estimateTask({
+                task_description: description,
+                employee_role: employeeRole,
+                employee_hourly_rate: employeeRate,
+                currency: 'USD',
+                employee_id: assigneeType === 'employee' ? assigneeId : undefined,
+                target_date: startDate,
+            });
+
+            setAiEstimate(estimate);
+            setHours(String(estimate.estimated_hours));
+            setCost(String(estimate.calculated_cost));
+            setSelectedMaterials([]);
+            setSelectedTools([]);
+
+            // Haptic feedback
+            if ('vibrate' in navigator) {
+                navigator.vibrate([50, 30, 50]);
+            }
+        } catch (error) {
+            console.error('AI Estimation failed:', error);
+        } finally {
+            setAiLoading(false);
+        }
+    };
+
+    const toggleMaterial = (material: string) => {
+        setSelectedMaterials(prev =>
+            prev.includes(material)
+                ? prev.filter(m => m !== material)
+                : [...prev, material]
+        );
+    };
+
+    const toggleTool = (tool: string) => {
+        setSelectedTools(prev =>
+            prev.includes(tool)
+                ? prev.filter(t => t !== tool)
+                : [...prev, tool]
+        );
     };
 
     const handleSave = async (addMore: boolean) => {
@@ -564,6 +629,130 @@ const GTDQuickAddDialog: React.FC<GTDQuickAddDialogProps> = ({
                             )}
                         </Box>
                     </Box>
+                </Box>
+
+                {/* ═══════════════════════════════════════
+                    AI ESTIMATION SECTION
+                ═══════════════════════════════════════ */}
+                <Box sx={{ mb: 3 }}>
+                    {/* AI Estimate Button */}
+                    <Button
+                        fullWidth
+                        variant="outlined"
+                        onClick={handleAIEstimate}
+                        disabled={!description.trim() || aiLoading}
+                        startIcon={aiLoading ? <CircularProgress size={18} /> : <AutoAwesomeIcon />}
+                        sx={{
+                            py: 1.5,
+                            borderRadius: 2,
+                            borderStyle: 'dashed',
+                            borderColor: aiEstimate ? 'success.main' : 'primary.main',
+                            bgcolor: aiEstimate ? 'success.50' : 'transparent',
+                            color: aiEstimate ? 'success.dark' : 'primary.main',
+                            '&:hover': {
+                                bgcolor: aiEstimate ? 'success.100' : 'primary.50',
+                            }
+                        }}
+                    >
+                        {aiLoading ? 'AI анализирует...' : aiEstimate ? '✓ AI расчет выполнен' : '✨ AI-расчет'}
+                    </Button>
+
+                    {/* AI Reasoning */}
+                    {aiEstimate?.reasoning && (
+                        <Paper
+                            variant="outlined"
+                            sx={{
+                                mt: 1.5,
+                                p: 1.5,
+                                borderRadius: 2,
+                                bgcolor: 'info.50',
+                                borderColor: 'info.200'
+                            }}
+                        >
+                            <Typography variant="caption" color="info.dark" fontWeight={500}>
+                                💡 {aiEstimate.reasoning}
+                            </Typography>
+                        </Paper>
+                    )}
+
+                    {/* Conflict Warning */}
+                    {aiEstimate?.has_conflict && (
+                        <Alert
+                            severity="warning"
+                            icon={<WarningIcon />}
+                            sx={{ mt: 1.5, borderRadius: 2 }}
+                        >
+                            <Typography variant="body2" fontWeight={500}>
+                                ⚠️ {aiEstimate.conflict_message}
+                            </Typography>
+                        </Alert>
+                    )}
+
+                    {/* Materials Chips */}
+                    {aiEstimate?.suggested_materials && aiEstimate.suggested_materials.length > 0 && (
+                        <Box sx={{ mt: 2 }}>
+                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                                <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase', letterSpacing: 1 }}>
+                                    📦 Материалы (предложено ИИ)
+                                </Typography>
+                                <Button
+                                    size="small"
+                                    onClick={() => setSelectedMaterials([...aiEstimate.suggested_materials])}
+                                    sx={{ fontSize: '0.7rem' }}
+                                >
+                                    Выбрать все
+                                </Button>
+                            </Box>
+                            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
+                                {aiEstimate.suggested_materials.map((material, i) => (
+                                    <Chip
+                                        key={i}
+                                        label={material}
+                                        onClick={() => toggleMaterial(material)}
+                                        color={selectedMaterials.includes(material) ? 'primary' : 'default'}
+                                        variant={selectedMaterials.includes(material) ? 'filled' : 'outlined'}
+                                        sx={{
+                                            borderRadius: 1.5,
+                                            '&:hover': { bgcolor: selectedMaterials.includes(material) ? 'primary.dark' : 'grey.200' }
+                                        }}
+                                    />
+                                ))}
+                            </Box>
+                        </Box>
+                    )}
+
+                    {/* Tools Chips */}
+                    {aiEstimate?.suggested_tools && aiEstimate.suggested_tools.length > 0 && (
+                        <Box sx={{ mt: 2 }}>
+                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                                <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase', letterSpacing: 1 }}>
+                                    🔧 Инструменты (предложено ИИ)
+                                </Typography>
+                                <Button
+                                    size="small"
+                                    onClick={() => setSelectedTools([...aiEstimate.suggested_tools])}
+                                    sx={{ fontSize: '0.7rem' }}
+                                >
+                                    Выбрать все
+                                </Button>
+                            </Box>
+                            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
+                                {aiEstimate.suggested_tools.map((tool, i) => (
+                                    <Chip
+                                        key={i}
+                                        label={tool}
+                                        onClick={() => toggleTool(tool)}
+                                        color={selectedTools.includes(tool) ? 'secondary' : 'default'}
+                                        variant={selectedTools.includes(tool) ? 'filled' : 'outlined'}
+                                        sx={{
+                                            borderRadius: 1.5,
+                                            '&:hover': { bgcolor: selectedTools.includes(tool) ? 'secondary.dark' : 'grey.200' }
+                                        }}
+                                    />
+                                ))}
+                            </Box>
+                        </Box>
+                    )}
                 </Box>
 
                 {/* ═══════════════════════════════════════

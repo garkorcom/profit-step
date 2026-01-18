@@ -115,7 +115,17 @@ export const useGTDTasks = (currentUser: any, showAllTasks: boolean = false) => 
         clients: Client[],
         users: UserProfile[],
         clientId?: string,
-        assigneeId?: string
+        assigneeId?: string,
+        aiData?: {
+            estimatedHours?: number;
+            estimatedCost?: number;
+            crewSize?: number;
+            aiMaterials?: string[];
+            selectedMaterials?: string[];
+            aiTools?: string[];
+            selectedTools?: string[];
+            aiReasoning?: string;
+        }
     ) => {
         if (!currentUser) return;
         try {
@@ -132,7 +142,19 @@ export const useGTDTasks = (currentUser: any, showAllTasks: boolean = false) => 
                 context: '',
                 description: '',
                 ...(clientId && { clientId, clientName: selectedClient?.name || '' }),
-                ...(assigneeId && { assigneeId, assigneeName: selectedAssignee?.displayName || '' })
+                ...(assigneeId && { assigneeId, assigneeName: selectedAssignee?.displayName || '' }),
+                // AI Estimation fields (only include if defined to avoid Firestore errors)
+                ...(aiData && {
+                    ...(aiData.estimatedHours && { estimatedDurationMinutes: Math.round(aiData.estimatedHours * 60) }),
+                    ...(aiData.estimatedCost !== undefined && { estimatedCost: aiData.estimatedCost }),
+                    ...(aiData.crewSize !== undefined && { crewSize: aiData.crewSize }),
+                    ...(aiData.aiMaterials && aiData.aiMaterials.length > 0 && { aiMaterials: aiData.aiMaterials }),
+                    ...(aiData.selectedMaterials && aiData.selectedMaterials.length > 0 && { selectedMaterials: aiData.selectedMaterials }),
+                    ...(aiData.aiTools && aiData.aiTools.length > 0 && { aiTools: aiData.aiTools }),
+                    ...(aiData.selectedTools && aiData.selectedTools.length > 0 && { selectedTools: aiData.selectedTools }),
+                    ...(aiData.aiReasoning && { aiReasoning: aiData.aiReasoning }),
+                    aiEstimateUsed: true,
+                }),
             };
             await addDoc(collection(db, 'gtd_tasks'), newTask);
         } catch (error) {

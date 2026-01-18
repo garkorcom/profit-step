@@ -36,7 +36,7 @@ import PersonIcon from '@mui/icons-material/Person';
 import FilterListIcon from '@mui/icons-material/FilterList';
 import GTDColumn from './GTDColumn';
 import GTDEditDialog from './GTDEditDialog';
-import GTDQuickAddDialog from './GTDQuickAddDialog';
+import GTDQuickAddDialog, { AIEstimateData } from './GTDQuickAddDialog';
 import { useGTDTasks } from '../../hooks/useGTDTasks';
 import { useSessionManager } from '../../hooks/useSessionManager';
 
@@ -144,8 +144,14 @@ const GTDBoard: React.FC = () => {
     };
 
     // 3. Task Actions
-    const handleAddTaskWrapper = async (title: string, columnId: GTDStatus, clientId?: string, assigneeId?: string) => {
-        await addTask(title, columnId, clients, users, clientId, assigneeId);
+    const handleAddTaskWrapper = async (
+        title: string,
+        columnId: GTDStatus,
+        clientId?: string,
+        assigneeId?: string,
+        aiData?: AIEstimateData
+    ) => {
+        await addTask(title, columnId, clients, users, clientId, assigneeId, aiData);
     };
 
     // Keyboard shortcuts
@@ -454,8 +460,8 @@ const GTDBoard: React.FC = () => {
             <GTDQuickAddDialog
                 open={quickAddOpen}
                 onClose={() => setQuickAddOpen(false)}
-                onAdd={(title, columnId, clientId, assigneeId, priority) => {
-                    handleAddTaskWrapper(title, columnId, clientId, assigneeId);
+                onAdd={(title, columnId, clientId, assigneeId, priority, aiData) => {
+                    handleAddTaskWrapper(title, columnId, clientId, assigneeId, aiData);
                 }}
                 targetColumn={activeColumn?.id || 'inbox'}
                 clients={clients}

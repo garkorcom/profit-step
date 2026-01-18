@@ -62,10 +62,29 @@ import { GTDStatus, GTDPriority } from '../../types/gtd.types';
 import { Client } from '../../types/crm.types';
 import { UserProfile } from '../../types/user.types';
 
+/** Data from AI estimation to save with task */
+export interface AIEstimateData {
+    estimatedHours?: number;
+    estimatedCost?: number;
+    crewSize?: number;
+    aiMaterials?: string[];
+    selectedMaterials?: string[];
+    aiTools?: string[];
+    selectedTools?: string[];
+    aiReasoning?: string;
+}
+
 interface GTDQuickAddDialogProps {
     open: boolean;
     onClose: () => void;
-    onAdd: (title: string, columnId: GTDStatus, clientId?: string, assigneeId?: string, priority?: GTDPriority) => void;
+    onAdd: (
+        title: string,
+        columnId: GTDStatus,
+        clientId?: string,
+        assigneeId?: string,
+        priority?: GTDPriority,
+        aiData?: AIEstimateData
+    ) => void;
     targetColumn: GTDStatus;
     clients: Client[];
     users: UserProfile[];
@@ -277,12 +296,25 @@ const GTDQuickAddDialog: React.FC<GTDQuickAddDialogProps> = ({
 
         setSaving(true);
         try {
+            // Build AI data if estimation was used
+            const aiData: AIEstimateData | undefined = aiEstimate ? {
+                estimatedHours: aiEstimate.estimated_hours,
+                estimatedCost: aiEstimate.calculated_cost,
+                crewSize: crewSize,
+                aiMaterials: aiEstimate.suggested_materials,
+                selectedMaterials: selectedMaterials.length > 0 ? selectedMaterials : undefined,
+                aiTools: aiEstimate.suggested_tools,
+                selectedTools: selectedTools.length > 0 ? selectedTools : undefined,
+                aiReasoning: aiEstimate.reasoning,
+            } : undefined;
+
             await onAdd(
                 description.trim(),
                 targetColumn,
                 selectedClient?.id,
                 assigneeType === 'employee' ? assigneeId : undefined,
-                priority !== 'none' ? priority : undefined
+                priority !== 'none' ? priority : undefined,
+                aiData
             );
 
             if (addMore) {

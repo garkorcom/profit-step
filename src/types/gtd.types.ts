@@ -177,6 +177,34 @@ export interface GTDTask {
 
     /** Элементы чек-листа */
     checklistItems?: ChecklistItem[];
+
+    // ═══════════════════════════════════════
+    // AI ESTIMATION FIELDS
+    // ═══════════════════════════════════════
+
+    /** Предполагаемая стоимость работы (рассчитано AI) */
+    estimatedCost?: number;
+
+    /** Количество работников */
+    crewSize?: number;
+
+    /** Предложенные материалы (от AI) */
+    aiMaterials?: string[];
+
+    /** Выбранные пользователем материалы */
+    selectedMaterials?: string[];
+
+    /** Предложенные инструменты (от AI) */
+    aiTools?: string[];
+
+    /** Выбранные пользователем инструменты */
+    selectedTools?: string[];
+
+    /** Объяснение AI-оценки */
+    aiReasoning?: string;
+
+    /** Флаг: была ли использована AI-оценка */
+    aiEstimateUsed?: boolean;
 }
 
 /**

@@ -3,7 +3,7 @@ import {
     Dialog, DialogTitle, DialogContent, DialogActions,
     TextField, Button, FormControl, InputLabel, Select, MenuItem,
     Box, Chip, Typography, Grid, Accordion, AccordionSummary, AccordionDetails,
-    useTheme, alpha
+    useTheme, alpha, Paper, IconButton, InputAdornment, CircularProgress, Alert
 } from '@mui/material';
 import FlagIcon from '@mui/icons-material/Flag';
 import PersonIcon from '@mui/icons-material/Person';
@@ -13,6 +13,11 @@ import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import InboxIcon from '@mui/icons-material/Inbox';
+import AddIcon from '@mui/icons-material/Add';
+import RemoveIcon from '@mui/icons-material/Remove';
+import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
+import RefreshIcon from '@mui/icons-material/Refresh';
+import CloseIcon from '@mui/icons-material/Close';
 
 import { useForm, Controller } from 'react-hook-form';
 import { GTDTask, GTDStatus, GTD_COLUMNS, GTDPriority, PRIORITY_COLORS } from '../../types/gtd.types';
@@ -21,6 +26,8 @@ import { UserProfile } from '../../types/user.types';
 import { Timestamp, collection, getDocs, query, orderBy, where } from 'firebase/firestore';
 import { db } from '../../firebase/firebase';
 import { useAuth } from '../../auth/AuthContext';
+import { estimateTask } from '../../api/aiApi';
+import { AIEstimateResponse } from '../../types/aiEstimate.types';
 
 interface GTDEditDialogProps {
     open: boolean;
@@ -74,6 +81,20 @@ const GTDEditDialog: React.FC<GTDEditDialogProps> = ({ open, onClose, task, onSa
     const [clients, setClients] = useState<Client[]>([]);
     const [expanded, setExpanded] = useState<boolean>(false);
 
+    // AI & Resources State
+    const [aiLoading, setAiLoading] = useState(false);
+    const [crewSize, setCrewSize] = useState(1);
+    const [hours, setHours] = useState('');
+    const [cost, setCost] = useState('');
+    const [aiReasoning, setAiReasoning] = useState('');
+    const [localMaterials, setLocalMaterials] = useState<string[]>([]);
+    const [localTools, setLocalTools] = useState<string[]>([]);
+    const [newMaterial, setNewMaterial] = useState('');
+    const [newTool, setNewTool] = useState('');
+    const [hasAiData, setHasAiData] = useState(false);
+
+    const HOURLY_RATE = 95; // Default hourly rate
+
     useEffect(() => {
         const fetchData = async () => {
             // Assignees (Users)
@@ -107,8 +128,76 @@ const GTDEditDialog: React.FC<GTDEditDialogProps> = ({ open, onClose, task, onSa
                 startDate: task.startDate ? new Date(task.startDate.seconds * 1000).toISOString().split('T')[0] : '',
                 estimatedDurationMinutes: task.estimatedDurationMinutes || 0
             });
+
+            // Initialize AI-related state from task
+            setCrewSize(task.crewSize || 1);
+            setHours(task.estimatedDurationMinutes ? String(task.estimatedDurationMinutes / 60) : '');
+            setCost(task.estimatedCost ? String(task.estimatedCost) : '');
+            setAiReasoning(task.aiReasoning || '');
+            setLocalMaterials(task.selectedMaterials || task.aiMaterials || []);
+            setLocalTools(task.selectedTools || task.aiTools || []);
+            setHasAiData(!!task.aiEstimateUsed);
         }
     }, [task, reset]);
+
+    // AI Estimation Handler
+    const handleAIEstimate = async () => {
+        if (!task) return;
+
+        const selectedAssignee = users.find(u => u.id === task.assigneeId);
+        const employeeRole = selectedAssignee?.title || selectedAssignee?.role || 'Worker';
+        const employeeRate = selectedAssignee?.hourlyRate || HOURLY_RATE;
+
+        setAiLoading(true);
+
+        try {
+            const estimate = await estimateTask({
+                task_description: task.title + (task.description ? '. ' + task.description : ''),
+                employee_role: employeeRole,
+                employee_hourly_rate: employeeRate,
+                currency: 'USD',
+            });
+
+            setHours(String(estimate.estimated_hours));
+            setCost(String(estimate.calculated_cost));
+            setAiReasoning(estimate.reasoning || '');
+            setLocalMaterials(estimate.suggested_materials || []);
+            setLocalTools(estimate.suggested_tools || []);
+            setHasAiData(true);
+
+            // Haptic feedback
+            if ('vibrate' in navigator) {
+                navigator.vibrate([50, 30, 50]);
+            }
+        } catch (error) {
+            console.error('AI Estimation failed:', error);
+        } finally {
+            setAiLoading(false);
+        }
+    };
+
+    // Material/Tool handlers
+    const addMaterial = () => {
+        if (newMaterial.trim() && !localMaterials.includes(newMaterial.trim())) {
+            setLocalMaterials([...localMaterials, newMaterial.trim()]);
+            setNewMaterial('');
+        }
+    };
+
+    const removeMaterial = (material: string) => {
+        setLocalMaterials(localMaterials.filter(m => m !== material));
+    };
+
+    const addTool = () => {
+        if (newTool.trim() && !localTools.includes(newTool.trim())) {
+            setLocalTools([...localTools, newTool.trim()]);
+            setNewTool('');
+        }
+    };
+
+    const removeTool = (tool: string) => {
+        setLocalTools(localTools.filter(t => t !== tool));
+    };
 
     const onSubmit = async (data: FormData) => {
         if (!task) return;
@@ -148,6 +237,29 @@ const GTDEditDialog: React.FC<GTDEditDialogProps> = ({ open, onClose, task, onSa
         // Auto-set completedAt if done
         if (data.status === 'done' && task.status !== 'done') {
             updates.completedAt = Timestamp.now();
+        }
+
+        // AI & Resources fields (only if they have values)
+        if (hours) {
+            updates.estimatedDurationMinutes = Math.round(Number(hours) * 60);
+        }
+        if (cost) {
+            updates.estimatedCost = Number(cost);
+        }
+        if (crewSize > 0) {
+            updates.crewSize = crewSize;
+        }
+        if (localMaterials.length > 0) {
+            updates.selectedMaterials = localMaterials;
+        }
+        if (localTools.length > 0) {
+            updates.selectedTools = localTools;
+        }
+        if (aiReasoning) {
+            updates.aiReasoning = aiReasoning;
+        }
+        if (hasAiData) {
+            updates.aiEstimateUsed = true;
         }
 
         try {
@@ -320,7 +432,168 @@ const GTDEditDialog: React.FC<GTDEditDialogProps> = ({ open, onClose, task, onSa
                             )}
                         />
 
-                        {/* 5. Accordion (Secondary Fields) */}
+                        {/* 5. Resources & Finance */}
+                        <Box sx={{ bgcolor: alpha(theme.palette.grey[500], 0.05), p: 2, borderRadius: 2 }}>
+                            <Typography variant="caption" color="text.secondary" sx={{ mb: 1.5, display: 'block', textTransform: 'uppercase', letterSpacing: 1 }}>
+                                Ресурсы и финансы
+                            </Typography>
+                            <Box sx={{ display: 'flex', gap: 1.5, alignItems: 'center', flexWrap: 'wrap' }}>
+                                {/* Crew Size Stepper */}
+                                <Paper variant="outlined" sx={{ display: 'flex', alignItems: 'center', borderRadius: 2, minWidth: 100 }}>
+                                    <IconButton size="small" onClick={() => setCrewSize(Math.max(1, crewSize - 1))} disabled={crewSize <= 1}>
+                                        <RemoveIcon fontSize="small" />
+                                    </IconButton>
+                                    <Box sx={{ flex: 1, textAlign: 'center', px: 1 }}>
+                                        <Typography variant="body1" fontWeight={600}>{crewSize}</Typography>
+                                        <Typography variant="caption" color="text.secondary">чел</Typography>
+                                    </Box>
+                                    <IconButton size="small" onClick={() => setCrewSize(Math.min(20, crewSize + 1))}>
+                                        <AddIcon fontSize="small" />
+                                    </IconButton>
+                                </Paper>
+
+                                {/* Hours */}
+                                <TextField
+                                    type="number"
+                                    inputMode="numeric"
+                                    value={hours}
+                                    onChange={(e) => setHours(e.target.value)}
+                                    placeholder="Часы"
+                                    size="small"
+                                    sx={{ width: 100 }}
+                                    InputProps={{
+                                        endAdornment: <InputAdornment position="end">ч</InputAdornment>
+                                    }}
+                                />
+
+                                {/* Cost */}
+                                <TextField
+                                    type="number"
+                                    inputMode="decimal"
+                                    value={cost}
+                                    onChange={(e) => setCost(e.target.value)}
+                                    placeholder="Стоимость"
+                                    size="small"
+                                    sx={{ width: 120 }}
+                                    InputProps={{
+                                        startAdornment: <InputAdornment position="start">$</InputAdornment>
+                                    }}
+                                />
+
+                                {/* Auto-calc hint */}
+                                {!cost && hours && (
+                                    <Button
+                                        size="small"
+                                        onClick={() => setCost(String(Math.round(Number(hours) * crewSize * HOURLY_RATE)))}
+                                        sx={{ textTransform: 'none', fontSize: '0.75rem' }}
+                                    >
+                                        💡 ${Math.round(Number(hours) * crewSize * HOURLY_RATE)}
+                                    </Button>
+                                )}
+                            </Box>
+                        </Box>
+
+                        {/* 6. AI Estimation */}
+                        <Box sx={{ bgcolor: alpha(theme.palette.primary.main, 0.05), p: 2, borderRadius: 2 }}>
+                            {/* AI Button */}
+                            <Button
+                                fullWidth
+                                variant="outlined"
+                                onClick={handleAIEstimate}
+                                disabled={aiLoading}
+                                startIcon={aiLoading ? <CircularProgress size={18} /> : hasAiData ? <RefreshIcon /> : <AutoAwesomeIcon />}
+                                sx={{
+                                    py: 1,
+                                    borderRadius: 2,
+                                    borderStyle: 'dashed',
+                                    borderColor: hasAiData ? 'success.main' : 'primary.main',
+                                    color: hasAiData ? 'success.dark' : 'primary.main',
+                                }}
+                            >
+                                {aiLoading ? 'AI анализирует...' : hasAiData ? '🔄 Перегенерировать AI' : '✨ AI-расчёт'}
+                            </Button>
+
+                            {/* AI Reasoning */}
+                            {aiReasoning && (
+                                <Paper variant="outlined" sx={{ mt: 1.5, p: 1.5, borderRadius: 2, bgcolor: 'info.50', borderColor: 'info.200' }}>
+                                    <Typography variant="caption" color="info.dark">
+                                        💡 {aiReasoning}
+                                    </Typography>
+                                </Paper>
+                            )}
+
+                            {/* Materials */}
+                            {(localMaterials.length > 0 || hasAiData) && (
+                                <Box sx={{ mt: 2 }}>
+                                    <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block' }}>
+                                        📦 Материалы
+                                    </Typography>
+                                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mb: 1 }}>
+                                        {localMaterials.map((m, i) => (
+                                            <Chip
+                                                key={i}
+                                                label={m}
+                                                size="small"
+                                                onDelete={() => removeMaterial(m)}
+                                                deleteIcon={<CloseIcon fontSize="small" />}
+                                                color="primary"
+                                                variant="outlined"
+                                            />
+                                        ))}
+                                    </Box>
+                                    <Box sx={{ display: 'flex', gap: 1 }}>
+                                        <TextField
+                                            size="small"
+                                            placeholder="Добавить материал..."
+                                            value={newMaterial}
+                                            onChange={(e) => setNewMaterial(e.target.value)}
+                                            onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), addMaterial())}
+                                            sx={{ flex: 1 }}
+                                        />
+                                        <IconButton onClick={addMaterial} color="primary" size="small">
+                                            <AddIcon />
+                                        </IconButton>
+                                    </Box>
+                                </Box>
+                            )}
+
+                            {/* Tools */}
+                            {(localTools.length > 0 || hasAiData) && (
+                                <Box sx={{ mt: 2 }}>
+                                    <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block' }}>
+                                        🔧 Инструменты
+                                    </Typography>
+                                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mb: 1 }}>
+                                        {localTools.map((t, i) => (
+                                            <Chip
+                                                key={i}
+                                                label={t}
+                                                size="small"
+                                                onDelete={() => removeTool(t)}
+                                                deleteIcon={<CloseIcon fontSize="small" />}
+                                                color="secondary"
+                                                variant="outlined"
+                                            />
+                                        ))}
+                                    </Box>
+                                    <Box sx={{ display: 'flex', gap: 1 }}>
+                                        <TextField
+                                            size="small"
+                                            placeholder="Добавить инструмент..."
+                                            value={newTool}
+                                            onChange={(e) => setNewTool(e.target.value)}
+                                            onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), addTool())}
+                                            sx={{ flex: 1 }}
+                                        />
+                                        <IconButton onClick={addTool} color="secondary" size="small">
+                                            <AddIcon />
+                                        </IconButton>
+                                    </Box>
+                                </Box>
+                            )}
+                        </Box>
+
+                        {/* 7. Accordion (Secondary Fields) */}
                         <Accordion expanded={expanded} onChange={() => setExpanded(!expanded)} disableGutters elevation={0} sx={{ border: '1px solid #e0e0e0', borderRadius: '8px !important', '&:before': { display: 'none' } }}>
                             <AccordionSummary expandIcon={<ExpandMoreIcon />}>
                                 <Typography variant="body2" color="text.secondary">More Options (Assignee, Client, Tags)</Typography>

@@ -304,12 +304,13 @@ service cloud.firestore {
                assigneeData.hierarchyPath.hasAny([request.auth.uid]);
       }
       
-      // Read: user is owner, assignee, OR manager in hierarchy
+      // Read: user is owner, assignee, manager in hierarchy, OR admin
       allow read: if isSignedIn() && 
                   (resource.data.ownerId == request.auth.uid || 
                    resource.data.assigneeId == request.auth.uid ||
                    isManagerOfOwner() ||
-                   isManagerOfAssignee());
+                   isManagerOfAssignee() ||
+                   isAdmin());
       
       // Create: any authenticated user can create tasks
       allow create: if isSignedIn() && 

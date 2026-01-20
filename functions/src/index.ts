@@ -555,6 +555,7 @@ export { forceFinishAllSessions } from './callable/admin/forceFinishAllSessions'
 export { closePayrollPeriod } from './callable/payroll/closePayrollPeriod';
 export { generateDailyPayroll } from './scheduled/generateDailyPayroll';
 export { onWorkSessionCreate } from './triggers/workSessions/onWorkSessionCreate';
+export { onWorkSessionUpdate } from './triggers/workSessions/onWorkSessionUpdate';
 
 // Sessions: Callable with validation
 export { updateWorkSession } from './callable/sessions/updateWorkSession';

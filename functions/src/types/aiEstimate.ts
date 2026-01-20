@@ -34,4 +34,6 @@ export interface AIEstimateResponse {
     conflict_message?: string;
     /** Total planned hours for the day including this task */
     total_day_hours?: number;
+    /** Whether this result came from cache (not fresh AI call) */
+    fromCache?: boolean;
 }

@@ -13,6 +13,12 @@ import * as functions from 'firebase-functions';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import * as admin from 'firebase-admin';
 import { AIEstimateRequest, AIEstimateResponse } from '../../types/aiEstimate';
+import {
+    getCachedEstimate,
+    incrementHitCount,
+    saveToCache,
+    cacheToResponse,
+} from '../../utils/aiCacheUtils';
 
 const db = admin.firestore();
 
@@ -169,6 +175,43 @@ export const estimateTask = functions
 
         console.log(`🎯 Estimating task: "${data.task_description}" for ${data.employee_role} at $${data.employee_hourly_rate}/hr`);
 
+        // ══════════════════════════════════════════
+        // CACHE LOOKUP
+        // ══════════════════════════════════════════
+        const cacheResult = await getCachedEstimate(data.task_description, data.employee_role);
+
+        if (cacheResult.hit && cacheResult.data) {
+            console.log(`⚡ CACHE HIT! Key: ${cacheResult.cacheKey}`);
+            await incrementHitCount(cacheResult.cacheKey);
+
+            // Recalculate cost with current rate (might differ from cached)
+            const cachedResponse = cacheToResponse(cacheResult.data);
+            cachedResponse.calculated_cost = Math.round(
+                cachedResponse.estimated_hours * data.employee_hourly_rate
+            );
+
+            // Still check for workload conflicts
+            if (data.employee_id && data.target_date) {
+                const targetDate = new Date(data.target_date);
+                const existingHours = await getEmployeeWorkload(data.employee_id, targetDate);
+                const newTotalHours = existingHours + cachedResponse.estimated_hours;
+
+                if (newTotalHours > 8) {
+                    cachedResponse.has_conflict = true;
+                    cachedResponse.total_day_hours = newTotalHours;
+                    cachedResponse.conflict_message = `⚠️ Перегрузка: Планируется ${newTotalHours.toFixed(1)} часов работы (лимит 8 часов)`;
+                }
+            }
+
+            return cachedResponse;
+        }
+
+        console.log(`🔍 Cache MISS. Key: ${cacheResult.cacheKey}. Calling Gemini...`);
+
+        // ══════════════════════════════════════════
+        // GEMINI AI CALL
+        // ══════════════════════════════════════════
+
         // Build user prompt
         const userPrompt = `
 ## Task to Estimate
@@ -208,7 +251,19 @@ Please provide your estimate in the specified JSON format.`;
             }
 
             console.log(`✅ Estimate complete: ${aiResponse.estimated_hours}h, $${aiResponse.calculated_cost}`);
-            return aiResponse;
+
+            // ══════════════════════════════════════════
+            // SAVE TO CACHE
+            // ══════════════════════════════════════════
+            await saveToCache(
+                cacheResult.cacheKey,
+                data.task_description,
+                data.employee_role,
+                data.employee_hourly_rate,
+                aiResponse
+            );
+
+            return { ...aiResponse, fromCache: false };
 
         } catch (error: any) {
             console.error('❌ Estimation failed:', error);

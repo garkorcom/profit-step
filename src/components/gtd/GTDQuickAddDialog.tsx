@@ -686,7 +686,7 @@ const GTDQuickAddDialog: React.FC<GTDQuickAddDialogProps> = ({
                             }
                         }}
                     >
-                        {aiLoading ? 'AI анализирует...' : aiEstimate ? '✓ AI расчет выполнен' : '✨ AI-расчет'}
+                        {aiLoading ? 'AI анализирует...' : aiEstimate ? (aiEstimate.fromCache ? '⚡ Cached' : '✓ AI расчет выполнен') : '✨ AI-расчет'}
                     </Button>
 
                     {/* AI Reasoning */}

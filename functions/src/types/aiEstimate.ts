@@ -36,4 +36,6 @@ export interface AIEstimateResponse {
     total_day_hours?: number;
     /** Whether this result came from cache (not fresh AI call) */
     fromCache?: boolean;
+    /** Whether this result came from a template (instant, no API) */
+    fromTemplate?: boolean;
 }

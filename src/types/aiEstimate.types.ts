@@ -36,4 +36,6 @@ export interface AIEstimateResponse {
     total_day_hours?: number;
     /** Whether result came from cache (fast response) */
     fromCache?: boolean;
+    /** Whether result came from template (instant response) */
+    fromTemplate?: boolean;
 }

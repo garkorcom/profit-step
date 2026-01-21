@@ -19,6 +19,10 @@ import {
     saveToCache,
     cacheToResponse,
 } from '../../utils/aiCacheUtils';
+import {
+    findTemplateMatch,
+    templateToResponse,
+} from '../../utils/templateMatcher';
 
 const db = admin.firestore();
 
@@ -176,7 +180,35 @@ export const estimateTask = functions
         console.log(`🎯 Estimating task: "${data.task_description}" for ${data.employee_role} at $${data.employee_hourly_rate}/hr`);
 
         // ══════════════════════════════════════════
-        // CACHE LOOKUP
+        // 1. TEMPLATE MATCH (Instant, no API)
+        // ══════════════════════════════════════════
+        const templateResult = await findTemplateMatch(data.task_description, data.employee_role);
+
+        if (templateResult.matched && templateResult.template) {
+            console.log(`✨ TEMPLATE HIT! Pattern: ${templateResult.template.pattern}`);
+
+            const templateResponse = templateToResponse(templateResult, data.employee_hourly_rate);
+
+            // Check for workload conflicts
+            if (data.employee_id && data.target_date) {
+                const targetDate = new Date(data.target_date);
+                const existingHours = await getEmployeeWorkload(data.employee_id, targetDate);
+                const newTotalHours = existingHours + templateResponse.estimated_hours;
+
+                if (newTotalHours > 8) {
+                    templateResponse.has_conflict = true;
+                    templateResponse.total_day_hours = newTotalHours;
+                    templateResponse.conflict_message = `⚠️ Перегрузка: Планируется ${newTotalHours.toFixed(1)} часов работы (лимит 8 часов)`;
+                }
+            }
+
+            return templateResponse;
+        }
+
+        console.log(`📋 No template match. Checking cache...`);
+
+        // ══════════════════════════════════════════
+        // 2. CACHE LOOKUP (~200ms, no API)
         // ══════════════════════════════════════════
         const cacheResult = await getCachedEstimate(data.task_description, data.employee_role);
 

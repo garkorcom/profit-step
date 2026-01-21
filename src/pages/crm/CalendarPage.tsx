@@ -74,15 +74,15 @@ import { Client } from '../../types/crm.types';
 import GTDEditDialog from '../../components/gtd/GTDEditDialog';
 import { doc, updateDoc, deleteDoc } from 'firebase/firestore';
 
-// Status colors for calendar display
-const STATUS_COLORS: Record<GTDStatus, { bg: string; border: string; text: string }> = {
-    inbox: { bg: '#f3f4f6', border: '#d1d5db', text: '#374151' },
-    next_action: { bg: '#fef3c7', border: '#fcd34d', text: '#92400e' },
-    projects: { bg: '#dbeafe', border: '#93c5fd', text: '#1e40af' },
-    waiting: { bg: '#fce7f3', border: '#f9a8d4', text: '#9d174d' },
-    estimate: { bg: '#fff7ed', border: '#fdba74', text: '#c2410c' },
-    someday: { bg: '#e0e7ff', border: '#a5b4fc', text: '#3730a3' },
-    done: { bg: '#d1fae5', border: '#6ee7b7', text: '#065f46' },
+// Status colors for calendar display - Enhanced with gradients
+const STATUS_COLORS: Record<GTDStatus, { bg: string; border: string; text: string; gradient?: string }> = {
+    inbox: { bg: '#f8fafc', border: '#94a3b8', text: '#334155', gradient: 'linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%)' },
+    next_action: { bg: '#fef9c3', border: '#eab308', text: '#854d0e', gradient: 'linear-gradient(135deg, #fef9c3 0%, #fde047 100%)' },
+    projects: { bg: '#dbeafe', border: '#3b82f6', text: '#1e40af', gradient: 'linear-gradient(135deg, #dbeafe 0%, #93c5fd 100%)' },
+    waiting: { bg: '#fce7f3', border: '#ec4899', text: '#9d174d', gradient: 'linear-gradient(135deg, #fce7f3 0%, #f9a8d4 100%)' },
+    estimate: { bg: '#ffedd5', border: '#f97316', text: '#c2410c', gradient: 'linear-gradient(135deg, #ffedd5 0%, #fdba74 100%)' },
+    someday: { bg: '#e0e7ff', border: '#6366f1', text: '#3730a3', gradient: 'linear-gradient(135deg, #e0e7ff 0%, #a5b4fc 100%)' },
+    done: { bg: '#dcfce7', border: '#22c55e', text: '#15803d', gradient: 'linear-gradient(135deg, #dcfce7 0%, #86efac 100%)' },
 };
 
 type ViewMode = 'month' | 'week';
@@ -328,338 +328,369 @@ const CalendarPage: React.FC = () => {
     }
 
     return (
-        <Container maxWidth="xl" sx={{ py: 2, height: 'calc(100vh - 64px)', display: 'flex', flexDirection: 'column' }}>
-            {/* Header */}
-            <Box display="flex" justifyContent="space-between" alignItems="center" mb={1.5} flexWrap="wrap" gap={1}>
-                <Box display="flex" alignItems="center" gap={1.5}>
-                    <Typography variant="h5" fontWeight="bold">
-                        📅 Task Calendar
-                    </Typography>
-                    <Chip label={`${tasks.length} Tasks`} color="primary" size="small" />
-                    {overdueCount > 0 && (
-                        <Chip
-                            icon={<WarningIcon />}
-                            label={`${overdueCount} Overdue`}
-                            color="error"
-                            size="small"
-                        />
-                    )}
-                </Box>
+        <Box sx={{
+            minHeight: 'calc(100vh - 64px)',
+            background: 'linear-gradient(180deg, #f0f4ff 0%, #fafbff 50%, #ffffff 100%)',
+            py: 2,
+        }}>
+            <Container maxWidth="xl" sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+                {/* Header with gradient */}
+                <Paper
+                    elevation={0}
+                    sx={{
+                        p: 2,
+                        mb: 2,
+                        borderRadius: 3,
+                        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                        boxShadow: '0 4px 20px rgba(102, 126, 234, 0.25)',
+                    }}
+                >
+                    <Box display="flex" justifyContent="space-between" alignItems="center" flexWrap="wrap" gap={1.5}>
+                        <Box display="flex" alignItems="center" gap={2}>
+                            <Typography variant="h5" fontWeight="bold" sx={{ color: 'white', display: 'flex', alignItems: 'center', gap: 1 }}>
+                                📅 Task Calendar
+                            </Typography>
+                            <Chip
+                                label={`${tasks.length} Tasks`}
+                                sx={{
+                                    bgcolor: 'rgba(255,255,255,0.2)',
+                                    color: 'white',
+                                    fontWeight: 600,
+                                    backdropFilter: 'blur(10px)',
+                                }}
+                                size="small"
+                            />
+                            {overdueCount > 0 && (
+                                <Chip
+                                    icon={<WarningIcon sx={{ color: 'white !important' }} />}
+                                    label={`${overdueCount} Overdue`}
+                                    sx={{
+                                        bgcolor: 'rgba(239, 68, 68, 0.9)',
+                                        color: 'white',
+                                        fontWeight: 600,
+                                    }}
+                                    size="small"
+                                />
+                            )}
+                        </Box>
 
-                <Box display="flex" alignItems="center" gap={1} flexWrap="wrap">
-                    {/* Client Filter */}
-                    <FormControl size="small" sx={{ minWidth: 150 }}>
-                        <InputLabel>Client</InputLabel>
-                        <Select
-                            value={selectedClientId}
-                            label="Client"
-                            onChange={(e) => setSelectedClientId(e.target.value)}
-                        >
-                            <MenuItem value="all"><em>All Clients</em></MenuItem>
-                            {clients.map(c => (
-                                <MenuItem key={c.id} value={c.id}>{c.name}</MenuItem>
-                            ))}
-                        </Select>
-                    </FormControl>
+                        <Box display="flex" alignItems="center" gap={1} flexWrap="wrap">
+                            {/* Client Filter */}
+                            <FormControl size="small" sx={{ minWidth: 150 }}>
+                                <InputLabel>Client</InputLabel>
+                                <Select
+                                    value={selectedClientId}
+                                    label="Client"
+                                    onChange={(e) => setSelectedClientId(e.target.value)}
+                                >
+                                    <MenuItem value="all"><em>All Clients</em></MenuItem>
+                                    {clients.map(c => (
+                                        <MenuItem key={c.id} value={c.id}>{c.name}</MenuItem>
+                                    ))}
+                                </Select>
+                            </FormControl>
 
-                    {/* View Toggle */}
-                    <ToggleButtonGroup
-                        value={viewMode}
-                        exclusive
-                        onChange={(_, val) => val && setViewMode(val)}
-                        size="small"
-                    >
-                        <ToggleButton value="month"><CalendarViewMonthIcon /></ToggleButton>
-                        <ToggleButton value="week"><ViewWeekIcon /></ToggleButton>
-                    </ToggleButtonGroup>
+                            {/* View Toggle */}
+                            <ToggleButtonGroup
+                                value={viewMode}
+                                exclusive
+                                onChange={(_, val) => val && setViewMode(val)}
+                                size="small"
+                            >
+                                <ToggleButton value="month"><CalendarViewMonthIcon /></ToggleButton>
+                                <ToggleButton value="week"><ViewWeekIcon /></ToggleButton>
+                            </ToggleButtonGroup>
 
-                    {/* My/All Toggle */}
-                    <ToggleButtonGroup
-                        value={showAllTasks}
-                        exclusive
-                        onChange={(_, val) => val !== null && setShowAllTasks(val)}
-                        size="small"
-                    >
-                        <ToggleButton value={false}>Мои</ToggleButton>
-                        <ToggleButton value={true}>Все</ToggleButton>
-                    </ToggleButtonGroup>
+                            {/* My/All Toggle */}
+                            <ToggleButtonGroup
+                                value={showAllTasks}
+                                exclusive
+                                onChange={(_, val) => val !== null && setShowAllTasks(val)}
+                                size="small"
+                            >
+                                <ToggleButton value={false}>Мои</ToggleButton>
+                                <ToggleButton value={true}>Все</ToggleButton>
+                            </ToggleButtonGroup>
 
-                    <Button variant="outlined" startIcon={<TodayIcon />} onClick={handleToday} size="small">
-                        Today
-                    </Button>
+                            <Button variant="outlined" startIcon={<TodayIcon />} onClick={handleToday} size="small">
+                                Today
+                            </Button>
 
-                    <Box display="flex" alignItems="center" bgcolor="white" borderRadius={1} border="1px solid #e5e7eb">
-                        <IconButton onClick={handlePrev} size="small">
-                            <ChevronLeftIcon />
-                        </IconButton>
-                        <Typography variant="subtitle2" sx={{ px: 1.5, minWidth: 130, textAlign: 'center', fontWeight: 600 }}>
-                            {viewMode === 'week'
-                                ? `${format(calendarDays[0], 'MMM d')} - ${format(calendarDays[6], 'MMM d, yyyy')}`
-                                : format(currentDate, 'MMMM yyyy')
-                            }
-                        </Typography>
-                        <IconButton onClick={handleNext} size="small">
-                            <ChevronRightIcon />
-                        </IconButton>
+                            <Box display="flex" alignItems="center" bgcolor="white" borderRadius={1} border="1px solid #e5e7eb">
+                                <IconButton onClick={handlePrev} size="small">
+                                    <ChevronLeftIcon />
+                                </IconButton>
+                                <Typography variant="subtitle2" sx={{ px: 1.5, minWidth: 130, textAlign: 'center', fontWeight: 600 }}>
+                                    {viewMode === 'week'
+                                        ? `${format(calendarDays[0], 'MMM d')} - ${format(calendarDays[6], 'MMM d, yyyy')}`
+                                        : format(currentDate, 'MMMM yyyy')
+                                    }
+                                </Typography>
+                                <IconButton onClick={handleNext} size="small">
+                                    <ChevronRightIcon />
+                                </IconButton>
+                            </Box>
+
+                            <Tooltip title="Export to iCal">
+                                <IconButton onClick={handleExportICal} size="small">
+                                    <DownloadIcon />
+                                </IconButton>
+                            </Tooltip>
+                        </Box>
                     </Box>
 
-                    <Tooltip title="Export to iCal">
-                        <IconButton onClick={handleExportICal} size="small">
-                            <DownloadIcon />
-                        </IconButton>
-                    </Tooltip>
-                </Box>
-            </Box>
-
-            {/* Status Legend */}
-            <Box display="flex" gap={0.5} mb={1.5} flexWrap="wrap">
-                {GTD_COLUMNS.filter(c => taskCounts[c.id]).map(col => (
-                    <Chip
-                        key={col.id}
-                        label={`${col.title} (${taskCounts[col.id] || 0})`}
-                        size="small"
-                        sx={{
-                            bgcolor: STATUS_COLORS[col.id].bg,
-                            borderColor: STATUS_COLORS[col.id].border,
-                            color: STATUS_COLORS[col.id].text,
-                            border: '1px solid',
-                            fontSize: '0.7rem',
-                            height: 24,
-                        }}
-                    />
-                ))}
-            </Box>
-
-            {/* Calendar Grid */}
-            <Paper elevation={0} sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column', border: '1px solid #e5e7eb', borderRadius: 2, overflow: 'hidden' }}>
-                {/* Weekday Headers */}
-                <Box display="grid" gridTemplateColumns="repeat(7, 1fr)" bgcolor="#f9fafb" borderBottom="1px solid #e5e7eb">
-                    {['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'].map(day => (
-                        <Box key={day} p={1} textAlign="center">
-                            <Typography variant="caption" fontWeight="bold" color="text.secondary">
-                                {day}
-                            </Typography>
-                        </Box>
-                    ))}
-                </Box>
-
-                {/* Days */}
-                <Box display="grid" gridTemplateColumns="repeat(7, 1fr)" flexGrow={1} sx={{ overflowY: 'auto' }}>
-                    {calendarDays.map((day, index) => {
-                        const dayTasks = getTasksForDay(day);
-                        const isCurrentMonth = isSameMonth(day, currentDate);
-                        const isToday = isSameDay(day, new Date());
-                        const hasOverdue = dayTasks.some(isOverdue);
-
-                        return (
-                            <Box
-                                key={day.toISOString()}
-                                onClick={() => handleDayClick(day)}
+                    {/* Status Legend */}
+                    <Box display="flex" gap={0.5} mb={1.5} flexWrap="wrap">
+                        {GTD_COLUMNS.filter(c => taskCounts[c.id]).map(col => (
+                            <Chip
+                                key={col.id}
+                                label={`${col.title} (${taskCounts[col.id] || 0})`}
+                                size="small"
                                 sx={{
-                                    borderRight: (index + 1) % 7 === 0 ? 'none' : '1px solid #e5e7eb',
-                                    borderBottom: '1px solid #e5e7eb',
-                                    bgcolor: isCurrentMonth ? 'white' : '#f9fafb',
-                                    minHeight: viewMode === 'week' ? 200 : 90,
-                                    p: 0.5,
-                                    display: 'flex',
-                                    flexDirection: 'column',
-                                    cursor: 'pointer',
-                                    transition: 'background 0.15s',
-                                    '&:hover': { bgcolor: '#f0f9ff' },
-                                    ...(hasOverdue && { borderLeft: '3px solid #ef4444' }),
+                                    bgcolor: STATUS_COLORS[col.id].bg,
+                                    borderColor: STATUS_COLORS[col.id].border,
+                                    color: STATUS_COLORS[col.id].text,
+                                    border: '1px solid',
+                                    fontSize: '0.7rem',
+                                    height: 24,
                                 }}
-                            >
-                                {/* Day Header */}
-                                <Box display="flex" justifyContent="space-between" alignItems="center" mb={0.25}>
-                                    <Typography
-                                        variant="caption"
+                            />
+                        ))}
+                    </Box>
+
+                    {/* Calendar Grid */}
+                    <Paper elevation={0} sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column', border: '1px solid #e5e7eb', borderRadius: 2, overflow: 'hidden' }}>
+                        {/* Weekday Headers */}
+                        <Box display="grid" gridTemplateColumns="repeat(7, 1fr)" bgcolor="#f9fafb" borderBottom="1px solid #e5e7eb">
+                            {['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'].map(day => (
+                                <Box key={day} p={1} textAlign="center">
+                                    <Typography variant="caption" fontWeight="bold" color="text.secondary">
+                                        {day}
+                                    </Typography>
+                                </Box>
+                            ))}
+                        </Box>
+
+                        {/* Days */}
+                        <Box display="grid" gridTemplateColumns="repeat(7, 1fr)" flexGrow={1} sx={{ overflowY: 'auto' }}>
+                            {calendarDays.map((day, index) => {
+                                const dayTasks = getTasksForDay(day);
+                                const isCurrentMonth = isSameMonth(day, currentDate);
+                                const isToday = isSameDay(day, new Date());
+                                const hasOverdue = dayTasks.some(isOverdue);
+
+                                return (
+                                    <Box
+                                        key={day.toISOString()}
+                                        onClick={() => handleDayClick(day)}
                                         sx={{
-                                            fontWeight: isToday ? 'bold' : 'normal',
-                                            color: isToday ? 'white' : (isCurrentMonth ? 'text.primary' : 'text.disabled'),
-                                            bgcolor: isToday ? 'primary.main' : 'transparent',
-                                            width: 20,
-                                            height: 20,
-                                            borderRadius: '50%',
+                                            borderRight: (index + 1) % 7 === 0 ? 'none' : '1px solid #e5e7eb',
+                                            borderBottom: '1px solid #e5e7eb',
+                                            bgcolor: isCurrentMonth ? 'white' : '#f9fafb',
+                                            minHeight: viewMode === 'week' ? 200 : 90,
+                                            p: 0.5,
                                             display: 'flex',
-                                            alignItems: 'center',
-                                            justifyContent: 'center',
-                                            fontSize: '0.65rem',
+                                            flexDirection: 'column',
+                                            cursor: 'pointer',
+                                            transition: 'background 0.15s',
+                                            '&:hover': { bgcolor: '#f0f9ff' },
+                                            ...(hasOverdue && { borderLeft: '3px solid #ef4444' }),
                                         }}
                                     >
-                                        {format(day, 'd')}
-                                    </Typography>
-                                    {dayTasks.length > 0 && (
-                                        <Chip
-                                            label={dayTasks.length}
-                                            size="small"
-                                            onClick={(e) => handleDayDetail(day, e)}
-                                            sx={{ height: 16, fontSize: '0.6rem', cursor: 'pointer' }}
-                                        />
-                                    )}
-                                </Box>
+                                        {/* Day Header */}
+                                        <Box display="flex" justifyContent="space-between" alignItems="center" mb={0.25}>
+                                            <Typography
+                                                variant="caption"
+                                                sx={{
+                                                    fontWeight: isToday ? 'bold' : 'normal',
+                                                    color: isToday ? 'white' : (isCurrentMonth ? 'text.primary' : 'text.disabled'),
+                                                    bgcolor: isToday ? 'primary.main' : 'transparent',
+                                                    width: 20,
+                                                    height: 20,
+                                                    borderRadius: '50%',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'center',
+                                                    fontSize: '0.65rem',
+                                                }}
+                                            >
+                                                {format(day, 'd')}
+                                            </Typography>
+                                            {dayTasks.length > 0 && (
+                                                <Chip
+                                                    label={dayTasks.length}
+                                                    size="small"
+                                                    onClick={(e) => handleDayDetail(day, e)}
+                                                    sx={{ height: 16, fontSize: '0.6rem', cursor: 'pointer' }}
+                                                />
+                                            )}
+                                        </Box>
 
-                                {/* Tasks */}
-                                <Box sx={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: 0.25 }}>
-                                    {dayTasks.slice(0, viewMode === 'week' ? 10 : 3).map(task => {
+                                        {/* Tasks */}
+                                        <Box sx={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: 0.25 }}>
+                                            {dayTasks.slice(0, viewMode === 'week' ? 10 : 3).map(task => {
+                                                const colors = STATUS_COLORS[task.status];
+                                                const taskOverdue = isOverdue(task);
+
+                                                return (
+                                                    <Tooltip key={task.id} title={`${task.title}${task.clientId ? ` • ${clientsMap[task.clientId]?.name || ''}` : ''}`} arrow>
+                                                        <Box
+                                                            onClick={(e) => handleTaskClick(task, e)}
+                                                            sx={{
+                                                                px: 0.5,
+                                                                py: 0.25,
+                                                                borderRadius: 0.5,
+                                                                bgcolor: taskOverdue ? '#fef2f2' : colors.bg,
+                                                                borderLeft: `3px solid ${taskOverdue ? '#ef4444' : colors.border}`,
+                                                                cursor: 'pointer',
+                                                                '&:hover': { opacity: 0.8 },
+                                                                display: 'flex',
+                                                                alignItems: 'center',
+                                                                gap: 0.25,
+                                                            }}
+                                                        >
+                                                            {taskOverdue && <WarningIcon sx={{ fontSize: 10, color: '#ef4444' }} />}
+                                                            <Typography
+                                                                variant="caption"
+                                                                noWrap
+                                                                sx={{
+                                                                    fontSize: '0.6rem',
+                                                                    color: taskOverdue ? '#991b1b' : colors.text,
+                                                                    fontWeight: 500,
+                                                                    flex: 1,
+                                                                }}
+                                                            >
+                                                                {task.title}
+                                                            </Typography>
+                                                        </Box>
+                                                    </Tooltip>
+                                                );
+                                            })}
+                                            {dayTasks.length > (viewMode === 'week' ? 10 : 3) && (
+                                                <Typography
+                                                    variant="caption"
+                                                    color="primary"
+                                                    sx={{ fontSize: '0.55rem', pl: 0.5, cursor: 'pointer' }}
+                                                    onClick={(e) => handleDayDetail(day, e)}
+                                                >
+                                                    +{dayTasks.length - (viewMode === 'week' ? 10 : 3)} more
+                                                </Typography>
+                                            )}
+                                        </Box>
+                                    </Box>
+                                );
+                            })}
+                        </Box>
+                    </Paper>
+
+                    {/* Quick Add Dialog */}
+                    <Dialog open={quickAddOpen} onClose={() => setQuickAddOpen(false)} maxWidth="xs" fullWidth>
+                        <DialogTitle>
+                            <AddIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
+                            Quick Add Task
+                            {quickAddDate && (
+                                <Chip label={format(quickAddDate, 'MMM d, yyyy')} size="small" sx={{ ml: 1 }} />
+                            )}
+                        </DialogTitle>
+                        <DialogContent>
+                            <TextField
+                                autoFocus
+                                fullWidth
+                                label="Task Title"
+                                value={quickAddTitle}
+                                onChange={(e) => setQuickAddTitle(e.target.value)}
+                                onKeyPress={(e) => e.key === 'Enter' && handleQuickAddSave()}
+                                sx={{ mt: 1 }}
+                            />
+                        </DialogContent>
+                        <DialogActions>
+                            <Button onClick={() => setQuickAddOpen(false)}>Cancel</Button>
+                            <Button onClick={handleQuickAddSave} variant="contained" disabled={!quickAddTitle.trim()}>
+                                Add Task
+                            </Button>
+                        </DialogActions>
+                    </Dialog>
+
+                    {/* Day Detail Dialog */}
+                    <Dialog open={dayDetailOpen} onClose={() => setDayDetailOpen(false)} maxWidth="sm" fullWidth>
+                        <DialogTitle>
+                            📅 {selectedDay && format(selectedDay, 'EEEE, MMMM d, yyyy')}
+                        </DialogTitle>
+                        <DialogContent>
+                            {selectedDay && (
+                                <List>
+                                    {getTasksForDay(selectedDay).map(task => {
                                         const colors = STATUS_COLORS[task.status];
                                         const taskOverdue = isOverdue(task);
 
                                         return (
-                                            <Tooltip key={task.id} title={`${task.title}${task.clientId ? ` • ${clientsMap[task.clientId]?.name || ''}` : ''}`} arrow>
-                                                <Box
-                                                    onClick={(e) => handleTaskClick(task, e)}
-                                                    sx={{
-                                                        px: 0.5,
-                                                        py: 0.25,
-                                                        borderRadius: 0.5,
-                                                        bgcolor: taskOverdue ? '#fef2f2' : colors.bg,
-                                                        borderLeft: `3px solid ${taskOverdue ? '#ef4444' : colors.border}`,
-                                                        cursor: 'pointer',
-                                                        '&:hover': { opacity: 0.8 },
-                                                        display: 'flex',
-                                                        alignItems: 'center',
-                                                        gap: 0.25,
-                                                    }}
-                                                >
-                                                    {taskOverdue && <WarningIcon sx={{ fontSize: 10, color: '#ef4444' }} />}
-                                                    <Typography
-                                                        variant="caption"
-                                                        noWrap
-                                                        sx={{
-                                                            fontSize: '0.6rem',
-                                                            color: taskOverdue ? '#991b1b' : colors.text,
-                                                            fontWeight: 500,
-                                                            flex: 1,
-                                                        }}
-                                                    >
-                                                        {task.title}
-                                                    </Typography>
-                                                </Box>
-                                            </Tooltip>
+                                            <ListItemButton
+                                                key={task.id}
+                                                onClick={() => {
+                                                    setDayDetailOpen(false);
+                                                    setSelectedTask(task);
+                                                    setIsDialogOpen(true);
+                                                }}
+                                                sx={{
+                                                    bgcolor: taskOverdue ? '#fef2f2' : colors.bg,
+                                                    borderLeft: `4px solid ${taskOverdue ? '#ef4444' : colors.border}`,
+                                                    mb: 1,
+                                                    borderRadius: 1,
+                                                }}
+                                            >
+                                                <ListItemIcon>
+                                                    {taskOverdue ? <WarningIcon color="error" /> : <AccessTimeIcon />}
+                                                </ListItemIcon>
+                                                <ListItemText
+                                                    primary={task.title}
+                                                    secondary={
+                                                        <>
+                                                            {task.clientId && clientsMap[task.clientId]?.name && `👤 ${clientsMap[task.clientId].name} • `}
+                                                            <Chip label={task.status} size="small" sx={{ height: 18, fontSize: '0.65rem' }} />
+                                                        </>
+                                                    }
+                                                />
+                                            </ListItemButton>
                                         );
                                     })}
-                                    {dayTasks.length > (viewMode === 'week' ? 10 : 3) && (
-                                        <Typography
-                                            variant="caption"
-                                            color="primary"
-                                            sx={{ fontSize: '0.55rem', pl: 0.5, cursor: 'pointer' }}
-                                            onClick={(e) => handleDayDetail(day, e)}
-                                        >
-                                            +{dayTasks.length - (viewMode === 'week' ? 10 : 3)} more
+                                    {selectedDay && getTasksForDay(selectedDay).length === 0 && (
+                                        <Typography color="text.secondary" textAlign="center" py={2}>
+                                            No tasks for this day
                                         </Typography>
                                     )}
-                                </Box>
-                            </Box>
-                        );
-                    })}
-                </Box>
-            </Paper>
-
-            {/* Quick Add Dialog */}
-            <Dialog open={quickAddOpen} onClose={() => setQuickAddOpen(false)} maxWidth="xs" fullWidth>
-                <DialogTitle>
-                    <AddIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
-                    Quick Add Task
-                    {quickAddDate && (
-                        <Chip label={format(quickAddDate, 'MMM d, yyyy')} size="small" sx={{ ml: 1 }} />
-                    )}
-                </DialogTitle>
-                <DialogContent>
-                    <TextField
-                        autoFocus
-                        fullWidth
-                        label="Task Title"
-                        value={quickAddTitle}
-                        onChange={(e) => setQuickAddTitle(e.target.value)}
-                        onKeyPress={(e) => e.key === 'Enter' && handleQuickAddSave()}
-                        sx={{ mt: 1 }}
-                    />
-                </DialogContent>
-                <DialogActions>
-                    <Button onClick={() => setQuickAddOpen(false)}>Cancel</Button>
-                    <Button onClick={handleQuickAddSave} variant="contained" disabled={!quickAddTitle.trim()}>
-                        Add Task
-                    </Button>
-                </DialogActions>
-            </Dialog>
-
-            {/* Day Detail Dialog */}
-            <Dialog open={dayDetailOpen} onClose={() => setDayDetailOpen(false)} maxWidth="sm" fullWidth>
-                <DialogTitle>
-                    📅 {selectedDay && format(selectedDay, 'EEEE, MMMM d, yyyy')}
-                </DialogTitle>
-                <DialogContent>
-                    {selectedDay && (
-                        <List>
-                            {getTasksForDay(selectedDay).map(task => {
-                                const colors = STATUS_COLORS[task.status];
-                                const taskOverdue = isOverdue(task);
-
-                                return (
-                                    <ListItemButton
-                                        key={task.id}
-                                        onClick={() => {
-                                            setDayDetailOpen(false);
-                                            setSelectedTask(task);
-                                            setIsDialogOpen(true);
-                                        }}
-                                        sx={{
-                                            bgcolor: taskOverdue ? '#fef2f2' : colors.bg,
-                                            borderLeft: `4px solid ${taskOverdue ? '#ef4444' : colors.border}`,
-                                            mb: 1,
-                                            borderRadius: 1,
-                                        }}
-                                    >
-                                        <ListItemIcon>
-                                            {taskOverdue ? <WarningIcon color="error" /> : <AccessTimeIcon />}
-                                        </ListItemIcon>
-                                        <ListItemText
-                                            primary={task.title}
-                                            secondary={
-                                                <>
-                                                    {task.clientId && clientsMap[task.clientId]?.name && `👤 ${clientsMap[task.clientId].name} • `}
-                                                    <Chip label={task.status} size="small" sx={{ height: 18, fontSize: '0.65rem' }} />
-                                                </>
-                                            }
-                                        />
-                                    </ListItemButton>
-                                );
-                            })}
-                            {selectedDay && getTasksForDay(selectedDay).length === 0 && (
-                                <Typography color="text.secondary" textAlign="center" py={2}>
-                                    No tasks for this day
-                                </Typography>
+                                </List>
                             )}
-                        </List>
-                    )}
-                </DialogContent>
-                <DialogActions>
-                    <Button onClick={() => setDayDetailOpen(false)}>Close</Button>
-                    <Button
-                        variant="contained"
-                        startIcon={<AddIcon />}
-                        onClick={() => {
-                            setDayDetailOpen(false);
-                            if (selectedDay) handleDayClick(selectedDay);
-                        }}
-                    >
-                        Add Task
-                    </Button>
-                </DialogActions>
-            </Dialog>
+                        </DialogContent>
+                        <DialogActions>
+                            <Button onClick={() => setDayDetailOpen(false)}>Close</Button>
+                            <Button
+                                variant="contained"
+                                startIcon={<AddIcon />}
+                                onClick={() => {
+                                    setDayDetailOpen(false);
+                                    if (selectedDay) handleDayClick(selectedDay);
+                                }}
+                            >
+                                Add Task
+                            </Button>
+                        </DialogActions>
+                    </Dialog>
 
-            {/* Edit Dialog */}
-            {selectedTask && (
-                <GTDEditDialog
-                    open={isDialogOpen}
-                    onClose={() => setIsDialogOpen(false)}
-                    task={selectedTask}
-                    onSave={handleUpdateTask}
-                    onDelete={handleDeleteTask}
-                />
-            )}
-        </Container>
+                    {/* Edit Dialog */}
+                    {selectedTask && (
+                        <GTDEditDialog
+                            open={isDialogOpen}
+                            onClose={() => setIsDialogOpen(false)}
+                            task={selectedTask}
+                            onSave={handleUpdateTask}
+                            onDelete={handleDeleteTask}
+                        />
+                    )}
+                </Paper>
+            </Container>
+        </Box>
     );
 };
 
 export default CalendarPage;
+

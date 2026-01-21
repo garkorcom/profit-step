@@ -3,6 +3,7 @@ import * as admin from 'firebase-admin';
 import axios from 'axios';
 import * as crypto from 'crypto';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { findNearbyProject, saveProjectLocation, updateLocationLastUsed } from '../../utils/geoUtils';
 
 // Initialize in the file if not already initialized
 if (admin.apps.length === 0) {
@@ -160,7 +161,13 @@ async function handleMessage(message: any) {
     } else if (text === '⏩ Skip') {
         await handleSkipMedia(chatId, userId);
     } else if (message.photo || message.document || message.video) {
-        await handleMediaUpload(chatId, userId, message);
+        // NEW: Check if this is an unsolicited photo (no active session)
+        const activeSessionForMedia = await getActiveSession(userId);
+        if (!activeSessionForMedia && message.photo) {
+            await handleUnsolicitedPhoto(chatId, userId, message);
+        } else {
+            await handleMediaUpload(chatId, userId, message);
+        }
     } else if (message.voice) {
         await handleVoiceMessage(chatId, userId, message);
     } else if (message.location) {
@@ -220,6 +227,17 @@ async function handleCallbackQuery(query: any) {
         } else if (data.startsWith('tasks:')) {
             const status = data.split(':')[1];
             await sendTaskList(chatId, userId, status);
+        }
+        // --- LOCATION FLOW HANDLERS (Photo-First) ---
+        else if (data === 'location_confirm_start') {
+            await handleLocationConfirmStart(chatId, userId);
+        } else if (data === 'location_pick_other') {
+            await handleLocationPickOther(chatId, userId);
+        } else if (data === 'location_cancel') {
+            await handleLocationCancel(chatId, userId);
+        } else if (data.startsWith('location_new_client_')) {
+            const clientId = data.split('location_new_client_')[1];
+            await handleLocationNewClient(chatId, userId, clientId);
         }
     } catch (error) {
         console.error('Error in handleCallbackQuery:', error);
@@ -453,6 +471,67 @@ async function initWorkSession(chatId: number, userId: number, clientId: string,
 async function handleLocation(chatId: number, userId: number, location: any) {
     const activeSession = await getActiveSession(userId);
 
+    // --- CASE 1: Awaiting location for photo-first flow ---
+    const pendingPhotoRef = db.collection('pending_photos').doc(String(userId));
+    const pendingPhotoDoc = await pendingPhotoRef.get();
+
+    if (pendingPhotoDoc.exists) {
+        // pendingData available for future use
+        const { latitude, longitude } = location;
+
+        // Try to find matching project by location
+        const matchedProject = await findNearbyProject(latitude, longitude);
+
+        if (matchedProject) {
+            // Found a match! Show confirmation
+            await updateLocationLastUsed(matchedProject.id);
+
+            // Store match for callback
+            await pendingPhotoRef.update({
+                matchedProjectId: matchedProject.id,
+                matchedClientId: matchedProject.clientId,
+                matchedClientName: matchedProject.clientName,
+                matchedServiceName: matchedProject.serviceName || null,
+                location: location
+            });
+
+            const serviceSuffix = matchedProject.serviceName ? ` - ${matchedProject.serviceName}` : '';
+            await sendMessage(chatId,
+                `📍 *Локация определена!*\n\n` +
+                `🏢 Проект: *${matchedProject.clientName}${serviceSuffix}*\n\n` +
+                `Начать работу здесь?`,
+                {
+                    inline_keyboard: [
+                        [{ text: '✅ Да, начать', callback_data: 'location_confirm_start' }],
+                        [{ text: '🔄 Другой проект', callback_data: 'location_pick_other' }],
+                        [{ text: '❌ Отмена', callback_data: 'location_cancel' }]
+                    ]
+                }
+            );
+        } else {
+            // No match - ask to select project and save new location
+            await pendingPhotoRef.update({ location: location });
+
+            await sendMessage(chatId,
+                `📍 *Новая локация!*\n\nЭта локация не найдена в базе.\nВыбери проект, чтобы сохранить её:`,
+                { remove_keyboard: true }
+            );
+
+            // Show client list with special callback for saving location
+            const snapshot = await db.collection('clients').orderBy('createdAt', 'desc').limit(10).get();
+            if (!snapshot.empty) {
+                const inlineKeyboard = snapshot.docs.map(doc => {
+                    const client = doc.data();
+                    return [{ text: client.name, callback_data: `location_new_client_${doc.id}` }];
+                });
+                inlineKeyboard.push([{ text: '❌ Отмена', callback_data: 'location_cancel' }]);
+                await sendMessage(chatId, '🏢 Выбери проект:', { inline_keyboard: inlineKeyboard });
+            }
+        }
+        return;
+    }
+
+    // --- CASE 2: Traditional flow (awaiting location after client selection) ---
     if (activeSession && activeSession.data().awaitingLocation) {
         // Save location and move to next step
         await activeSession.ref.update({
@@ -461,10 +540,222 @@ async function handleLocation(chatId: number, userId: number, location: any) {
             awaitingStartPhoto: true
         });
 
-        await sendMessage(chatId, "✅ Location verified.\n\n📸 Now please send a **photo** of the start condition.", { remove_keyboard: true }); // Remove special location keyboard if any
+        await sendMessage(chatId, "✅ Location verified.\n\n📸 Now please send a **photo** of the start condition.", { remove_keyboard: true });
     } else {
         await sendMessage(chatId, "Updated location received.", { remove_keyboard: true });
     }
+}
+
+/**
+ * Handle photo sent without an active session (Photo-First Flow).
+ * Saves photo temporarily and asks for location.
+ */
+async function handleUnsolicitedPhoto(chatId: number, userId: number, message: any) {
+    const fileId = message.photo[message.photo.length - 1].file_id;
+
+    // Save photo temporarily
+    const url = await saveTelegramFile(fileId, `pending_photos/${userId}/photo_${Date.now()}.jpg`);
+
+    // Store pending photo data
+    await db.collection('pending_photos').doc(String(userId)).set({
+        fileId: fileId,
+        url: url,
+        userId: userId,
+        chatId: chatId,
+        createdAt: admin.firestore.Timestamp.now()
+    });
+
+    await sendMessage(chatId,
+        `📸 *Фото получено!*\n\n` +
+        `📍 Теперь отправь свою *локацию*, чтобы я определил проект.`,
+        {
+            keyboard: [[{ text: '📍 Отправить локацию', request_location: true }], [{ text: '❌ Отмена' }]],
+            resize_keyboard: true
+        }
+    );
+}
+
+/**
+ * User confirmed auto-detected project - start session.
+ */
+async function handleLocationConfirmStart(chatId: number, userId: number) {
+    const pendingPhotoRef = db.collection('pending_photos').doc(String(userId));
+    const pendingPhotoDoc = await pendingPhotoRef.get();
+
+    if (!pendingPhotoDoc.exists) {
+        await sendMessage(chatId, "⚠️ Нет ожидающих фото.", { remove_keyboard: true });
+        return;
+    }
+
+    const data = pendingPhotoDoc.data()!;
+    const clientId = data.matchedClientId;
+    const clientName = data.matchedClientName;
+    const serviceName = data.matchedServiceName;
+    const photoUrl = data.url;
+    const location = data.location;
+
+    // Create session directly (skip location step since we have it)
+    const platformUser = await findPlatformUser(userId);
+    let employeeName = 'Worker';
+    let platformUserId = null;
+    let companyId = null;
+    let hourlyRate = 0;
+
+    if (platformUser) {
+        employeeName = platformUser.displayName || 'Worker';
+        platformUserId = platformUser.id;
+        companyId = platformUser.companyId;
+        hourlyRate = platformUser.hourlyRate || 0;
+    }
+
+    await db.collection('work_sessions').add({
+        employeeId: userId,
+        employeeName: employeeName,
+        platformUserId: platformUserId,
+        companyId: companyId,
+        clientId: clientId,
+        clientName: serviceName ? `${clientName} - ${serviceName}` : clientName,
+        startTime: admin.firestore.FieldValue.serverTimestamp(),
+        status: 'active',
+        service: serviceName || null,
+        startLocation: location,
+        startPhotoUrl: photoUrl,
+        awaitingLocation: false,
+        awaitingStartPhoto: false,
+        awaitingStartVoice: true, // Go to voice step
+        hourlyRate: hourlyRate,
+        photoFirstFlow: true // Mark as photo-first
+    });
+
+    // Cleanup pending photo
+    await pendingPhotoRef.delete();
+
+    await sendMessage(chatId,
+        `✅ *Смена начата!*\n\n` +
+        `🏢 Проект: *${clientName}${serviceName ? ' - ' + serviceName : ''}*\n\n` +
+        `🎙 Запиши голосовое: *Что планируешь делать?*`,
+        {
+            keyboard: [[{ text: '⏩ Skip' }]],
+            resize_keyboard: true
+        }
+    );
+
+    await sendAdminNotification(`▶️ *Work Started (Auto)*\n👤 ${employeeName}\n📍 ${clientName}`);
+}
+
+/**
+ * User wants to pick a different project than auto-detected.
+ */
+async function handleLocationPickOther(chatId: number, userId: number) {
+    const snapshot = await db.collection('clients').orderBy('createdAt', 'desc').limit(10).get();
+
+    if (snapshot.empty) {
+        await sendMessage(chatId, "No clients found.");
+        return;
+    }
+
+    const inlineKeyboard = snapshot.docs.map(doc => {
+        const client = doc.data();
+        return [{ text: client.name, callback_data: `location_new_client_${doc.id}` }];
+    });
+    inlineKeyboard.push([{ text: '❌ Отмена', callback_data: 'location_cancel' }]);
+
+    await sendMessage(chatId, '🏢 Выбери проект:', { inline_keyboard: inlineKeyboard });
+}
+
+/**
+ * Cancel the photo-first flow.
+ */
+async function handleLocationCancel(chatId: number, userId: number) {
+    const pendingPhotoRef = db.collection('pending_photos').doc(String(userId));
+    await pendingPhotoRef.delete();
+
+    await sendMessage(chatId, "❌ Отменено.", { remove_keyboard: true });
+    await sendMainMenu(chatId);
+}
+
+/**
+ * User selected a new client for the photo-first flow.
+ * Save the location to project_locations and start session.
+ */
+async function handleLocationNewClient(chatId: number, userId: number, clientId: string) {
+    const pendingPhotoRef = db.collection('pending_photos').doc(String(userId));
+    const pendingPhotoDoc = await pendingPhotoRef.get();
+
+    if (!pendingPhotoDoc.exists) {
+        await sendMessage(chatId, "⚠️ Нет ожидающих фото.");
+        return;
+    }
+
+    const pendingData = pendingPhotoDoc.data()!;
+    const location = pendingData.location;
+    const photoUrl = pendingData.url;
+
+    // Get client info
+    const clientDoc = await db.collection('clients').doc(clientId).get();
+    if (!clientDoc.exists) {
+        await sendMessage(chatId, "⚠️ Клиент не найден.");
+        return;
+    }
+    const clientData = clientDoc.data()!;
+    const clientName = clientData.name;
+
+    // Save new location to project_locations
+    await saveProjectLocation(
+        clientId,
+        clientName,
+        location.latitude,
+        location.longitude,
+        userId
+    );
+
+    // Create session
+    const platformUser = await findPlatformUser(userId);
+    let employeeName = 'Worker';
+    let platformUserId = null;
+    let companyId = null;
+    let hourlyRate = 0;
+
+    if (platformUser) {
+        employeeName = platformUser.displayName || 'Worker';
+        platformUserId = platformUser.id;
+        companyId = platformUser.companyId;
+        hourlyRate = platformUser.hourlyRate || 0;
+    }
+
+    await db.collection('work_sessions').add({
+        employeeId: userId,
+        employeeName: employeeName,
+        platformUserId: platformUserId,
+        companyId: companyId,
+        clientId: clientId,
+        clientName: clientName,
+        startTime: admin.firestore.FieldValue.serverTimestamp(),
+        status: 'active',
+        startLocation: location,
+        startPhotoUrl: photoUrl,
+        awaitingLocation: false,
+        awaitingStartPhoto: false,
+        awaitingStartVoice: true,
+        hourlyRate: hourlyRate,
+        photoFirstFlow: true
+    });
+
+    // Cleanup
+    await pendingPhotoRef.delete();
+
+    await sendMessage(chatId,
+        `✅ *Смена начата!*\n\n` +
+        `🏢 Проект: *${clientName}*\n` +
+        `📍 Локация сохранена для будущего.\n\n` +
+        `🎙 Запиши голосовое: *Что планируешь делать?*`,
+        {
+            keyboard: [[{ text: '⏩ Skip' }]],
+            resize_keyboard: true
+        }
+    );
+
+    await sendAdminNotification(`▶️ *Work Started (New Location)*\n👤 ${employeeName}\n📍 ${clientName}`);
 }
 
 async function pauseWorkSession(chatId: number, userId: number) {

@@ -26,6 +26,8 @@ import {
     ToggleButton,
     ToggleButtonGroup,
     FormControl,
+    FormControlLabel,
+    Checkbox,
     InputLabel,
     Select,
     MenuItem,
@@ -182,6 +184,7 @@ const GTDQuickAddDialog: React.FC<GTDQuickAddDialogProps> = ({
     const [aiEstimate, setAiEstimate] = useState<AIEstimateResponse | null>(null);
     const [selectedMaterials, setSelectedMaterials] = useState<string[]>([]);
     const [selectedTools, setSelectedTools] = useState<string[]>([]);
+    const [needsEstimate, setNeedsEstimate] = useState(false);
 
     // Quick dates memoized
     const quickDates = useMemo(() => getQuickDates(), []);
@@ -302,7 +305,7 @@ const GTDQuickAddDialog: React.FC<GTDQuickAddDialogProps> = ({
 
             await onAdd(
                 description.trim(),
-                targetColumn,
+                needsEstimate ? 'estimate' : targetColumn,  // Override column if needs estimate
                 selectedClient?.id,
                 assigneeType === 'employee' ? assigneeId : undefined,
                 priority !== 'none' ? priority : undefined,
@@ -331,6 +334,7 @@ const GTDQuickAddDialog: React.FC<GTDQuickAddDialogProps> = ({
                 setAssigneeId('');
                 setStartTime('');
                 setPriority('none');
+                setNeedsEstimate(false);
 
                 // Scroll to top
                 scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
@@ -380,6 +384,7 @@ const GTDQuickAddDialog: React.FC<GTDQuickAddDialogProps> = ({
             next_action: 'Next Actions',
             waiting: 'Waiting For',
             projects: 'Projects',
+            estimate: '📐 Estimate',
             someday: 'Someday',
             done: 'Done',
         };
@@ -619,6 +624,23 @@ const GTDQuickAddDialog: React.FC<GTDQuickAddDialogProps> = ({
                             )}
                         </Box>
                     </Box>
+
+                    {/* Needs Estimate Checkbox */}
+                    <FormControlLabel
+                        control={
+                            <Checkbox
+                                checked={needsEstimate}
+                                onChange={(e) => setNeedsEstimate(e.target.checked)}
+                                sx={{ color: 'warning.main', '&.Mui-checked': { color: 'warning.main' } }}
+                            />
+                        }
+                        label={
+                            <Typography variant="body2" color="text.secondary">
+                                📐 Требует просчёт (отправить в Estimate)
+                            </Typography>
+                        }
+                        sx={{ mt: 1 }}
+                    />
                 </Box>
 
                 {/* ═══════════════════════════════════════

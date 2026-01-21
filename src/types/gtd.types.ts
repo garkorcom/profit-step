@@ -19,10 +19,11 @@ import { Timestamp } from 'firebase/firestore';
  * - next_action: Следующие действия — задачи готовые к выполнению
  * - waiting: Ожидание — задачи, заблокированные внешними факторами
  * - projects: Проекты — многошаговые задачи
+ * - estimate: На просчёт — задачи требующие расчёта времени/стоимости
  * - someday: Когда-нибудь — идеи на будущее
  * - done: Выполнено — завершённые задачи
  */
-export type GTDStatus = 'inbox' | 'next_action' | 'waiting' | 'projects' | 'someday' | 'done';
+export type GTDStatus = 'inbox' | 'next_action' | 'waiting' | 'projects' | 'estimate' | 'someday' | 'done';
 
 /**
  * Приоритеты задач
@@ -205,6 +206,9 @@ export interface GTDTask {
 
     /** Флаг: была ли использована AI-оценка */
     aiEstimateUsed?: boolean;
+
+    /** Флаг: задача требует просчёта (отправить в колонку Estimate) */
+    needsEstimate?: boolean;
 }
 
 /**
@@ -216,6 +220,7 @@ export const GTD_COLUMNS: { id: GTDStatus; title: string }[] = [
     { id: 'next_action', title: 'Next Actions' }, // Следующие действия
     { id: 'projects', title: 'Projects' },     // Проекты (многошаговые)
     { id: 'waiting', title: 'Waiting For' },   // Ожидание
+    { id: 'estimate', title: '📐 Estimate' },  // На просчёт
     { id: 'someday', title: 'Someday / Maybe' }, // Когда-нибудь
     { id: 'done', title: 'Done ✓' }            // Выполнено
 ];

@@ -11,6 +11,7 @@ const initialData: Record<GTDStatus, GTDTask[]> = {
     next_action: [],
     waiting: [],
     projects: [],
+    estimate: [],
     someday: [],
     done: []
 };

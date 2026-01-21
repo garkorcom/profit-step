@@ -27,6 +27,7 @@ const COLUMN_STYLES: Record<GTDStatus, { bg: string; headerBg: string; icon?: Re
     next_action: { bg: '#fef3c7', headerBg: '#fde68a' },
     projects: { bg: '#dbeafe', headerBg: '#bfdbfe' },
     waiting: { bg: '#fce7f3', headerBg: '#fbcfe8' },
+    estimate: { bg: '#fff7ed', headerBg: '#fed7aa' },  // Orange for Estimate
     someday: { bg: '#e0e7ff', headerBg: '#c7d2fe' },
     done: { bg: '#d1fae5', headerBg: '#a7f3d0', icon: <CheckCircleIcon sx={{ fontSize: 18, color: '#059669', mr: 0.5 }} /> }
 };

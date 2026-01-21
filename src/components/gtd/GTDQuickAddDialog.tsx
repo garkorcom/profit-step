@@ -173,7 +173,6 @@ const GTDQuickAddDialog: React.FC<GTDQuickAddDialogProps> = ({
     const [tasksCreated, setTasksCreated] = useState(0);
     const [showUndo, setShowUndo] = useState(false);
     const [showToast, setShowToast] = useState(false);
-    const [showSuggestion, setShowSuggestion] = useState(false);
 
     // Priority (minimal, still available)
     const [priority, setPriority] = useState<GTDPriority>('none');
@@ -227,13 +226,6 @@ const GTDQuickAddDialog: React.FC<GTDQuickAddDialogProps> = ({
 
     const handleTimeSelect = (time: string) => {
         setStartTime(startTime === time ? '' : time);
-    };
-
-    const applySuggestion = () => {
-        setCrewSize(3);
-        setHours('8');
-        setCost(String(8 * 3 * HOURLY_RATE));
-        setShowSuggestion(false);
     };
 
     // AI Estimation Handler
@@ -369,7 +361,6 @@ const GTDQuickAddDialog: React.FC<GTDQuickAddDialogProps> = ({
         setPriority('none');
         setTasksCreated(0);
         setShowUndo(false);
-        setShowSuggestion(false);
         onClose();
     };
 
@@ -381,12 +372,7 @@ const GTDQuickAddDialog: React.FC<GTDQuickAddDialogProps> = ({
         }
     }, [open]);
 
-    // Show suggestion when client is selected
-    useEffect(() => {
-        if (selectedClient && !hours && !cost) {
-            setShowSuggestion(true);
-        }
-    }, [selectedClient, hours, cost]);
+
 
     const getColumnName = (col: GTDStatus): string => {
         const names: Record<GTDStatus, string> = {
@@ -539,7 +525,7 @@ const GTDQuickAddDialog: React.FC<GTDQuickAddDialogProps> = ({
                                     endAdornment: (
                                         <>
                                             {selectedClient && (
-                                                <IconButton size="small" onClick={() => { setSelectedClient(null); setShowSuggestion(false); }}>
+                                                <IconButton size="small" onClick={() => setSelectedClient(null)}>
                                                     <ClearIcon fontSize="small" />
                                                 </IconButton>
                                             )}
@@ -557,34 +543,6 @@ const GTDQuickAddDialog: React.FC<GTDQuickAddDialogProps> = ({
                             </li>
                         )}
                     />
-
-                    {/* Suggestion Banner */}
-                    {showSuggestion && (
-                        <Button
-                            onClick={applySuggestion}
-                            fullWidth
-                            sx={{
-                                mt: 1.5,
-                                justifyContent: 'flex-start',
-                                textAlign: 'left',
-                                bgcolor: 'warning.50',
-                                border: 1,
-                                borderColor: 'warning.200',
-                                borderRadius: 2,
-                                py: 1,
-                                '&:hover': { bgcolor: 'warning.100' },
-                            }}
-                        >
-                            <Box>
-                                <Typography variant="caption" fontWeight={600} color="warning.dark">
-                                    💡 Применить типичные значения
-                                </Typography>
-                                <Typography variant="caption" color="warning.main" display="block">
-                                    3 человека · 8 часов · ${8 * 3 * HOURLY_RATE}
-                                </Typography>
-                            </Box>
-                        </Button>
-                    )}
                 </Box>
 
                 {/* Description */}

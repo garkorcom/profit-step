@@ -62,17 +62,23 @@ const GTDFilterBuilder: React.FC<GTDFilterBuilderProps> = ({ filters, onChange, 
         onChange(filters.map(f => {
             if (f.id !== id) return f;
 
-            // Should reset value if property changes potentially, but let's keep it simple
+            // Handle property change with proper typing
             if (field === 'property') {
-                // Reset defaults based on property
+                const newProperty = value as FilterProperty;
                 return {
                     ...f,
-                    [field]: value,
-                    value: value === 'status' ? 'inbox' : (value === 'priority' ? 'high' : '')
+                    property: newProperty,
+                    value: newProperty === 'status' ? 'inbox' : (newProperty === 'priority' ? 'high' : '')
                 };
             }
 
-            return { ...f, [field]: value };
+            // Handle operator change
+            if (field === 'operator') {
+                return { ...f, operator: value as FilterOperator };
+            }
+
+            // Handle value change
+            return { ...f, value };
         }));
     };
 

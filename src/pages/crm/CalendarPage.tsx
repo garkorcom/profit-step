@@ -1,56 +1,103 @@
+/**
+ * @fileoverview GTD Task Calendar
+ * 
+ * Modern calendar view for GTD tasks with:
+ * - Tasks displayed by dueDate or startDate
+ * - Color-coded by status
+ * - Click to edit functionality
+ * - Month navigation
+ */
+
 import React, { useState, useEffect, useMemo } from 'react';
-import { Box, Container, Typography, Paper, Grid, IconButton, Button, Tooltip, Chip, CircularProgress } from '@mui/material';
-import { collection, query, where, onSnapshot, Timestamp } from 'firebase/firestore';
+import {
+    Box,
+    Container,
+    Typography,
+    Paper,
+    IconButton,
+    Button,
+    Tooltip,
+    Chip,
+    CircularProgress,
+    ToggleButtonGroup,
+    ToggleButton,
+} from '@mui/material';
+import { collection, query, where, onSnapshot, or } from 'firebase/firestore';
 import { db } from '../../firebase/firebase';
-import { startOfMonth, endOfMonth, startOfWeek, endOfWeek, eachDayOfInterval, format, isSameMonth, isSameDay, addMonths, subMonths, parseISO } from 'date-fns';
+import { useAuth } from '../../auth/AuthContext';
+import {
+    startOfMonth,
+    endOfMonth,
+    startOfWeek,
+    endOfWeek,
+    eachDayOfInterval,
+    format,
+    isSameMonth,
+    isSameDay,
+    addMonths,
+    subMonths,
+    parseISO,
+    isValid,
+} from 'date-fns';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import TodayIcon from '@mui/icons-material/Today';
-import RefreshIcon from '@mui/icons-material/Refresh';
-import LeadDetailsDialog from '../../components/crm/LeadDetailsDialog';
+import { GTDTask, GTDStatus, GTD_COLUMNS } from '../../types/gtd.types';
+import GTDEditDialog from '../../components/gtd/GTDEditDialog';
+import { doc, updateDoc, deleteDoc } from 'firebase/firestore';
 
-// Interface matching the one in DealsPage
-interface Lead {
-    id: string;
-    name: string;
-    phone: string;
-    service: string;
-    status: 'new' | 'contacted' | 'quote_sent' | 'won' | 'lost';
-    createdAt: Timestamp;
-    preferred_date?: string; // YYYY-MM-DD
-    preferred_time?: string; // HH:MM
-    notes?: { text: string; date: Timestamp }[];
-    email?: string;
-    value?: number;
-    source?: string;
-    briefing?: string;
-    aiAnalysis?: any;
-}
+// Status colors for calendar display
+const STATUS_COLORS: Record<GTDStatus, { bg: string; border: string; text: string }> = {
+    inbox: { bg: '#f3f4f6', border: '#d1d5db', text: '#374151' },
+    next_action: { bg: '#fef3c7', border: '#fcd34d', text: '#92400e' },
+    projects: { bg: '#dbeafe', border: '#93c5fd', text: '#1e40af' },
+    waiting: { bg: '#fce7f3', border: '#f9a8d4', text: '#9d174d' },
+    estimate: { bg: '#fff7ed', border: '#fdba74', text: '#c2410c' },
+    someday: { bg: '#e0e7ff', border: '#a5b4fc', text: '#3730a3' },
+    done: { bg: '#d1fae5', border: '#6ee7b7', text: '#065f46' },
+};
 
 const CalendarPage: React.FC = () => {
+    const { currentUser } = useAuth();
     const [currentDate, setCurrentDate] = useState(new Date());
-    const [leads, setLeads] = useState<Lead[]>([]);
+    const [tasks, setTasks] = useState<GTDTask[]>([]);
     const [loading, setLoading] = useState(true);
-    const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
+    const [selectedTask, setSelectedTask] = useState<GTDTask | null>(null);
     const [isDialogOpen, setIsDialogOpen] = useState(false);
+    const [showAllTasks, setShowAllTasks] = useState(false);
 
-    // Fetch leads with preferred_date
+    // Fetch GTD tasks with dueDate or startDate
     useEffect(() => {
-        const q = query(collection(db, 'leads'), where('preferred_date', '!=', null));
-        const unsubscribe = onSnapshot(q, (snapshot) => {
-            const leadsData = snapshot.docs.map((doc) => ({
-                id: doc.id,
-                ...doc.data(),
-            })) as Lead[];
-            setLeads(leadsData);
+        if (!currentUser) return;
+
+        // Query: tasks where user is owner OR assignee, with dueDate or startDate
+        const baseQuery = showAllTasks
+            ? query(collection(db, 'gtd_tasks'))
+            : query(
+                collection(db, 'gtd_tasks'),
+                or(
+                    where('ownerId', '==', currentUser.uid),
+                    where('assigneeId', '==', currentUser.uid)
+                )
+            );
+
+        const unsubscribe = onSnapshot(baseQuery, (snapshot) => {
+            const tasksData = snapshot.docs
+                .map((doc) => ({
+                    id: doc.id,
+                    ...doc.data(),
+                } as GTDTask))
+                .filter(t => t.dueDate || t.startDate); // Only tasks with dates
+
+            setTasks(tasksData);
             setLoading(false);
         }, (error) => {
-            console.error("Error fetching calendar leads:", error);
+            console.error("Error fetching calendar tasks:", error);
             setLoading(false);
         });
 
         return () => unsubscribe();
-    }, []);
+    }, [currentUser, showAllTasks]);
 
     // Generate calendar days
     const calendarDays = useMemo(() => {
@@ -59,65 +106,153 @@ const CalendarPage: React.FC = () => {
         const startDate = startOfWeek(monthStart);
         const endDate = endOfWeek(monthEnd);
 
-        return eachDayOfInterval({
-            start: startDate,
-            end: endDate,
-        });
+        return eachDayOfInterval({ start: startDate, end: endDate });
     }, [currentDate]);
 
     const handlePrevMonth = () => setCurrentDate(subMonths(currentDate, 1));
     const handleNextMonth = () => setCurrentDate(addMonths(currentDate, 1));
     const handleToday = () => setCurrentDate(new Date());
 
-    const handleLeadClick = (lead: Lead) => {
-        setSelectedLead(lead);
+    const handleTaskClick = (task: GTDTask) => {
+        setSelectedTask(task);
         setIsDialogOpen(true);
     };
 
-    const getLeadsForDay = (day: Date) => {
-        const dateStr = format(day, 'yyyy-MM-dd');
-        return leads.filter(lead => lead.preferred_date === dateStr);
+    const handleUpdateTask = async (taskId: string, data: Partial<GTDTask>) => {
+        try {
+            await updateDoc(doc(db, 'gtd_tasks', taskId), data);
+            setIsDialogOpen(false);
+        } catch (error) {
+            console.error('Failed to update task:', error);
+        }
     };
 
+    const handleDeleteTask = async (taskId: string) => {
+        try {
+            await deleteDoc(doc(db, 'gtd_tasks', taskId));
+            setIsDialogOpen(false);
+        } catch (error) {
+            console.error('Failed to delete task:', error);
+        }
+    };
+
+    // Get tasks for a specific day
+    const getTasksForDay = (day: Date): GTDTask[] => {
+        return tasks.filter(task => {
+            // Check dueDate first, then startDate
+            const dateField = task.dueDate || task.startDate;
+            if (!dateField) return false;
+
+            // Handle Firestore Timestamp or string
+            let taskDate: Date;
+            if (typeof dateField === 'string') {
+                taskDate = parseISO(dateField);
+            } else if ((dateField as any).toDate) {
+                taskDate = (dateField as any).toDate();
+            } else {
+                taskDate = new Date(dateField as any);
+            }
+
+            return isValid(taskDate) && isSameDay(taskDate, day);
+        });
+    };
+
+    // Count tasks by status
+    const taskCounts = useMemo(() => {
+        const counts: Record<string, number> = {};
+        tasks.forEach(t => {
+            counts[t.status] = (counts[t.status] || 0) + 1;
+        });
+        return counts;
+    }, [tasks]);
+
+    if (loading) {
+        return (
+            <Box display="flex" justifyContent="center" alignItems="center" height="100vh">
+                <CircularProgress />
+            </Box>
+        );
+    }
+
     return (
-        <Container maxWidth="xl" sx={{ py: 4, height: 'calc(100vh - 64px)', display: 'flex', flexDirection: 'column' }}>
+        <Container maxWidth="xl" sx={{ py: 3, height: 'calc(100vh - 64px)', display: 'flex', flexDirection: 'column' }}>
             {/* Header */}
-            <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
+            <Box display="flex" justifyContent="space-between" alignItems="center" mb={2} flexWrap="wrap" gap={2}>
                 <Box display="flex" alignItems="center" gap={2}>
-                    <Typography variant="h4" fontWeight="bold">
-                        Call Calendar
+                    <Typography variant="h5" fontWeight="bold">
+                        📅 Task Calendar
                     </Typography>
-                    <Chip label={`${leads.length} Scheduled`} color="primary" size="small" />
+                    <Chip
+                        label={`${tasks.length} Tasks`}
+                        color="primary"
+                        size="small"
+                    />
                 </Box>
 
-                <Box display="flex" alignItems="center" gap={1}>
-                    <Button variant="outlined" startIcon={<TodayIcon />} onClick={handleToday}>
+                <Box display="flex" alignItems="center" gap={1} flexWrap="wrap">
+                    {/* View Toggle */}
+                    <ToggleButtonGroup
+                        value={showAllTasks}
+                        exclusive
+                        onChange={(_, val) => val !== null && setShowAllTasks(val)}
+                        size="small"
+                    >
+                        <ToggleButton value={false}>Мои</ToggleButton>
+                        <ToggleButton value={true}>Все</ToggleButton>
+                    </ToggleButtonGroup>
+
+                    <Button variant="outlined" startIcon={<TodayIcon />} onClick={handleToday} size="small">
                         Today
                     </Button>
+
                     <Box display="flex" alignItems="center" bgcolor="white" borderRadius={1} border="1px solid #e5e7eb">
-                        <IconButton onClick={handlePrevMonth}>
+                        <IconButton onClick={handlePrevMonth} size="small">
                             <ChevronLeftIcon />
                         </IconButton>
-                        <Typography variant="h6" sx={{ px: 2, minWidth: 150, textAlign: 'center' }}>
+                        <Typography variant="subtitle1" sx={{ px: 2, minWidth: 140, textAlign: 'center', fontWeight: 600 }}>
                             {format(currentDate, 'MMMM yyyy')}
                         </Typography>
-                        <IconButton onClick={handleNextMonth}>
+                        <IconButton onClick={handleNextMonth} size="small">
                             <ChevronRightIcon />
                         </IconButton>
                     </Box>
-                    <IconButton onClick={() => setLoading(true)} disabled={loading}>
-                        <RefreshIcon />
-                    </IconButton>
                 </Box>
             </Box>
 
+            {/* Status Legend */}
+            <Box display="flex" gap={1} mb={2} flexWrap="wrap">
+                {GTD_COLUMNS.filter(c => taskCounts[c.id]).map(col => (
+                    <Chip
+                        key={col.id}
+                        label={`${col.title} (${taskCounts[col.id] || 0})`}
+                        size="small"
+                        sx={{
+                            bgcolor: STATUS_COLORS[col.id].bg,
+                            borderColor: STATUS_COLORS[col.id].border,
+                            color: STATUS_COLORS[col.id].text,
+                            border: '1px solid',
+                        }}
+                    />
+                ))}
+            </Box>
+
             {/* Calendar Grid */}
-            <Paper elevation={0} sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column', border: '1px solid #e5e7eb', borderRadius: 2, overflow: 'hidden' }}>
+            <Paper
+                elevation={0}
+                sx={{
+                    flexGrow: 1,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    border: '1px solid #e5e7eb',
+                    borderRadius: 2,
+                    overflow: 'hidden'
+                }}
+            >
                 {/* Weekday Headers */}
                 <Box display="grid" gridTemplateColumns="repeat(7, 1fr)" bgcolor="#f9fafb" borderBottom="1px solid #e5e7eb">
-                    {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
-                        <Box key={day} p={2} textAlign="center">
-                            <Typography variant="subtitle2" fontWeight="bold" color="text.secondary">
+                    {['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'].map(day => (
+                        <Box key={day} p={1.5} textAlign="center">
+                            <Typography variant="caption" fontWeight="bold" color="text.secondary">
                                 {day}
                             </Typography>
                         </Box>
@@ -127,7 +262,7 @@ const CalendarPage: React.FC = () => {
                 {/* Days */}
                 <Box display="grid" gridTemplateColumns="repeat(7, 1fr)" flexGrow={1} sx={{ overflowY: 'auto' }}>
                     {calendarDays.map((day, index) => {
-                        const dayLeads = getLeadsForDay(day);
+                        const dayTasks = getTasksForDay(day);
                         const isCurrentMonth = isSameMonth(day, currentDate);
                         const isToday = isSameDay(day, new Date());
 
@@ -138,76 +273,93 @@ const CalendarPage: React.FC = () => {
                                     borderRight: (index + 1) % 7 === 0 ? 'none' : '1px solid #e5e7eb',
                                     borderBottom: '1px solid #e5e7eb',
                                     bgcolor: isCurrentMonth ? 'white' : '#f9fafb',
-                                    minHeight: 120,
-                                    p: 1,
+                                    minHeight: 100,
+                                    p: 0.5,
                                     display: 'flex',
                                     flexDirection: 'column',
-                                    gap: 0.5
                                 }}
                             >
-                                <Box display="flex" justifyContent="space-between" alignItems="center" mb={1}>
+                                {/* Day Number */}
+                                <Box display="flex" justifyContent="flex-start" mb={0.5}>
                                     <Typography
-                                        variant="body2"
+                                        variant="caption"
                                         sx={{
                                             fontWeight: isToday ? 'bold' : 'normal',
                                             color: isToday ? 'white' : (isCurrentMonth ? 'text.primary' : 'text.disabled'),
                                             bgcolor: isToday ? 'primary.main' : 'transparent',
-                                            width: 24,
-                                            height: 24,
+                                            width: 22,
+                                            height: 22,
                                             borderRadius: '50%',
                                             display: 'flex',
                                             alignItems: 'center',
-                                            justifyContent: 'center'
+                                            justifyContent: 'center',
+                                            fontSize: '0.7rem',
                                         }}
                                     >
                                         {format(day, 'd')}
                                     </Typography>
                                 </Box>
 
-                                {dayLeads.map(lead => (
-                                    <Tooltip key={lead.id} title={`${lead.name} - ${lead.service}`}>
-                                        <Box
-                                            onClick={() => handleLeadClick(lead)}
-                                            sx={{
-                                                p: 0.5,
-                                                px: 1,
-                                                borderRadius: 1,
-                                                bgcolor: lead.status === 'new' ? '#eff6ff' : '#f3f4f6',
-                                                border: '1px solid',
-                                                borderColor: lead.status === 'new' ? '#bfdbfe' : '#e5e7eb',
-                                                cursor: 'pointer',
-                                                '&:hover': { bgcolor: '#dbeafe' },
-                                                fontSize: '0.75rem',
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                gap: 0.5
-                                            }}
-                                        >
-                                            <Box
-                                                sx={{
-                                                    width: 6,
-                                                    height: 6,
-                                                    borderRadius: '50%',
-                                                    bgcolor: lead.preferred_time ? '#10b981' : '#9ca3af'
-                                                }}
-                                            />
-                                            <Typography variant="caption" noWrap fontWeight="medium">
-                                                {lead.preferred_time || 'Anytime'} - {lead.name}
-                                            </Typography>
-                                        </Box>
-                                    </Tooltip>
-                                ))}
+                                {/* Tasks */}
+                                <Box sx={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: 0.25 }}>
+                                    {dayTasks.slice(0, 3).map(task => {
+                                        const colors = STATUS_COLORS[task.status];
+                                        return (
+                                            <Tooltip key={task.id} title={task.title} arrow>
+                                                <Box
+                                                    onClick={() => handleTaskClick(task)}
+                                                    sx={{
+                                                        px: 0.5,
+                                                        py: 0.25,
+                                                        borderRadius: 0.5,
+                                                        bgcolor: colors.bg,
+                                                        borderLeft: `3px solid ${colors.border}`,
+                                                        cursor: 'pointer',
+                                                        '&:hover': {
+                                                            opacity: 0.8,
+                                                            transform: 'scale(1.02)',
+                                                        },
+                                                        transition: 'all 0.15s',
+                                                    }}
+                                                >
+                                                    <Typography
+                                                        variant="caption"
+                                                        noWrap
+                                                        sx={{
+                                                            fontSize: '0.65rem',
+                                                            color: colors.text,
+                                                            fontWeight: 500,
+                                                            display: 'block',
+                                                        }}
+                                                    >
+                                                        {task.title}
+                                                    </Typography>
+                                                </Box>
+                                            </Tooltip>
+                                        );
+                                    })}
+                                    {dayTasks.length > 3 && (
+                                        <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.6rem', pl: 0.5 }}>
+                                            +{dayTasks.length - 3} more
+                                        </Typography>
+                                    )}
+                                </Box>
                             </Box>
                         );
                     })}
                 </Box>
             </Paper>
 
-            <LeadDetailsDialog
-                open={isDialogOpen}
-                onClose={() => setIsDialogOpen(false)}
-                lead={selectedLead}
-            />
+            {/* Edit Dialog */}
+            {selectedTask && (
+                <GTDEditDialog
+                    open={isDialogOpen}
+                    onClose={() => setIsDialogOpen(false)}
+                    task={selectedTask}
+                    onSave={handleUpdateTask}
+                    onDelete={handleDeleteTask}
+                />
+            )}
         </Container>
     );
 };

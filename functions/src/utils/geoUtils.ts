@@ -119,3 +119,40 @@ export async function updateLocationLastUsed(locationId: string): Promise<void> 
         lastUsed: admin.firestore.Timestamp.now()
     });
 }
+
+/**
+ * Extract GPS coordinates from photo EXIF metadata.
+ * Works only with original photos (sent as documents), not compressed ones.
+ * 
+ * @param fileBuffer - Raw photo file buffer
+ * @returns GPS coordinates or null if not found
+ */
+export async function extractGPSFromPhoto(fileBuffer: Buffer): Promise<{ latitude: number; longitude: number } | null> {
+    try {
+        // Dynamic import to handle missing types
+        const ExifParser = require('exif-parser');
+
+        const parser = ExifParser.create(fileBuffer);
+        const result = parser.parse();
+
+        // Check for GPS data in tags
+        if (result.tags && result.tags.GPSLatitude !== undefined && result.tags.GPSLongitude !== undefined) {
+            const latitude = result.tags.GPSLatitude;
+            const longitude = result.tags.GPSLongitude;
+
+            // Validate coordinates
+            if (typeof latitude === 'number' && typeof longitude === 'number' &&
+                latitude >= -90 && latitude <= 90 &&
+                longitude >= -180 && longitude <= 180) {
+                console.log(`📍 EXIF GPS found: ${latitude}, ${longitude}`);
+                return { latitude, longitude };
+            }
+        }
+
+        console.log('📍 No GPS in EXIF metadata');
+        return null;
+    } catch (error) {
+        console.log('📍 EXIF parsing failed:', error);
+        return null;
+    }
+}

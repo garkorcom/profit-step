@@ -548,26 +548,117 @@ async function handleLocation(chatId: number, userId: number, location: any) {
 
 /**
  * Handle photo sent without an active session (Photo-First Flow).
- * Saves photo temporarily and asks for location.
+ * Tries to extract GPS from EXIF metadata first.
+ * If GPS found → auto-detect project (skip location request).
+ * If no GPS → ask for location.
  */
 async function handleUnsolicitedPhoto(chatId: number, userId: number, message: any) {
     const fileId = message.photo[message.photo.length - 1].file_id;
 
-    // Save photo temporarily
+    // Import extractGPSFromPhoto
+    const { extractGPSFromPhoto } = await import('../../utils/geoUtils');
+
+    // Get file path from Telegram
+    const fileInfoResponse = await axios.get(
+        `https://api.telegram.org/bot${WORKER_BOT_TOKEN}/getFile?file_id=${fileId}`
+    );
+    const filePath = fileInfoResponse.data.result.file_path;
+
+    // Download file as buffer to check EXIF
+    const fileResponse = await axios.get(
+        `https://api.telegram.org/file/bot${WORKER_BOT_TOKEN}/${filePath}`,
+        { responseType: 'arraybuffer' }
+    );
+    const fileBuffer = Buffer.from(fileResponse.data);
+
+    // Try to extract GPS from EXIF
+    const exifGPS = await extractGPSFromPhoto(fileBuffer);
+
+    // Save photo to storage
     const url = await saveTelegramFile(fileId, `pending_photos/${userId}/photo_${Date.now()}.jpg`);
 
-    // Store pending photo data
+    if (exifGPS) {
+        // GPS found in EXIF! Try to auto-detect project
+        const matchedProject = await findNearbyProject(exifGPS.latitude, exifGPS.longitude);
+
+        if (matchedProject) {
+            // Found a match! Show confirmation
+            await updateLocationLastUsed(matchedProject.id);
+
+            // Store for callback
+            await db.collection('pending_photos').doc(String(userId)).set({
+                fileId: fileId,
+                url: url,
+                userId: userId,
+                chatId: chatId,
+                location: exifGPS,
+                matchedProjectId: matchedProject.id,
+                matchedClientId: matchedProject.clientId,
+                matchedClientName: matchedProject.clientName,
+                matchedServiceName: matchedProject.serviceName || null,
+                createdAt: admin.firestore.Timestamp.now(),
+                gpsSource: 'exif'
+            });
+
+            const serviceSuffix = matchedProject.serviceName ? ` - ${matchedProject.serviceName}` : '';
+            await sendMessage(chatId,
+                `📍 *Локация из фото!*\n\n` +
+                `🏢 Проект: *${matchedProject.clientName}${serviceSuffix}*\n\n` +
+                `Начать работу здесь?`,
+                {
+                    inline_keyboard: [
+                        [{ text: '✅ Да, начать', callback_data: 'location_confirm_start' }],
+                        [{ text: '🔄 Другой проект', callback_data: 'location_pick_other' }],
+                        [{ text: '❌ Отмена', callback_data: 'location_cancel' }]
+                    ]
+                }
+            );
+            return;
+        } else {
+            // GPS found but no matching project → save for new location
+            await db.collection('pending_photos').doc(String(userId)).set({
+                fileId: fileId,
+                url: url,
+                userId: userId,
+                chatId: chatId,
+                location: exifGPS,
+                createdAt: admin.firestore.Timestamp.now(),
+                gpsSource: 'exif'
+            });
+
+            await sendMessage(chatId,
+                `📍 *GPS из фото получен!*\n\n` +
+                `Эта локация не найдена в базе.\nВыбери проект:`,
+                { remove_keyboard: true }
+            );
+
+            // Show client list
+            const snapshot = await db.collection('clients').orderBy('createdAt', 'desc').limit(10).get();
+            if (!snapshot.empty) {
+                const inlineKeyboard = snapshot.docs.map(doc => {
+                    const client = doc.data();
+                    return [{ text: client.name, callback_data: `location_new_client_${doc.id}` }];
+                });
+                inlineKeyboard.push([{ text: '❌ Отмена', callback_data: 'location_cancel' }]);
+                await sendMessage(chatId, '🏢 Выбери проект:', { inline_keyboard: inlineKeyboard });
+            }
+            return;
+        }
+    }
+
+    // No GPS in EXIF → ask for location (original flow)
     await db.collection('pending_photos').doc(String(userId)).set({
         fileId: fileId,
         url: url,
         userId: userId,
         chatId: chatId,
-        createdAt: admin.firestore.Timestamp.now()
+        createdAt: admin.firestore.Timestamp.now(),
+        gpsSource: null
     });
 
     await sendMessage(chatId,
         `📸 *Фото получено!*\n\n` +
-        `📍 Теперь отправь свою *локацию*, чтобы я определил проект.`,
+        `📍 GPS не найден в фото.\nОтправь свою *локацию*.`,
         {
             keyboard: [[{ text: '📍 Отправить локацию', request_location: true }], [{ text: '❌ Отмена' }]],
             resize_keyboard: true

@@ -80,6 +80,7 @@ const GTDEditDialog: React.FC<GTDEditDialogProps> = ({ open, onClose, task, onSa
     const [users, setUsers] = useState<UserProfile[]>([]);
     const [clients, setClients] = useState<Client[]>([]);
     const [expanded, setExpanded] = useState<boolean>(false);
+    const [resourcesExpanded, setResourcesExpanded] = useState<boolean>(false); // Collapsed by default
 
     // AI & Resources State
     const [aiLoading, setAiLoading] = useState(false);
@@ -121,24 +122,27 @@ const GTDEditDialog: React.FC<GTDEditDialogProps> = ({ open, onClose, task, onSa
                 description: task.description || '',
                 context: task.context || '',
                 clientId: task.clientId || '',
-                assigneeId: task.assigneeId || '',
+                // Default to current user if no assignee
+                assigneeId: task.assigneeId || userProfile?.id || '',
                 status: task.status,
                 priority: task.priority || 'none',
                 dueDate: task.dueDate ? new Date(task.dueDate.seconds * 1000).toISOString().split('T')[0] : '',
                 startDate: task.startDate ? new Date(task.startDate.seconds * 1000).toISOString().split('T')[0] : '',
-                estimatedDurationMinutes: task.estimatedDurationMinutes || 0
+                // Default to 60 minutes (1 hour) if 0 or missing
+                estimatedDurationMinutes: task.estimatedDurationMinutes || 60
             });
 
             // Initialize AI-related state from task
             setCrewSize(task.crewSize || 1);
-            setHours(task.estimatedDurationMinutes ? String(task.estimatedDurationMinutes / 60) : '');
+            // Default to '1' hour if missing
+            setHours(task.estimatedDurationMinutes ? String(task.estimatedDurationMinutes / 60) : '1');
             setCost(task.estimatedCost ? String(task.estimatedCost) : '');
             setAiReasoning(task.aiReasoning || '');
             setLocalMaterials(task.selectedMaterials || task.aiMaterials || []);
             setLocalTools(task.selectedTools || task.aiTools || []);
             setHasAiData(!!task.aiEstimateUsed);
         }
-    }, [task, reset]);
+    }, [task, reset, userProfile]);
 
     // AI Estimation Handler
     const handleAIEstimate = async () => {
@@ -432,66 +436,94 @@ const GTDEditDialog: React.FC<GTDEditDialogProps> = ({ open, onClose, task, onSa
                             )}
                         />
 
-                        {/* 5. Resources & Finance */}
-                        <Box sx={{ bgcolor: alpha(theme.palette.grey[500], 0.05), p: 2, borderRadius: 2 }}>
-                            <Typography variant="caption" color="text.secondary" sx={{ mb: 1.5, display: 'block', textTransform: 'uppercase', letterSpacing: 1 }}>
-                                Ресурсы и финансы
-                            </Typography>
-                            <Box sx={{ display: 'flex', gap: 1.5, alignItems: 'center', flexWrap: 'wrap' }}>
-                                {/* Crew Size Stepper */}
-                                <Paper variant="outlined" sx={{ display: 'flex', alignItems: 'center', borderRadius: 2, minWidth: 100 }}>
-                                    <IconButton size="small" onClick={() => setCrewSize(Math.max(1, crewSize - 1))} disabled={crewSize <= 1}>
-                                        <RemoveIcon fontSize="small" />
-                                    </IconButton>
-                                    <Box sx={{ flex: 1, textAlign: 'center', px: 1 }}>
-                                        <Typography variant="body1" fontWeight={600}>{crewSize}</Typography>
-                                        <Typography variant="caption" color="text.secondary">чел</Typography>
+                        {/* 5. Resources & Finance (Accordion) */}
+                        <Accordion expanded={resourcesExpanded} onChange={() => setResourcesExpanded(!resourcesExpanded)} disableGutters elevation={0} sx={{ border: '1px solid #e0e0e0', borderRadius: '8px !important', '&:before': { display: 'none' }, bgcolor: alpha(theme.palette.grey[500], 0.05) }}>
+                            <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', textTransform: 'uppercase', letterSpacing: 1, fontWeight: 'bold' }}>
+                                    Ресурсы и финансы
+                                </Typography>
+                            </AccordionSummary>
+                            <AccordionDetails>
+                                <Box display="flex" flexDirection="column" gap={2}>
+                                    {/* Assignee Selection (Moved here) */}
+                                    <Controller
+                                        name="assigneeId"
+                                        control={control}
+                                        render={({ field }) => (
+                                            <FormControl fullWidth size="small">
+                                                <InputLabel>Исполнитель</InputLabel>
+                                                <Select {...field} label="Исполнитель" displayEmpty>
+                                                    <MenuItem value=""><em>Не назначен</em></MenuItem>
+                                                    {users.map(u => (
+                                                        <MenuItem key={u.id} value={u.id}>
+                                                            <Box display="flex" alignItems="center" gap={1}>
+                                                                <PersonIcon fontSize="small" sx={{ color: 'text.secondary' }} />
+                                                                {u.displayName}
+                                                            </Box>
+                                                        </MenuItem>
+                                                    ))}
+                                                </Select>
+                                            </FormControl>
+                                        )}
+                                    />
+
+                                    <Box sx={{ display: 'flex', gap: 1.5, alignItems: 'center', flexWrap: 'wrap' }}>
+                                        {/* Crew Size Stepper */}
+                                        <Paper variant="outlined" sx={{ display: 'flex', alignItems: 'center', borderRadius: 2, minWidth: 100 }}>
+                                            <IconButton size="small" onClick={() => setCrewSize(Math.max(1, crewSize - 1))} disabled={crewSize <= 1}>
+                                                <RemoveIcon fontSize="small" />
+                                            </IconButton>
+                                            <Box sx={{ flex: 1, textAlign: 'center', px: 1 }}>
+                                                <Typography variant="body1" fontWeight={600}>{crewSize}</Typography>
+                                                <Typography variant="caption" color="text.secondary">чел</Typography>
+                                            </Box>
+                                            <IconButton size="small" onClick={() => setCrewSize(Math.min(20, crewSize + 1))}>
+                                                <AddIcon fontSize="small" />
+                                            </IconButton>
+                                        </Paper>
+
+                                        {/* Hours */}
+                                        <TextField
+                                            type="number"
+                                            inputMode="numeric"
+                                            value={hours}
+                                            onChange={(e) => setHours(e.target.value)}
+                                            placeholder="Часы"
+                                            size="small"
+                                            sx={{ width: 100 }}
+                                            InputProps={{
+                                                endAdornment: <InputAdornment position="end">ч</InputAdornment>
+                                            }}
+                                        />
+
+                                        {/* Cost */}
+                                        <TextField
+                                            type="number"
+                                            inputMode="decimal"
+                                            value={cost}
+                                            onChange={(e) => setCost(e.target.value)}
+                                            placeholder="Стоимость"
+                                            size="small"
+                                            sx={{ width: 120 }}
+                                            InputProps={{
+                                                startAdornment: <InputAdornment position="start">$</InputAdornment>
+                                            }}
+                                        />
+
+                                        {/* Auto-calc hint */}
+                                        {!cost && hours && (
+                                            <Button
+                                                size="small"
+                                                onClick={() => setCost(String(Math.round(Number(hours) * crewSize * HOURLY_RATE)))}
+                                                sx={{ textTransform: 'none', fontSize: '0.75rem' }}
+                                            >
+                                                💡 ${Math.round(Number(hours) * crewSize * HOURLY_RATE)}
+                                            </Button>
+                                        )}
                                     </Box>
-                                    <IconButton size="small" onClick={() => setCrewSize(Math.min(20, crewSize + 1))}>
-                                        <AddIcon fontSize="small" />
-                                    </IconButton>
-                                </Paper>
-
-                                {/* Hours */}
-                                <TextField
-                                    type="number"
-                                    inputMode="numeric"
-                                    value={hours}
-                                    onChange={(e) => setHours(e.target.value)}
-                                    placeholder="Часы"
-                                    size="small"
-                                    sx={{ width: 100 }}
-                                    InputProps={{
-                                        endAdornment: <InputAdornment position="end">ч</InputAdornment>
-                                    }}
-                                />
-
-                                {/* Cost */}
-                                <TextField
-                                    type="number"
-                                    inputMode="decimal"
-                                    value={cost}
-                                    onChange={(e) => setCost(e.target.value)}
-                                    placeholder="Стоимость"
-                                    size="small"
-                                    sx={{ width: 120 }}
-                                    InputProps={{
-                                        startAdornment: <InputAdornment position="start">$</InputAdornment>
-                                    }}
-                                />
-
-                                {/* Auto-calc hint */}
-                                {!cost && hours && (
-                                    <Button
-                                        size="small"
-                                        onClick={() => setCost(String(Math.round(Number(hours) * crewSize * HOURLY_RATE)))}
-                                        sx={{ textTransform: 'none', fontSize: '0.75rem' }}
-                                    >
-                                        💡 ${Math.round(Number(hours) * crewSize * HOURLY_RATE)}
-                                    </Button>
-                                )}
-                            </Box>
-                        </Box>
+                                </Box>
+                            </AccordionDetails>
+                        </Accordion>
 
                         {/* 6. AI Estimation */}
                         <Box sx={{ bgcolor: alpha(theme.palette.primary.main, 0.05), p: 2, borderRadius: 2 }}>
@@ -600,23 +632,8 @@ const GTDEditDialog: React.FC<GTDEditDialogProps> = ({ open, onClose, task, onSa
                             </AccordionSummary>
                             <AccordionDetails>
                                 <Box display="flex" flexDirection="column" gap={2}>
-                                    {/* Assignee & Client Row */}
+                                    {/* Client Only (Assignee moved to Resources) */}
                                     <Box display="flex" gap={2}>
-                                        <Controller
-                                            name="assigneeId"
-                                            control={control}
-                                            render={({ field }) => (
-                                                <FormControl fullWidth size="small">
-                                                    <InputLabel>Assignee</InputLabel>
-                                                    <Select {...field} label="Assignee" displayEmpty>
-                                                        <MenuItem value=""><em>None</em></MenuItem>
-                                                        {users.map(u => (
-                                                            <MenuItem key={u.id} value={u.id}>{u.displayName}</MenuItem>
-                                                        ))}
-                                                    </Select>
-                                                </FormControl>
-                                            )}
-                                        />
                                         <Controller
                                             name="clientId"
                                             control={control}

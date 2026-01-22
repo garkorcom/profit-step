@@ -71,6 +71,7 @@ const GTDEditDialog: React.FC<GTDEditDialogProps> = ({ open, onClose, task, onSa
     const theme = useTheme();
     const { userProfile } = useAuth(); // Corrected usage check
     const { control, handleSubmit, reset, setValue, watch } = useForm<FormData>();
+    const [startTime, setStartTime] = useState<string>('');
     const currentStatus = watch('status');
     const currentPriority = watch('priority');
 
@@ -117,6 +118,8 @@ const GTDEditDialog: React.FC<GTDEditDialogProps> = ({ open, onClose, task, onSa
 
     useEffect(() => {
         if (task) {
+            const startDateTime = task.startDate ? new Date(task.startDate.seconds * 1000) : null;
+
             reset({
                 title: task.title,
                 description: task.description || '',
@@ -127,10 +130,19 @@ const GTDEditDialog: React.FC<GTDEditDialogProps> = ({ open, onClose, task, onSa
                 status: task.status,
                 priority: task.priority || 'none',
                 dueDate: task.dueDate ? new Date(task.dueDate.seconds * 1000).toISOString().split('T')[0] : '',
-                startDate: task.startDate ? new Date(task.startDate.seconds * 1000).toISOString().split('T')[0] : '',
+                startDate: startDateTime ? startDateTime.toISOString().split('T')[0] : '',
                 // Default to 60 minutes (1 hour) if 0 or missing
                 estimatedDurationMinutes: task.estimatedDurationMinutes || 60
             });
+
+            if (startDateTime) {
+                // Extract HH:MM
+                const hh = String(startDateTime.getHours()).padStart(2, '0');
+                const mm = String(startDateTime.getMinutes()).padStart(2, '0');
+                setStartTime(`${hh}:${mm}`);
+            } else {
+                setStartTime('');
+            }
 
             // Initialize AI-related state from task
             setCrewSize(task.crewSize || 1);
@@ -235,7 +247,18 @@ const GTDEditDialog: React.FC<GTDEditDialogProps> = ({ open, onClose, task, onSa
             updates.dueDate = Timestamp.fromDate(new Date(data.dueDate));
         }
         if (data.startDate) {
-            updates.startDate = Timestamp.fromDate(new Date(data.startDate));
+            const dateStr = data.startDate;
+            let dateObj = new Date(dateStr);
+            if (startTime) {
+                const [hh, mm] = startTime.split(':').map(Number);
+                dateObj.setHours(hh, mm);
+            }
+            updates.startDate = Timestamp.fromDate(dateObj);
+        }
+
+        // Handle "Needs Estimate" logic if status is 'estimate'
+        if (data.status === 'estimate') {
+            updates.needsEstimate = true;
         }
 
         // Auto-set completedAt if done
@@ -350,87 +373,22 @@ const GTDEditDialog: React.FC<GTDEditDialogProps> = ({ open, onClose, task, onSa
 
                         {/* 3. Timeline Grid (2x2) */}
                         {/* Use Grid2 as Grid, expecting size prop instead of xs/item */}
-                        <Grid container spacing={2}>
-                            <Grid size={{ xs: 6 }}>
-                                <Controller
-                                    name="startDate"
-                                    control={control}
-                                    render={({ field }) => (
-                                        <TextField
-                                            {...field}
-                                            label="Start Date"
-                                            type="date"
-                                            fullWidth
-                                            size="small"
-                                            InputLabelProps={{ shrink: true }}
-                                            InputProps={{ startAdornment: <PlayArrowIcon fontSize="small" sx={{ mr: 1, color: 'text.secondary' }} /> }}
-                                        />
-                                    )}
-                                />
-                            </Grid>
-                            <Grid size={{ xs: 6 }}>
-                                <Controller
-                                    name="dueDate"
-                                    control={control}
-                                    render={({ field }) => (
-                                        <TextField
-                                            {...field}
-                                            label="Deadline"
-                                            type="date"
-                                            fullWidth
-                                            size="small"
-                                            InputLabelProps={{ shrink: true }}
-                                            error={!!field.value && new Date(field.value) < new Date() && currentStatus !== 'done'}
-                                            InputProps={{ startAdornment: <FlagIcon fontSize="small" sx={{ mr: 1, color: 'error.main' }} /> }}
-                                        />
-                                    )}
-                                />
-                            </Grid>
-                            <Grid size={{ xs: 6 }}>
-                                <Controller
-                                    name="estimatedDurationMinutes"
-                                    control={control}
-                                    render={({ field }) => (
-                                        <TextField
-                                            {...field}
-                                            label="Est. Duration (min)"
-                                            type="number"
-                                            fullWidth
-                                            size="small"
-                                            InputProps={{ startAdornment: <AccessTimeIcon fontSize="small" sx={{ mr: 1, color: 'text.secondary' }} /> }}
-                                        />
-                                    )}
-                                />
-                            </Grid>
-                            <Grid size={{ xs: 6 }}>
-                                {/* Placeholder for Reminder or Priority Summary */}
-                                <Box display="flex" alignItems="center" height="100%" pl={1}>
-                                    <Chip
-                                        label={PRIORITY_OPTIONS.find(p => p.value === currentPriority)?.label || 'No Priority'}
-                                        size="small"
-                                        sx={{
-                                            bgcolor: PRIORITY_OPTIONS.find(p => p.value === currentPriority)?.color + '20',
-                                            color: PRIORITY_OPTIONS.find(p => p.value === currentPriority)?.color,
-                                            fontWeight: 'bold'
-                                        }}
-                                    />
-                                </Box>
-                            </Grid>
-                        </Grid>
+                        {/* 3. Removed old Timeline Grid (Moved to bottom) */}
 
-                        {/* 4. Description */}
+                        {/* 4. Description (Moved Up) */}
                         <Controller
                             name="description"
                             control={control}
+                            rules={{ required: true }}
                             render={({ field }) => (
                                 <TextField
                                     {...field}
-                                    label="Description"
+                                    label="Что нужно сделать? *"
+                                    placeholder="Опишите задачу..."
                                     multiline
                                     rows={3}
                                     fullWidth
                                     variant="outlined"
-                                    size="small"
                                     sx={{ bgcolor: 'background.paper' }}
                                 />
                             )}
@@ -623,6 +581,89 @@ const GTDEditDialog: React.FC<GTDEditDialogProps> = ({ open, onClose, task, onSa
                                     </Box>
                                 </Box>
                             )}
+                        </Box>
+
+                        {/* 6. Estimate Button */}
+                        <Button
+                            variant={currentStatus === 'estimate' ? "contained" : "outlined"}
+                            color="secondary"
+                            fullWidth
+                            onClick={() => setValue('status', 'estimate')}
+                            startIcon={<span style={{ fontSize: '1.2rem' }}>📐</span>}
+                            sx={{ borderStyle: 'dashed', py: 1 }}
+                        >
+                            Требует просчёт (отправить в Estimate)
+                        </Button>
+
+                        {/* 7. When / Timing Section (Reorganized) */}
+                        <Box>
+                            <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block', textTransform: 'uppercase', letterSpacing: 1 }}>
+                                Когда
+                            </Typography>
+                            <Grid container spacing={2}>
+                                <Grid size={{ xs: 6 }}>
+                                    <Controller
+                                        name="startDate"
+                                        control={control}
+                                        render={({ field }) => (
+                                            <TextField
+                                                {...field}
+                                                label="Дата начала"
+                                                type="date"
+                                                fullWidth
+                                                size="small"
+                                                InputLabelProps={{ shrink: true }}
+                                                InputProps={{ startAdornment: <PlayArrowIcon fontSize="small" sx={{ mr: 1, color: 'text.secondary' }} /> }}
+                                            />
+                                        )}
+                                    />
+                                </Grid>
+                                <Grid size={{ xs: 6 }}>
+                                    <TextField
+                                        label="Время начала (опц.)"
+                                        type="time"
+                                        fullWidth
+                                        size="small"
+                                        value={startTime}
+                                        onChange={(e) => setStartTime(e.target.value)}
+                                        InputLabelProps={{ shrink: true }}
+                                    />
+                                </Grid>
+                                <Grid size={{ xs: 6 }}>
+                                    <Controller
+                                        name="dueDate"
+                                        control={control}
+                                        render={({ field }) => (
+                                            <TextField
+                                                {...field}
+                                                label="Дедлайн"
+                                                type="date"
+                                                fullWidth
+                                                size="small"
+                                                InputLabelProps={{ shrink: true }}
+                                                error={!!field.value && new Date(field.value) < new Date() && currentStatus !== 'done'}
+                                                InputProps={{ startAdornment: <FlagIcon fontSize="small" sx={{ mr: 1, color: 'error.main' }} /> }}
+                                            />
+                                        )}
+                                    />
+                                </Grid>
+                                <Grid size={{ xs: 6 }}>
+                                    <Controller
+                                        name="estimatedDurationMinutes"
+                                        control={control}
+                                        render={({ field }) => (
+                                            <TextField
+                                                {...field}
+                                                label="Длительность (мин)"
+                                                type="number"
+                                                fullWidth
+                                                size="small"
+                                                InputProps={{ startAdornment: <AccessTimeIcon fontSize="small" sx={{ mr: 1, color: 'text.secondary' }} /> }}
+                                            />
+                                        )}
+                                    />
+                                </Grid>
+                            </Grid>
                         </Box>
 
                         {/* 7. Accordion (Secondary Fields) */}

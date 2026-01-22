@@ -209,6 +209,12 @@ export interface GTDTask {
 
     /** Флаг: задача требует просчёта (отправить в колонку Estimate) */
     needsEstimate?: boolean;
+
+    /** Тип задачи (для wizard) */
+    taskType?: 'check' | 'do' | 'buy' | 'deliver' | 'call' | 'document' | 'measure' | 'fix' | 'coordinate';
+
+    /** Флаг: требуется транспорт */
+    needsVehicle?: boolean;
 }
 
 /**
@@ -223,4 +229,250 @@ export const GTD_COLUMNS: { id: GTDStatus; title: string }[] = [
     { id: 'estimate', title: '📐 Estimate' },  // На просчёт
     { id: 'someday', title: 'Someday / Maybe' }, // Когда-нибудь
     { id: 'done', title: 'Done ✓' }            // Выполнено
+];
+
+// ═══════════════════════════════════════
+// SMART TASK CONSTRUCTOR v2 (Motion-style)
+// ═══════════════════════════════════════
+
+/**
+ * Группы действий для визуального разделения
+ */
+export type ActionGroup = 'supply' | 'control' | 'execute' | 'communicate';
+
+/**
+ * Маршруты задач — куда падает задача после создания
+ */
+export type TaskRoute = 'shopping' | 'calendar' | 'route' | 'tickets' | 'board' | 'crm';
+
+/**
+ * Типы полей для динамических форм
+ */
+export type FieldType = 'text' | 'number' | 'date' | 'time' | 'select' | 'camera' | 'checklist' | 'location';
+
+/**
+ * Конфигурация поля формы
+ */
+export interface FieldConfig {
+    type: FieldType;
+    label: string;
+    placeholder?: string;
+    required?: boolean;
+}
+
+/**
+ * 12 типов задач для быстрого создания
+ */
+export type TaskType =
+    // Группа А: Снабжение
+    | 'buy' | 'deliver' | 'pickup' | 'move'
+    // Группа Б: Контроль
+    | 'check' | 'measure' | 'photo'
+    // Группа В: Исполнение
+    | 'fix' | 'install' | 'service'
+    // Группа Г: Коммуникация
+    | 'meet' | 'sign';
+
+/**
+ * Полная конфигурация типа задачи v2
+ */
+export interface TaskTypeConfig {
+    emoji: string;
+    label: string;
+    labelShort: string;
+    group: ActionGroup;
+    route: TaskRoute;
+    fields: FieldConfig[];
+    defaults: {
+        estimatedDurationMinutes?: number;
+        crewSize?: number;
+        needsEstimate?: boolean;
+        needsVehicle?: boolean;
+        priority?: GTDPriority;
+        status?: GTDStatus;
+        deadlineToday?: boolean;
+    };
+}
+
+/**
+ * Конфигурация 12 типов задач с группами, маршрутами и динамическими полями
+ */
+export const TASK_TYPE_CONFIG: Record<TaskType, TaskTypeConfig> = {
+    // ═══════════════════════════════════════
+    // ГРУППА А: СНАБЖЕНИЕ (supply)
+    // ═══════════════════════════════════════
+    buy: {
+        emoji: '🛒',
+        label: 'Купить',
+        labelShort: 'Куп',
+        group: 'supply',
+        route: 'shopping',
+        fields: [
+            { type: 'checklist', label: 'Список товаров', required: true },
+            { type: 'number', label: 'Бюджет', placeholder: '$' },
+            { type: 'camera', label: 'Фото образца' },
+        ],
+        defaults: { estimatedDurationMinutes: 60, priority: 'low' }
+    },
+    deliver: {
+        emoji: '🚚',
+        label: 'Привезти',
+        labelShort: 'Прив',
+        group: 'supply',
+        route: 'route',
+        fields: [
+            { type: 'location', label: 'Откуда', required: true },
+            { type: 'text', label: 'Что везём' },
+            { type: 'text', label: 'Контакт на месте' },
+        ],
+        defaults: { needsVehicle: true, estimatedDurationMinutes: 60 }
+    },
+    pickup: {
+        emoji: '📦',
+        label: 'Забрать',
+        labelShort: 'Забр',
+        group: 'supply',
+        route: 'route',
+        fields: [
+            { type: 'text', label: 'Что забрать', required: true },
+            { type: 'location', label: 'Откуда' },
+            { type: 'text', label: 'Контакт' },
+        ],
+        defaults: { needsVehicle: true, estimatedDurationMinutes: 45 }
+    },
+    move: {
+        emoji: '🏗️',
+        label: 'Переместить',
+        labelShort: 'Перем',
+        group: 'supply',
+        route: 'board',
+        fields: [
+            { type: 'text', label: 'Что переместить', required: true },
+            { type: 'text', label: 'Откуда' },
+            { type: 'text', label: 'Куда' },
+        ],
+        defaults: { crewSize: 2, estimatedDurationMinutes: 60 }
+    },
+
+    // ═══════════════════════════════════════
+    // ГРУППА Б: КОНТРОЛЬ (control)
+    // ═══════════════════════════════════════
+    check: {
+        emoji: '📋',
+        label: 'Проверить',
+        labelShort: 'Пров',
+        group: 'control',
+        route: 'calendar',
+        fields: [
+            { type: 'time', label: 'Дедлайн', required: true },
+            { type: 'select', label: 'Исполнитель' },
+            { type: 'checklist', label: 'Чек-лист' },
+        ],
+        defaults: { estimatedDurationMinutes: 30, deadlineToday: true }
+    },
+    measure: {
+        emoji: '📐',
+        label: 'Замерить',
+        labelShort: 'Замер',
+        group: 'control',
+        route: 'crm',
+        fields: [
+            { type: 'number', label: 'Площадь (м²)' },
+            { type: 'number', label: 'Количество (шт)' },
+            { type: 'text', label: 'Комментарий' },
+        ],
+        defaults: { estimatedDurationMinutes: 30, needsEstimate: true }
+    },
+    photo: {
+        emoji: '📸',
+        label: 'Сфотографировать',
+        labelShort: 'Фото',
+        group: 'control',
+        route: 'board',
+        fields: [
+            { type: 'camera', label: 'Фото', required: true },
+            { type: 'text', label: 'Комментарий' },
+        ],
+        defaults: { estimatedDurationMinutes: 15 }
+    },
+
+    // ═══════════════════════════════════════
+    // ГРУППА В: ИСПОЛНЕНИЕ (execute)
+    // ═══════════════════════════════════════
+    fix: {
+        emoji: '🔧',
+        label: 'Починить',
+        labelShort: 'Почин',
+        group: 'execute',
+        route: 'tickets',
+        fields: [
+            { type: 'camera', label: 'Фото проблемы' },
+            { type: 'text', label: 'Описание', required: true },
+            { type: 'select', label: 'Срочность' },
+        ],
+        defaults: { priority: 'high', estimatedDurationMinutes: 60 }
+    },
+    install: {
+        emoji: '⚡',
+        label: 'Установить',
+        labelShort: 'Устан',
+        group: 'execute',
+        route: 'calendar',
+        fields: [
+            { type: 'text', label: 'Что установить', required: true },
+            { type: 'text', label: 'Требования' },
+        ],
+        defaults: { crewSize: 2, needsEstimate: true, estimatedDurationMinutes: 120 }
+    },
+    service: {
+        emoji: '🧹',
+        label: 'Обслужить',
+        labelShort: 'Обсл',
+        group: 'execute',
+        route: 'calendar',
+        fields: [
+            { type: 'text', label: 'Тип работ', required: true },
+            { type: 'select', label: 'Периодичность' },
+        ],
+        defaults: { crewSize: 2, estimatedDurationMinutes: 120 }
+    },
+
+    // ═══════════════════════════════════════
+    // ГРУППА Г: КОММУНИКАЦИЯ (communicate)
+    // ═══════════════════════════════════════
+    meet: {
+        emoji: '🤝',
+        label: 'Встретить',
+        labelShort: 'Встр',
+        group: 'communicate',
+        route: 'calendar',
+        fields: [
+            { type: 'text', label: 'Кого', required: true },
+            { type: 'time', label: 'Когда', required: true },
+            { type: 'text', label: 'Где' },
+        ],
+        defaults: { estimatedDurationMinutes: 30 }
+    },
+    sign: {
+        emoji: '✍️',
+        label: 'Подписать',
+        labelShort: 'Подп',
+        group: 'communicate',
+        route: 'board',
+        fields: [
+            { type: 'text', label: 'Документ', required: true },
+            { type: 'text', label: 'Контрагент' },
+        ],
+        defaults: { estimatedDurationMinutes: 15 }
+    },
+};
+
+/**
+ * Группировка типов по категориям для UI
+ */
+export const ACTION_GROUPS: { id: ActionGroup; label: string; emoji: string; types: TaskType[] }[] = [
+    { id: 'supply', label: 'Снабжение', emoji: '📦', types: ['buy', 'deliver', 'pickup', 'move'] },
+    { id: 'control', label: 'Контроль', emoji: '📋', types: ['check', 'measure', 'photo'] },
+    { id: 'execute', label: 'Исполнение', emoji: '🔧', types: ['fix', 'install', 'service'] },
+    { id: 'communicate', label: 'Коммуникация', emoji: '👥', types: ['meet', 'sign'] },
 ];

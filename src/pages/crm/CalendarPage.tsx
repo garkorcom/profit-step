@@ -29,6 +29,8 @@ import {
     Chip,
     FormControlLabel,
     Switch,
+    useTheme,
+    useMediaQuery,
 } from '@mui/material';
 import { LocalizationProvider, TimePicker } from '@mui/x-date-pickers';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
@@ -84,7 +86,7 @@ const PASTEL_COLORS: Record<GTDStatus, { bg: string; text: string }> = {
     done: { bg: '#DBEDDB', text: '#1C3829' },
 };
 
-type ViewMode = 'month' | 'week' | 'day';
+type ViewMode = 'month' | 'week' | 'day' | 'list';
 
 // --- DRAGGABLE TASK ---
 const DraggableTask: React.FC<{ task: GTDTask; isOverdue: boolean; onClick: () => void }> = ({ task, isOverdue, onClick }) => {
@@ -161,13 +163,29 @@ const HOURS = Array.from({ length: 24 }, (_, i) => i);
 
 const CalendarPage: React.FC = () => {
     const { currentUser } = useAuth();
+    const theme = useTheme();
+    const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
+
     const [currentDate, setCurrentDate] = useState(new Date());
     const [tasks, setTasks] = useState<GTDTask[]>([]);
     const [clients, setClients] = useState<Client[]>([]);
     const [loading, setLoading] = useState(true);
     const [selectedTask, setSelectedTask] = useState<GTDTask | null>(null);
     const [isDialogOpen, setIsDialogOpen] = useState(false);
+
+    // View Mode State
+    // We'll initialize based on device type in useEffect or use a derived default if not set
     const [viewMode, setViewMode] = useState<ViewMode>('month');
+
+    // Effect to set default view for mobile
+    useEffect(() => {
+        if (isMobile) {
+            setViewMode('list');
+        } else {
+            setViewMode('month');
+        }
+    }, [isMobile]);
+
     const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
 
     // Filters
@@ -249,6 +267,13 @@ const CalendarPage: React.FC = () => {
     // Calendar Math
     const calendarDays = useMemo(() => {
         if (viewMode === 'day') return [currentDate];
+        // For list view, we behave like 'month' or 'week'? 
+        // Let's iterate the current month for List View to show a schedule
+        if (viewMode === 'list') {
+            const start = startOfMonth(currentDate);
+            const end = endOfMonth(currentDate);
+            return eachDayOfInterval({ start, end });
+        }
         const start = viewMode === 'week' ? startOfWeek(currentDate) : startOfWeek(startOfMonth(currentDate));
         const end = viewMode === 'week' ? endOfWeek(currentDate) : endOfWeek(endOfMonth(currentDate));
         return eachDayOfInterval({ start, end });
@@ -265,7 +290,7 @@ const CalendarPage: React.FC = () => {
     const handlePrev = () => {
         if (viewMode === 'day') setCurrentDate(subDays(currentDate, 1));
         else if (viewMode === 'week') setCurrentDate(subWeeks(currentDate, 1));
-        else setCurrentDate(subMonths(currentDate, 1));
+        else setCurrentDate(subMonths(currentDate, 1)); // Month & List move by month
     };
     const handleNext = () => {
         if (viewMode === 'day') setCurrentDate(addDays(currentDate, 1));
@@ -403,43 +428,153 @@ const CalendarPage: React.FC = () => {
         );
     };
 
+    // --- LIST VIEW RENDER (MOBILE) ---
+    const renderListView = () => {
+        // Filter out empty days to show a cleaner list, "Agenda" style
+        // Or show all days? Agenda usually skips empty days. 
+        // Let's show all days that match the search/month, but maybe highlight today.
+        // Actually, for "List View" usually we just show days with tasks or consecutive days.
+        // Let's stick to showing the whole month but compact.
+
+        return (
+            <Box flexGrow={1} overflow="auto" px={2} py={1}>
+                {calendarDays.map(day => {
+                    const dayTasks = getTasksForDay(day);
+                    if (dayTasks.length === 0) return null; // Skip empty days for cleaner mobile view? Or keep?
+                    // Let's keep empty days IF it's "today". Otherwise skip? 
+                    // Common pattern: Show header for day, then list items.
+
+                    const isToday = isSameDay(day, new Date());
+
+                    return (
+                        <Box key={day.toISOString()} mb={2}>
+                            <Box display="flex" alignItems="center" gap={1} mb={1} sx={{ opacity: isToday ? 1 : 0.7 }}>
+                                <Typography variant="body1" fontWeight={isToday ? 700 : 600} color={isToday ? 'primary.main' : 'text.primary'}>
+                                    {format(day, 'd MMM')}
+                                </Typography>
+                                <Typography variant="caption" color="text.secondary">
+                                    {format(day, 'EEEE')}
+                                </Typography>
+                                {isToday && <Chip label="Today" size="small" color="primary" sx={{ height: 20, fontSize: '0.65rem' }} />}
+                            </Box>
+
+                            <Box display="flex" flexDirection="column" gap={1}>
+                                {dayTasks.map(task => {
+                                    const style = PASTEL_COLORS[task.status] || PASTEL_COLORS.inbox;
+                                    const taskTime = getTaskDate(task);
+                                    const timeStr = taskTime && typeof task.dueDate !== 'string' ? format(taskTime, 'HH:mm') : 'All Day';
+
+                                    return (
+                                        <Box
+                                            key={task.id}
+                                            onClick={() => { setSelectedTask(task); setIsDialogOpen(true); }}
+                                            sx={{
+                                                bgcolor: 'white',
+                                                border: '1px solid #E0E0E0',
+                                                borderRadius: 2,
+                                                p: 1.5,
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: 1.5,
+                                                boxShadow: '0px 2px 4px rgba(0,0,0,0.02)'
+                                            }}
+                                        >
+                                            <Box
+                                                sx={{
+                                                    minWidth: 4,
+                                                    height: 32,
+                                                    borderRadius: 1,
+                                                    bgcolor: style.bg
+                                                }}
+                                            />
+                                            <Box flexGrow={1}>
+                                                <Typography variant="body2" fontWeight={500}>{task.title}</Typography>
+                                                <Box display="flex" alignItems="center" gap={1}>
+                                                    <Typography variant="caption" color="text.secondary">{timeStr}</Typography>
+                                                    {task.clientName && (
+                                                        <Chip label={task.clientName} size="small" sx={{ height: 16, fontSize: '0.65rem' }} />
+                                                    )}
+                                                </Box>
+                                            </Box>
+                                        </Box>
+                                    );
+                                })}
+                            </Box>
+                        </Box>
+                    );
+                })}
+
+                {/* Empty State for Month */}
+                {filteredTasks.filter(t => isSameMonth(getTaskDate(t) || new Date(), currentDate)).length === 0 && (
+                    <Box display="flex" justifyContent="center" py={4}>
+                        <Typography variant="body2" color="text.secondary">No tasks for this month</Typography>
+                    </Box>
+                )}
+
+                {/* Floating Action Button for Mobile */}
+                {/* We already have quick add on cell click, but on mobile maybe a FAB? 
+                     For now, user can click "Add" in header or we add a FAB. 
+                     Header "Add" is good enough or we can rely on Header.
+                 */}
+            </Box>
+        );
+    };
+
     return (
         <LocalizationProvider dateAdapter={AdapterDateFns}>
             <DndContext collisionDetection={closestCenter} onDragStart={(e) => setDraggedTaskId(e.active.id as string)} onDragEnd={handleDragEnd}>
                 <Box sx={{ height: '100vh', display: 'flex', flexDirection: 'column', bgcolor: '#ffffff', color: '#37352F' }}>
                     {/* --- HEADER --- */}
-                    <Box sx={{ px: 3, py: 1.5, display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #E0E0E0' }}>
-                        <Box display="flex" alignItems="center" gap={2}>
-                            <Typography variant="h6" fontWeight="600" sx={{ letterSpacing: '-0.02em', fontFamily: 'Inter, system-ui, sans-serif' }}>
-                                Calendar
-                            </Typography>
+                    <Box sx={{
+                        px: 2,
+                        py: 1.5,
+                        display: 'flex',
+                        flexDirection: isMobile ? 'column' : 'row',
+                        alignItems: isMobile ? 'stretch' : 'center',
+                        justifyContent: 'space-between',
+                        borderBottom: '1px solid #E0E0E0',
+                        gap: isMobile ? 2 : 0
+                    }}>
+                        {/* Top Row (Mobile): Title + Navigation */}
+                        <Box display="flex" alignItems="center" justifyContent="space-between" width={isMobile ? '100%' : 'auto'}>
+                            <Box display="flex" alignItems="center" gap={1}>
+                                <Typography variant="h6" fontWeight="600" sx={{ letterSpacing: '-0.02em', fontFamily: 'Inter, system-ui, sans-serif' }}>
+                                    {isMobile ? format(currentDate, 'MMMM') : 'Calendar'}
+                                </Typography>
+                                {!isMobile && (
+                                    <Typography variant="body1" fontWeight="500" sx={{ minWidth: 160, ml: 2 }}>
+                                        {viewMode === 'day' ? format(currentDate, 'EEEE, MMM d') : format(currentDate, 'MMMM yyyy')}
+                                    </Typography>
+                                )}
+                            </Box>
 
                             <Box display="flex" alignItems="center" bgcolor="#F7F7F5" borderRadius={1} px={0.5}>
                                 <IconButton size="small" onClick={handlePrev}><ChevronLeftIcon fontSize="small" /></IconButton>
-                                <Button onClick={handleToday} sx={{ color: '#37352F', textTransform: 'none', fontWeight: 500, minWidth: 'auto', px: 1.5 }}>Today</Button>
+                                <Button onClick={handleToday} sx={{ color: '#37352F', textTransform: 'none', fontWeight: 500, minWidth: 'auto', px: 1.5 }}>
+                                    {isMobile ? 'T' : 'Today'}
+                                </Button>
                                 <IconButton size="small" onClick={handleNext}><ChevronRightIcon fontSize="small" /></IconButton>
                             </Box>
-
-                            <Typography variant="body1" fontWeight="500" sx={{ minWidth: 180 }}>
-                                {viewMode === 'day' ? format(currentDate, 'EEEE, MMM d, yyyy') : format(currentDate, 'MMMM yyyy')}
-                            </Typography>
                         </Box>
 
-                        <Box display="flex" alignItems="center" gap={1}>
-                            {/* View Switcher: Month / Week / Day */}
+                        {/* Bottom Row (Mobile) or Right Side (Desktop): Controls */}
+                        <Box display="flex" alignItems="center" gap={1} justifyContent={isMobile ? 'space-between' : 'flex-end'} width={isMobile ? '100%' : 'auto'}>
+                            {/* View Switcher */}
                             <Box sx={{ border: '1px solid #E0E0E0', borderRadius: 1, display: 'flex', overflow: 'hidden' }}>
-                                {(['month', 'week', 'day'] as ViewMode[]).map((mode, i) => (
+                                {(isMobile ? ['list', 'day', 'month'] : ['month', 'week', 'day']).map((mode, i) => (
                                     <React.Fragment key={mode}>
                                         {i > 0 && <Box sx={{ width: '1px', bgcolor: '#E0E0E0' }} />}
                                         <Button
                                             size="small"
-                                            onClick={() => setViewMode(mode)}
+                                            onClick={() => setViewMode(mode as ViewMode | 'list')}
                                             sx={{
                                                 bgcolor: viewMode === mode ? '#F7F7F5' : 'transparent',
                                                 color: '#37352F',
                                                 textTransform: 'capitalize',
                                                 borderRadius: 0,
-                                                py: 0.5
+                                                py: 0.5,
+                                                px: isMobile ? 2 : 1.5,
+                                                fontSize: isMobile ? '0.75rem' : '0.875rem'
                                             }}
                                         >
                                             {mode}
@@ -448,27 +583,44 @@ const CalendarPage: React.FC = () => {
                                 ))}
                             </Box>
 
-                            <Button
-                                startIcon={<FilterListIcon fontSize="small" sx={{ color: activeFilters.length ? '#2196f3' : 'inherit' }} />}
-                                endIcon={<KeyboardArrowDownIcon fontSize="small" />}
-                                onClick={(e) => setFilterAnchorEl(e.currentTarget)}
-                                sx={{ color: activeFilters.length ? '#2196f3' : '#37352F', textTransform: 'none', fontWeight: 400, '&:hover': { bgcolor: '#F7F7F5' } }}
-                            >
-                                Filter {activeFilters.length > 0 && `(${activeFilters.length})`}
-                            </Button>
+                            <Box display="flex" gap={0.5}>
+                                <Button
+                                    size={isMobile ? "small" : "medium"}
+                                    startIcon={<FilterListIcon fontSize="small" sx={{ color: activeFilters.length ? '#2196f3' : 'inherit' }} />}
+                                    onClick={(e) => setFilterAnchorEl(e.currentTarget)}
+                                    sx={{
+                                        color: activeFilters.length ? '#2196f3' : '#37352F',
+                                        textTransform: 'none',
+                                        fontWeight: 400,
+                                        '&:hover': { bgcolor: '#F7F7F5' },
+                                        minWidth: isMobile ? 'auto' : 64
+                                    }}
+                                >
+                                    {!isMobile && 'Filter'}
+                                    {activeFilters.length > 0 && ` (${activeFilters.length})`}
+                                </Button>
 
-                            <IconButton size="small" onClick={handleExportICal}><DownloadIcon fontSize="small" sx={{ color: '#9CA3AF' }} /></IconButton>
+                                {!isMobile && (
+                                    <IconButton size="small" onClick={handleExportICal}><DownloadIcon fontSize="small" sx={{ color: '#9CA3AF' }} /></IconButton>
+                                )}
+
+                                <IconButton size="small" onClick={() => handleQuickAdd(new Date(), 9)} sx={{ bgcolor: '#37352F', color: 'white', '&:hover': { bgcolor: '#121212' } }}>
+                                    <AddIcon fontSize="small" />
+                                </IconButton>
+                            </Box>
                         </Box>
                     </Box>
 
                     {/* --- CONTENT --- */}
-                    {viewMode === 'day' ? renderDayView() : (
+                    {viewMode === 'list' ? renderListView() : viewMode === 'day' ? renderDayView() : (
                         <Box display="flex" flexGrow={1} flexDirection="column" sx={{ overflow: 'hidden' }}>
                             {/* Weekday Headers */}
                             <Box display="grid" gridTemplateColumns="repeat(7, 1fr)" borderBottom="1px solid #E0E0E0">
                                 {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(d => (
                                     <Box key={d} py={1} px={2} borderRight="1px solid #E0E0E0" sx={{ '&:last-child': { borderRight: 'none' } }}>
-                                        <Typography variant="caption" fontWeight="600" color="#9CA3AF" sx={{ textTransform: 'uppercase' }}>{d}</Typography>
+                                        <Typography variant="caption" fontWeight="600" color="#9CA3AF" sx={{ textTransform: 'uppercase', fontSize: isMobile ? '0.65rem' : '0.75rem' }}>
+                                            {isMobile ? d.charAt(0) : d}
+                                        </Typography>
                                     </Box>
                                 ))}
                             </Box>
@@ -484,9 +636,9 @@ const CalendarPage: React.FC = () => {
                                             onClick={() => handleQuickAdd(day)}
                                             isCurrentMonth={isSameMonth(day, currentDate)}
                                             isToday={isSameDay(day, new Date())}
-                                            viewMode={viewMode}
+                                            viewMode={viewMode as ViewMode}
                                         >
-                                            {dayTasks.slice(0, 4).map(task => (
+                                            {dayTasks.slice(0, isMobile ? 2 : 4).map(task => (
                                                 <DraggableTask
                                                     key={task.id}
                                                     task={task}
@@ -494,9 +646,9 @@ const CalendarPage: React.FC = () => {
                                                     onClick={() => { setSelectedTask(task); setIsDialogOpen(true); }}
                                                 />
                                             ))}
-                                            {dayTasks.length > 4 && (
+                                            {dayTasks.length > (isMobile ? 2 : 4) && (
                                                 <Typography variant="caption" color="text.secondary" sx={{ cursor: 'pointer' }}>
-                                                    +{dayTasks.length - 4} more
+                                                    +{dayTasks.length - (isMobile ? 2 : 4)}
                                                 </Typography>
                                             )}
                                         </DroppableDayCell>

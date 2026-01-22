@@ -466,6 +466,7 @@ const GTDBoard: React.FC = () => {
                 targetColumn={activeColumn?.id || 'inbox'}
                 clients={clients}
                 users={users}
+                currentUser={currentUser}
             />
 
             {/* Edit Dialog */}

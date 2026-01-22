@@ -328,6 +328,28 @@ service cloud.firestore {
                     resource.data.ownerId == request.auth.uid;
     }
 
+    // Shopping Lists (Quick Shopping Flow)
+    match /shopping_lists/{listId} {
+      // Read: authenticated users can read lists they created or are assigned to
+      allow read: if isSignedIn() && 
+                  (resource.data.createdBy == request.auth.uid ||
+                   resource.data.assignedTo == request.auth.uid ||
+                   isAdmin());
+      
+      // Create: authenticated users can create shopping lists
+      allow create: if isSignedIn();
+      
+      // Update: creator or assignee can update
+      allow update: if isSignedIn() && 
+                    (resource.data.createdBy == request.auth.uid ||
+                     resource.data.assignedTo == request.auth.uid ||
+                     isAdmin());
+      
+      // Delete: only creator or admin
+      allow delete: if isSignedIn() && 
+                    (resource.data.createdBy == request.auth.uid || isAdmin());
+    }
+
     // Work Sessions (Time Tracking)
     match /work_sessions/{sessionId} {
       allow read: if isSignedIn();

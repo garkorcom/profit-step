@@ -54,15 +54,21 @@ import {
     Clear as ClearIcon,
     AutoAwesome as AutoAwesomeIcon,
     Warning as WarningIcon,
+    ExpandMore as ExpandMoreIcon, // Added missing icon
 } from '@mui/icons-material';
 import { estimateTask } from '../../api/aiApi';
 import { AIEstimateResponse } from '../../types/aiEstimate.types';
 import { format, addDays, startOfWeek, isToday, isTomorrow } from 'date-fns';
 import { ru } from 'date-fns/locale';
 
-import { GTDStatus, GTDPriority } from '../../types/gtd.types';
+import { GTDStatus, GTDPriority, TaskType, TASK_TYPE_CONFIG, ACTION_GROUPS } from '../../types/gtd.types';
 import { Client } from '../../types/crm.types';
 import { UserProfile } from '../../types/user.types';
+import DynamicFormField from './DynamicFormField';
+import ShoppingListInput, { ShoppingItem } from './ShoppingListInput';
+import { saveShoppingList } from '../../services/shoppingListService';
+import AuditTaskInput, { AuditTaskPayload } from './AuditTaskInput';
+import RepairTicketInput, { RepairTicketPayload } from './RepairTicketInput';
 
 /** Data from AI estimation to save with task */
 export interface AIEstimateData {
@@ -90,6 +96,7 @@ interface GTDQuickAddDialogProps {
     targetColumn: GTDStatus;
     clients: Client[];
     users: UserProfile[];
+    currentUser?: any;
 }
 
 // Helper: Generate quick date options
@@ -138,6 +145,7 @@ const GTDQuickAddDialog: React.FC<GTDQuickAddDialogProps> = ({
     targetColumn,
     clients,
     users,
+    currentUser,
 }) => {
     const theme = useTheme();
     const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
@@ -150,6 +158,7 @@ const GTDQuickAddDialog: React.FC<GTDQuickAddDialogProps> = ({
     // Assignee
     const [assigneeType, setAssigneeType] = useState<'self' | 'employee'>('self');
     const [assigneeId, setAssigneeId] = useState('');
+    const [resourcesExpanded, setResourcesExpanded] = useState(false); // New state for accordion
 
     // Client
     const [clientInput, setClientInput] = useState('');
@@ -158,7 +167,7 @@ const GTDQuickAddDialog: React.FC<GTDQuickAddDialogProps> = ({
     // Task details
     const [description, setDescription] = useState('');
     const [crewSize, setCrewSize] = useState(2);
-    const [hours, setHours] = useState('');
+    const [hours, setHours] = useState('1');
     const [cost, setCost] = useState('');
 
     // Planning
@@ -185,6 +194,11 @@ const GTDQuickAddDialog: React.FC<GTDQuickAddDialogProps> = ({
     const [selectedMaterials, setSelectedMaterials] = useState<string[]>([]);
     const [selectedTools, setSelectedTools] = useState<string[]>([]);
     const [needsEstimate, setNeedsEstimate] = useState(false);
+    const [taskType, setTaskType] = useState<TaskType | null>(null);
+    const [dynamicValues, setDynamicValues] = useState<Record<string, any>>({});
+    const [shoppingMode, setShoppingMode] = useState(false);
+    const [auditMode, setAuditMode] = useState(false);
+    const [repairMode, setRepairMode] = useState(false);
 
     // Quick dates memoized
     const quickDates = useMemo(() => getQuickDates(), []);
@@ -286,6 +300,198 @@ const GTDQuickAddDialog: React.FC<GTDQuickAddDialogProps> = ({
         );
     };
 
+    // Task Type Selection Handler
+    const handleTaskTypeSelect = (type: TaskType) => {
+        console.log('🎯 handleTaskTypeSelect called with type:', type);
+        setTaskType(type);
+        const config = TASK_TYPE_CONFIG[type];
+
+        // Special handling for shopping mode
+        if (type === 'buy') {
+            setShoppingMode(true);
+            setAuditMode(false);
+            setRepairMode(false);
+            if ('vibrate' in navigator) {
+                navigator.vibrate([30, 20, 30]);
+            }
+            return;
+        }
+
+        // Special handling for audit mode
+        if (type === 'check') {
+            setAuditMode(true);
+            setShoppingMode(false);
+            setRepairMode(false);
+            if ('vibrate' in navigator) {
+                navigator.vibrate([30, 20, 30]);
+            }
+            return;
+        }
+
+        // Special handling for repair mode
+        if (type === 'fix') {
+            console.log('🔧 [FIX] Repair mode trigger - type:', type, 'selectedClient:', selectedClient?.name);
+            setRepairMode(true);
+            setShoppingMode(false);
+            setAuditMode(false);
+            console.log('🔧 [FIX] States set: repairMode=true');
+            if ('vibrate' in navigator) {
+                navigator.vibrate([30, 20, 30]);
+            }
+            return;
+        }
+
+        // Apply smart defaults
+        if (config.defaults.estimatedDurationMinutes) {
+            const hours = config.defaults.estimatedDurationMinutes / 60;
+            setHours(String(hours));
+        }
+        if (config.defaults.crewSize) {
+            setCrewSize(config.defaults.crewSize);
+        }
+        if (config.defaults.needsEstimate) {
+            setNeedsEstimate(true);
+        }
+        if (config.defaults.priority && config.defaults.priority !== 'none') {
+            setPriority(config.defaults.priority);
+        }
+
+        // Pre-fill description with task type label
+        if (!description.trim()) {
+            setDescription(config.label + ': ');
+        }
+
+        // Haptic feedback
+        if ('vibrate' in navigator) {
+            navigator.vibrate(30);
+        }
+    };
+
+    // Handle shopping list completion
+    const handleShoppingComplete = async (items: ShoppingItem[]) => {
+        if (!currentUser?.uid) return;
+
+        setSaving(true);
+        try {
+            await saveShoppingList(
+                selectedClient?.id || 'no_client',
+                undefined, // locationId - TODO: add location support
+                items,
+                currentUser.uid,
+                selectedClient?.name
+            );
+
+            setTasksCreated(prev => prev + items.length);
+            setShowToast(true);
+
+            // Reset
+            setShoppingMode(false);
+            setTaskType(null);
+
+            // Haptic feedback
+            if ('vibrate' in navigator) {
+                navigator.vibrate([50, 30, 50]);
+            }
+        } catch (error) {
+            console.error('Failed to save shopping list:', error);
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleShoppingCancel = () => {
+        setShoppingMode(false);
+        setTaskType(null);
+    };
+
+    // Handle audit task completion
+    const handleAuditComplete = async (payload: AuditTaskPayload) => {
+        if (!currentUser?.uid) return;
+
+        setSaving(true);
+        try {
+            // Create task description from template
+            const taskDescription = `${payload.templateName}: ${selectedClient?.name || 'Проверка'}`;
+
+            // Build AI data with checklist
+            const aiData: AIEstimateData = {
+                estimatedHours: payload.estimatedMinutes / 60,
+                crewSize: 1,
+            };
+
+            await onAdd(
+                taskDescription,
+                payload.deadlineType === 'urgent' ? 'next_action' : 'inbox',
+                selectedClient?.id,
+                payload.assigneeId,
+                payload.deadlineType === 'urgent' ? 'high' : 'medium',
+                aiData
+            );
+
+            setTasksCreated(prev => prev + 1);
+            setShowToast(true);
+
+            // Reset
+            setAuditMode(false);
+            setTaskType(null);
+
+            // Haptic feedback
+            if ('vibrate' in navigator) {
+                navigator.vibrate([50, 30, 50]);
+            }
+        } catch (error) {
+            console.error('Failed to create audit task:', error);
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleAuditCancel = () => {
+        setAuditMode(false);
+        setTaskType(null);
+    };
+
+    // Handle repair ticket completion
+    const handleRepairComplete = async (payload: RepairTicketPayload) => {
+        if (!currentUser?.uid) return;
+
+        setSaving(true);
+        try {
+            // Create task description from category
+            const taskDescription = `Ремонт (${payload.categoryName}): ${selectedClient?.name || 'Заявка'}`;
+
+            await onAdd(
+                taskDescription,
+                payload.severity === 'critical' ? 'next_action' : 'inbox',
+                selectedClient?.id,
+                undefined, // Will be auto-assigned by routing
+                payload.severity === 'critical' ? 'high' : 'medium',
+                undefined
+            );
+
+            setTasksCreated(prev => prev + 1);
+            setShowToast(true);
+
+            // Reset
+            setRepairMode(false);
+            setTaskType(null);
+
+            // Haptic feedback
+            if ('vibrate' in navigator) {
+                navigator.vibrate([50, 30, 50]);
+            }
+        } catch (error) {
+            console.error('Failed to create repair ticket:', error);
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleRepairCancel = () => {
+        setRepairMode(false);
+        setTaskType(null);
+    };
+
     const handleSave = async (addMore: boolean) => {
         if (!description.trim()) return;
 
@@ -307,7 +513,7 @@ const GTDQuickAddDialog: React.FC<GTDQuickAddDialogProps> = ({
                 description.trim(),
                 needsEstimate ? 'estimate' : targetColumn,  // Override column if needs estimate
                 selectedClient?.id,
-                assigneeType === 'employee' ? assigneeId : undefined,
+                assigneeType === 'employee' ? assigneeId : (assigneeType === 'self' ? currentUser?.uid : undefined),
                 priority !== 'none' ? priority : undefined,
                 aiData
             );
@@ -328,7 +534,7 @@ const GTDQuickAddDialog: React.FC<GTDQuickAddDialogProps> = ({
 
                 // Reset non-persistent fields
                 setDescription('');
-                setHours('');
+                setHours('1');
                 setCost('');
                 setAssigneeType('self');
                 setAssigneeId('');
@@ -354,7 +560,7 @@ const GTDQuickAddDialog: React.FC<GTDQuickAddDialogProps> = ({
         setSelectedClient(null);
         setClientInput('');
         setCrewSize(2);
-        setHours('');
+        setHours('1');
         setCost('');
         setAssigneeType('self');
         setAssigneeId('');
@@ -456,492 +662,611 @@ const GTDQuickAddDialog: React.FC<GTDQuickAddDialogProps> = ({
                     pb: 16, // Space for sticky footer
                 }}
             >
-                {/* Assignee */}
-                <Box sx={{ mb: 3 }}>
-                    <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block', textTransform: 'uppercase', letterSpacing: 1 }}>
-                        Исполнитель
-                    </Typography>
-                    <ToggleButtonGroup
-                        value={assigneeType}
-                        exclusive
-                        onChange={(_, val) => val && setAssigneeType(val)}
-                        fullWidth
-                        sx={{
-                            bgcolor: 'grey.100',
-                            borderRadius: 2,
-                            p: 0.5,
-                            '& .MuiToggleButton-root': {
-                                border: 0,
-                                borderRadius: 1.5,
-                                py: 1.5,
-                                '&.Mui-selected': {
-                                    bgcolor: 'background.paper',
-                                    boxShadow: 1,
-                                }
-                            }
-                        }}
-                    >
-                        <ToggleButton value="self">👤 Я</ToggleButton>
-                        <ToggleButton value="employee">👥 Сотрудник</ToggleButton>
-                    </ToggleButtonGroup>
-
-                    {assigneeType === 'employee' && (
-                        <Autocomplete
-                            options={users}
-                            getOptionLabel={(u) => u.displayName || ''}
-                            value={users.find(u => u.id === assigneeId) || null}
-                            onChange={(_, val) => setAssigneeId(val?.id || '')}
-                            renderInput={(params) => (
-                                <TextField
-                                    {...params}
-                                    placeholder="Имя сотрудника..."
-                                    size="small"
-                                    sx={{ mt: 1.5 }}
-                                />
-                            )}
-                        />
-                    )}
-                </Box>
-
-                {/* Client */}
-                <Box sx={{ mb: 3 }}>
-                    <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block', textTransform: 'uppercase', letterSpacing: 1 }}>
-                        Клиент <Box component="span" sx={{ color: 'error.main' }}>*</Box>
-                    </Typography>
-                    <Autocomplete
-                        options={clients}
-                        getOptionLabel={(c) => c.name}
-                        value={selectedClient}
-                        onChange={(_, val) => setSelectedClient(val)}
-                        inputValue={clientInput}
-                        onInputChange={(_, val) => setClientInput(val)}
-                        renderInput={(params) => (
-                            <TextField
-                                {...params}
-                                placeholder="Выберите или введите..."
-                                sx={{
-                                    '& .MuiOutlinedInput-root': {
-                                        bgcolor: selectedClient ? 'primary.50' : 'background.paper',
-                                        borderColor: selectedClient ? 'primary.main' : undefined,
-                                    }
-                                }}
-                                InputProps={{
-                                    ...params.InputProps,
-                                    endAdornment: (
-                                        <>
-                                            {selectedClient && (
-                                                <IconButton size="small" onClick={() => setSelectedClient(null)}>
-                                                    <ClearIcon fontSize="small" />
-                                                </IconButton>
-                                            )}
-                                            <IconButton size="small" sx={{ color: 'grey.400' }}>
-                                                <MicIcon fontSize="small" />
-                                            </IconButton>
-                                        </>
-                                    ),
-                                }}
-                            />
-                        )}
-                        renderOption={(props, option) => (
-                            <li {...props}>
-                                {option.type === 'company' ? '🏢' : '👤'} {option.name}
-                            </li>
-                        )}
+                {/* Shopping Mode - Show dedicated shopping input */}
+                {shoppingMode ? (
+                    <ShoppingListInput
+                        onComplete={handleShoppingComplete}
+                        onCancel={handleShoppingCancel}
+                        clientName={selectedClient?.name}
                     />
-                </Box>
-
-                {/* Description */}
-                <Box sx={{ mb: 3 }}>
-                    <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block', textTransform: 'uppercase', letterSpacing: 1 }}>
-                        Описание <Box component="span" sx={{ color: 'error.main' }}>*</Box>
-                    </Typography>
-                    <TextField
-                        fullWidth
-                        multiline
-                        rows={2}
-                        value={description}
-                        onChange={(e) => setDescription(e.target.value)}
-                        placeholder="Что нужно сделать?"
+                ) : auditMode ? (
+                    <AuditTaskInput
+                        onComplete={handleAuditComplete}
+                        onCancel={handleAuditCancel}
+                        clientId={selectedClient?.id || ''}
+                        clientName={selectedClient?.name || 'Без клиента'}
+                        locationId={undefined}
                     />
-                </Box>
-
-                {/* Resources Grid */}
-                <Box sx={{ mb: 3 }}>
-                    <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block', textTransform: 'uppercase', letterSpacing: 1 }}>
-                        Ресурсы и финансы
-                    </Typography>
-                    <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1.5 }}>
-                        {/* Crew Size Stepper */}
-                        <Paper variant="outlined" sx={{ display: 'flex', alignItems: 'center', borderRadius: 2 }}>
-                            <IconButton
-                                onClick={() => setCrewSize(Math.max(1, crewSize - 1))}
-                                disabled={crewSize <= 1}
-                            >
-                                <RemoveIcon />
-                            </IconButton>
-                            <Box sx={{ flex: 1, textAlign: 'center' }}>
-                                <Typography variant="h6" fontWeight={700}>{crewSize}</Typography>
-                                <Typography variant="caption" color="text.secondary">человек</Typography>
-                            </Box>
-                            <IconButton onClick={() => setCrewSize(Math.min(20, crewSize + 1))}>
-                                <AddIcon />
-                            </IconButton>
-                        </Paper>
-
-                        {/* Hours */}
-                        <TextField
-                            type="number"
-                            inputMode="numeric"
-                            value={hours}
-                            onChange={(e) => setHours(e.target.value)}
-                            placeholder="Часы"
-                            InputProps={{
-                                endAdornment: <InputAdornment position="end">ч</InputAdornment>
-                            }}
-                        />
-
-                        {/* Cost - Full Width */}
-                        <Box sx={{ gridColumn: 'span 2' }}>
-                            <TextField
-                                fullWidth
-                                type="number"
-                                inputMode="decimal"
-                                value={cost}
-                                onChange={(e) => setCost(e.target.value)}
-                                placeholder="Стоимость"
-                                InputProps={{
-                                    startAdornment: <InputAdornment position="start">$</InputAdornment>
-                                }}
+                ) : repairMode ? (
+                    <RepairTicketInput
+                        onComplete={handleRepairComplete}
+                        onCancel={handleRepairCancel}
+                        clientId={selectedClient?.id || ''}
+                        clientName={selectedClient?.name || 'Без клиента'}
+                        locationId={undefined}
+                    />
+                ) : (
+                    <>
+                        {/* 1. Client & Description (Moved to Top) */}
+                        <Box sx={{ mb: 3 }}>
+                            <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block', textTransform: 'uppercase', letterSpacing: 1 }}>
+                                Клиент <Box component="span" sx={{ color: 'error.main' }}>*</Box>
+                            </Typography>
+                            <Autocomplete
+                                options={clients}
+                                getOptionLabel={(c) => c.name}
+                                value={selectedClient}
+                                onChange={(_, val) => setSelectedClient(val)}
+                                inputValue={clientInput}
+                                onInputChange={(_, val) => setClientInput(val)}
+                                renderInput={(params) => (
+                                    <TextField
+                                        {...params}
+                                        placeholder="Выберите или введите..."
+                                        sx={{
+                                            '& .MuiOutlinedInput-root': {
+                                                bgcolor: selectedClient ? 'primary.50' : 'background.paper',
+                                                borderColor: selectedClient ? 'primary.main' : undefined,
+                                            }
+                                        }}
+                                        InputProps={{
+                                            ...params.InputProps,
+                                            endAdornment: (
+                                                <>
+                                                    {selectedClient && (
+                                                        <IconButton size="small" onClick={() => setSelectedClient(null)}>
+                                                            <ClearIcon fontSize="small" />
+                                                        </IconButton>
+                                                    )}
+                                                    <IconButton size="small" sx={{ color: 'grey.400' }}>
+                                                        <MicIcon fontSize="small" />
+                                                    </IconButton>
+                                                </>
+                                            ),
+                                        }}
+                                    />
+                                )}
+                                renderOption={(props, option) => (
+                                    <li {...props}>
+                                        {option.type === 'company' ? '🏢' : '👤'} {option.name}
+                                    </li>
+                                )}
                             />
-                            {!cost && hours && (
-                                <Button
-                                    size="small"
-                                    onClick={() => setCost(String(estimatedCost))}
-                                    sx={{ mt: 0.5, color: 'warning.main', textTransform: 'none' }}
-                                >
-                                    💡 Авто: ${estimatedCost.toLocaleString()} ({crewSize} чел × {hours}ч × ${HOURLY_RATE})
-                                </Button>
+                        </Box>
+
+                        {/* 1.5. Task Type Grid (Grouped by Category) */}
+                        <Box sx={{ mb: 3 }}>
+                            <Typography variant="caption" color="text.secondary" sx={{ mb: 1.5, display: 'block', textTransform: 'uppercase', letterSpacing: 1 }}>
+                                🎯 Что нужно?
+                            </Typography>
+
+                            {ACTION_GROUPS.map((group) => (
+                                <Box key={group.id} sx={{ mb: 2 }}>
+                                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1, fontSize: '0.65rem' }}>
+                                        {group.emoji} {group.label}
+                                    </Typography>
+                                    <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                                        {group.types.map((type) => {
+                                            const config = TASK_TYPE_CONFIG[type];
+                                            const isSelected = taskType === type;
+                                            return (
+                                                <Button
+                                                    key={type}
+                                                    variant={isSelected ? 'contained' : 'outlined'}
+                                                    size="small"
+                                                    onClick={() => handleTaskTypeSelect(type)}
+                                                    sx={{
+                                                        flexDirection: 'column',
+                                                        py: 1,
+                                                        px: 1.5,
+                                                        minWidth: 60,
+                                                        borderRadius: 2,
+                                                        border: isSelected ? 'none' : '1px solid #e0e0e0',
+                                                        bgcolor: isSelected ? 'primary.main' : 'background.paper',
+                                                        color: isSelected ? 'white' : 'text.primary',
+                                                        '&:hover': {
+                                                            bgcolor: isSelected ? 'primary.dark' : 'grey.100',
+                                                        },
+                                                        transition: 'all 0.15s ease',
+                                                    }}
+                                                >
+                                                    <Typography variant="body1" sx={{ lineHeight: 1, fontSize: '1.25rem' }}>
+                                                        {config.emoji}
+                                                    </Typography>
+                                                    <Typography variant="caption" sx={{ mt: 0.25, fontWeight: 500, fontSize: '0.6rem' }}>
+                                                        {config.labelShort}
+                                                    </Typography>
+                                                </Button>
+                                            );
+                                        })}
+                                    </Box>
+                                </Box>
+                            ))}
+
+                            {/* Show selected route info */}
+                            {taskType && (
+                                <Box sx={{ mt: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
+                                    <Typography variant="caption" color="text.secondary">
+                                        → {TASK_TYPE_CONFIG[taskType].route === 'shopping' ? '🛒 Shopping List' :
+                                            TASK_TYPE_CONFIG[taskType].route === 'calendar' ? '📅 Calendar' :
+                                                TASK_TYPE_CONFIG[taskType].route === 'route' ? '🗺️ Route List' :
+                                                    TASK_TYPE_CONFIG[taskType].route === 'tickets' ? '🎫 Tickets' :
+                                                        TASK_TYPE_CONFIG[taskType].route === 'crm' ? '📊 CRM' : '📋 Board'}
+                                    </Typography>
+                                </Box>
                             )}
                         </Box>
-                    </Box>
 
-                    {/* Needs Estimate Checkbox */}
-                    <FormControlLabel
-                        control={
-                            <Checkbox
-                                checked={needsEstimate}
-                                onChange={(e) => setNeedsEstimate(e.target.checked)}
-                                sx={{ color: 'warning.main', '&.Mui-checked': { color: 'warning.main' } }}
-                            />
-                        }
-                        label={
-                            <Typography variant="body2" color="text.secondary">
-                                📐 Требует просчёт (отправить в Estimate)
+                        <Box sx={{ mb: 3 }}>
+                            <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block', textTransform: 'uppercase', letterSpacing: 1 }}>
+                                Описание <Box component="span" sx={{ color: 'error.main' }}>*</Box>
                             </Typography>
-                        }
-                        sx={{ mt: 1 }}
-                    />
-                </Box>
+                            <TextField
+                                fullWidth
+                                multiline
+                                rows={2}
+                                value={description}
+                                onChange={(e) => setDescription(e.target.value)}
+                                placeholder="Что нужно сделать?"
+                            />
+                        </Box>
 
-                {/* ═══════════════════════════════════════
+                        {/* 2.5. Dynamic Fields based on Task Type */}
+                        {taskType && TASK_TYPE_CONFIG[taskType].fields.length > 0 && (
+                            <Box sx={{ mb: 3, p: 2, bgcolor: 'grey.50', borderRadius: 2 }}>
+                                <Typography variant="caption" color="text.secondary" sx={{ mb: 2, display: 'block', textTransform: 'uppercase', letterSpacing: 1 }}>
+                                    ⚙️ Поля для «{TASK_TYPE_CONFIG[taskType].label}»
+                                </Typography>
+                                {TASK_TYPE_CONFIG[taskType].fields.map((field, idx) => (
+                                    <DynamicFormField
+                                        key={idx}
+                                        config={field}
+                                        value={dynamicValues[field.label] || ''}
+                                        onChange={(val) => setDynamicValues(prev => ({ ...prev, [field.label]: val }))}
+                                    />
+                                ))}
+                            </Box>
+                        )}
+
+                        {/* 2. Resources & Finance (Accordion) */}
+                        <Box sx={{ mb: 3, border: '1px solid #e0e0e0', borderRadius: 2, overflow: 'hidden' }}>
+                            <Box
+                                onClick={() => setResourcesExpanded(!resourcesExpanded)}
+                                sx={{
+                                    p: 2,
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    alignItems: 'center',
+                                    cursor: 'pointer',
+                                    bgcolor: 'grey.50'
+                                }}
+                            >
+                                <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase', letterSpacing: 1, fontWeight: 'bold' }}>
+                                    Ресурсы и финансы
+                                </Typography>
+                                <IconButton size="small" sx={{ transform: resourcesExpanded ? 'rotate(180deg)' : 'none', transition: '0.2s' }}>
+                                    <ExpandMoreIcon />
+                                </IconButton>
+                            </Box>
+
+                            {resourcesExpanded && (
+                                <Box sx={{ p: 2 }}>
+                                    {/* Assignee (Moved Inside) */}
+                                    <Box sx={{ mb: 3 }}>
+                                        <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block', textTransform: 'uppercase', letterSpacing: 1 }}>
+                                            Исполнитель
+                                        </Typography>
+                                        <ToggleButtonGroup
+                                            value={assigneeType}
+                                            exclusive
+                                            onChange={(_, val) => val && setAssigneeType(val)}
+                                            fullWidth
+                                            sx={{
+                                                bgcolor: 'grey.100',
+                                                borderRadius: 2,
+                                                p: 0.5,
+                                                '& .MuiToggleButton-root': {
+                                                    border: 0,
+                                                    borderRadius: 1.5,
+                                                    py: 1.5,
+                                                    '&.Mui-selected': {
+                                                        bgcolor: 'background.paper',
+                                                        boxShadow: 1,
+                                                    }
+                                                }
+                                            }}
+                                        >
+                                            <ToggleButton value="self">👤 Я</ToggleButton>
+                                            <ToggleButton value="employee">👥 Сотрудник</ToggleButton>
+                                        </ToggleButtonGroup>
+
+                                        {assigneeType === 'employee' && (
+                                            <Autocomplete
+                                                options={users}
+                                                getOptionLabel={(u) => u.displayName || ''}
+                                                value={users.find(u => u.id === assigneeId) || null}
+                                                onChange={(_, val) => setAssigneeId(val?.id || '')}
+                                                renderInput={(params) => (
+                                                    <TextField
+                                                        {...params}
+                                                        placeholder="Имя сотрудника..."
+                                                        size="small"
+                                                        sx={{ mt: 1.5 }}
+                                                    />
+                                                )}
+                                            />
+                                        )}
+                                    </Box>
+
+                                    <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1.5 }}>
+                                        {/* Crew Size Stepper */}
+                                        <Paper variant="outlined" sx={{ display: 'flex', alignItems: 'center', borderRadius: 2 }}>
+                                            <IconButton
+                                                onClick={() => setCrewSize(Math.max(1, crewSize - 1))}
+                                                disabled={crewSize <= 1}
+                                            >
+                                                <RemoveIcon />
+                                            </IconButton>
+                                            <Box sx={{ flex: 1, textAlign: 'center' }}>
+                                                <Typography variant="h6" fontWeight={700}>{crewSize}</Typography>
+                                                <Typography variant="caption" color="text.secondary">человек</Typography>
+                                            </Box>
+                                            <IconButton onClick={() => setCrewSize(Math.min(20, crewSize + 1))}>
+                                                <AddIcon />
+                                            </IconButton>
+                                        </Paper>
+
+                                        {/* Hours */}
+                                        <TextField
+                                            type="number"
+                                            inputMode="numeric"
+                                            value={hours}
+                                            onChange={(e) => setHours(e.target.value)}
+                                            placeholder="Часы"
+                                            InputProps={{
+                                                endAdornment: <InputAdornment position="end">ч</InputAdornment>
+                                            }}
+                                        />
+
+                                        {/* Cost - Full Width */}
+                                        <Box sx={{ gridColumn: 'span 2' }}>
+                                            <TextField
+                                                fullWidth
+                                                type="number"
+                                                inputMode="decimal"
+                                                value={cost}
+                                                onChange={(e) => setCost(e.target.value)}
+                                                placeholder="Стоимость"
+                                                InputProps={{
+                                                    startAdornment: <InputAdornment position="start">$</InputAdornment>
+                                                }}
+                                            />
+                                            {!cost && hours && (
+                                                <Button
+                                                    size="small"
+                                                    onClick={() => setCost(String(estimatedCost))}
+                                                    sx={{ mt: 0.5, color: 'warning.main', textTransform: 'none' }}
+                                                >
+                                                    💡 Авто: ${estimatedCost.toLocaleString()} ({crewSize} чел × {hours}ч × ${HOURLY_RATE})
+                                                </Button>
+                                            )}
+                                        </Box>
+                                    </Box>
+                                </Box>
+                            )}
+                        </Box>
+
+                        {/* 3. Estimate Button */}
+                        <Box sx={{ mb: 3 }}>
+                            <Button
+                                variant={needsEstimate ? "contained" : "outlined"}
+                                color="secondary"
+                                fullWidth
+                                onClick={() => setNeedsEstimate(!needsEstimate)}
+                                startIcon={<span style={{ fontSize: '1.2rem' }}>📐</span>}
+                                sx={{ borderStyle: 'dashed', py: 1 }}
+                            >
+                                {needsEstimate ? 'Отправлено на просчёт' : 'Требует просчёт (отправить в Estimate)'}
+                            </Button>
+                        </Box>
+
+                        {/* ═══════════════════════════════════════
                     AI ESTIMATION SECTION
                 ═══════════════════════════════════════ */}
-                <Box sx={{ mb: 3 }}>
-                    {/* AI Estimate Button */}
-                    <Button
-                        fullWidth
-                        variant="outlined"
-                        onClick={handleAIEstimate}
-                        disabled={!description.trim() || aiLoading}
-                        startIcon={aiLoading ? <CircularProgress size={18} /> : <AutoAwesomeIcon />}
-                        sx={{
-                            py: 1.5,
-                            borderRadius: 2,
-                            borderStyle: 'dashed',
-                            borderColor: aiEstimate ? 'success.main' : 'primary.main',
-                            bgcolor: aiEstimate ? 'success.50' : 'transparent',
-                            color: aiEstimate ? 'success.dark' : 'primary.main',
-                            '&:hover': {
-                                bgcolor: aiEstimate ? 'success.100' : 'primary.50',
-                            }
-                        }}
-                    >
-                        {aiLoading ? 'AI анализирует...' : aiEstimate ? (aiEstimate.fromTemplate ? '📋 Шаблон' : aiEstimate.fromCache ? '⚡ Cached' : '✓ AI расчет выполнен') : '✨ AI-расчет'}
-                    </Button>
-
-                    {/* AI Reasoning */}
-                    {aiEstimate?.reasoning && (
-                        <Paper
-                            variant="outlined"
-                            sx={{
-                                mt: 1.5,
-                                p: 1.5,
-                                borderRadius: 2,
-                                bgcolor: 'info.50',
-                                borderColor: 'info.200'
-                            }}
-                        >
-                            <Typography variant="caption" color="info.dark" fontWeight={500}>
-                                💡 {aiEstimate.reasoning}
-                            </Typography>
-                        </Paper>
-                    )}
-
-                    {/* Conflict Warning */}
-                    {aiEstimate?.has_conflict && (
-                        <Alert
-                            severity="warning"
-                            icon={<WarningIcon />}
-                            sx={{ mt: 1.5, borderRadius: 2 }}
-                        >
-                            <Typography variant="body2" fontWeight={500}>
-                                ⚠️ {aiEstimate.conflict_message}
-                            </Typography>
-                        </Alert>
-                    )}
-
-                    {/* Materials Chips */}
-                    {aiEstimate?.suggested_materials && aiEstimate.suggested_materials.length > 0 && (
-                        <Box sx={{ mt: 2 }}>
-                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-                                <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase', letterSpacing: 1 }}>
-                                    📦 Материалы (предложено ИИ)
-                                </Typography>
-                                <Button
-                                    size="small"
-                                    onClick={() => setSelectedMaterials([...aiEstimate.suggested_materials])}
-                                    sx={{ fontSize: '0.7rem' }}
-                                >
-                                    Выбрать все
-                                </Button>
-                            </Box>
-                            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
-                                {aiEstimate.suggested_materials.map((material, i) => (
-                                    <Chip
-                                        key={i}
-                                        label={material}
-                                        onClick={() => toggleMaterial(material)}
-                                        color={selectedMaterials.includes(material) ? 'primary' : 'default'}
-                                        variant={selectedMaterials.includes(material) ? 'filled' : 'outlined'}
-                                        sx={{
-                                            borderRadius: 1.5,
-                                            '&:hover': { bgcolor: selectedMaterials.includes(material) ? 'primary.dark' : 'grey.200' }
-                                        }}
-                                    />
-                                ))}
-                            </Box>
-                        </Box>
-                    )}
-
-                    {/* Tools Chips */}
-                    {aiEstimate?.suggested_tools && aiEstimate.suggested_tools.length > 0 && (
-                        <Box sx={{ mt: 2 }}>
-                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-                                <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase', letterSpacing: 1 }}>
-                                    🔧 Инструменты (предложено ИИ)
-                                </Typography>
-                                <Button
-                                    size="small"
-                                    onClick={() => setSelectedTools([...aiEstimate.suggested_tools])}
-                                    sx={{ fontSize: '0.7rem' }}
-                                >
-                                    Выбрать все
-                                </Button>
-                            </Box>
-                            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
-                                {aiEstimate.suggested_tools.map((tool, i) => (
-                                    <Chip
-                                        key={i}
-                                        label={tool}
-                                        onClick={() => toggleTool(tool)}
-                                        color={selectedTools.includes(tool) ? 'secondary' : 'default'}
-                                        variant={selectedTools.includes(tool) ? 'filled' : 'outlined'}
-                                        sx={{
-                                            borderRadius: 1.5,
-                                            '&:hover': { bgcolor: selectedTools.includes(tool) ? 'secondary.dark' : 'grey.200' }
-                                        }}
-                                    />
-                                ))}
-                            </Box>
-                        </Box>
-                    )}
-                </Box>
-
-                {/* ═══════════════════════════════════════
-                    PLANNING SECTION
-                ═══════════════════════════════════════ */}
-                <Box sx={{ mb: 3 }}>
-                    <Typography variant="caption" color="text.secondary" sx={{ mb: 1.5, display: 'block', textTransform: 'uppercase', letterSpacing: 1 }}>
-                        Когда
-                    </Typography>
-
-                    {/* Quick Date Chips */}
-                    <Box sx={{
-                        display: 'flex',
-                        gap: 1,
-                        overflowX: 'auto',
-                        pb: 1.5,
-                        mx: -2,
-                        px: 2,
-                        '&::-webkit-scrollbar': { display: 'none' },
-                    }}>
-                        {quickDates.map((qd) => (
-                            <Chip
-                                key={qd.id}
-                                onClick={() => handleQuickDateSelect(qd)}
-                                label={
-                                    <Box sx={{ textAlign: 'center' }}>
-                                        <Typography variant="caption" fontWeight={600} display="block">
-                                            {qd.label}
-                                        </Typography>
-                                        <Typography variant="caption" sx={{ opacity: 0.7 }}>
-                                            {qd.sub}
-                                        </Typography>
-                                    </Box>
-                                }
-                                sx={{
-                                    minWidth: 56,
-                                    height: 'auto',
-                                    py: 1,
-                                    borderRadius: 2,
-                                    bgcolor: selectedQuickDate === qd.id ? 'primary.main' : 'grey.100',
-                                    color: selectedQuickDate === qd.id ? 'white' : 'text.primary',
-                                    '& .MuiChip-label': { px: 1.5 },
-                                    boxShadow: selectedQuickDate === qd.id ? 3 : 0,
-                                }}
-                            />
-                        ))}
-                        <Chip
-                            onClick={() => setPlanningMode('custom')}
-                            label={
-                                <Box sx={{ textAlign: 'center' }}>
-                                    <Typography variant="body2">📅</Typography>
-                                    <Typography variant="caption">Другая</Typography>
-                                </Box>
-                            }
-                            variant="outlined"
-                            sx={{
-                                minWidth: 56,
-                                height: 'auto',
-                                py: 1,
-                                borderRadius: 2,
-                                borderStyle: 'dashed',
-                            }}
-                        />
-                    </Box>
-
-                    {/* Custom Date Picker */}
-                    {planningMode === 'custom' && (
-                        <TextField
-                            type="date"
-                            fullWidth
-                            value={startDate}
-                            onChange={(e) => setStartDate(e.target.value)}
-                            sx={{ mb: 1.5 }}
-                        />
-                    )}
-
-                    {/* Quick Time */}
-                    <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block' }}>
-                        Время начала (опционально)
-                    </Typography>
-                    <Box sx={{ display: 'flex', gap: 1, mb: 2 }}>
-                        {QUICK_TIMES.map((qt) => (
+                        <Box sx={{ mb: 3 }}>
+                            {/* AI Estimate Button */}
                             <Button
-                                key={qt.id}
-                                variant={startTime === qt.time ? 'contained' : 'outlined'}
-                                onClick={() => handleTimeSelect(qt.time)}
+                                fullWidth
+                                variant="outlined"
+                                onClick={handleAIEstimate}
+                                disabled={!description.trim() || aiLoading}
+                                startIcon={aiLoading ? <CircularProgress size={18} /> : <AutoAwesomeIcon />}
                                 sx={{
-                                    flex: 1,
-                                    flexDirection: 'column',
                                     py: 1.5,
                                     borderRadius: 2,
+                                    borderStyle: 'dashed',
+                                    borderColor: aiEstimate ? 'success.main' : 'primary.main',
+                                    bgcolor: aiEstimate ? 'success.50' : 'transparent',
+                                    color: aiEstimate ? 'success.dark' : 'primary.main',
+                                    '&:hover': {
+                                        bgcolor: aiEstimate ? 'success.100' : 'primary.50',
+                                    }
                                 }}
                             >
-                                <Typography variant="body1">{qt.emoji}</Typography>
-                                <Typography variant="caption">{qt.time}</Typography>
+                                {aiLoading ? 'AI анализирует...' : aiEstimate ? (aiEstimate.fromTemplate ? '📋 Шаблон' : aiEstimate.fromCache ? '⚡ Cached' : '✓ AI расчет выполнен') : '✨ AI-расчет'}
                             </Button>
-                        ))}
-                        <Button
-                            variant="outlined"
-                            sx={{
-                                flex: 1,
-                                flexDirection: 'column',
-                                py: 1.5,
-                                borderRadius: 2,
-                                borderStyle: 'dashed',
-                            }}
-                        >
-                            <Typography variant="body1">⏱</Typography>
-                            <Typography variant="caption">Точное</Typography>
-                        </Button>
-                    </Box>
 
-                    {/* Duration */}
-                    <Paper variant="outlined" sx={{ p: 2, borderRadius: 2, bgcolor: 'grey.50' }}>
-                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1.5 }}>
-                            <Typography variant="caption" fontWeight={500}>Длительность</Typography>
-                            <ToggleButtonGroup
-                                value={durationMode}
-                                exclusive
-                                onChange={(_, val) => val && setDurationMode(val)}
-                                size="small"
-                            >
-                                <ToggleButton value="days" sx={{ px: 1.5 }}>Дни</ToggleButton>
-                                <ToggleButton value="date" sx={{ px: 1.5 }}>Дата</ToggleButton>
-                            </ToggleButtonGroup>
+                            {/* AI Reasoning */}
+                            {aiEstimate?.reasoning && (
+                                <Paper
+                                    variant="outlined"
+                                    sx={{
+                                        mt: 1.5,
+                                        p: 1.5,
+                                        borderRadius: 2,
+                                        bgcolor: 'info.50',
+                                        borderColor: 'info.200'
+                                    }}
+                                >
+                                    <Typography variant="caption" color="info.dark" fontWeight={500}>
+                                        💡 {aiEstimate.reasoning}
+                                    </Typography>
+                                </Paper>
+                            )}
+
+                            {/* Conflict Warning */}
+                            {aiEstimate?.has_conflict && (
+                                <Alert
+                                    severity="warning"
+                                    icon={<WarningIcon />}
+                                    sx={{ mt: 1.5, borderRadius: 2 }}
+                                >
+                                    <Typography variant="body2" fontWeight={500}>
+                                        ⚠️ {aiEstimate.conflict_message}
+                                    </Typography>
+                                </Alert>
+                            )}
+
+                            {/* Materials Chips */}
+                            {aiEstimate?.suggested_materials && aiEstimate.suggested_materials.length > 0 && (
+                                <Box sx={{ mt: 2 }}>
+                                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                                        <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase', letterSpacing: 1 }}>
+                                            📦 Материалы (предложено ИИ)
+                                        </Typography>
+                                        <Button
+                                            size="small"
+                                            onClick={() => setSelectedMaterials([...aiEstimate.suggested_materials])}
+                                            sx={{ fontSize: '0.7rem' }}
+                                        >
+                                            Выбрать все
+                                        </Button>
+                                    </Box>
+                                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
+                                        {aiEstimate.suggested_materials.map((material, i) => (
+                                            <Chip
+                                                key={i}
+                                                label={material}
+                                                onClick={() => toggleMaterial(material)}
+                                                color={selectedMaterials.includes(material) ? 'primary' : 'default'}
+                                                variant={selectedMaterials.includes(material) ? 'filled' : 'outlined'}
+                                                sx={{
+                                                    borderRadius: 1.5,
+                                                    '&:hover': { bgcolor: selectedMaterials.includes(material) ? 'primary.dark' : 'grey.200' }
+                                                }}
+                                            />
+                                        ))}
+                                    </Box>
+                                </Box>
+                            )}
+
+                            {/* Tools Chips */}
+                            {aiEstimate?.suggested_tools && aiEstimate.suggested_tools.length > 0 && (
+                                <Box sx={{ mt: 2 }}>
+                                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                                        <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase', letterSpacing: 1 }}>
+                                            🔧 Инструменты (предложено ИИ)
+                                        </Typography>
+                                        <Button
+                                            size="small"
+                                            onClick={() => setSelectedTools([...aiEstimate.suggested_tools])}
+                                            sx={{ fontSize: '0.7rem' }}
+                                        >
+                                            Выбрать все
+                                        </Button>
+                                    </Box>
+                                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
+                                        {aiEstimate.suggested_tools.map((tool, i) => (
+                                            <Chip
+                                                key={i}
+                                                label={tool}
+                                                onClick={() => toggleTool(tool)}
+                                                color={selectedTools.includes(tool) ? 'secondary' : 'default'}
+                                                variant={selectedTools.includes(tool) ? 'filled' : 'outlined'}
+                                                sx={{
+                                                    borderRadius: 1.5,
+                                                    '&:hover': { bgcolor: selectedTools.includes(tool) ? 'secondary.dark' : 'grey.200' }
+                                                }}
+                                            />
+                                        ))}
+                                    </Box>
+                                </Box>
+                            )}
                         </Box>
 
-                        {durationMode === 'days' ? (
-                            <>
-                                <Box sx={{ display: 'flex', gap: 1 }}>
-                                    {DURATION_OPTIONS.map((opt) => (
-                                        <Button
-                                            key={opt.days}
-                                            variant={durationDays === opt.days ? 'contained' : 'outlined'}
-                                            size="small"
-                                            onClick={() => handleDurationChange(opt.days)}
-                                            sx={{ flex: 1, borderRadius: 1.5 }}
-                                        >
-                                            {opt.label}
-                                        </Button>
-                                    ))}
-                                </Box>
-                                {hours && suggestedDuration && suggestedDuration !== durationDays && (
+                        {/* ═══════════════════════════════════════
+                    PLANNING SECTION
+                ═══════════════════════════════════════ */}
+                        <Box sx={{ mb: 3 }}>
+                            <Typography variant="caption" color="text.secondary" sx={{ mb: 1.5, display: 'block', textTransform: 'uppercase', letterSpacing: 1 }}>
+                                Когда
+                            </Typography>
+
+                            {/* Quick Date Chips */}
+                            <Box sx={{
+                                display: 'flex',
+                                gap: 1,
+                                overflowX: 'auto',
+                                pb: 1.5,
+                                mx: -2,
+                                px: 2,
+                                '&::-webkit-scrollbar': { display: 'none' },
+                            }}>
+                                {quickDates.map((qd) => (
+                                    <Chip
+                                        key={qd.id}
+                                        onClick={() => handleQuickDateSelect(qd)}
+                                        label={
+                                            <Box sx={{ textAlign: 'center' }}>
+                                                <Typography variant="caption" fontWeight={600} display="block">
+                                                    {qd.label}
+                                                </Typography>
+                                                <Typography variant="caption" sx={{ opacity: 0.7 }}>
+                                                    {qd.sub}
+                                                </Typography>
+                                            </Box>
+                                        }
+                                        sx={{
+                                            minWidth: 56,
+                                            height: 'auto',
+                                            py: 1,
+                                            borderRadius: 2,
+                                            bgcolor: selectedQuickDate === qd.id ? 'primary.main' : 'grey.100',
+                                            color: selectedQuickDate === qd.id ? 'white' : 'text.primary',
+                                            '& .MuiChip-label': { px: 1.5 },
+                                            boxShadow: selectedQuickDate === qd.id ? 3 : 0,
+                                        }}
+                                    />
+                                ))}
+                                <Chip
+                                    onClick={() => setPlanningMode('custom')}
+                                    label={
+                                        <Box sx={{ textAlign: 'center' }}>
+                                            <Typography variant="body2">📅</Typography>
+                                            <Typography variant="caption">Другая</Typography>
+                                        </Box>
+                                    }
+                                    variant="outlined"
+                                    sx={{
+                                        minWidth: 56,
+                                        height: 'auto',
+                                        py: 1,
+                                        borderRadius: 2,
+                                        borderStyle: 'dashed',
+                                    }}
+                                />
+                            </Box>
+
+                            {/* Custom Date Picker */}
+                            {planningMode === 'custom' && (
+                                <TextField
+                                    type="date"
+                                    fullWidth
+                                    value={startDate}
+                                    onChange={(e) => setStartDate(e.target.value)}
+                                    sx={{ mb: 1.5 }}
+                                />
+                            )}
+
+                            {/* Quick Time */}
+                            <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block' }}>
+                                Время начала (опционально)
+                            </Typography>
+                            <Box sx={{ display: 'flex', gap: 1, mb: 2 }}>
+                                {QUICK_TIMES.map((qt) => (
                                     <Button
-                                        size="small"
-                                        onClick={() => handleDurationChange(suggestedDuration)}
-                                        sx={{ mt: 1, color: 'warning.main', textTransform: 'none' }}
+                                        key={qt.id}
+                                        variant={startTime === qt.time ? 'contained' : 'outlined'}
+                                        onClick={() => handleTimeSelect(qt.time)}
+                                        sx={{
+                                            flex: 1,
+                                            flexDirection: 'column',
+                                            py: 1.5,
+                                            borderRadius: 2,
+                                        }}
                                     >
-                                        💡 {hours}ч работы ≈ {suggestedDuration} {suggestedDuration === 1 ? 'день' : suggestedDuration < 5 ? 'дня' : 'дней'} (по 8ч/день)
+                                        <Typography variant="body1">{qt.emoji}</Typography>
+                                        <Typography variant="caption">{qt.time}</Typography>
                                     </Button>
-                                )}
-                            </>
-                        ) : (
+                                ))}
+                            </Box>
                             <TextField
-                                type="date"
+                                type="time"
                                 fullWidth
                                 size="small"
-                                value={endDate}
-                                inputProps={{ min: startDate }}
-                                onChange={(e) => setEndDate(e.target.value)}
+                                value={startTime}
+                                onChange={(e) => setStartTime(e.target.value)}
+                                InputLabelProps={{ shrink: true }}
+                                sx={{ mb: 2 }}
                             />
-                        )}
 
-                        {/* Summary */}
-                        <Box sx={{ mt: 2, pt: 2, borderTop: 1, borderColor: 'divider', display: 'flex', justifyContent: 'space-between' }}>
-                            <Typography variant="caption" color="text.secondary">Итого:</Typography>
-                            <Typography variant="body2" fontWeight={600}>
-                                {quickDates.find(q => q.id === selectedQuickDate)?.sub || startDate} → {
-                                    durationMode === 'days'
-                                        ? `+${durationDays} ${durationDays === 1 ? 'день' : durationDays < 5 ? 'дня' : 'дней'}`
-                                        : format(new Date(endDate), 'd MMM', { locale: ru })
-                                }
-                                {startTime && ` в ${startTime}`}
-                            </Typography>
+                            {/* Duration */}
+                            <Paper variant="outlined" sx={{ p: 2, borderRadius: 2, bgcolor: 'grey.50' }}>
+                                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1.5 }}>
+                                    <Typography variant="caption" fontWeight={500}>Длительность</Typography>
+                                    <ToggleButtonGroup
+                                        value={durationMode}
+                                        exclusive
+                                        onChange={(_, val) => val && setDurationMode(val)}
+                                        size="small"
+                                    >
+                                        <ToggleButton value="days" sx={{ px: 1.5 }}>Дни</ToggleButton>
+                                        <ToggleButton value="date" sx={{ px: 1.5 }}>Дата</ToggleButton>
+                                    </ToggleButtonGroup>
+                                </Box>
+
+                                {durationMode === 'days' ? (
+                                    <>
+                                        <Box sx={{ display: 'flex', gap: 1 }}>
+                                            {DURATION_OPTIONS.map((opt) => (
+                                                <Button
+                                                    key={opt.days}
+                                                    variant={durationDays === opt.days ? 'contained' : 'outlined'}
+                                                    size="small"
+                                                    onClick={() => handleDurationChange(opt.days)}
+                                                    sx={{ flex: 1, borderRadius: 1.5 }}
+                                                >
+                                                    {opt.label}
+                                                </Button>
+                                            ))}
+                                        </Box>
+                                        {hours && suggestedDuration && suggestedDuration !== durationDays && (
+                                            <Button
+                                                size="small"
+                                                onClick={() => handleDurationChange(suggestedDuration)}
+                                                sx={{ mt: 1, color: 'warning.main', textTransform: 'none' }}
+                                            >
+                                                💡 {hours}ч работы ≈ {suggestedDuration} {suggestedDuration === 1 ? 'день' : suggestedDuration < 5 ? 'дня' : 'дней'} (по 8ч/день)
+                                            </Button>
+                                        )}
+                                    </>
+                                ) : (
+                                    <TextField
+                                        type="date"
+                                        fullWidth
+                                        size="small"
+                                        value={endDate}
+                                        inputProps={{ min: startDate }}
+                                        onChange={(e) => setEndDate(e.target.value)}
+                                    />
+                                )}
+
+                                {/* Summary */}
+                                <Box sx={{ mt: 2, pt: 2, borderTop: 1, borderColor: 'divider', display: 'flex', justifyContent: 'space-between' }}>
+                                    <Typography variant="caption" color="text.secondary">Итого:</Typography>
+                                    <Typography variant="body2" fontWeight={600}>
+                                        {quickDates.find(q => q.id === selectedQuickDate)?.sub || startDate} → {
+                                            durationMode === 'days'
+                                                ? `+${durationDays} ${durationDays === 1 ? 'день' : durationDays < 5 ? 'дня' : 'дней'}`
+                                                : format(new Date(endDate), 'd MMM', { locale: ru })
+                                        }
+                                        {startTime && ` в ${startTime}`}
+                                    </Typography>
+                                </Box>
+                            </Paper>
                         </Box>
-                    </Paper>
-                </Box>
+                    </>
+                )}
             </Box>
 
             {/* ═══════════════════════════════════════

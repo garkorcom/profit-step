@@ -95,12 +95,10 @@ export const sendSessionReminders = functions.pubsub
 
                     if (status === 'active' || status === 'paused') {
                         message += `⚠️ Status: Still ${status.toUpperCase()}\n\n`;
-                        message += `This session will be **auto-closed** tonight at 1:00 AM with 1 hour credited.\n\n`;
                         message += `Please finish your session properly or contact an admin to correct the time.`;
                     } else {
                         message += `⏱ Duration: ${Math.floor((session.durationMinutes || 0) / 60)}h ${(session.durationMinutes || 0) % 60}m\n\n`;
-                        message += `This session will be **locked** tonight at 1:00 AM.\n`;
-                        message += `If you need to make corrections, please contact an admin before then.`;
+                        message += `If you need to make corrections, please contact an admin.`;
                     }
 
                     notifications.push(

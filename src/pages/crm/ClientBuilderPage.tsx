@@ -16,6 +16,7 @@ import { Save as SaveIcon, ArrowBack as ArrowBackIcon } from '@mui/icons-materia
 import { useAuth } from '../../auth/AuthContext';
 import { crmApi } from '../../api/crmApi';
 import { Client, ClientType, ClientStatus } from '../../types/crm.types';
+import LocationPicker from '../../components/common/LocationPicker';
 
 const ClientBuilderPage: React.FC = () => {
     const navigate = useNavigate();
@@ -195,6 +196,7 @@ const ClientBuilderPage: React.FC = () => {
                                 <MenuItem value="qualified">Qualified</MenuItem>
                                 <MenuItem value="customer">Customer</MenuItem>
                                 <MenuItem value="churned">Churned</MenuItem>
+                                <MenuItem value="done">Done</MenuItem>
                             </TextField>
                         </Grid>
 
@@ -228,6 +230,14 @@ const ClientBuilderPage: React.FC = () => {
                                 rows={2}
                                 value={formData.address || ''}
                                 onChange={handleChange}
+                            />
+                        </Grid>
+
+                        <Grid size={{ xs: 12 }}>
+                            <LocationPicker
+                                value={formData.workLocation}
+                                onChange={(val) => setFormData(prev => ({ ...prev, workLocation: val }))}
+                                label="Project Location (Geofence)"
                             />
                         </Grid>
 

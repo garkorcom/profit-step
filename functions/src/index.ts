@@ -42,6 +42,9 @@ export {
   // updateCompanyMemberCount, // REMOVED: Use updateCompanyMemberCount_v2 instead
 } from './activityLogger';
 
+// Monitoring & Diagnostics
+export { diagnoseBot } from './http/diagnoseBot';
+
 // Pagination cost monitoring
 export {
   // monitorPaginationCosts, // REMOVED: Too many Firestore reads (every 15 min)
@@ -557,5 +560,10 @@ export { generateDailyPayroll } from './scheduled/generateDailyPayroll';
 export { onWorkSessionCreate } from './triggers/workSessions/onWorkSessionCreate';
 export { onWorkSessionUpdate } from './triggers/workSessions/onWorkSessionUpdate';
 
+// Receipts: Ledger integration
+export { onReceiptUpdate } from './triggers/receipts/onReceiptUpdate';
+
 // Sessions: Callable with validation
 export { updateWorkSession } from './callable/sessions/updateWorkSession';
+export { checkLongBreaks } from './scheduled/checkLongBreaks';
+

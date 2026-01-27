@@ -1,9 +1,12 @@
 import * as functions from 'firebase-functions';
+import { logger } from 'firebase-functions';
 import * as admin from 'firebase-admin';
 import axios from 'axios';
 import * as crypto from 'crypto';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { findNearbyProject, saveProjectLocation, updateLocationLastUsed } from '../../utils/geoUtils';
+import * as ShoppingHandler from './handlers/shoppingHandler';
+import { sendMessage, getActiveSession, sendMainMenu } from './telegramUtils';
 
 // Initialize in the file if not already initialized
 if (admin.apps.length === 0) {
@@ -21,6 +24,7 @@ const ADMIN_GROUP_ID = process.env.ADMIN_GROUP_ID || functions.config().worker_b
 
 // Types
 interface TelegramUpdate {
+    update_id: number;
     message?: {
         message_id: number;
         from: {
@@ -77,13 +81,19 @@ interface TelegramUpdate {
 // --- Main Function ---
 
 export const onWorkerBotMessage = functions.https.onRequest(async (req, res) => {
+    // DIAGNOSTIC LOGGING
+    logger.info(`📨 Telegram Webhook Request`, { method: req.method, path: req.path });
+    logger.info(`🔑 Config Check`, { tokenConfigured: !!WORKER_BOT_TOKEN });
+
     // 1. Handle Telegram Webhook
     if (req.method === 'POST') {
         try {
             const update = req.body as TelegramUpdate;
+            logger.info('📦 Update Payload', { updateId: update.update_id, from: update.message?.from?.id || update.callback_query?.from?.id });
 
             // Handle Callback Queries (Button Clicks)
             if (update.callback_query) {
+                logger.info(`🔘 Processing Callback`, { data: update.callback_query.data });
                 await handleCallbackQuery(update.callback_query);
                 res.status(200).send('OK');
                 return;
@@ -97,7 +107,7 @@ export const onWorkerBotMessage = functions.https.onRequest(async (req, res) => 
                 const already = await processedRef.get();
 
                 if (already.exists) {
-                    console.log(`⏭️ Skipping duplicate message: ${msgId}`);
+                    logger.info(`⏭️ Skipping duplicate message`, { msgId });
                     res.status(200).send('OK');
                     return;
                 }
@@ -115,7 +125,7 @@ export const onWorkerBotMessage = functions.https.onRequest(async (req, res) => 
 
             res.status(200).send('OK');
         } catch (error) {
-            console.error('Error in onWorkerBotMessage:', error);
+            logger.error('Error in onWorkerBotMessage', error);
             res.status(500).send('Internal Server Error');
         }
     } else {
@@ -138,7 +148,7 @@ async function handleMessage(message: any) {
         if (text === `/login ${WORKER_PASSWORD}` || text === WORKER_PASSWORD) {
             await registerWorker(userId, userName);
             await sendMessage(chatId, "✅ Authorization successful! You can now use the bot.\n\nCommands:\n/start - Main Menu\n/help - Instructions");
-            await sendMainMenu(chatId);
+            await sendMainMenu(chatId, userId);
             return;
         }
         await sendMessage(chatId, "🔒 Access Denied.\nPlease enter the access password:");
@@ -147,11 +157,13 @@ async function handleMessage(message: any) {
 
     // 2. Main Logic
     if (text === '/start') {
-        await sendMainMenu(chatId);
+        await sendMainMenu(chatId, userId);
     } else if (text === '▶️ Start Work') {
         await sendClientList(chatId);
     } else if (text === '⏹️ Finish Work') {
         await handleFinishWorkRequest(chatId, userId);
+    } else if (text === '⚠️ Finish Late') {
+        await handleFinishLateRequest(chatId, userId);
     } else if (text === '☕ Break') {
         await pauseWorkSession(chatId, userId);
     } else if (text === '▶️ Resume Work') {
@@ -161,7 +173,23 @@ async function handleMessage(message: any) {
     } else if (text === '⏩ Skip') {
         await handleSkipMedia(chatId, userId);
     } else if (message.photo || message.document || message.video) {
-        // NEW: Check if this is an unsolicited photo (no active session)
+        // Check if awaiting shopping receipt photo
+        if (message.photo) {
+            const largestPhoto = message.photo[message.photo.length - 1];
+            // First check receipt upload
+            const wasReceipt = await ShoppingHandler.handleShoppingReceiptPhoto(
+                chatId, userId, largestPhoto.file_id, message.from.first_name
+            );
+            if (wasReceipt) return;
+
+            // Then check smart add photo (Shopping)
+            const wasSmartAdd = await ShoppingHandler.handleShoppingPhotoInput(
+                chatId, userId, largestPhoto.file_id
+            );
+            if (wasSmartAdd) return;
+        }
+
+        // If not shopping related, proceed to work session media logic
         const activeSessionForMedia = await getActiveSession(userId);
         if (!activeSessionForMedia && message.photo) {
             await handleUnsolicitedPhoto(chatId, userId, message);
@@ -169,6 +197,12 @@ async function handleMessage(message: any) {
             await handleMediaUpload(chatId, userId, message);
         }
     } else if (message.voice) {
+        // Check if awaiting shopping voice input
+        const wasShoppingVoice = await ShoppingHandler.handleShoppingVoiceInput(
+            chatId, userId, message.voice.file_id
+        );
+        if (wasShoppingVoice) return;
+        // Regular voice handling
         await handleVoiceMessage(chatId, userId, message);
     } else if (message.location) {
         await handleLocation(chatId, userId, message.location);
@@ -182,6 +216,8 @@ async function handleMessage(message: any) {
         await handleTimezone(chatId, userId, timezone);
     } else if (text === '/tasks' || text === '📋 Tasks') {
         await sendTasksMenu(chatId, userId);
+    } else if (text === '/shopping' || text === '🛒 Shopping') {
+        await ShoppingHandler.handleShoppingCommand(chatId, userId);
     } else if (text && text.length > 0) {
         // Handle text descriptions if awaiting
         await handleText(chatId, userId, text);
@@ -209,7 +245,7 @@ async function handleCallbackQuery(query: any) {
             await handleServiceSelection(chatId, userId, clientId, serviceIndex);
         } else if (data === 'cancel_selection') {
             await sendMessage(chatId, "Selection cancelled.");
-            await sendMainMenu(chatId);
+            await sendMainMenu(chatId, userId);
         }
         // --- NEW HANDLERS ---
         else if (data === 'force_finish_work') {
@@ -239,8 +275,19 @@ async function handleCallbackQuery(query: any) {
             const clientId = data.split('location_new_client_')[1];
             await handleLocationNewClient(chatId, userId, clientId);
         }
+        // --- SHOPPING HANDLERS ---
+        else if (data.startsWith('shop:')) {
+            await ShoppingHandler.handleShoppingCallback(chatId, userId, data, query.message.message_id);
+        }
+        // --- DRAFT HANDLERS (shopping add confirmation) ---
+        else if (data.startsWith('draft:')) {
+            const parts = data.split(':');
+            const action = parts[1];
+            const params = parts.slice(2);
+            await ShoppingHandler.handleDraftCallback(chatId, userId, action, params);
+        }
     } catch (error) {
-        console.error('Error in handleCallbackQuery:', error);
+        logger.error('Error in handleCallbackQuery', error);
         await sendMessage(chatId, "⚠️ Error processing request.");
     } finally {
         // Answer callback to stop loading animation
@@ -249,7 +296,7 @@ async function handleCallbackQuery(query: any) {
                 callback_query_id: query.id
             });
         } catch (e) {
-            console.error('Error answering callback:', e);
+            logger.error('Error answering callback', e);
         }
     }
 }
@@ -284,45 +331,31 @@ async function registerWorker(userId: number, name: string) {
     });
 }
 
-async function sendMainMenu(chatId: number) {
-    // Check if session is paused or active to decide generic menu
-    const activeSession = await getActiveSession(chatId);
 
-    let keyboard;
-    if (activeSession && activeSession.data().status === 'paused') {
-        keyboard = [
-            [{ text: "▶️ Resume Work" }, { text: "⏹️ Finish Work" }]
-        ];
-    } else if (activeSession && activeSession.data().status === 'active') {
-        keyboard = [
-            [{ text: "☕ Break" }, { text: "⏹️ Finish Work" }]
-        ];
-    } else {
-        keyboard = [
-            [{ text: "▶️ Start Work" }],
-            [{ text: "📋 Tasks" }]
-        ];
-    }
-
-    await sendMessage(chatId, "👷‍♂️ *Worker Panel*\nSelect an action:", {
-        keyboard: keyboard,
-        resize_keyboard: true,
-        one_time_keyboard: false
-    });
-}
 
 async function sendClientList(chatId: number) {
     // Fetch clients from Firestore
-    const snapshot = await db.collection('clients').orderBy('createdAt', 'desc').limit(10).get();
+    // Fetch clients from Firestore
+    // SIMPLIFIED QUERY (Fix for Missing Index): 
+    // Instead of complex filters, just fetch latest 50 and filter in memory.
+    const snapshot = await db.collection('clients')
+        .orderBy('createdAt', 'desc')
+        .limit(50)
+        .get();
 
     if (snapshot.empty) {
         await sendMessage(chatId, "No clients found in CRM.");
         return;
     }
 
-    const inlineKeyboard = snapshot.docs.map(doc => {
+    const inlineKeyboard: any[][] = [];
+
+    snapshot.docs.forEach(doc => {
         const client = doc.data();
-        return [{ text: client.name, callback_data: `start_client_${doc.id}` }];
+        // Manual filter for 'done' status just in case
+        if (client.status === 'done') return;
+
+        inlineKeyboard.push([{ text: client.name, callback_data: `start_client_${doc.id}` }]);
     });
 
     // Add "No Project" Button
@@ -420,11 +453,16 @@ async function initWorkSession(chatId: number, userId: number, clientId: string,
     let companyId = null;
     let hourlyRate = 0; // Default rate
 
+    // First get employee record (always exists for bot workers)
+    const empDoc = await db.collection('employees').doc(String(userId)).get();
+    const empData = empDoc.exists ? empDoc.data() : null;
+
     if (platformUser) {
         employeeName = platformUser.displayName || 'Worker';
         platformUserId = platformUser.id;
         companyId = platformUser.companyId;
-        hourlyRate = platformUser.hourlyRate || 0; // Get rate from platform user
+        // Priority: platformUser.hourlyRate -> employees.hourlyRate
+        hourlyRate = platformUser.hourlyRate || empData?.hourlyRate || 0;
 
         // Sync local employee record to match platform name
         await db.collection('employees').doc(String(userId)).set({
@@ -434,12 +472,10 @@ async function initWorkSession(chatId: number, userId: number, clientId: string,
             updatedAt: admin.firestore.FieldValue.serverTimestamp()
         }, { merge: true });
     } else {
-        // Fallback to local employee record
-        const empDoc = await db.collection('employees').doc(String(userId)).get();
-        if (empDoc.exists) {
-            const empData = empDoc.data();
-            employeeName = empData?.name || 'Worker';
-            hourlyRate = empData?.hourlyRate || 0; // Get rate from employee doc
+        // Fallback to local employee record only
+        if (empData) {
+            employeeName = empData.name || 'Worker';
+            hourlyRate = empData.hourlyRate || 0; // Get rate from employee doc
         }
     }
 
@@ -518,14 +554,19 @@ async function handleLocation(chatId: number, userId: number, location: any) {
             );
 
             // Show client list with special callback for saving location
-            const snapshot = await db.collection('clients').orderBy('createdAt', 'desc').limit(10).get();
+            const snapshot = await db.collection('clients').orderBy('createdAt', 'desc').limit(20).get();
             if (!snapshot.empty) {
-                const inlineKeyboard = snapshot.docs.map(doc => {
+                const inlineKeyboard: any[][] = [];
+                snapshot.docs.forEach(doc => {
                     const client = doc.data();
-                    return [{ text: client.name, callback_data: `location_new_client_${doc.id}` }];
+                    // Filter out 'done' clients
+                    if (client.status === 'done') return;
+                    inlineKeyboard.push([{ text: client.name, callback_data: `location_new_client_${doc.id}` }]);
                 });
-                inlineKeyboard.push([{ text: '❌ Отмена', callback_data: 'location_cancel' }]);
-                await sendMessage(chatId, '🏢 Выбери проект:', { inline_keyboard: inlineKeyboard });
+                if (inlineKeyboard.length > 0) {
+                    inlineKeyboard.push([{ text: '❌ Отмена', callback_data: 'location_cancel' }]);
+                    await sendMessage(chatId, '🏢 Выбери проект:', { inline_keyboard: inlineKeyboard });
+                }
             }
         }
         return;
@@ -533,14 +574,105 @@ async function handleLocation(chatId: number, userId: number, location: any) {
 
     // --- CASE 2: Traditional flow (awaiting location after client selection) ---
     if (activeSession && activeSession.data().awaitingLocation) {
-        // Save location and move to next step
+        // Validation: Check if location matches the selected client
+        const sessionData = activeSession.data();
+        const clientId = sessionData.clientId;
+
+        // Skip check for "No Project"
+        if (clientId !== 'no_project') {
+            // We need to find the project location. 
+            // Ideally project_locations has it, or we check the client/site address.
+            // For now, let's use the findNearbyProject utility to see if the current location matches the intended client.
+            const { latitude, longitude } = location;
+            const matchedProject = await findNearbyProject(latitude, longitude);
+
+            if (matchedProject && matchedProject.clientId === clientId) {
+                // Perfectly matches!
+                const timeStr = new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+                await sendMessage(chatId, `✅ Фото принято! Объект *${sessionData.clientName}* время старта *${timeStr}*`);
+                await sendMessage(chatId, "🚀 Сессия начата, удачной работы!");
+            } else {
+                // Warning
+                // locationWarning = "\n⚠️ *Локация не соответствует клиенту*"; 
+                // Actually logic says: If mismatch -> "Location mismatch", then proceed to voice.
+                await sendMessage(chatId, "⚠️ *Локация не соответствует клиенту*");
+            }
+        } else {
+            await sendMessage(chatId, "✅ Локация сохранена.");
+        }
+
+        // Save location and move to next step (Skip Photo step as per new requirement? 
+        // OLD REQUIREMENT says: "If locations match... Photo accepted". 
+        // Wait, "Photo accepted" implies we already sent a photo? 
+        // In this flow (CASE 2), we just sent LOCATION. We haven't sent PHOTO yet.
+        // The prompt says: "Implement logic of comparing 3 coordinates... If match... Bot replies: 'Photo accepted!'"
+        // This implies the user sends a PHOTO with GEO.
+        // BUT here we are in `handleLocation` which handles "InputMediaLocation" or "Location Share".
+
+        // Let's re-read: "Implement logic comparing... User Location ... Project Coords ... Photo Geotag".
+        // "If locations match... Bot replies 'Photo accepted'".
+        // This suggests THIS logic belongs in `handleUnsolicitedPhoto` or `handleMediaUpload` (Start Photo).
+        // OR it suggests the flow is: Select Client -> Send Photo (with geo) -> Verify.
+        // Currently flow is: Select Client -> Send Location -> Send Photo -> Voice.
+
+        // The Prompt says: "After checking location proceed to voice request." (Screen 4).
+        // It seems to imply we SKIP the separate photo step if we do validation here?
+        // Or maybe verification happens at the Photo step?
+        // Let's look at `handleMediaUpload` (Start Photo).
+        // Currently: Awaiting Location -> Awaiting Start Photo.
+
+        // Let's implement this verification in `handleLocation` first (User shares Live Location).
+        // And we will ALSO implement it in `handleMediaUpload` if they send a photo with geodata.
+
+        // UPDATED FLOW: 
+        // 1. User sends Location.
+        // 2. We verify.
+        // 3. We reply and ask for Photo? Or Voice?
+        // Prompt says: "After checking location transition to voice request".
+        // This implies we MIGHT skip the separate text photo request? 
+        // But Screen 3 title is "Geolocation and Photo".
+        // Let's keep the Photo step but maybe the verification happens THERE?
+
+        // Actually, the prompt says "Implement logic to compare... Location sent by user... Coords of object...".
+        // "If match... Bot says: Photo accepted!". 
+        // This phrasing "Photo accepted" strongly implies this check happens when the PHOTO is received.
+        // So I should modify `handleMediaUpload` (Start Session Photo) to check the location (if available from previous step or metadata).
+
+        // HOWEVER, the `handleLocation` function is where we receive the explicit location.
+        // If the user sends location separate from photo, we store it.
+
+        // Let's update `handleLocation` to just store it.
+        // And update `handleMediaUpload` to do the check?
+        // BUT, `handleMediaUpload` (Start Photo) comes AFTER `handleLocation`.
+        // If we want to verify, we verify when we have both (or one if strict).
+
+        // Let's stick to the current flow: Location -> Photo -> Voice.
+        // I will add the check in `handleLocation` (validation of the location itself).
+        // And I will add the check in `handleUnsolicitedPhoto` (Photo-First).
+
+        // Wait, if I delete the "Photo accepted" message from here, where do I put it?
+        // The prompt says: "If locations match... Bot answers: 'Photo accepted! ... Start time ...'".
+        // Then "Session started...".
+        // Then "Voice report...".
+
+        // So the flow:
+        // 1. Client selected.
+        // 2. Request Location.
+        // 3. User sends Location. -> Bot validates.
+        // 4. Request Photo.
+        // 5. User sends Photo. -> Bot says "Photo accepted".
+
+        // Okay, I will implement validation in `handleLocation` but keep the "Photo" message for the photo step?
+        // "If locations match (with allowed radius): Bot answers 'Photo accepted!...'".
+        // This implies the check is done WHEN THE PHOTO IS SENT (using the location from the previous step).
+
         await activeSession.ref.update({
-            startLocation: location, // { latitude, longitude }
+            startLocation: location,
             awaitingLocation: false,
             awaitingStartPhoto: true
         });
 
-        await sendMessage(chatId, "✅ Location verified.\n\n📸 Now please send a **photo** of the start condition.", { remove_keyboard: true });
+        await sendMessage(chatId, "✅ Локация получена.\n\n📸 Теперь отправь **фото** начала работ.", { remove_keyboard: true });
     } else {
         await sendMessage(chatId, "Updated location received.", { remove_keyboard: true });
     }
@@ -633,14 +765,19 @@ async function handleUnsolicitedPhoto(chatId: number, userId: number, message: a
             );
 
             // Show client list
-            const snapshot = await db.collection('clients').orderBy('createdAt', 'desc').limit(10).get();
+            const snapshot = await db.collection('clients').orderBy('createdAt', 'desc').limit(20).get();
             if (!snapshot.empty) {
-                const inlineKeyboard = snapshot.docs.map(doc => {
+                const inlineKeyboard: any[][] = [];
+                snapshot.docs.forEach(doc => {
                     const client = doc.data();
-                    return [{ text: client.name, callback_data: `location_new_client_${doc.id}` }];
+                    // Filter out 'done' clients
+                    if (client.status === 'done') return;
+                    inlineKeyboard.push([{ text: client.name, callback_data: `location_new_client_${doc.id}` }]);
                 });
-                inlineKeyboard.push([{ text: '❌ Отмена', callback_data: 'location_cancel' }]);
-                await sendMessage(chatId, '🏢 Выбери проект:', { inline_keyboard: inlineKeyboard });
+                if (inlineKeyboard.length > 0) {
+                    inlineKeyboard.push([{ text: '❌ Отмена', callback_data: 'location_cancel' }]);
+                    await sendMessage(chatId, '🏢 Выбери проект:', { inline_keyboard: inlineKeyboard });
+                }
             }
             return;
         }
@@ -692,11 +829,19 @@ async function handleLocationConfirmStart(chatId: number, userId: number) {
     let companyId = null;
     let hourlyRate = 0;
 
+    // Check employees collection for rate (Admin UI saves here)
+    const empDoc = await db.collection('employees').doc(String(userId)).get();
+    const empData = empDoc.exists ? empDoc.data() : null;
+
     if (platformUser) {
         employeeName = platformUser.displayName || 'Worker';
         platformUserId = platformUser.id;
         companyId = platformUser.companyId;
-        hourlyRate = platformUser.hourlyRate || 0;
+        // Priority: platformUser.hourlyRate -> employees.hourlyRate
+        hourlyRate = platformUser.hourlyRate || empData?.hourlyRate || 0;
+    } else if (empData) {
+        employeeName = empData.name || 'Worker';
+        hourlyRate = empData.hourlyRate || 0;
     }
 
     await db.collection('work_sessions').add({
@@ -724,7 +869,7 @@ async function handleLocationConfirmStart(chatId: number, userId: number) {
     await sendMessage(chatId,
         `✅ *Смена начата!*\n\n` +
         `🏢 Проект: *${clientName}${serviceName ? ' - ' + serviceName : ''}*\n\n` +
-        `🎙 Запиши голосовое: *Что планируешь делать?*`,
+        `🎙 Запиши голосовое: что планируешь сегодня делать?`,
         {
             keyboard: [[{ text: '⏩ Skip' }]],
             resize_keyboard: true
@@ -738,16 +883,19 @@ async function handleLocationConfirmStart(chatId: number, userId: number) {
  * User wants to pick a different project than auto-detected.
  */
 async function handleLocationPickOther(chatId: number, userId: number) {
-    const snapshot = await db.collection('clients').orderBy('createdAt', 'desc').limit(10).get();
+    const snapshot = await db.collection('clients').orderBy('createdAt', 'desc').limit(20).get();
 
     if (snapshot.empty) {
         await sendMessage(chatId, "No clients found.");
         return;
     }
 
-    const inlineKeyboard = snapshot.docs.map(doc => {
+    const inlineKeyboard: any[][] = [];
+    snapshot.docs.forEach(doc => {
         const client = doc.data();
-        return [{ text: client.name, callback_data: `location_new_client_${doc.id}` }];
+        // Filter out 'done' clients
+        if (client.status === 'done') return;
+        inlineKeyboard.push([{ text: client.name, callback_data: `location_new_client_${doc.id}` }]);
     });
     inlineKeyboard.push([{ text: '❌ Отмена', callback_data: 'location_cancel' }]);
 
@@ -762,7 +910,7 @@ async function handleLocationCancel(chatId: number, userId: number) {
     await pendingPhotoRef.delete();
 
     await sendMessage(chatId, "❌ Отменено.", { remove_keyboard: true });
-    await sendMainMenu(chatId);
+    await sendMainMenu(chatId, userId);
 }
 
 /**
@@ -807,11 +955,19 @@ async function handleLocationNewClient(chatId: number, userId: number, clientId:
     let companyId = null;
     let hourlyRate = 0;
 
+    // Check employees collection for rate (Admin UI saves here)
+    const empDoc = await db.collection('employees').doc(String(userId)).get();
+    const empData = empDoc.exists ? empDoc.data() : null;
+
     if (platformUser) {
         employeeName = platformUser.displayName || 'Worker';
         platformUserId = platformUser.id;
         companyId = platformUser.companyId;
-        hourlyRate = platformUser.hourlyRate || 0;
+        // Priority: platformUser.hourlyRate -> employees.hourlyRate
+        hourlyRate = platformUser.hourlyRate || empData?.hourlyRate || 0;
+    } else if (empData) {
+        employeeName = empData.name || 'Worker';
+        hourlyRate = empData.hourlyRate || 0;
     }
 
     await db.collection('work_sessions').add({
@@ -839,7 +995,7 @@ async function handleLocationNewClient(chatId: number, userId: number, clientId:
         `✅ *Смена начата!*\n\n` +
         `🏢 Проект: *${clientName}*\n` +
         `📍 Локация сохранена для будущего.\n\n` +
-        `🎙 Запиши голосовое: *Что планируешь делать?*`,
+        `🎙 Запиши голосовое: что планируешь сегодня делать?`,
         {
             keyboard: [[{ text: '⏩ Skip' }]],
             resize_keyboard: true
@@ -853,7 +1009,7 @@ async function pauseWorkSession(chatId: number, userId: number) {
     const activeSession = await getActiveSession(userId);
     if (!activeSession) {
         await sendMessage(chatId, "No active session to pause.");
-        await sendMainMenu(chatId);
+        await sendMainMenu(chatId, userId);
         return;
     }
 
@@ -865,7 +1021,7 @@ async function pauseWorkSession(chatId: number, userId: number) {
     });
 
     await sendMessage(chatId, "☕ Session paused. Enjoy your break! Press 'Resume' when back.");
-    await sendMainMenu(chatId); // Update buttons
+    await sendMainMenu(chatId, userId); // Update buttons
 }
 
 async function resumeWorkSession(chatId: number, userId: number) {
@@ -877,7 +1033,7 @@ async function resumeWorkSession(chatId: number, userId: number) {
 
     if (sessionSnapshot.empty) {
         await sendMessage(chatId, "No paused session found.");
-        await sendMainMenu(chatId);
+        await sendMainMenu(chatId, userId);
         return;
     }
 
@@ -892,19 +1048,45 @@ async function resumeWorkSession(chatId: number, userId: number) {
         breakDurationMinutes = Math.round((now.toMillis() - breakStart.toMillis()) / 60000);
     }
 
-    await session.ref.update({
+    // --- AUTO-CORRECTION LOGIC ---
+    let adjustedBreakMinutes = breakDurationMinutes;
+    let adjustmentApplied = false;
+    const BREAK_LIMIT = 60; // Configurable limit
+
+    if (breakDurationMinutes > BREAK_LIMIT) {
+        // User forgot to resume? Cap at limit, count rest as work.
+        adjustedBreakMinutes = BREAK_LIMIT;
+        adjustmentApplied = true;
+    }
+
+    const updateData: any = {
         status: 'active',
         lastBreakStart: admin.firestore.FieldValue.delete(), // Remove temp field
+        breakNotificationSent: admin.firestore.FieldValue.delete(), // clear flag
         breaks: admin.firestore.FieldValue.arrayUnion({
             start: breakStart,
             end: now,
-            durationMinutes: breakDurationMinutes
+            durationMinutes: adjustedBreakMinutes, // Use adjusted
+            originalDuration: breakDurationMinutes,
+            autoAdjusted: adjustmentApplied
         }),
-        totalBreakMinutes: admin.firestore.FieldValue.increment(breakDurationMinutes)
-    });
+        totalBreakMinutes: admin.firestore.FieldValue.increment(adjustedBreakMinutes)
+    };
 
-    await sendMessage(chatId, `▶️ Work resumed. Break: ${breakDurationMinutes}m.`);
-    await sendMainMenu(chatId);
+    if (adjustmentApplied) {
+        updateData.needsAdjustment = true; // Flag for admin
+        updateData.autoCorrectedBreak = true;
+    }
+
+    await session.ref.update(updateData);
+
+    if (adjustmentApplied) {
+        await sendMessage(chatId, `⚠️ **Корректировка перерыва**\nВаш перерыв длился ${Math.floor(breakDurationMinutes / 60)}ч ${breakDurationMinutes % 60}м.\nМы засчитали стандартный перерыв (1ч), остальное время пошло в работу.\n\n▶️ Работа возобновлена.`);
+    } else {
+        await sendMessage(chatId, `▶️ Работа возобновлена. Перерыв: ${breakDurationMinutes}м.`);
+    }
+
+    await sendMainMenu(chatId, userId);
 }
 
 async function handleFinishWorkRequest(chatId: number, userId: number) {
@@ -912,7 +1094,7 @@ async function handleFinishWorkRequest(chatId: number, userId: number) {
 
     if (!activeSession) {
         await sendMessage(chatId, "⚠️ You don't have an active work session.");
-        await sendMainMenu(chatId);
+        await sendMainMenu(chatId, userId);
         return;
     }
 
@@ -923,6 +1105,31 @@ async function handleFinishWorkRequest(chatId: number, userId: number) {
 
     await sendMessage(chatId, "📸 Please send a photo (or file/video) of the finished work to complete the session.\n\nOr click Skip if not applicable.", {
         keyboard: [[{ text: "⏩ Skip" }]],
+        resize_keyboard: true
+    });
+}
+
+async function handleFinishLateRequest(chatId: number, userId: number) {
+    const activeSession = await getActiveSession(userId);
+
+    if (!activeSession) {
+        await sendMessage(chatId, "⚠️ You don't have an active work session.");
+        await sendMainMenu(chatId, userId);
+        return;
+    }
+
+    // "Finish Late" Flow:
+    // 1. Mark session as needing adjustment
+    // 2. Skip Photo & Voice
+    // 3. Ask for text description/time
+
+    await activeSession.ref.update({
+        needsAdjustment: true,
+        awaitingDescription: true // Skip directly to description
+    });
+
+    await sendMessage(chatId, "🕒 *Позднее закрытие*\n\nВведите реальное время окончания или причину позднего закрытия:", {
+        keyboard: [[{ text: "⏩ Skip" }]], // User can skip providing reason? Probably better to enforce text but "Skip" allows finalizing with empty reason.
         resize_keyboard: true
     });
 }
@@ -945,17 +1152,18 @@ async function handleSkipMedia(chatId: number, userId: number) {
             skippedEndPhoto: true
         });
         await sendMessage(chatId,
-            "⏩ Фото пропущено.\\n\\n🎙 Запиши голосовое: *Что успел сделать?*",
+            "⏩ Фото пропущено.\n\n🎙 Запиши голосовое: Что успел сделать?",
             { keyboard: [[{ text: "⏩ Skip" }]], resize_keyboard: true }
         );
     } else if (sessionData.awaitingEndVoice) {
-        // Skip End Voice → go to text description
-        await activeSession.ref.update({
-            awaitingEndVoice: false,
-            awaitingDescription: true,
-            skippedEndVoice: true
-        });
-        await sendMessage(chatId, "⏩ Голосовое пропущено.\\n📝 Напиши коротко что сделал:", { remove_keyboard: true });
+        // Skip End Voice → IMMEDIATE FINALIZE
+        // Fix: Record "SKIP" in database instead of generic text
+        await finalizeSession(chatId, userId, activeSession, "SKIP");
+
+    } else if (sessionData.awaitingDescription) {
+        // Skip Description → Finalize with SKIP marker
+        await finalizeSession(chatId, userId, activeSession, "SKIP");
+
     } else if (sessionData.awaitingStartPhoto) {
         // Skip Start Photo → go to voice
         await activeSession.ref.update({
@@ -964,7 +1172,7 @@ async function handleSkipMedia(chatId: number, userId: number) {
             skippedStartPhoto: true
         });
         await sendMessage(chatId,
-            "⏩ Фото пропущено.\\n\\n🎙 Запиши голосовое: *Что планируешь делать?*",
+            "⏩ Фото пропущено.\n\n🎙 Запиши голосовое: что планируешь сегодня делать?",
             { keyboard: [[{ text: "⏩ Skip" }]], resize_keyboard: true }
         );
     } else if (sessionData.awaitingStartVoice) {
@@ -974,7 +1182,7 @@ async function handleSkipMedia(chatId: number, userId: number) {
             skippedStartVoice: true
         });
         await sendMessage(chatId, "✅ Смена началась! Удачи!", { remove_keyboard: true });
-        await sendMainMenu(chatId);
+        await sendMainMenu(chatId, userId);
     } else {
         await sendMessage(chatId, "⚠️ Нечего пропускать.");
     }
@@ -1018,18 +1226,43 @@ async function handleMediaUpload(chatId: number, userId: number, message: any) {
         // Save Start Media
         const url = await saveTelegramFile(fileId, `work_photos/${activeSession.id}/start_${Date.now()}.${extension}`);
 
+        // --- GEOLOCATION VERIFICATION LOGIC ---
+        // 1. Get Session Location (saved in previous step)
+        const startLocation = sessionData.startLocation;
+        let isLocationMatch = false;
+
+        if (startLocation) {
+            const { latitude, longitude } = startLocation;
+            // Check against project location
+            // We need to know which project logic involves.
+            // We can check `findNearbyProject` again or check specific client coords if we stored them.
+            const matchedProject = await findNearbyProject(latitude, longitude);
+            // Verify if matched project corresponds to selected client
+            if (matchedProject && matchedProject.clientId === sessionData.clientId) {
+                isLocationMatch = true;
+            }
+            // TODO: Check Photo Exif if available (not available in standard photo messages usually, only files)
+        }
+
+        // --- REPLY MESSAGES ---
+        const timeStr = new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+
+        if (isLocationMatch || sessionData.clientId === 'no_project') {
+            await sendMessage(chatId, `✅ Фото принято! Объект *${sessionData.clientName}* время старта *${timeStr}*\n\n🚀 Сессия начата, удачной работы!`);
+        } else {
+            await sendMessage(chatId, "⚠️ Локация не соответствует клиенту\n\n🚀 Сессия начата (с предупреждением).");
+        }
+
         await activeSession.ref.update({
             startPhotoId: fileId,
             startPhotoUrl: url,
             startMediaType: message.video ? 'video' : (message.document ? 'document' : 'photo'),
             awaitingStartPhoto: false,
-            awaitingStartVoice: true  // NEW: Ask for voice about plans
+            awaitingStartVoice: true  // Ask for voice
         });
 
         await sendMessage(chatId,
-            "📸 Фото принято!\\n\\n" +
-            "🎙 *Запиши голосовое:* Что планируешь сегодня делать?\\n" +
-            "_Например: 'Буду красить стены в 203 номере'_",
+            "🎙 Запиши голосовое: что планируешь сегодня делать?",
             {
                 keyboard: [[{ text: "⏩ Skip" }]],
                 resize_keyboard: true
@@ -1050,9 +1283,7 @@ async function handleMediaUpload(chatId: number, userId: number, message: any) {
         });
 
         await sendMessage(chatId,
-            "📸 Фото принято!\\n\\n" +
-            "🎙 *Запиши голосовое:* Что успел сделать? Были ли проблемы?\\n" +
-            "_Например: 'Всё покрасил, но не хватило грунтовки'_",
+            "📸 Фото принято!\n\n🎙 Запиши голосовое: Что успел сделать?",
             {
                 keyboard: [[{ text: "⏩ Skip" }]],
                 resize_keyboard: true
@@ -1078,66 +1309,153 @@ async function handleCancel(chatId: number, userId: number) {
     } else {
         await sendMessage(chatId, "Nothing to cancel.", { remove_keyboard: true });
     }
-    await sendMainMenu(chatId);
+    await sendMainMenu(chatId, userId);
 }
 
 async function handleText(chatId: number, userId: number, text: string) {
+    // Check if awaiting shopping quick add
+    const wasShoppingAdd = await ShoppingHandler.handleShoppingQuickAddText(chatId, userId, text);
+    if (wasShoppingAdd) return;
+
     const activeSession = await getActiveSession(userId);
     if (!activeSession) return; // Should not happen often if we ignore other text
 
     if (activeSession.data().awaitingDescription) {
-        // FINALIZE SESSION
-        const sessionData = activeSession.data();
-        const endTime = admin.firestore.Timestamp.now();
-        const startTime = sessionData.startTime;
-
-        let hourlyRate = sessionData.hourlyRate;
-
-        // FAILSAFE: If no snapshot rate (old session), fetch current profile rate
-        if (hourlyRate === undefined || hourlyRate === null) {
-            const platformUser = await findPlatformUser(userId);
-            if (platformUser && platformUser.hourlyRate) {
-                hourlyRate = platformUser.hourlyRate;
-            } else {
-                const empDoc = await db.collection('employees').doc(String(userId)).get();
-                hourlyRate = empDoc.data()?.hourlyRate || 0;
-            }
-            // Update the session with this rate so we have it for history
-            await activeSession.ref.update({ hourlyRate: hourlyRate });
-        }
-
-        // Calculate duration (minus breaks if any)
-        let totalMinutes = Math.round((endTime.toMillis() - startTime.toMillis()) / 60000);
-        if (sessionData.totalBreakMinutes) {
-            totalMinutes -= sessionData.totalBreakMinutes;
-        }
-
-        // --- Calculate Earnings ---
-        const hours = parseFloat((totalMinutes / 60).toFixed(2));
-        const sessionEarnings = parseFloat((hours * hourlyRate).toFixed(2));
-
-        // --- Calculate Daily Totals ---
-        const dailyStats = await calculateDailyStats(userId, totalMinutes, sessionEarnings);
-        const dailyHours = Math.floor(dailyStats.minutes / 60);
-        const dailyMins = dailyStats.minutes % 60;
-
-
-        await activeSession.ref.update({
-            description: text,
-            endTime: endTime,
-            durationMinutes: totalMinutes,
-            sessionEarnings: sessionEarnings,
-            status: 'completed',
-            awaitingDescription: false
-        });
-
-        await sendMessage(chatId, `🏁 Work finished!\n\n⏱ Session: ${Math.floor(totalMinutes / 60)}h ${totalMinutes % 60}m\n💰 Earned: $${sessionEarnings}\n📅 **Today Total: ${dailyHours}h ${dailyMins}m ($${dailyStats.earnings.toFixed(2)})**\n📍 Client: ${sessionData.clientName}\n📝 Desc: ${text}`);
-
-        await sendAdminNotification(`🏁 *Work Finished*\n👤 ${sessionData.employeeName}\n📍 ${sessionData.clientName}\n⏱ ${Math.floor(totalMinutes / 60)}h ${totalMinutes % 60}m\n💵 Earned: $${sessionEarnings}\n📝 ${text}`);
-
-        // Return to main menu after finishing
-        await sendMainMenu(chatId);
+        // FINALIZE SESSION with text description
+        await finalizeSession(chatId, userId, activeSession, text);
     }
+}
+
+
+async function finalizeSession(chatId: number, userId: number, activeSession: any, description: string) {
+    const sessionData = activeSession.data();
+    const endTime = admin.firestore.Timestamp.now();
+    const startTime = sessionData.startTime;
+
+    let hourlyRate = sessionData.hourlyRate;
+
+    // FAILSAFE: If no snapshot rate (old session), fetch current profile rate
+    // UPDATED: Check for default_rate in User Profile first!
+    if (hourlyRate === undefined || hourlyRate === null || hourlyRate === 0) {
+        const platformUser = await findPlatformUser(userId);
+
+        // Priority: UserProfile.defaultRate -> UserProfile.hourlyRate -> Employee.hourlyRate
+        if (platformUser) {
+            if (platformUser.defaultRate) {
+                hourlyRate = platformUser.defaultRate;
+            } else if (platformUser.hourlyRate) {
+                hourlyRate = platformUser.hourlyRate;
+            }
+        }
+
+        if (!hourlyRate) {
+            const empDoc = await db.collection('employees').doc(String(userId)).get();
+            hourlyRate = empDoc.data()?.hourlyRate || 0;
+        }
+
+        // Update the session with this rate so we have it for history
+        await activeSession.ref.update({ hourlyRate: hourlyRate });
+    }
+
+    // Calculate duration (minus breaks if any)
+    let totalMinutes = Math.round((endTime.toMillis() - startTime.toMillis()) / 60000);
+
+    // --- HANDLE OPEN BREAK (Finish while Paused) ---
+    const BREAK_LIMIT = 60;
+    let currentBreakMinutes = 0;
+    let adjustmentApplied = false;
+
+    if (sessionData.status === 'paused' && sessionData.lastBreakStart) {
+        const breakStart = sessionData.lastBreakStart;
+        const actualBreakMinutes = Math.round((endTime.toMillis() - breakStart.toMillis()) / 60000);
+
+        currentBreakMinutes = actualBreakMinutes;
+
+        // Apply auto-correction if needed
+        if (actualBreakMinutes > BREAK_LIMIT) {
+            currentBreakMinutes = BREAK_LIMIT;
+            adjustmentApplied = true;
+        }
+
+        // Record this final break in history (optional, or just deduct)
+        // Ideally we should push to 'breaks' array for completeness, but session is closing.
+        // We'll just ensure totalMinutes is correct.
+    }
+
+    let existingBreaks = sessionData.totalBreakMinutes || 0;
+    let totalDeductibleBreak = existingBreaks + currentBreakMinutes;
+
+    totalMinutes -= totalDeductibleBreak;
+
+    // --- Message Customization ---
+    let extraMessage = "";
+    if (adjustmentApplied) {
+        extraMessage = `\n⚠️ **Авто-коррекция**: Перерыв был ограничен 1ч (вместо ${Math.floor((sessionData.lastBreakStart ? (endTime.toMillis() - sessionData.lastBreakStart.toMillis()) / 60000 : 0) / 60)}ч).`;
+    }
+
+    // Prepare Update Data
+    const updateData: any = {
+        description: description,
+        endTime: endTime,
+        durationMinutes: totalMinutes,
+        sessionEarnings: 0, // calc below
+        status: 'completed',
+        awaitingDescription: false,
+        totalBreakMinutes: totalDeductibleBreak // Update this to reflect the final break
+    };
+
+    if (adjustmentApplied) {
+        updateData.needsAdjustment = true;
+        updateData.autoCorrectedBreak = true;
+
+        // Also add the break record
+        updateData.breaks = admin.firestore.FieldValue.arrayUnion({
+            start: sessionData.lastBreakStart,
+            end: endTime,
+            durationMinutes: currentBreakMinutes,
+            autoAdjusted: true,
+            note: "Closed on finish"
+        });
+    } else if (currentBreakMinutes > 0) {
+        // Normal break close
+        updateData.breaks = admin.firestore.FieldValue.arrayUnion({
+            start: sessionData.lastBreakStart,
+            end: endTime,
+            durationMinutes: currentBreakMinutes,
+            note: "Closed on finish"
+        });
+    }
+
+    // Flag cleared
+    updateData.lastBreakStart = admin.firestore.FieldValue.delete();
+    updateData.breakNotificationSent = admin.firestore.FieldValue.delete();
+
+    // ... continue calculation
+
+    // Sanity check
+    if (totalMinutes < 0) totalMinutes = 0;
+
+    // --- Calculate Earnings ---
+    const hours = parseFloat((totalMinutes / 60).toFixed(2));
+    const sessionEarnings = parseFloat((hours * hourlyRate).toFixed(2));
+
+    // Update earnings in updateData
+    updateData.sessionEarnings = sessionEarnings;
+
+    // --- Calculate Daily Totals ---
+    const dailyStats = await calculateDailyStats(userId, totalMinutes, sessionEarnings);
+    const dailyHours = Math.floor(dailyStats.minutes / 60);
+    const dailyMins = dailyStats.minutes % 60;
+
+    await activeSession.ref.update(updateData);
+
+    // "Rest up!" removed. Rate line added.
+    await sendMessage(chatId, `🏁 Work finished!\n\n⏱ Session: ${Math.floor(totalMinutes / 60)}h ${totalMinutes % 60}m\n💰 Earned: $${sessionEarnings}\nRate: $${hourlyRate}/hr\n📅 **Today Total: ${dailyHours}h ${dailyMins}m ($${dailyStats.earnings.toFixed(2)})**\n📍 Client: ${sessionData.clientName}\n📝 Desc: ${description}${extraMessage}`);
+
+    await sendAdminNotification(`🏁 *Work Finished*\n👤 ${sessionData.employeeName}\n📍 ${sessionData.clientName}\n⏱ ${Math.floor(totalMinutes / 60)}h ${totalMinutes % 60}m\n💵 Earned: $${sessionEarnings}\n📝 ${description}`);
+
+    // Return to main menu after finishing
+    await sendMainMenu(chatId, userId);
 }
 
 /**
@@ -1165,12 +1483,14 @@ async function transcribeAudioWithRetry(audioBase64: string, systemPrompt: strin
 
     for (const modelName of models) {
         console.log(`🤖 Trying ${modelName} via Google AI...`);
-        try {
-            const model = genAI.getGenerativeModel({
-                model: modelName,
-                generationConfig: { responseMimeType: 'application/json' }
-            });
 
+        const model = genAI.getGenerativeModel({
+            model: modelName,
+            generationConfig: { responseMimeType: 'application/json' }
+        });
+        logger.info(`🤖 Trying ${modelName} via Google AI...`);
+
+        try {
             const result = await model.generateContent([
                 { text: systemPrompt },
                 {
@@ -1180,22 +1500,22 @@ async function transcribeAudioWithRetry(audioBase64: string, systemPrompt: strin
                     }
                 }
             ]);
-
-            const text = result.response.text();
+            const response = await result.response;
+            const text = response.text();
 
             if (text) {
-                console.log(`✅ Success with ${modelName}`);
+                logger.info(`✅ Success with ${modelName}`);
                 return text;
             }
         } catch (error: any) {
-            const errMsg = `[${modelName}] Failed: ${error.message}`;
-            console.warn(errMsg);
+            const errMsg = `⚠️ Error with ${modelName}: ${error.message}`;
+            logger.warn(errMsg);
             errors.push(errMsg);
             // Continue to next model
         }
     }
 
-    console.error('❌ All Gemini attempts failed:', errors);
+    logger.error('❌ All Gemini attempts failed', { errors });
     throw new Error(`All models failed. Last error: ${errors[errors.length - 1]}`);
 }
 
@@ -1227,7 +1547,7 @@ async function handleVoiceMessage(chatId: number, userId: number, message: any) 
 
         const audioResponse = await axios.get(downloadUrl, { responseType: 'arraybuffer' });
         const audioBase64 = Buffer.from(audioResponse.data).toString('base64');
-        console.log(`🎙 Audio downloaded. Size: ${audioResponse.data.length} bytes. Base64 length: ${audioBase64.length}`);
+        logger.info(`🎙 Audio downloaded`, { size: audioResponse.data.length, base64Length: audioBase64.length });
 
         // 2. Save voice to Storage (optional, for history)
         const voiceStoragePath = `work_voices/${activeSession.id}/${context.toLowerCase()}_${Date.now()}.ogg`;
@@ -1273,7 +1593,7 @@ async function handleVoiceMessage(chatId: number, userId: number, message: any) 
 }`;
 
         // 3. Send to Gemini 1.5 Flash for transcription (with Region Fallback)
-        console.log(`🎙 Sending audio to Gemini. Project: ${process.env.GCLOUD_PROJECT || 'profit-step'}`);
+        logger.info(`🎙 Sending audio to Gemini. Project: ${process.env.GCLOUD_PROJECT || 'profit-step'}`);
 
         let aiData;
         try {
@@ -1281,9 +1601,9 @@ async function handleVoiceMessage(chatId: number, userId: number, message: any) 
             // Cleanup markdown code blocks if present
             const cleanText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
             aiData = JSON.parse(cleanText);
-            console.log('🤖 AI Data:', JSON.stringify(aiData, null, 2));
+            logger.info('🤖 AI Data', aiData);
         } catch (err: any) {
-            console.error('❌ Transcription completely failed:', err);
+            logger.error('❌ Transcription completely failed', err);
             await sendMessage(chatId, "⚠️ Ошибка сервиса AI. Попробуйте еще раз или напишите текстом.");
             return;
         }
@@ -1304,7 +1624,7 @@ async function handleVoiceMessage(chatId: number, userId: number, message: any) 
 
             // Continue to normal flow
             await sendMessage(chatId, `📝 Записал задачу: *${aiData.summary}*\n\n_${aiData.description}_`);
-            await sendMainMenu(chatId);
+            await sendMainMenu(chatId, userId);
         } else {
             // END_SHIFT context
             updates.resultSummary = aiData.summary;
@@ -1354,7 +1674,7 @@ async function handleVoiceMessage(chatId: number, userId: number, message: any) 
                         newTasksCount++;
                     }
                     await batch.commit();
-                    console.log(`✅ Created ${newTasksCount} tasks for user ${platformUser.id}`);
+                    logger.info(`✅ Created ${newTasksCount} tasks for user ${platformUser.id}`);
                 }
             }
 
@@ -1371,7 +1691,7 @@ async function handleVoiceMessage(chatId: number, userId: number, message: any) 
                 responseMsg += `\n⚠️ Проблема: ${aiData.issues}`;
             }
 
-            await sendMessage(chatId, responseMsg + `\n\nОтдыхай!`);
+            await sendMessage(chatId, responseMsg);
 
             // Now finalize the session (move to description step or complete)
             updates.awaitingDescription = true;
@@ -1381,7 +1701,7 @@ async function handleVoiceMessage(chatId: number, userId: number, message: any) 
         await activeSession.ref.update(updates);
 
     } catch (error: any) {
-        console.error('Error transcribing voice:', error);
+        logger.error('Error transcribing voice:', error);
         await sendMessage(chatId, `⚠️ Ошибка расшифровки: ${error.message}. Попробуй ещё раз или напиши текстом.`);
     }
 }
@@ -1464,7 +1784,7 @@ async function sendAdminNotification(text: string) {
     try {
         await sendMessage(Number(ADMIN_GROUP_ID), text);
     } catch (error) {
-        console.error('Failed to notify admin group:', error);
+        logger.error('Failed to notify admin group', error);
         // Do not throw, so user flow is not interrupted
     }
 }
@@ -1473,7 +1793,10 @@ async function sendAdminNotification(text: string) {
 // --- Helpers ---
 
 async function saveTelegramFile(fileId: string, destinationPath: string): Promise<string | null> {
-    if (!WORKER_BOT_TOKEN) return null;
+    if (!WORKER_BOT_TOKEN) {
+        logger.error("Missing WORKER_BOT_TOKEN");
+        return null;
+    }
     try {
         // 1. Get File Path from Telegram
         const fileRes = await axios.get(`https://api.telegram.org/bot${WORKER_BOT_TOKEN}/getFile?file_id=${fileId}`);
@@ -1518,7 +1841,7 @@ async function saveTelegramFile(fileId: string, destinationPath: string): Promis
         return publicUrl;
 
     } catch (error) {
-        console.error('Error saving Telegram file:', error);
+        logger.error('Error saving Telegram file', error);
         return null;
     }
 }
@@ -1529,33 +1852,7 @@ async function saveTelegramFile(fileId: string, destinationPath: string): Promis
  * @param userId - Telegram user ID
  * @returns Active session document or null if none found
  */
-async function getActiveSession(userId: number) {
-    // Check for active sessions first
-    let qs = await db.collection('work_sessions')
-        .where('employeeId', '==', userId)
-        .where('status', '==', 'active')
-        .orderBy('startTime', 'desc')
-        .limit(1)
-        .get();
 
-    if (!qs.empty) {
-        return qs.docs[0];
-    }
-
-    // Check for paused sessions if no active found
-    qs = await db.collection('work_sessions')
-        .where('employeeId', '==', userId)
-        .where('status', '==', 'paused')
-        .orderBy('startTime', 'desc')
-        .limit(1)
-        .get();
-
-    if (!qs.empty) {
-        return qs.docs[0];
-    }
-
-    return null;
-}
 
 /**
  * Calculates daily work statistics for a user.
@@ -1684,37 +1981,8 @@ async function autoFinishActiveSession(activeSession: FirebaseFirestore.QueryDoc
     return `⚠️ Previous session closed (${sessionData.clientName}).\n⏱ ${Math.floor(totalMinutes / 60)}h ${totalMinutes % 60}m  |  💵 Earned: $${sessionEarnings}\n\n`;
 }
 
-async function sendMessage(chatId: number, text: string, options: any = {}) {
-    if (!WORKER_BOT_TOKEN) {
-        console.error("Missing WORKER_BOT_TOKEN");
-        return;
-    }
-    try {
-        const body: any = {
-            chat_id: chatId,
-            text: text,
-            parse_mode: 'Markdown',
-            ...options
-        };
 
-        if (options.keyboard) {
-            body.reply_markup = { keyboard: options.keyboard, resize_keyboard: true, one_time_keyboard: false };
-            delete body.keyboard;
-        }
-        if (options.inline_keyboard) {
-            body.reply_markup = { inline_keyboard: options.inline_keyboard };
-            delete body.inline_keyboard;
-        }
-        if (options.remove_keyboard) {
-            body.reply_markup = { remove_keyboard: true };
-            delete body.remove_keyboard;
-        }
 
-        await axios.post(`https://api.telegram.org/bot${WORKER_BOT_TOKEN}/sendMessage`, body);
-    } catch (error: any) {
-        console.error('Error sending Telegram message:', error.response?.data || error.message);
-    }
-}
 
 async function findPlatformUser(telegramId: number): Promise<any | null> {
     try {
@@ -1885,3 +2153,67 @@ async function sendTaskList(chatId: number, telegramId: number, status: string) 
         });
     }
 }
+
+// ============================================
+// SHOPPING HANDLERS
+// ============================================
+
+/**
+ * Handle /shopping command - show project list
+ */
+
+
+/**
+ * Show client selection for new list
+ */
+
+
+/**
+ * Handle all shopping callbacks
+ */
+
+
+/**
+ * Show shopping list with items
+ */
+
+
+/**
+ * Start receipt upload flow
+ */
+
+
+/**
+ * Start quick add flow (supports text, voice, photo)
+ */
+
+
+/**
+ * Handle shopping receipt photo upload
+ */
+
+
+/**
+ * Handle shopping quick add text (AI-powered)
+ */
+
+
+/**
+ * Handle shopping voice input (AI-powered)
+ */
+
+
+/**
+ * Handle shopping photo input (AI-powered)
+ */
+
+
+/**
+ * Show draft confirmation UI
+ */
+
+
+/**
+ * Handle draft callbacks (delete, save, more, clear)
+ */
+

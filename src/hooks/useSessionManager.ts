@@ -51,6 +51,7 @@ export const useSessionManager = (userId?: string, userDisplayName?: string, use
             const hours = durationMinutes / 60;
             const earnings = parseFloat((hours * rate).toFixed(2));
 
+            // 1. Update work_session
             await updateDoc(sessionRef, {
                 status: 'completed',
                 endTime: endTime,
@@ -58,7 +59,23 @@ export const useSessionManager = (userId?: string, userDisplayName?: string, use
                 sessionEarnings: earnings
             });
 
-            setSessionStartMessage(`⏹️ Session stopped`);
+            // 2. Aggregate stats on the related task
+            if (activeSession.relatedTaskId) {
+                try {
+                    const { increment } = await import('firebase/firestore');
+                    const taskRef = doc(db, 'gtd_tasks', activeSession.relatedTaskId);
+                    await updateDoc(taskRef, {
+                        totalTimeSpentMinutes: increment(durationMinutes),
+                        totalEarnings: increment(earnings),
+                        actualDurationMinutes: increment(durationMinutes),
+                        updatedAt: Timestamp.now()
+                    });
+                } catch (e) {
+                    console.warn('Could not update task aggregates:', e);
+                }
+            }
+
+            setSessionStartMessage(`⏹️ Session stopped (${durationMinutes}min, $${earnings})`);
             setSessionSnackbarOpen(true);
         } catch (error) {
             console.error("Error stopping session:", error);
@@ -110,7 +127,24 @@ export const useSessionManager = (userId?: string, userDisplayName?: string, use
                 closedSessionMsg = 'Previous session closed. ';
             }
 
-            // 2. Create new active session
+            // 2. Determine hourlyRate: task.hourlyRate → user.hourlyRate → 0
+            // Priority 1: Task-specific rate (for special projects/clients)
+            // Priority 2: User's default rate from profile
+            let hourlyRate = task.hourlyRate || 0;
+
+            if (!hourlyRate) {
+                try {
+                    const { getDoc } = await import('firebase/firestore');
+                    const userDoc = await getDoc(doc(db, 'users', userId));
+                    if (userDoc.exists()) {
+                        hourlyRate = userDoc.data()?.hourlyRate || 0;
+                    }
+                } catch (e) {
+                    console.warn('Could not fetch hourlyRate:', e);
+                }
+            }
+
+            // 3. Create new active session with hourlyRate
             await addDoc(collection(db, 'work_sessions'), {
                 employeeId: effectiveUserId,
                 employeeName: userDisplayName || 'Unknown',
@@ -121,7 +155,8 @@ export const useSessionManager = (userId?: string, userDisplayName?: string, use
                 clientName: task.clientName || '',
                 type: 'regular',
                 relatedTaskId: task.id,
-                relatedTaskTitle: task.title
+                relatedTaskTitle: task.title,
+                hourlyRate: hourlyRate // Task rate or user fallback
             });
 
             setSessionStartMessage(`${closedSessionMsg}⏱️ Session started: ${task.title}`);

@@ -55,27 +55,58 @@ export async function findNearbyProject(
     latitude: number,
     longitude: number
 ): Promise<ProjectLocation | null> {
-    const snapshot = await db.collection('project_locations').get();
-
-    if (snapshot.empty) return null;
-
     let closestProject: ProjectLocation | null = null;
     let closestDistance = Infinity;
 
-    for (const doc of snapshot.docs) {
-        const data = doc.data() as Omit<ProjectLocation, 'id'>;
-        const distance = getDistanceMiles(
-            latitude,
-            longitude,
-            data.latitude,
-            data.longitude
-        );
+    // 1. Check legacy project_locations
+    const snapshot = await db.collection('project_locations').get();
 
-        const radius = data.radiusMiles || DEFAULT_RADIUS_MILES;
+    // Helper to process candidate
+    const processCandidate = (candidate: ProjectLocation, dist: number, radius: number) => {
+        if (dist <= radius && dist < closestDistance) {
+            closestDistance = dist;
+            closestProject = candidate;
+        }
+    };
 
-        if (distance <= radius && distance < closestDistance) {
-            closestDistance = distance;
-            closestProject = { id: doc.id, ...data } as ProjectLocation;
+    if (!snapshot.empty) {
+        for (const doc of snapshot.docs) {
+            const data = doc.data() as Omit<ProjectLocation, 'id'>;
+            const distance = getDistanceMiles(latitude, longitude, data.latitude, data.longitude);
+            const radius = data.radiusMiles || DEFAULT_RADIUS_MILES;
+            processCandidate({ id: doc.id, ...data } as ProjectLocation, distance, radius);
+        }
+    }
+
+    // 2. Check Clients with workLocation
+    // Optimization: In a real large DB, we'd use GeoFire or bounded queries. 
+    // Here we assume manageable client count or filter by status 'active/customer'.
+    const clientsSnap = await db.collection('clients')
+        .where('workLocation', '!=', null)
+        .get();
+
+    for (const doc of clientsSnap.docs) {
+        const client = doc.data();
+        if (client.workLocation) { // Double check
+            const loc = client.workLocation;
+            // Use 5 miles default if not set (though UI defaults to 5)
+            const radius = loc.radius || 5;
+            const distance = getDistanceMiles(latitude, longitude, loc.latitude, loc.longitude);
+
+            // Map Client to ProjectLocation interface
+            const candidate: ProjectLocation = {
+                id: doc.id, // Use client ID as project ID to avoid duplicates
+                clientId: doc.id,
+                clientName: client.name,
+                latitude: loc.latitude,
+                longitude: loc.longitude,
+                radiusMiles: radius,
+                createdAt: client.createdAt,
+                lastUsed: client.updatedAt || client.createdAt,
+                createdBy: 0 // System/Admin
+            };
+
+            processCandidate(candidate, distance, radius);
         }
     }
 

@@ -118,7 +118,17 @@ const GTDEditDialog: React.FC<GTDEditDialogProps> = ({ open, onClose, task, onSa
 
     useEffect(() => {
         if (task) {
-            const startDateTime = task.startDate ? new Date(task.startDate.seconds * 1000) : null;
+            // Helper to parse date field (can be Timestamp, string, or Date)
+            const parseDateField = (d: any): Date | null => {
+                if (!d) return null;
+                if (d.seconds) return new Date(d.seconds * 1000);
+                if (typeof d === 'string') return new Date(d);
+                if (d instanceof Date) return d;
+                return null;
+            };
+
+            const startDateTime = parseDateField(task.startDate);
+            const dueDateParsed = parseDateField(task.dueDate);
 
             reset({
                 title: task.title,
@@ -129,7 +139,7 @@ const GTDEditDialog: React.FC<GTDEditDialogProps> = ({ open, onClose, task, onSa
                 assigneeId: task.assigneeId || userProfile?.id || '',
                 status: task.status,
                 priority: task.priority || 'none',
-                dueDate: task.dueDate ? new Date(task.dueDate.seconds * 1000).toISOString().split('T')[0] : '',
+                dueDate: dueDateParsed ? dueDateParsed.toISOString().split('T')[0] : '',
                 startDate: startDateTime ? startDateTime.toISOString().split('T')[0] : '',
                 // Default to 60 minutes (1 hour) if 0 or missing
                 estimatedDurationMinutes: task.estimatedDurationMinutes || 60

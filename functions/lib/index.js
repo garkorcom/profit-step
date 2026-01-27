@@ -9,7 +9,7 @@
  * - adminDeleteUser: Безопасное удаление пользователя администратором
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.updateWorkSession = exports.onWorkSessionUpdate = exports.onWorkSessionCreate = exports.generateDailyPayroll = exports.closePayrollPeriod = exports.forceFinishAllSessions = exports.sendSessionReminders = exports.finalizeExpiredSessions = exports.onWorkerBotMessage = exports.estimateTask = exports.generateLeadSummary = exports.sendMessage = exports.onTelegramMessage = exports.onWhatsAppMessage = exports.onLeadCreate = exports.updateCompanyMemberCount_v2 = exports.trackUserActivation_v2 = exports.logUserUpdates_v2 = exports.incrementLoginCount_v2 = exports.inviteUser = exports.adminDeleteUser = exports.onUserDelete = exports.onUserCreate = exports.admin_createUserWithPassword = exports.logPaginationMetrics = exports.logInvitationAccepted = exports.logInvitationSent = exports.logUserDeleted = exports.logUserCreated = exports.brevoWebhookHandler = exports.trackFirstInvite = exports.initializeUserActivation = exports.aggregateEngagementMetrics = exports.aggregateGrowthMetrics = exports.processAvatar = void 0;
+exports.checkLongBreaks = exports.updateWorkSession = exports.onReceiptUpdate = exports.onWorkSessionUpdate = exports.onWorkSessionCreate = exports.generateDailyPayroll = exports.closePayrollPeriod = exports.forceFinishAllSessions = exports.sendSessionReminders = exports.finalizeExpiredSessions = exports.onWorkerBotMessage = exports.estimateTask = exports.generateLeadSummary = exports.sendMessage = exports.onTelegramMessage = exports.onWhatsAppMessage = exports.onLeadCreate = exports.updateCompanyMemberCount_v2 = exports.trackUserActivation_v2 = exports.logUserUpdates_v2 = exports.incrementLoginCount_v2 = exports.inviteUser = exports.adminDeleteUser = exports.onUserDelete = exports.onUserCreate = exports.admin_createUserWithPassword = exports.logPaginationMetrics = exports.diagnoseBot = exports.logInvitationAccepted = exports.logInvitationSent = exports.logUserDeleted = exports.logUserCreated = exports.brevoWebhookHandler = exports.trackFirstInvite = exports.initializeUserActivation = exports.aggregateEngagementMetrics = exports.aggregateGrowthMetrics = exports.processAvatar = void 0;
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 const crypto = require("crypto");
@@ -36,6 +36,9 @@ Object.defineProperty(exports, "logUserCreated", { enumerable: true, get: functi
 Object.defineProperty(exports, "logUserDeleted", { enumerable: true, get: function () { return activityLogger_1.logUserDeleted; } });
 Object.defineProperty(exports, "logInvitationSent", { enumerable: true, get: function () { return activityLogger_1.logInvitationSent; } });
 Object.defineProperty(exports, "logInvitationAccepted", { enumerable: true, get: function () { return activityLogger_1.logInvitationAccepted; } });
+// Monitoring & Diagnostics
+var diagnoseBot_1 = require("./http/diagnoseBot");
+Object.defineProperty(exports, "diagnoseBot", { enumerable: true, get: function () { return diagnoseBot_1.diagnoseBot; } });
 // Pagination cost monitoring
 var monitorPaginationCosts_1 = require("./monitorPaginationCosts");
 // monitorPaginationCosts, // REMOVED: Too many Firestore reads (every 15 min)
@@ -445,7 +448,12 @@ var onWorkSessionCreate_1 = require("./triggers/workSessions/onWorkSessionCreate
 Object.defineProperty(exports, "onWorkSessionCreate", { enumerable: true, get: function () { return onWorkSessionCreate_1.onWorkSessionCreate; } });
 var onWorkSessionUpdate_1 = require("./triggers/workSessions/onWorkSessionUpdate");
 Object.defineProperty(exports, "onWorkSessionUpdate", { enumerable: true, get: function () { return onWorkSessionUpdate_1.onWorkSessionUpdate; } });
+// Receipts: Ledger integration
+var onReceiptUpdate_1 = require("./triggers/receipts/onReceiptUpdate");
+Object.defineProperty(exports, "onReceiptUpdate", { enumerable: true, get: function () { return onReceiptUpdate_1.onReceiptUpdate; } });
 // Sessions: Callable with validation
 var updateWorkSession_1 = require("./callable/sessions/updateWorkSession");
 Object.defineProperty(exports, "updateWorkSession", { enumerable: true, get: function () { return updateWorkSession_1.updateWorkSession; } });
+var checkLongBreaks_1 = require("./scheduled/checkLongBreaks");
+Object.defineProperty(exports, "checkLongBreaks", { enumerable: true, get: function () { return checkLongBreaks_1.checkLongBreaks; } });
 //# sourceMappingURL=index.js.map

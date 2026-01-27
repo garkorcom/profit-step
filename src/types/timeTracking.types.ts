@@ -33,6 +33,7 @@ export interface WorkSession {
     correctionNote?: string;
     isVoided?: boolean;
     voidReason?: string;
+    needsAdjustment?: boolean; // True if session was finished late/incorrectly
     relatedTaskId?: string; // Links to GTD Task
 
     // === LIFECYCLE MANAGEMENT ===

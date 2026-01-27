@@ -17,6 +17,7 @@ interface UpdateSessionRequest {
     clientId?: string;
     clientName?: string;
     description?: string;
+    hourlyRate?: number;  // Allow admin to override rate
 }
 
 /**
@@ -36,7 +37,7 @@ export const updateWorkSession = functions.https.onCall(async (data: UpdateSessi
         throw new functions.https.HttpsError('unauthenticated', 'Требуется авторизация');
     }
 
-    const { sessionId, newStartTime, newEndTime, editNote, clientId, clientName, description } = data;
+    const { sessionId, newStartTime, newEndTime, editNote, clientId, clientName, description, hourlyRate } = data;
     const editorUid = context.auth.uid;
 
     // Validate required fields
@@ -137,11 +138,11 @@ export const updateWorkSession = functions.https.onCall(async (data: UpdateSessi
             }
         }
 
-        // 7. Calculate Earnings (use snapshotted hourlyRate)
-        const hourlyRate = sessionData.hourlyRate || 0;
+        // 7. Calculate Earnings (use provided rate or fallback to session rate)
+        const effectiveHourlyRate = hourlyRate ?? sessionData.hourlyRate ?? 0;
         const totalBreakMinutes = sessionData.totalBreakMinutes || 0;
         const durationMinutes = Math.round((end.getTime() - start.getTime()) / 60000) - totalBreakMinutes;
-        const sessionEarnings = parseFloat(((durationMinutes / 60) * hourlyRate).toFixed(2));
+        const sessionEarnings = parseFloat(((durationMinutes / 60) * effectiveHourlyRate).toFixed(2));
 
         // 8. Build Update Object with Audit Trail
         const updates: Record<string, any> = {
@@ -160,6 +161,11 @@ export const updateWorkSession = functions.https.onCall(async (data: UpdateSessi
             // Clear review flag if it was set
             requiresAdminReview: false,
         };
+
+        // Update hourlyRate if provided (admin override)
+        if (hourlyRate !== undefined) {
+            updates.hourlyRate = hourlyRate;
+        }
 
         // Store original values only on first edit
         if (!sessionData.originalStartTime) {

@@ -33,6 +33,7 @@ import { estimatesApi } from '../../api/estimatesApi';
 import { Client } from '../../types/crm.types';
 import { Estimate } from '../../types/estimate.types';
 import { useAuth } from '../../auth/AuthContext';
+import ProjectFinanceTab from '../../components/crm/ProjectFinanceTab';
 
 interface TabPanelProps {
     children?: React.ReactNode;
@@ -189,6 +190,7 @@ const ClientDetailsPage: React.FC = () => {
                 <Tabs value={tabValue} onChange={handleTabChange} aria-label="client tabs">
                     <Tab label="Details" />
                     <Tab label={`Estimates (${estimates.length})`} />
+                    <Tab label="💰 Finance" />
                     <Tab label="Tasks" disabled />
                 </Tabs>
             </Paper>
@@ -295,6 +297,10 @@ const ClientDetailsPage: React.FC = () => {
                         </TableBody>
                     </Table>
                 </TableContainer>
+            </TabPanel>
+
+            <TabPanel value={tabValue} index={2}>
+                <ProjectFinanceTab clientId={client.id} clientName={client.name} />
             </TabPanel>
         </Container>
     );

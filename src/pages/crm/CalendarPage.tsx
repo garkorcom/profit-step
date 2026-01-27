@@ -121,9 +121,22 @@ const DraggableTask: React.FC<{ task: GTDTask; isOverdue: boolean; onClick: () =
 };
 
 // --- DROPPABLE DAY CELL ---
-const DroppableDayCell: React.FC<{ day: Date; children: React.ReactNode; onClick: () => void; isCurrentMonth: boolean; isToday: boolean; viewMode: ViewMode }> =
-    ({ day, children, onClick, isCurrentMonth, isToday, viewMode }) => {
+const DroppableDayCell: React.FC<{
+    day: Date;
+    children: React.ReactNode;
+    onClick: () => void;
+    isCurrentMonth: boolean;
+    isToday: boolean;
+    viewMode: ViewMode;
+    taskCount?: number;
+    onShowMore?: (event: React.MouseEvent<HTMLElement>) => void;
+}> =
+    ({ day, children, onClick, isCurrentMonth, isToday, viewMode, taskCount = 0, onShowMore }) => {
         const { isOver, setNodeRef } = useDroppable({ id: day.toISOString() });
+
+        // Fixed heights based on view mode
+        const cellHeight = viewMode === 'week' ? 200 : 110;
+        const maxVisibleTasks = viewMode === 'week' ? 5 : 3;
 
         return (
             <Box
@@ -133,25 +146,29 @@ const DroppableDayCell: React.FC<{ day: Date; children: React.ReactNode; onClick
                     borderRight: '1px solid #E0E0E0',
                     borderBottom: '1px solid #E0E0E0',
                     bgcolor: isOver ? '#E3F2FD' : (isCurrentMonth ? '#FFFFFF' : '#FAFAFA'),
-                    minHeight: viewMode === 'week' ? 300 : 120,
+                    height: cellHeight,
+                    minHeight: cellHeight,
+                    maxHeight: cellHeight,
                     p: 1,
                     cursor: 'pointer',
                     transition: 'background 0.15s',
-                    '&:hover': { bgcolor: '#F7F7F5' }
+                    overflow: 'hidden',
+                    position: 'relative',
+                    '&:hover': { bgcolor: '#F7F7F5' },
                 }}
             >
-                <Box display="flex" justifyContent="space-between" mb={1}>
+                <Box display="flex" justifyContent="space-between" mb={0.5}>
                     <Box sx={{
-                        width: 24, height: 24, borderRadius: '50%',
+                        width: 22, height: 22, borderRadius: '50%',
                         bgcolor: isToday ? '#EB5757' : 'transparent',
                         color: isToday ? 'white' : (isCurrentMonth ? '#37352F' : '#D1D5DB'),
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        fontSize: '0.75rem', fontWeight: isToday ? '600' : '400'
+                        fontSize: '0.7rem', fontWeight: isToday ? '600' : '400'
                     }}>
                         {format(day, 'd')}
                     </Box>
                 </Box>
-                <Box display="flex" flexDirection="column" gap={0.5}>
+                <Box display="flex" flexDirection="column" gap={0.25} sx={{ overflow: 'hidden' }}>
                     {children}
                 </Box>
             </Box>
@@ -192,6 +209,11 @@ const CalendarPage: React.FC = () => {
     const [filterAnchorEl, setFilterAnchorEl] = useState<null | HTMLElement>(null);
     const [activeFilters, setActiveFilters] = useState<FilterConfig[]>([]);
 
+    // Day Popover (for showing all tasks on a day)
+    const [dayPopoverOpen, setDayPopoverOpen] = useState(false);
+    const [selectedDayTasks, setSelectedDayTasks] = useState<GTDTask[]>([]);
+    const [selectedDayDate, setSelectedDayDate] = useState<Date | null>(null);
+
     // Quick Add
     const [quickAddOpen, setQuickAddOpen] = useState(false);
     const [quickAddDate, setQuickAddDate] = useState<Date | null>(null);
@@ -217,16 +239,17 @@ const CalendarPage: React.FC = () => {
             or(where('ownerId', '==', currentUser.uid), where('assigneeId', '==', currentUser.uid))
         );
         const unsubscribe = onSnapshot(q, (snapshot) => {
-            const data = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as GTDTask)).filter(t => t.dueDate || t.startDate);
+            const data = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as GTDTask));
+            // Show all tasks - use createdAt as fallback date if no dueDate/startDate
             setTasks(data);
             setLoading(false);
         });
         return () => unsubscribe();
     }, [currentUser]);
 
-    // Helpers
+    // Helpers - priority: dueDate > startDate > createdAt
     const getTaskDate = (task: GTDTask): Date | null => {
-        const d = task.dueDate || task.startDate;
+        const d = task.dueDate || task.startDate || task.createdAt;
         if (!d) return null;
         if (typeof d === 'string') return parseISO(d);
         if ((d as any).toDate) return (d as any).toDate();
@@ -274,8 +297,8 @@ const CalendarPage: React.FC = () => {
             const end = endOfMonth(currentDate);
             return eachDayOfInterval({ start, end });
         }
-        const start = viewMode === 'week' ? startOfWeek(currentDate) : startOfWeek(startOfMonth(currentDate));
-        const end = viewMode === 'week' ? endOfWeek(currentDate) : endOfWeek(endOfMonth(currentDate));
+        const start = viewMode === 'week' ? startOfWeek(currentDate, { weekStartsOn: 1 }) : startOfWeek(startOfMonth(currentDate), { weekStartsOn: 1 });
+        const end = viewMode === 'week' ? endOfWeek(currentDate, { weekStartsOn: 1 }) : endOfWeek(endOfMonth(currentDate), { weekStartsOn: 1 });
         return eachDayOfInterval({ start, end });
     }, [currentDate, viewMode]);
 
@@ -384,7 +407,7 @@ const CalendarPage: React.FC = () => {
         });
 
         return (
-            <Box flexGrow={1} overflow="auto">
+            <Box sx={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
                 {/* All-day section */}
                 {allDayTasks.length > 0 && (
                     <Box p={2} borderBottom="1px solid #E0E0E0" bgcolor="#FAFAFA">
@@ -437,7 +460,7 @@ const CalendarPage: React.FC = () => {
         // Let's stick to showing the whole month but compact.
 
         return (
-            <Box flexGrow={1} overflow="auto" px={2} py={1}>
+            <Box sx={{ flex: 1, minHeight: 0, overflow: 'auto', px: 2, py: 1 }}>
                 {calendarDays.map(day => {
                     const dayTasks = getTasksForDay(day);
                     if (dayTasks.length === 0) return null; // Skip empty days for cleaner mobile view? Or keep?
@@ -523,7 +546,15 @@ const CalendarPage: React.FC = () => {
     return (
         <LocalizationProvider dateAdapter={AdapterDateFns}>
             <DndContext collisionDetection={closestCenter} onDragStart={(e) => setDraggedTaskId(e.active.id as string)} onDragEnd={handleDragEnd}>
-                <Box sx={{ height: '100vh', display: 'flex', flexDirection: 'column', bgcolor: '#ffffff', color: '#37352F' }}>
+                <Box sx={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    height: '100%',
+                    minHeight: 0,
+                    bgcolor: '#ffffff',
+                    color: '#37352F',
+                    overflow: 'hidden'
+                }}>
                     {/* --- HEADER --- */}
                     <Box sx={{
                         px: 2,
@@ -613,48 +644,76 @@ const CalendarPage: React.FC = () => {
 
                     {/* --- CONTENT --- */}
                     {viewMode === 'list' ? renderListView() : viewMode === 'day' ? renderDayView() : (
-                        <Box display="flex" flexGrow={1} flexDirection="column" sx={{ overflow: 'hidden' }}>
-                            {/* Weekday Headers */}
-                            <Box display="grid" gridTemplateColumns="repeat(7, 1fr)" borderBottom="1px solid #E0E0E0">
-                                {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(d => (
-                                    <Box key={d} py={1} px={2} borderRight="1px solid #E0E0E0" sx={{ '&:last-child': { borderRight: 'none' } }}>
-                                        <Typography variant="caption" fontWeight="600" color="#9CA3AF" sx={{ textTransform: 'uppercase', fontSize: isMobile ? '0.65rem' : '0.75rem' }}>
-                                            {isMobile ? d.charAt(0) : d}
-                                        </Typography>
-                                    </Box>
-                                ))}
-                            </Box>
+                        <Box display="grid" gridTemplateColumns="repeat(7, 1fr)" sx={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
+                            {/* Weekday Headers (Sticky) */}
+                            {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(d => (
+                                <Box
+                                    key={d}
+                                    py={1}
+                                    px={2}
+                                    borderRight="1px solid #E0E0E0"
+                                    borderBottom="1px solid #E0E0E0"
+                                    bgcolor="white"
+                                    sx={{
+                                        position: 'sticky',
+                                        top: 0,
+                                        zIndex: 10,
+                                        '&:last-child': { borderRight: 'none' } // Actually inside a grid, last col might differ, but border logic repeats
+                                    }}
+                                >
+                                    <Typography variant="caption" fontWeight="600" color="#9CA3AF" sx={{ textTransform: 'uppercase', fontSize: isMobile ? '0.65rem' : '0.75rem' }}>
+                                        {isMobile ? d.charAt(0) : d}
+                                    </Typography>
+                                </Box>
+                            ))}
 
-                            {/* Grid */}
-                            <Box display="grid" gridTemplateColumns="repeat(7, 1fr)" flexGrow={1} sx={{ overflowY: 'auto' }}>
-                                {calendarDays.map((day) => {
-                                    const dayTasks = getTasksForDay(day);
-                                    return (
-                                        <DroppableDayCell
-                                            key={day.toISOString()}
-                                            day={day}
-                                            onClick={() => handleQuickAdd(day)}
-                                            isCurrentMonth={isSameMonth(day, currentDate)}
-                                            isToday={isSameDay(day, new Date())}
-                                            viewMode={viewMode as ViewMode}
-                                        >
-                                            {dayTasks.slice(0, isMobile ? 2 : 4).map(task => (
-                                                <DraggableTask
-                                                    key={task.id}
-                                                    task={task}
-                                                    isOverdue={isOverdue(task)}
-                                                    onClick={() => { setSelectedTask(task); setIsDialogOpen(true); }}
-                                                />
-                                            ))}
-                                            {dayTasks.length > (isMobile ? 2 : 4) && (
-                                                <Typography variant="caption" color="text.secondary" sx={{ cursor: 'pointer' }}>
-                                                    +{dayTasks.length - (isMobile ? 2 : 4)}
-                                                </Typography>
-                                            )}
-                                        </DroppableDayCell>
-                                    );
-                                })}
-                            </Box>
+                            {/* Grid Days */}
+                            {calendarDays.map((day) => {
+                                const dayTasks = getTasksForDay(day);
+                                const maxVisible = isMobile ? 2 : 3;
+                                const hasMore = dayTasks.length > maxVisible;
+
+                                return (
+                                    <DroppableDayCell
+                                        key={day.toISOString()}
+                                        day={day}
+                                        onClick={() => handleQuickAdd(day)}
+                                        isCurrentMonth={isSameMonth(day, currentDate)}
+                                        isToday={isSameDay(day, new Date())}
+                                        viewMode={viewMode as ViewMode}
+                                        taskCount={dayTasks.length}
+                                    >
+                                        {dayTasks.slice(0, maxVisible).map(task => (
+                                            <DraggableTask
+                                                key={task.id}
+                                                task={task}
+                                                isOverdue={isOverdue(task)}
+                                                onClick={() => { setSelectedTask(task); setIsDialogOpen(true); }}
+                                            />
+                                        ))}
+                                        {hasMore && (
+                                            <Typography
+                                                variant="caption"
+                                                color="primary"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    // Show all tasks for this day in a dialog
+                                                    setSelectedDayTasks(dayTasks);
+                                                    setSelectedDayDate(day);
+                                                    setDayPopoverOpen(true);
+                                                }}
+                                                sx={{
+                                                    cursor: 'pointer',
+                                                    fontWeight: 500,
+                                                    '&:hover': { textDecoration: 'underline' }
+                                                }}
+                                            >
+                                                +{dayTasks.length - maxVisible} ещё
+                                            </Typography>
+                                        )}
+                                    </DroppableDayCell>
+                                );
+                            })}
                         </Box>
                     )}
 
@@ -736,6 +795,54 @@ const CalendarPage: React.FC = () => {
                             onDelete={async (id) => { await deleteDoc(doc(db, 'gtd_tasks', id)); setIsDialogOpen(false); }}
                         />
                     )}
+
+                    {/* Day Popover - All Tasks for a Day */}
+                    <Dialog
+                        open={dayPopoverOpen}
+                        onClose={() => setDayPopoverOpen(false)}
+                        maxWidth="xs"
+                        fullWidth
+                    >
+                        <DialogTitle sx={{ pb: 1 }}>
+                            {selectedDayDate && format(selectedDayDate, 'EEEE, d MMMM')}
+                        </DialogTitle>
+                        <DialogContent sx={{ pt: 0 }}>
+                            <List dense>
+                                {selectedDayTasks.map(task => {
+                                    const style = PASTEL_COLORS[task.status] || PASTEL_COLORS.inbox;
+                                    return (
+                                        <ListItemButton
+                                            key={task.id}
+                                            onClick={() => {
+                                                setDayPopoverOpen(false);
+                                                setSelectedTask(task);
+                                                setIsDialogOpen(true);
+                                            }}
+                                            sx={{ borderRadius: 1, mb: 0.5 }}
+                                        >
+                                            <ListItemIcon sx={{ minWidth: 28 }}>
+                                                <Box sx={{
+                                                    width: 8,
+                                                    height: 24,
+                                                    borderRadius: 1,
+                                                    bgcolor: style.bg,
+                                                }} />
+                                            </ListItemIcon>
+                                            <ListItemText
+                                                primary={task.title}
+                                                secondary={task.clientName}
+                                                primaryTypographyProps={{ fontWeight: 500, fontSize: '0.9rem' }}
+                                                secondaryTypographyProps={{ fontSize: '0.75rem' }}
+                                            />
+                                            {task.priority === 'high' && (
+                                                <WarningIcon fontSize="small" sx={{ color: '#ef4444' }} />
+                                            )}
+                                        </ListItemButton>
+                                    );
+                                })}
+                            </List>
+                        </DialogContent>
+                    </Dialog>
                 </Box>
             </DndContext>
         </LocalizationProvider>

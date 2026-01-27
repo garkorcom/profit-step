@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Container,
   Typography,
@@ -8,10 +8,12 @@ import {
   Divider,
   Alert,
   CircularProgress,
+  TextField,
 } from '@mui/material';
 import { Email as EmailIcon } from '@mui/icons-material';
 import { httpsCallable } from 'firebase/functions';
-import { functions } from '../firebase/firebase';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { functions, db } from '../firebase/firebase';
 import { useAuth } from '../auth/AuthContext';
 
 /**
@@ -24,9 +26,47 @@ const SettingsPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
-  const isAdmin = userProfile?.role === 'admin';
+  // Base Rate state
+  const [baseRate, setBaseRate] = useState<string>('');
+  const [savingRate, setSavingRate] = useState(false);
+  const [rateSuccess, setRateSuccess] = useState<string | null>(null);
 
-  // Тестирование email интеграции
+  const isAdmin = userProfile?.role === 'admin';
+  const companyId = userProfile?.companyId;
+
+  // Load base rate on mount
+  useEffect(() => {
+    const loadSettings = async () => {
+      if (!companyId) return;
+      try {
+        const settingsDoc = await getDoc(doc(db, 'companies', companyId));
+        if (settingsDoc.exists()) {
+          setBaseRate(settingsDoc.data()?.defaultRate?.toString() || '');
+        }
+      } catch (err) {
+        console.error('Error loading settings:', err);
+      }
+    };
+    loadSettings();
+  }, [companyId]);
+
+  // Save base rate
+  const handleSaveBaseRate = async () => {
+    if (!companyId) return;
+    setSavingRate(true);
+    setRateSuccess(null);
+    try {
+      await setDoc(doc(db, 'companies', companyId), {
+        defaultRate: parseFloat(baseRate) || 0,
+        updatedAt: new Date()
+      }, { merge: true });
+      setRateSuccess('✅ Базовый Rate сохранен!');
+    } catch (err: any) {
+      setError('Ошибка сохранения: ' + err.message);
+    } finally {
+      setSavingRate(false);
+    }
+  };
   const handleTestEmail = async () => {
     setTestingEmail(true);
     setError(null);
@@ -126,11 +166,33 @@ const SettingsPage: React.FC = () => {
       {/* Общие настройки */}
       <Paper sx={{ p: 3, mt: 3 }}>
         <Typography variant="h6" gutterBottom>
-          Общие настройки
+          Настройки команды
         </Typography>
-        <Typography variant="body2" color="text.secondary">
-          Раздел в разработке...
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+          Базовые настройки для сотрудников
         </Typography>
+        <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+          <TextField
+            label="Базовый Rate ($/час)"
+            type="number"
+            value={baseRate}
+            onChange={(e) => setBaseRate(e.target.value)}
+            sx={{ width: 200 }}
+            InputProps={{ inputProps: { min: 0, step: 0.5 } }}
+          />
+          <Button
+            variant="contained"
+            onClick={handleSaveBaseRate}
+            disabled={savingRate}
+          >
+            {savingRate ? 'Сохранение...' : 'Сохранить'}
+          </Button>
+        </Box>
+        {rateSuccess && (
+          <Alert severity="success" sx={{ mt: 2 }} onClose={() => setRateSuccess(null)}>
+            {rateSuccess}
+          </Alert>
+        )}
       </Paper>
 
       {/* Уведомления */}

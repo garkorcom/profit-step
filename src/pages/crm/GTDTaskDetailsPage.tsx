@@ -2,7 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import {
     Box, Typography, Paper, Grid, IconButton, Chip, TextField, Button,
-    Avatar, Divider, Breadcrumbs, useTheme, Skeleton, Tooltip
+    Avatar, Divider, Breadcrumbs, useTheme, Skeleton, Tooltip, Menu, MenuItem,
+    Autocomplete, Popover, ClickAwayListener
 } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import EditIcon from '@mui/icons-material/Edit';
@@ -16,13 +17,19 @@ import ChecklistIcon from '@mui/icons-material/Checklist';
 import SendIcon from '@mui/icons-material/Send';
 import HistoryIcon from '@mui/icons-material/History';
 import ChatBubbleOutlineIcon from '@mui/icons-material/ChatBubbleOutline';
+import DeleteIcon from '@mui/icons-material/Delete';
+import BusinessIcon from '@mui/icons-material/Business';
 
-import { doc, updateDoc, Timestamp, onSnapshot, collection, addDoc, query, orderBy } from 'firebase/firestore';
+import { doc, updateDoc, Timestamp, onSnapshot, collection, addDoc, query, orderBy, deleteDoc, getDocs } from 'firebase/firestore';
 import { db } from '../../firebase/firebase';
-import { GTDTask, GTDStatus, GTD_COLUMNS, PRIORITY_COLORS, ChecklistItem } from '../../types/gtd.types';
+import { GTDTask, GTDStatus, GTD_COLUMNS, PRIORITY_COLORS, ChecklistItem, GTDPriority } from '../../types/gtd.types';
+import { Client } from '../../types/crm.types';
+import { UserProfile } from '../../types/user.types';
 import { useAuth } from '../../auth/AuthContext';
 import { useSessionManager } from '../../hooks/useSessionManager';
 import TaskChecklist from '../../components/gtd/TaskChecklist';
+import { LocalizationProvider, DatePicker } from '@mui/x-date-pickers';
+import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 
 /**
  * Full Task Page - Notion-Style Layout
@@ -61,6 +68,19 @@ const GTDTaskDetailsPage: React.FC = () => {
     const [newComment, setNewComment] = useState('');
     const [elapsedTime, setElapsedTime] = useState(0);
 
+    // Inline editing state
+    const [users, setUsers] = useState<UserProfile[]>([]);
+    const [clients, setClients] = useState<Client[]>([]);
+    const [editingStartDate, setEditingStartDate] = useState(false);
+    const [editingDueDate, setEditingDueDate] = useState(false);
+    const [editingDuration, setEditingDuration] = useState(false);
+    const [durationValue, setDurationValue] = useState('');
+    const [priorityAnchor, setPriorityAnchor] = useState<HTMLElement | null>(null);
+    const [editingAssignee, setEditingAssignee] = useState(false);
+    const [editingClient, setEditingClient] = useState(false);
+    const [editingRate, setEditingRate] = useState(false);
+    const [rateValue, setRateValue] = useState('');
+
     // Check if this task is active
     const isTaskActive = activeSession && activeSession.relatedTaskId === taskId;
 
@@ -89,6 +109,8 @@ const GTDTaskDetailsPage: React.FC = () => {
                 setTask(data);
                 setDescription(data.description || '');
                 setTitle(data.title || '');
+                setDurationValue(String(data.estimatedDurationMinutes || ''));
+                setRateValue(String(data.hourlyRate || ''));
             } else {
                 navigate('/crm/gtd');
             }
@@ -97,6 +119,20 @@ const GTDTaskDetailsPage: React.FC = () => {
 
         return () => unsubscribe();
     }, [taskId, navigate]);
+
+    // Fetch users and clients for inline editing
+    useEffect(() => {
+        const fetchData = async () => {
+            try {
+                const usersSnap = await getDocs(query(collection(db, 'users'), orderBy('displayName')));
+                setUsers(usersSnap.docs.map(d => ({ id: d.id, ...d.data() } as UserProfile)));
+
+                const clientsSnap = await getDocs(query(collection(db, 'clients'), orderBy('name')));
+                setClients(clientsSnap.docs.map(d => ({ id: d.id, ...d.data() } as Client)));
+            } catch (e) { console.error('Error fetching users/clients:', e); }
+        };
+        fetchData();
+    }, []);
 
     // Fetch comments
     useEffect(() => {
@@ -178,6 +214,69 @@ const GTDTaskDetailsPage: React.FC = () => {
         });
     };
 
+    // Inline editing handlers
+    const handleUpdateField = async (field: string, value: any) => {
+        if (!taskId) return;
+        await updateDoc(doc(db, 'gtd_tasks', taskId), {
+            [field]: value,
+            updatedAt: Timestamp.now()
+        });
+    };
+
+    const handleDateUpdate = async (field: 'startDate' | 'dueDate', date: Date | null) => {
+        if (!taskId) return;
+        await updateDoc(doc(db, 'gtd_tasks', taskId), {
+            [field]: date ? Timestamp.fromDate(date) : null,
+            updatedAt: Timestamp.now()
+        });
+        if (field === 'startDate') setEditingStartDate(false);
+        if (field === 'dueDate') setEditingDueDate(false);
+    };
+
+    const handlePriorityChange = async (priority: GTDPriority) => {
+        await handleUpdateField('priority', priority);
+        setPriorityAnchor(null);
+    };
+
+    const handleAssigneeChange = async (user: UserProfile | null) => {
+        if (!taskId) return;
+        await updateDoc(doc(db, 'gtd_tasks', taskId), {
+            assigneeId: user?.id || null,
+            assigneeName: user?.displayName || null,
+            updatedAt: Timestamp.now()
+        });
+        setEditingAssignee(false);
+    };
+
+    const handleClientChange = async (client: Client | null) => {
+        if (!taskId) return;
+        await updateDoc(doc(db, 'gtd_tasks', taskId), {
+            clientId: client?.id || null,
+            clientName: client?.name || null,
+            updatedAt: Timestamp.now()
+        });
+        setEditingClient(false);
+    };
+
+    const handleDurationSave = async () => {
+        if (!taskId) return;
+        const minutes = parseInt(durationValue) || 0;
+        await handleUpdateField('estimatedDurationMinutes', minutes);
+        setEditingDuration(false);
+    };
+
+    const handleDeleteTask = async () => {
+        if (!taskId || !window.confirm('Удалить эту задачу? Это действие нельзя отменить.')) return;
+        await deleteDoc(doc(db, 'gtd_tasks', taskId));
+        navigate('/crm/gtd');
+    };
+
+    const handleRateSave = async () => {
+        if (!taskId) return;
+        const rate = parseFloat(rateValue) || 0;
+        await handleUpdateField('hourlyRate', rate);
+        setEditingRate(false);
+    };
 
     const formatDate = (timestamp: Timestamp | undefined) => {
         if (!timestamp) return '—';
@@ -589,7 +688,7 @@ const GTDTaskDetailsPage: React.FC = () => {
                                     ⚙️ Детали
                                 </Typography>
 
-                                {/* Priority */}
+                                {/* Priority - Clickable */}
                                 <Box mb={2.5}>
                                     <Typography variant="caption" color="text.disabled" display="block" mb={0.5}>
                                         Приоритет
@@ -597,74 +696,252 @@ const GTDTaskDetailsPage: React.FC = () => {
                                     <Chip
                                         size="small"
                                         label={task.priority === 'none' ? '—' : task.priority}
+                                        onClick={(e) => setPriorityAnchor(e.currentTarget)}
                                         sx={{
                                             bgcolor: task.priority === 'none' ? '#f1f5f9' : priorityColor + '20',
                                             color: task.priority === 'none' ? '#94a3b8' : priorityColor,
                                             fontWeight: 600,
-                                            textTransform: 'capitalize'
+                                            textTransform: 'capitalize',
+                                            cursor: 'pointer',
+                                            '&:hover': { opacity: 0.8 }
                                         }}
                                     />
+                                    <Menu
+                                        anchorEl={priorityAnchor}
+                                        open={Boolean(priorityAnchor)}
+                                        onClose={() => setPriorityAnchor(null)}
+                                    >
+                                        {(['none', 'low', 'medium', 'high'] as GTDPriority[]).map(p => (
+                                            <MenuItem key={p} onClick={() => handlePriorityChange(p)}>
+                                                <Box display="flex" alignItems="center" gap={1}>
+                                                    <Box sx={{ width: 12, height: 12, borderRadius: '50%', bgcolor: PRIORITY_COLORS[p] || '#9ca3af' }} />
+                                                    <Typography sx={{ textTransform: 'capitalize' }}>{p === 'none' ? 'Нет' : p}</Typography>
+                                                </Box>
+                                            </MenuItem>
+                                        ))}
+                                    </Menu>
                                 </Box>
 
-                                {/* Assignee */}
+                                {/* Assignee - Clickable */}
                                 <Box mb={2.5}>
                                     <Typography variant="caption" color="text.disabled" display="block" mb={0.5}>
                                         Исполнитель
                                     </Typography>
-                                    <Box display="flex" alignItems="center" gap={1}>
-                                        <Avatar sx={{ width: 24, height: 24, bgcolor: '#e2e8f0', fontSize: 12 }}>
-                                            {task.assigneeName?.charAt(0) || <PersonIcon sx={{ fontSize: 14 }} />}
-                                        </Avatar>
-                                        <Typography variant="body2">{task.assigneeName || '—'}</Typography>
-                                    </Box>
+                                    {editingAssignee ? (
+                                        <ClickAwayListener onClickAway={() => setEditingAssignee(false)}>
+                                            <Autocomplete
+                                                size="small"
+                                                options={users}
+                                                getOptionLabel={(u) => u.displayName || u.email || ''}
+                                                value={users.find(u => u.id === task.assigneeId) || null}
+                                                onChange={(_, val) => handleAssigneeChange(val)}
+                                                renderInput={(params) => <TextField {...params} autoFocus placeholder="Выбрать..." />}
+                                                sx={{ minWidth: 180 }}
+                                            />
+                                        </ClickAwayListener>
+                                    ) : (
+                                        <Box
+                                            display="flex"
+                                            alignItems="center"
+                                            gap={1}
+                                            onClick={() => setEditingAssignee(true)}
+                                            sx={{ cursor: 'pointer', p: 0.5, borderRadius: 1, '&:hover': { bgcolor: '#f1f5f9' } }}
+                                        >
+                                            <Avatar sx={{ width: 24, height: 24, bgcolor: '#e2e8f0', fontSize: 12 }}>
+                                                {task.assigneeName?.charAt(0) || <PersonIcon sx={{ fontSize: 14 }} />}
+                                            </Avatar>
+                                            <Typography variant="body2">{task.assigneeName || '— нажмите для выбора'}</Typography>
+                                        </Box>
+                                    )}
                                 </Box>
 
-                                {/* Client */}
-                                {task.clientName && (
-                                    <Box mb={2.5}>
-                                        <Typography variant="caption" color="text.disabled" display="block" mb={0.5}>
-                                            Клиент
-                                        </Typography>
-                                        <Typography variant="body2" fontWeight={500}>{task.clientName}</Typography>
-                                    </Box>
-                                )}
+                                {/* Client - Clickable */}
+                                <Box mb={2.5}>
+                                    <Typography variant="caption" color="text.disabled" display="block" mb={0.5}>
+                                        Клиент
+                                    </Typography>
+                                    {editingClient ? (
+                                        <ClickAwayListener onClickAway={() => setEditingClient(false)}>
+                                            <Autocomplete
+                                                size="small"
+                                                options={clients}
+                                                getOptionLabel={(c) => c.name || ''}
+                                                value={clients.find(c => c.id === task.clientId) || null}
+                                                onChange={(_, val) => handleClientChange(val)}
+                                                renderInput={(params) => <TextField {...params} autoFocus placeholder="Выбрать..." />}
+                                                sx={{ minWidth: 180 }}
+                                            />
+                                        </ClickAwayListener>
+                                    ) : (
+                                        <Box
+                                            display="flex"
+                                            alignItems="center"
+                                            gap={1}
+                                            onClick={() => setEditingClient(true)}
+                                            sx={{ cursor: 'pointer', p: 0.5, borderRadius: 1, '&:hover': { bgcolor: '#f1f5f9' } }}
+                                        >
+                                            <BusinessIcon sx={{ fontSize: 16, color: '#94a3b8' }} />
+                                            <Typography variant="body2" fontWeight={task.clientName ? 500 : 400}>
+                                                {task.clientName || '— нажмите для выбора'}
+                                            </Typography>
+                                        </Box>
+                                    )}
+                                </Box>
 
                                 <Divider sx={{ my: 2 }} />
 
-                                {/* Dates */}
-                                <Box mb={2}>
-                                    <Typography variant="caption" color="text.disabled" display="block" mb={0.5}>
-                                        Дата старта
-                                    </Typography>
-                                    <Box display="flex" alignItems="center" gap={1}>
-                                        <PlayArrowIcon sx={{ fontSize: 16, color: '#94a3b8' }} />
-                                        <Typography variant="body2">{formatDate(task.startDate)}</Typography>
-                                    </Box>
-                                </Box>
-
-                                <Box mb={2}>
-                                    <Typography variant="caption" color="text.disabled" display="block" mb={0.5}>
-                                        Дедлайн
-                                    </Typography>
-                                    <Box display="flex" alignItems="center" gap={1}>
-                                        <FlagIcon sx={{ fontSize: 16, color: task.dueDate && new Date(task.dueDate.seconds * 1000) < new Date() && task.status !== 'done' ? '#ef4444' : '#94a3b8' }} />
-                                        <Typography
-                                            variant="body2"
-                                            color={task.dueDate && new Date(task.dueDate.seconds * 1000) < new Date() && task.status !== 'done' ? 'error' : 'inherit'}
-                                            fontWeight={task.dueDate ? 500 : 400}
-                                        >
-                                            {formatDate(task.dueDate)}
+                                {/* Start Date - Clickable */}
+                                <LocalizationProvider dateAdapter={AdapterDateFns}>
+                                    <Box mb={2}>
+                                        <Typography variant="caption" color="text.disabled" display="block" mb={0.5}>
+                                            Дата старта
                                         </Typography>
+                                        {editingStartDate ? (
+                                            <DatePicker
+                                                value={task.startDate ? new Date(task.startDate.seconds * 1000) : null}
+                                                onChange={(date) => handleDateUpdate('startDate', date)}
+                                                slotProps={{ textField: { size: 'small', autoFocus: true, fullWidth: true } }}
+                                            />
+                                        ) : (
+                                            <Box
+                                                display="flex"
+                                                alignItems="center"
+                                                gap={1}
+                                                onClick={() => setEditingStartDate(true)}
+                                                sx={{ cursor: 'pointer', p: 0.5, borderRadius: 1, '&:hover': { bgcolor: '#f1f5f9' } }}
+                                            >
+                                                <PlayArrowIcon sx={{ fontSize: 16, color: '#94a3b8' }} />
+                                                <Typography variant="body2">{formatDate(task.startDate)}</Typography>
+                                            </Box>
+                                        )}
                                     </Box>
-                                </Box>
 
+                                    {/* Due Date - Clickable */}
+                                    <Box mb={2}>
+                                        <Typography variant="caption" color="text.disabled" display="block" mb={0.5}>
+                                            Дедлайн
+                                        </Typography>
+                                        {editingDueDate ? (
+                                            <DatePicker
+                                                value={task.dueDate ? new Date(task.dueDate.seconds * 1000) : null}
+                                                onChange={(date) => handleDateUpdate('dueDate', date)}
+                                                slotProps={{ textField: { size: 'small', autoFocus: true, fullWidth: true } }}
+                                            />
+                                        ) : (
+                                            <Box
+                                                display="flex"
+                                                alignItems="center"
+                                                gap={1}
+                                                onClick={() => setEditingDueDate(true)}
+                                                sx={{ cursor: 'pointer', p: 0.5, borderRadius: 1, '&:hover': { bgcolor: '#f1f5f9' } }}
+                                            >
+                                                <FlagIcon sx={{ fontSize: 16, color: task.dueDate && new Date(task.dueDate.seconds * 1000) < new Date() && task.status !== 'done' ? '#ef4444' : '#94a3b8' }} />
+                                                <Typography
+                                                    variant="body2"
+                                                    color={task.dueDate && new Date(task.dueDate.seconds * 1000) < new Date() && task.status !== 'done' ? 'error' : 'inherit'}
+                                                    fontWeight={task.dueDate ? 500 : 400}
+                                                >
+                                                    {formatDate(task.dueDate)}
+                                                </Typography>
+                                            </Box>
+                                        )}
+                                    </Box>
+                                </LocalizationProvider>
+
+                                {/* Duration - Clickable */}
                                 <Box mb={2}>
                                     <Typography variant="caption" color="text.disabled" display="block" mb={0.5}>
                                         Оценка времени
                                     </Typography>
-                                    <Box display="flex" alignItems="center" gap={1}>
-                                        <AccessTimeIcon sx={{ fontSize: 16, color: '#94a3b8' }} />
-                                        <Typography variant="body2">{formatDuration(task.estimatedDurationMinutes)}</Typography>
+                                    {editingDuration ? (
+                                        <ClickAwayListener onClickAway={handleDurationSave}>
+                                            <TextField
+                                                size="small"
+                                                type="number"
+                                                value={durationValue}
+                                                onChange={(e) => setDurationValue(e.target.value)}
+                                                onKeyDown={(e) => e.key === 'Enter' && handleDurationSave()}
+                                                autoFocus
+                                                placeholder="Минуты"
+                                                InputProps={{
+                                                    endAdornment: <Typography variant="caption" color="text.secondary">мин</Typography>
+                                                }}
+                                                sx={{ width: 120 }}
+                                            />
+                                        </ClickAwayListener>
+                                    ) : (
+                                        <Box
+                                            display="flex"
+                                            alignItems="center"
+                                            gap={1}
+                                            onClick={() => setEditingDuration(true)}
+                                            sx={{ cursor: 'pointer', p: 0.5, borderRadius: 1, '&:hover': { bgcolor: '#f1f5f9' } }}
+                                        >
+                                            <AccessTimeIcon sx={{ fontSize: 16, color: '#94a3b8' }} />
+                                            <Typography variant="body2">{formatDuration(task.estimatedDurationMinutes)}</Typography>
+                                        </Box>
+                                    )}
+                                </Box>
+
+                                {/* Hourly Rate - Clickable */}
+                                <Box mb={2}>
+                                    <Typography variant="caption" color="text.disabled" display="block" mb={0.5}>
+                                        💰 Ставка ($/ч)
+                                    </Typography>
+                                    {editingRate ? (
+                                        <ClickAwayListener onClickAway={handleRateSave}>
+                                            <TextField
+                                                size="small"
+                                                type="number"
+                                                value={rateValue}
+                                                onChange={(e) => setRateValue(e.target.value)}
+                                                onKeyDown={(e) => e.key === 'Enter' && handleRateSave()}
+                                                autoFocus
+                                                placeholder="0"
+                                                InputProps={{
+                                                    startAdornment: <Typography variant="caption" color="text.secondary" sx={{ mr: 0.5 }}>$</Typography>
+                                                }}
+                                                sx={{ width: 100 }}
+                                            />
+                                        </ClickAwayListener>
+                                    ) : (
+                                        <Box
+                                            display="flex"
+                                            alignItems="center"
+                                            gap={1}
+                                            onClick={() => setEditingRate(true)}
+                                            sx={{ cursor: 'pointer', p: 0.5, borderRadius: 1, '&:hover': { bgcolor: '#f1f5f9' } }}
+                                        >
+                                            <Typography variant="body2" fontWeight={task.hourlyRate ? 600 : 400}>
+                                                {task.hourlyRate ? `$${task.hourlyRate}/ч` : '— (использует дефолт)'}
+                                            </Typography>
+                                        </Box>
+                                    )}
+                                </Box>
+
+                                <Divider sx={{ my: 2 }} />
+
+                                {/* Time & Earnings Stats */}
+                                <Box mb={2} sx={{ bgcolor: '#f0fdf4', p: 1.5, borderRadius: 2, border: '1px solid #bbf7d0' }}>
+                                    <Typography variant="caption" color="text.secondary" display="block" mb={1} fontWeight={600}>
+                                        📊 Затраты
+                                    </Typography>
+                                    <Box display="flex" justifyContent="space-between" mb={0.5}>
+                                        <Typography variant="caption" color="text.secondary">Время:</Typography>
+                                        <Typography variant="body2" fontWeight={500}>
+                                            {formatDuration(task.totalTimeSpentMinutes || 0)}
+                                            {task.estimatedDurationMinutes && (
+                                                <Typography component="span" variant="caption" color="text.disabled" sx={{ ml: 0.5 }}>
+                                                    / {formatDuration(task.estimatedDurationMinutes)}
+                                                </Typography>
+                                            )}
+                                        </Typography>
+                                    </Box>
+                                    <Box display="flex" justifyContent="space-between">
+                                        <Typography variant="caption" color="text.secondary">Заработок:</Typography>
+                                        <Typography variant="body2" fontWeight={600} color="success.main">
+                                            ${(task.totalEarnings || 0).toFixed(2)}
+                                        </Typography>
                                     </Box>
                                 </Box>
 
@@ -683,6 +960,20 @@ const GTDTaskDetailsPage: React.FC = () => {
                                         </Typography>
                                     </Box>
                                 )}
+
+                                <Divider sx={{ my: 2 }} />
+
+                                {/* Delete Button */}
+                                <Button
+                                    fullWidth
+                                    variant="outlined"
+                                    color="error"
+                                    startIcon={<DeleteIcon />}
+                                    onClick={handleDeleteTask}
+                                    sx={{ borderRadius: 2 }}
+                                >
+                                    Удалить задачу
+                                </Button>
                             </Paper>
                         </Box>
                     </Grid>

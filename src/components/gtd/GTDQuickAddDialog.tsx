@@ -66,7 +66,7 @@ import { Client } from '../../types/crm.types';
 import { UserProfile } from '../../types/user.types';
 import DynamicFormField from './DynamicFormField';
 import ShoppingListInput, { ShoppingItem } from './ShoppingListInput';
-import { saveShoppingList } from '../../services/shoppingListService';
+import { saveShoppingList } from '../../features/shopping';
 import AuditTaskInput, { AuditTaskPayload } from './AuditTaskInput';
 import RepairTicketInput, { RepairTicketPayload } from './RepairTicketInput';
 
@@ -374,11 +374,11 @@ const GTDQuickAddDialog: React.FC<GTDQuickAddDialogProps> = ({
         setSaving(true);
         try {
             await saveShoppingList(
-                selectedClient?.id || 'no_client',
-                undefined, // locationId - TODO: add location support
                 items,
+                selectedClient?.id || 'no_client',
                 currentUser.uid,
-                selectedClient?.name
+                undefined, // locationId
+                undefined  // locationName
             );
 
             setTasksCreated(prev => prev + items.length);

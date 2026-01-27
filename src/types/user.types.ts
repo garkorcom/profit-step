@@ -66,6 +66,7 @@ export interface UserProfile {
   lastSeen?: Timestamp | string;  // Дата последней активности
   status: UserStatus;      // Статус активности ('active' по умолчанию)
   hourlyRate?: number;     // Почасовая ставка (для расчета зарплаты)
+  defaultRate?: number;    // Ставка по умолчанию (System Setting)
 
   // --- Поля для дашбордов ---
   loginCount?: number;     // Количество входов в систему

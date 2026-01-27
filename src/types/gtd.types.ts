@@ -215,6 +215,29 @@ export interface GTDTask {
 
     /** Флаг: требуется транспорт */
     needsVehicle?: boolean;
+
+    // ═══════════════════════════════════════
+    // RATE & TIME TRACKING FIELDS
+    // ═══════════════════════════════════════
+
+    /** 
+     * Почасовая ставка для этой конкретной задачи
+     * Приоритет: task.hourlyRate → user.hourlyRate
+     * Если указан — переопределяет дефолтный рейт сотрудника
+     */
+    hourlyRate?: number;
+
+    /** 
+     * Общий заработок по задаче (агрегат из work_sessions)
+     * Обновляется при stopSession
+     */
+    totalEarnings?: number;
+
+    /** 
+     * Общее время работы над задачей (в минутах)
+     * Сумма durationMinutes из всех work_sessions с relatedTaskId
+     */
+    totalTimeSpentMinutes?: number;
 }
 
 /**

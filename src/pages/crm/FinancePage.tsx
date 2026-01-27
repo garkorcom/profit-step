@@ -115,25 +115,25 @@ const FinancePage: React.FC = () => {
         }
     };
 
+    /**
+     * Fetch employees/workers from Firestore.
+     * 
+     * UNIFIED RATE SYSTEM (2026-01-26):
+     * - Previously used separate 'employees' collection for rates
+     * - Now unified with 'users' collection to sync with Timer/Bot
+     * - Timer (useSessionManager) reads from users.hourlyRate
+     * - Bot (onWorkerBotMessage) reads from users.hourlyRate with employees fallback
+     * - FinancePage now updates users.hourlyRate directly
+     */
     const fetchEmployees = async () => {
-        try {
-            // Try specific 'employees' collection first (contains rates)
-            const empSnap = await getDocs(collection(db, 'employees'));
-            if (!empSnap.empty) {
-                setEmployees(empSnap.docs.map(d => ({ id: d.id, ...d.data() } as Employee)));
-                return;
-            }
-        } catch (e) {
-            console.warn("Error fetching employees collection (permissions?), attempting fallback to users...", e);
-        }
-
-        // Fallback 1: Users collection (for basic names)
+        // Unified: use 'users' collection for both profiles and rates
         try {
             const userSnap = await getDocs(collection(db, 'users'));
             if (!userSnap.empty) {
                 setEmployees(userSnap.docs.map(d => ({
                     id: d.id,
                     name: d.data().displayName || d.data().name || 'Unknown',
+                    hourlyRate: d.data().hourlyRate || 0,
                     ...d.data()
                 } as Employee)));
             }
@@ -200,8 +200,8 @@ const FinancePage: React.FC = () => {
         if (isNaN(rate)) return;
 
         try {
-            // Updating the 'employees' collection which stores the rates
-            await updateDoc(doc(db, 'employees', empId), { hourlyRate: rate });
+            // Unified: update rate in 'users' collection (same as timer reads)
+            await updateDoc(doc(db, 'users', empId), { hourlyRate: rate });
             setEmployees(prev => prev.map(e => e.id === empId ? { ...e, hourlyRate: rate } : e));
         } catch (error) {
             console.error("Error updating rate:", error);

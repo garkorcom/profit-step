@@ -34,15 +34,10 @@ import {
 } from '@mui/icons-material';
 import { nanoid } from 'nanoid';
 
-export interface ShoppingItem {
-    id: string;
-    name: string;
-    quantity: number;
-    unit?: string;
-    photoUrl?: string;
-    isUrgent: boolean;
-    completed: boolean;
-}
+import { ShoppingItem } from '../../features/shopping';
+
+// Re-export for backward compatibility
+export type { ShoppingItem };
 
 interface ShoppingListInputProps {
     onComplete: (items: ShoppingItem[]) => void;

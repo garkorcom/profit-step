@@ -2,12 +2,12 @@ import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
 import { toZonedTime, fromZonedTime } from 'date-fns-tz';
 import { subDays, endOfDay } from 'date-fns';
-import axios from 'axios';
+
 
 const db = admin.firestore();
 
 // Config
-const WORKER_BOT_TOKEN = process.env.WORKER_BOT_TOKEN || functions.config().worker_bot?.token;
+
 
 // Florida timezone - all our objects are in Florida
 const TIME_ZONE = 'America/New_York';
@@ -103,17 +103,8 @@ export const finalizeExpiredSessions = functions.pubsub
 
                     autoClosedCount++;
 
-                    // Notify worker via Telegram
-                    const chatId = session.employeeId;
-                    if (chatId && typeof chatId === 'number') {
-                        const clientName = session.clientName || 'Unknown';
-                        notifications.push(sendMessage(chatId,
-                            `⚠️ *Session Requires Review*\n\n` +
-                            `Your session "${clientName}" from ${session.startTime.toDate().toLocaleDateString()} was left open.\n\n` +
-                            `It has been flagged for admin review.\n` +
-                            `💡 Please contact your administrator to confirm the actual work duration.`
-                        ));
-                    }
+                    // NOTE: Removed 1 AM notification per user request.
+                    // Workers won't be notified at 1 AM anymore.
                 }
 
                 batch.update(doc.ref, updates);
@@ -133,22 +124,3 @@ export const finalizeExpiredSessions = functions.pubsub
 
         return null;
     });
-
-/**
- * Sends a Telegram message to the worker
- */
-async function sendMessage(chatId: number, text: string) {
-    if (!WORKER_BOT_TOKEN) {
-        console.warn('WORKER_BOT_TOKEN not configured, skipping notification');
-        return;
-    }
-    try {
-        await axios.post(`https://api.telegram.org/bot${WORKER_BOT_TOKEN}/sendMessage`, {
-            chat_id: chatId,
-            text,
-            parse_mode: 'Markdown',
-        });
-    } catch (error: any) {
-        console.error('Error sending Telegram message:', error.message);
-    }
-}

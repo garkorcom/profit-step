@@ -30,6 +30,8 @@ const MainLayout: React.FC = () => {
           flex: 1, // Занимает все доступное пространство
           display: 'flex',
           flexDirection: 'column',
+          minWidth: 0, // Allows flex children to shrink below content size
+          overflow: 'hidden', // Prevents content overflow
         }}
       >
         {/* Outlet - здесь рендерятся дочерние маршруты */}

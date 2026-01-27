@@ -67,7 +67,7 @@ export interface PaginatedCompaniesResult {
 // --- Client (Customer 360) ---
 
 export type ClientType = 'person' | 'company';
-export type ClientStatus = 'new' | 'contacted' | 'qualified' | 'customer' | 'churned';
+export type ClientStatus = 'new' | 'contacted' | 'qualified' | 'customer' | 'churned' | 'done';
 
 export interface ClientContact {
   phone: string;
@@ -98,6 +98,14 @@ export interface Client {
   industry?: string;
   source?: string;
   status: ClientStatus;
+
+  // Location / Geofence
+  workLocation?: {
+    latitude: number;
+    longitude: number;
+    radius: number; // miles
+    address?: string;
+  };
 
   // Financials
   totalRevenue: number; // LTV
@@ -236,3 +244,64 @@ export interface ActivityLog {
   performedBy: string; // User ID
   performedAt: Timestamp;
 }
+
+// --- Project Accounting System ---
+
+export type ProjectStatus = 'active' | 'completed' | 'archived';
+
+export interface Project {
+  id: string;
+  clientId: string;
+  clientName: string; // Denormalized for display
+  companyId: string;
+
+  name: string; // "Kitchen Renovation", "Maintenance 2026"
+  description?: string;
+  status: ProjectStatus;
+
+  // Aggregated finances (updated by triggers)
+  totalDebit: number;   // All charges
+  totalCredit: number;  // All payments
+  balance: number;      // Saldo = debit - credit
+
+  // Metadata
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+  createdBy: string;
+}
+
+export type LedgerEntryType = 'debit' | 'credit';
+export type LedgerCategory =
+  | 'labor'       // Work sessions
+  | 'materials'   // Shopping/supplies
+  | 'admin'       // Administrative costs
+  | 'documents'   // Permits, etc.
+  | 'payment'     // Client payment
+  | 'adjustment'; // Manual correction
+
+export type LedgerSourceType = 'work_session' | 'shopping_receipt' | 'manual';
+
+export interface LedgerEntry {
+  id: string;
+  projectId: string;
+  clientId: string;
+  companyId: string;
+
+  type: LedgerEntryType;
+  category: LedgerCategory;
+
+  amount: number;
+  description: string;
+
+  // Auto-link to source document
+  sourceType: LedgerSourceType;
+  sourceId?: string; // ID of work_session or receipt
+
+  // Transaction date (may differ from createdAt)
+  date: Timestamp;
+
+  // Metadata
+  createdAt: Timestamp;
+  createdBy: string;
+}
+

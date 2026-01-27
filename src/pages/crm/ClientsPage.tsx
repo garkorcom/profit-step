@@ -25,17 +25,24 @@ import {
 } from '@mui/icons-material';
 import { useAuth } from '../../auth/AuthContext';
 import { crmApi } from '../../api/crmApi';
+import { projectsApi } from '../../api/projectsApi';
 import { Client } from '../../types/crm.types';
+
+interface ClientBalance {
+    clientId: string;
+    balance: number;
+}
 
 const ClientsPage: React.FC = () => {
     const navigate = useNavigate();
     const { userProfile } = useAuth();
     const [clients, setClients] = useState<Client[]>([]);
+    const [balances, setBalances] = useState<Map<string, number>>(new Map());
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
-        const fetchClients = async () => {
+        const fetchData = async () => {
             if (!userProfile?.companyId) {
                 setLoading(false);
                 return;
@@ -43,8 +50,21 @@ const ClientsPage: React.FC = () => {
 
             try {
                 setLoading(true);
-                const data = await crmApi.getClients(userProfile.companyId);
-                setClients(data);
+
+                // Fetch clients and balances in parallel
+                const [clientsData, balancesSummary] = await Promise.all([
+                    crmApi.getClients(userProfile.companyId),
+                    projectsApi.getClientBalancesSummary(userProfile.companyId)
+                ]);
+
+                setClients(clientsData);
+
+                // Create balance map for quick lookup
+                const balanceMap = new Map<string, number>();
+                balancesSummary.forEach(item => {
+                    balanceMap.set(item.clientId, item.balance);
+                });
+                setBalances(balanceMap);
             } catch (err) {
                 console.error('Error loading clients:', err);
                 setError('Failed to load clients');
@@ -53,8 +73,12 @@ const ClientsPage: React.FC = () => {
             }
         };
 
-        fetchClients();
+        fetchData();
     }, [userProfile?.companyId]);
+
+    const getClientBalance = (clientId: string): number => {
+        return balances.get(clientId) || 0;
+    };
 
     const getStatusColor = (status: string) => {
         switch (status) {
@@ -107,13 +131,14 @@ const ClientsPage: React.FC = () => {
                             <TableCell>Type</TableCell>
                             <TableCell>Contact</TableCell>
                             <TableCell>Status</TableCell>
+                            <TableCell align="right">Balance</TableCell>
                             <TableCell>Actions</TableCell>
                         </TableRow>
                     </TableHead>
                     <TableBody>
                         {clients.length === 0 ? (
                             <TableRow>
-                                <TableCell colSpan={5} align="center">
+                                <TableCell colSpan={6} align="center">
                                     <Typography variant="body1" sx={{ py: 3, color: 'text.secondary' }}>
                                         No clients found. Create your first client!
                                     </Typography>
@@ -162,6 +187,22 @@ const ClientsPage: React.FC = () => {
                                             color={getStatusColor(client.status) as any}
                                             size="small"
                                         />
+                                    </TableCell>
+                                    <TableCell align="right">
+                                        {(() => {
+                                            const balance = getClientBalance(client.id);
+                                            if (balance === 0) return <Typography variant="body2" color="text.secondary">—</Typography>;
+                                            return (
+                                                <Typography
+                                                    variant="body2"
+                                                    fontWeight="bold"
+                                                    color={balance > 0 ? 'error.main' : 'success.main'}
+                                                >
+                                                    ${Math.abs(balance).toFixed(2)}
+                                                    {balance > 0 ? ' ⬆️' : ' ✅'}
+                                                </Typography>
+                                            );
+                                        })()}
                                     </TableCell>
                                     <TableCell>
                                         <IconButton

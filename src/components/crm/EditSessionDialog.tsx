@@ -37,9 +37,15 @@ const getStartOfDay = (date: Date): Date => {
 /**
  * Checks if a session is within the edit window (today or yesterday)
  * Sessions from day-before-yesterday and earlier cannot be edited
+ * EXCEPTION: Sessions with requiresAdminReview=true can always be edited
  */
 const isWithinEditWindow = (session: WorkSession): boolean => {
     if (!session.startTime) return false;
+
+    // Sessions requiring admin review can ALWAYS be edited
+    if (session.requiresAdminReview) {
+        return true;
+    }
 
     // Already finalized or processed
     if (session.finalizationStatus === 'finalized' || session.finalizationStatus === 'processed') {
@@ -60,6 +66,14 @@ const isWithinEditWindow = (session: WorkSession): boolean => {
  */
 const getEditWindowMessage = (session: WorkSession): { message: string; isUrgent: boolean } => {
     if (!session.startTime) return { message: '', isUrgent: false };
+
+    // Special case: auto-closed sessions requiring review
+    if (session.requiresAdminReview) {
+        return {
+            message: '🔴 Сессия была закрыта автоматически! Укажите реальное время работы.',
+            isUrgent: true
+        };
+    }
 
     const sessionDate = new Date(session.startTime.seconds * 1000);
     const today = getStartOfDay(new Date());
@@ -209,6 +223,7 @@ const EditSessionDialog: React.FC<EditSessionDialogProps> = ({
                 clientId: clientId,
                 clientName: clientName,
                 description: description,
+                hourlyRate: hourlyRate ? parseFloat(hourlyRate) : undefined,
             });
 
             const data = result.data as { success: boolean; message: string; durationMinutes?: number; sessionEarnings?: number };

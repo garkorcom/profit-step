@@ -9,7 +9,7 @@
  * - adminDeleteUser: Безопасное удаление пользователя администратором
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.checkLongBreaks = exports.updateWorkSession = exports.onReceiptUpdate = exports.onWorkSessionUpdate = exports.onWorkSessionCreate = exports.generateDailyPayroll = exports.closePayrollPeriod = exports.forceFinishAllSessions = exports.sendSessionReminders = exports.finalizeExpiredSessions = exports.onWorkerBotMessage = exports.estimateTask = exports.generateLeadSummary = exports.sendMessage = exports.onTelegramMessage = exports.onWhatsAppMessage = exports.onLeadCreate = exports.updateCompanyMemberCount_v2 = exports.trackUserActivation_v2 = exports.logUserUpdates_v2 = exports.incrementLoginCount_v2 = exports.inviteUser = exports.adminDeleteUser = exports.onUserDelete = exports.onUserCreate = exports.admin_createUserWithPassword = exports.logPaginationMetrics = exports.diagnoseBot = exports.logInvitationAccepted = exports.logInvitationSent = exports.logUserDeleted = exports.logUserCreated = exports.brevoWebhookHandler = exports.trackFirstInvite = exports.initializeUserActivation = exports.aggregateEngagementMetrics = exports.aggregateGrowthMetrics = exports.processAvatar = void 0;
+exports.checkLongBreaks = exports.updateWorkSession = exports.onReceiptUpdate = exports.onWorkSessionUpdate = exports.onWorkSessionCreate = exports.generateDailyPayroll = exports.closePayrollPeriod = exports.forceFinishAllSessions = exports.finalizeExpiredSessions = exports.onWorkerBotMessage = exports.estimateTask = exports.generateLeadSummary = exports.sendMessage = exports.onTelegramMessage = exports.onWhatsAppMessage = exports.onLeadCreate = exports.updateCompanyMemberCount_v2 = exports.trackUserActivation_v2 = exports.logUserUpdates_v2 = exports.incrementLoginCount_v2 = exports.inviteUser = exports.adminDeleteUser = exports.onUserDelete = exports.onUserCreate = exports.admin_createUserWithPassword = exports.logPaginationMetrics = exports.diagnoseBot = exports.logInvitationAccepted = exports.logInvitationSent = exports.logUserDeleted = exports.logUserCreated = exports.brevoWebhookHandler = exports.trackFirstInvite = exports.initializeUserActivation = exports.aggregateEngagementMetrics = exports.aggregateGrowthMetrics = exports.processAvatar = void 0;
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 const crypto = require("crypto");
@@ -436,8 +436,7 @@ Object.defineProperty(exports, "onWorkerBotMessage", { enumerable: true, get: fu
 // Scheduled: Session Management
 var finalizeExpiredSessions_1 = require("./scheduled/finalizeExpiredSessions");
 Object.defineProperty(exports, "finalizeExpiredSessions", { enumerable: true, get: function () { return finalizeExpiredSessions_1.finalizeExpiredSessions; } });
-var sendSessionReminders_1 = require("./scheduled/sendSessionReminders");
-Object.defineProperty(exports, "sendSessionReminders", { enumerable: true, get: function () { return sendSessionReminders_1.sendSessionReminders; } });
+// export { sendSessionReminders } from './scheduled/sendSessionReminders'; // DISABLED: Session reminders turned off
 var forceFinishAllSessions_1 = require("./callable/admin/forceFinishAllSessions");
 Object.defineProperty(exports, "forceFinishAllSessions", { enumerable: true, get: function () { return forceFinishAllSessions_1.forceFinishAllSessions; } });
 var closePayrollPeriod_1 = require("./callable/payroll/closePayrollPeriod");

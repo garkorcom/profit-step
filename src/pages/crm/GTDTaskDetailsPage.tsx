@@ -223,10 +223,12 @@ const GTDTaskDetailsPage: React.FC = () => {
         });
     };
 
-    const handleDateUpdate = async (field: 'startDate' | 'dueDate', date: Date | null) => {
+    const handleDateUpdate = async (field: 'startDate' | 'dueDate', date: any) => {
         if (!taskId) return;
+        // Convert pickerValue to Date if needed
+        const dateValue: Date | null = date ? ((date as any).toDate?.() ?? new Date(date)) : null;
         await updateDoc(doc(db, 'gtd_tasks', taskId), {
-            [field]: date ? Timestamp.fromDate(date) : null,
+            [field]: dateValue ? Timestamp.fromDate(dateValue) : null,
             updatedAt: Timestamp.now()
         });
         if (field === 'startDate') setEditingStartDate(false);

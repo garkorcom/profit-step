@@ -49,11 +49,29 @@ export interface Receipt {
     clientId: string;
     clientName: string;
     listId: string;
-    photoUrl: string;
+    photoUrl: string;              // Фото чека
+    goodsPhotoUrl?: string;        // Фото товаров (Double Proof)
     createdAt: FieldValue;
-    status: 'needs_review' | 'approved';
+    status: 'awaiting_goods_photo' | 'needs_review' | 'approved';
     linkedItemIds: string[];
     totalAmount?: number;
+
+    // === FINANCIAL CONSTRUCTOR (Phase 2) ===
+    paymentSource?: 'personal' | 'company_card' | 'cash_advance';
+    companyCardId?: string;
+    cashAdvanceId?: string;
+    changeAmount?: number;
+    changeAction?: 'returned' | 'kept_balance' | 'salary_deduct';
+
+    // === ALLOCATION (Phase 3) ===
+    costCenter?: 'billable' | 'internal' | 'personal';
+    billingStatus?: 'pending' | 'verified' | 'invoiced' | 'paid';
+    reimbursementStatus?: 'pending' | 'paid';
+
+    // === ANTI-FRAUD ===
+    uploadLocation?: { latitude: number; longitude: number };
+    gpsMatch?: boolean;
+    flagged?: boolean;
 }
 
 /**
@@ -249,7 +267,7 @@ export async function processReceipt(
             return { success: false, boughtItems: [] };
         }
 
-        // Create receipt document
+        // Create receipt document (awaiting goods photo for Double Proof)
         const receiptId = nanoid(12);
         const receipt: Receipt = {
             id: receiptId,
@@ -260,7 +278,7 @@ export async function processReceipt(
             listId: listId,
             photoUrl: photoUrl,
             createdAt: FieldValue.serverTimestamp(),
-            status: 'needs_review',
+            status: 'awaiting_goods_photo', // Double Proof: need goods photo
             linkedItemIds: selectedItems.map((i: ShoppingItem) => i.id),
         };
 
@@ -314,6 +332,31 @@ export async function cancelSelection(listId: string, userId: number): Promise<v
         items,
         updatedAt: FieldValue.serverTimestamp(),
     });
+}
+
+/**
+ * Add goods photo to receipt (Double Proof Step 2)
+ * Updates receipt status from awaiting_goods_photo to needs_review
+ */
+export async function addGoodsPhoto(
+    receiptId: string,
+    goodsPhotoUrl: string
+): Promise<{ success: boolean; listId?: string }> {
+    const receiptRef = admin.firestore().collection('receipts').doc(receiptId);
+    const doc = await receiptRef.get();
+
+    if (!doc.exists) {
+        return { success: false };
+    }
+
+    const data = doc.data()!;
+
+    await receiptRef.update({
+        goodsPhotoUrl: goodsPhotoUrl,
+        status: 'needs_review', // Double Proof complete, ready for manager review
+    });
+
+    return { success: true, listId: data.listId };
 }
 
 /**

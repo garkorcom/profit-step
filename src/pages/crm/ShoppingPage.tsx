@@ -55,10 +55,11 @@ import {
     archiveShoppingList,
     saveShoppingList,
 } from '../../features/shopping';
+import { ReceiptsTabView } from '../../features/shopping/views/ReceiptsTabView';
 import { useClients } from '../../features/shopping/hooks/useClients';
 import { useAuth } from '../../auth/AuthContext';
 
-type TabValue = 'active' | 'completed';
+type TabValue = 'active' | 'completed' | 'receipts';
 
 const ShoppingPage: React.FC = () => {
     const navigate = useNavigate();
@@ -295,7 +296,6 @@ const ShoppingPage: React.FC = () => {
                     />
                 </Box>
 
-                {/* Tabs */}
                 <Tabs
                     value={tabValue}
                     onChange={(_, v) => setTabValue(v)}
@@ -313,11 +313,17 @@ const ShoppingPage: React.FC = () => {
                         label={`Завершённые (${completedLists.stats.totalLists})`}
                         value="completed"
                     />
+                    <Tab
+                        label="💰 Чеки"
+                        value="receipts"
+                    />
                 </Tabs>
             </Box>
 
             {/* Content */}
-            {loading ? (
+            {tabValue === 'receipts' ? (
+                <ReceiptsTabView />
+            ) : loading ? (
                 <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}>
                     <CircularProgress />
                 </Box>

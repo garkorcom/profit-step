@@ -238,6 +238,16 @@ export interface GTDTask {
      * Сумма durationMinutes из всех work_sessions с relatedTaskId
      */
     totalTimeSpentMinutes?: number;
+
+    // ═══════════════════════════════════════
+    // ACCEPTANCE FIELDS (when assigned to someone else)
+    // ═══════════════════════════════════════
+
+    /** Дата принятия задачи исполнителем */
+    acceptedAt?: Timestamp;
+
+    /** ID пользователя, который принял задачу */
+    acceptedBy?: string;
 }
 
 /**

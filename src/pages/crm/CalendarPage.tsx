@@ -767,13 +767,13 @@ const CalendarPage: React.FC = () => {
                                     <TimePicker
                                         label="Start"
                                         value={quickAddStartTime}
-                                        onChange={(v) => setQuickAddStartTime(v)}
+                                        onChange={(v) => setQuickAddStartTime(v ? (v as any).toDate?.() ?? v : null)}
                                         slotProps={{ textField: { size: 'small', fullWidth: true } }}
                                     />
                                     <TimePicker
                                         label="End"
                                         value={quickAddEndTime}
-                                        onChange={(v) => setQuickAddEndTime(v)}
+                                        onChange={(v) => setQuickAddEndTime(v ? (v as any).toDate?.() ?? v : null)}
                                         slotProps={{ textField: { size: 'small', fullWidth: true } }}
                                     />
                                 </Box>

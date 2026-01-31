@@ -94,6 +94,7 @@ const TimeTrackingTable: React.FC<TimeTrackingTableProps> = ({
                         <TableCell>Client / Object</TableCell>
                         <TableCell>Time Log</TableCell>
                         <TableCell>Duration</TableCell>
+                        <TableCell>Planned Work</TableCell>
                         <TableCell>Description</TableCell>
                         <TableCell>Status</TableCell>
                         <TableCell align="right">Details</TableCell>
@@ -102,7 +103,7 @@ const TimeTrackingTable: React.FC<TimeTrackingTableProps> = ({
                 <TableBody>
                     {sessions.length === 0 ? (
                         <TableRow>
-                            <TableCell colSpan={8} align="center">No work sessions found for this period</TableCell>
+                            <TableCell colSpan={9} align="center">No work sessions found for this period</TableCell>
                         </TableRow>
                     ) : (
                         sessions.map((session) => {
@@ -175,6 +176,19 @@ const TimeTrackingTable: React.FC<TimeTrackingTableProps> = ({
                                     {/* Duration */}
                                     <TableCell sx={{ fontWeight: 'bold' }}>
                                         {formatDuration(session.durationMinutes)}
+                                    </TableCell>
+
+                                    {/* Planned Work (from voice transcription) */}
+                                    <TableCell>
+                                        {session.plannedTaskDescription ? (
+                                            <Tooltip title={session.plannedTaskDescription}>
+                                                <Typography variant="body2" noWrap sx={{ maxWidth: 180 }}>
+                                                    {session.plannedTaskSummary || session.plannedTaskDescription}
+                                                </Typography>
+                                            </Tooltip>
+                                        ) : (
+                                            <Typography variant="caption" color="text.secondary">-</Typography>
+                                        )}
                                     </TableCell>
 
                                     {/* Description */}

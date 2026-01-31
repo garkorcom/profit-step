@@ -19,7 +19,7 @@ const db = admin.firestore();
 // SECURITY: Prefer environment variable, fallback to config, then hardcoded (for dev/ref)
 // Ideally: firebase functions:config:set worker_bot.token="..." worker_bot.password="..."
 const WORKER_BOT_TOKEN = process.env.WORKER_BOT_TOKEN || functions.config().worker_bot?.token;
-const WORKER_PASSWORD = process.env.WORKER_PASSWORD || functions.config().worker_bot?.password || 'work2025';
+const WORKER_PASSWORD = process.env.WORKER_PASSWORD || functions.config().worker_bot?.password || '9846';
 const ADMIN_GROUP_ID = process.env.ADMIN_GROUP_ID || functions.config().worker_bot?.admin_group_id;
 
 // Types
@@ -158,6 +158,45 @@ async function handleMessage(message: any) {
     // 2. Main Logic
     if (text === '/start') {
         await sendMainMenu(chatId, userId);
+    } else if (text === '/?' || text === '/help') {
+        // Help command with instructions for adding new users
+        await sendMessage(chatId, `📚 *Справка*
+
+*Как добавить нового пользователя:*
+1️⃣ Новый сотрудник открывает бота в Telegram
+2️⃣ Нажимает /start  
+3️⃣ Вводит пароль: \`9846\`
+4️⃣ После авторизации появится в системе
+
+━━━━━━━━━━━━━━━━━━
+*🎙 Как создать задачу голосом:*
+
+Задачи создаются автоматически при завершении работы:
+
+1️⃣ Начни сессию: *▶️ Start Work*
+2️⃣ Выбери клиента
+3️⃣ Работай...
+4️⃣ Заверши: *⏹️ Finish Work*
+5️⃣ *Запиши голосовое* с отчётом
+
+🤖 *AI автоматически распознает задачи* из твоего голосового сообщения и создаст их в GTD!
+
+Пример: _"Сегодня закончил плитку в ванной. Завтра нужно купить затирку и закончить межкомнатные двери."_
+
+→ AI создаст 2 задачи:
+• Купить затирку
+• Закончить межкомнатные двери
+
+━━━━━━━━━━━━━━━━━━
+*Доступные команды:*
+/start - Главное меню
+/? или /help - Эта справка
+🛒 Закупки - Списки покупок
+
+*Работа с таймером:*
+▶️ Start Work - Начать сессию
+⏹️ Finish Work - Завершить работу  
+☕ Break - Перерыв`);
     } else if (text === '▶️ Start Work') {
         await sendClientList(chatId);
     } else if (text === '⏹️ Finish Work') {
@@ -176,7 +215,14 @@ async function handleMessage(message: any) {
         // Check if awaiting shopping receipt photo
         if (message.photo) {
             const largestPhoto = message.photo[message.photo.length - 1];
-            // First check receipt upload
+
+            // First check goods photo (Double Proof Step 2)
+            const wasGoodsPhoto = await ShoppingHandler.handleGoodsPhoto(
+                chatId, userId, largestPhoto.file_id
+            );
+            if (wasGoodsPhoto) return;
+
+            // Then check receipt upload
             const wasReceipt = await ShoppingHandler.handleShoppingReceiptPhoto(
                 chatId, userId, largestPhoto.file_id, message.from.first_name
             );
@@ -1559,7 +1605,7 @@ async function handleVoiceMessage(chatId: number, userId: number, message: any) 
 
 
         const empDoc = await db.collection('employees').doc(String(userId)).get();
-        const userTimezone = empDoc.data()?.timezone || 'UTC';
+        const userTimezone = empDoc.data()?.timezone || 'America/New_York';
         const currentDate = new Date().toLocaleDateString('ru-RU', { timeZone: userTimezone });
 
         const systemPrompt = `
@@ -1871,7 +1917,7 @@ async function saveTelegramFile(fileId: string, destinationPath: string): Promis
  * @returns Object with total minutes and earnings for today
  */
 async function calculateDailyStats(userId: number, currentSessionMinutes = 0, currentSessionEarnings = 0, chatId: number | null = null) {
-    let timezone = 'UTC';
+    let timezone = 'America/New_York';
     let platformUserId: string | null = null;
 
     // Fetch user's timezone preference

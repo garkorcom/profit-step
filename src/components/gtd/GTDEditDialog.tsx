@@ -320,18 +320,73 @@ const GTDEditDialog: React.FC<GTDEditDialogProps> = ({ open, onClose, task, onSa
         setValue('status', status);
     };
 
+    // Handle task acceptance by assignee
+    const handleAcceptTask = async () => {
+        if (!task || !userProfile) return;
+        try {
+            await onSave(task.id, {
+                acceptedAt: Timestamp.now(),
+                acceptedBy: userProfile.id
+            });
+        } catch (error) {
+            console.error('Error accepting task:', error);
+        }
+    };
+
+    // Check if current user can accept the task
+    const canAcceptTask = task && userProfile &&
+        task.assigneeId === userProfile.id &&
+        task.ownerId !== userProfile.id &&
+        !task.acceptedAt;
+
+    const isTaskAccepted = !!task?.acceptedAt;
+
     return (
         <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm" PaperProps={{
             sx: { borderRadius: 3, p: 1 }
         }}>
             <form onSubmit={handleSubmit(onSubmit)}>
-                <DialogTitle sx={{ px: 2, pb: 1, pt: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <Typography variant="h6" fontWeight="bold">Quick Edit</Typography>
-                    {task?.createdAt && (
-                        <Typography variant="caption" color="text.secondary">
-                            Created: {new Date(task.createdAt.seconds * 1000).toLocaleDateString()}
-                        </Typography>
-                    )}
+                <DialogTitle sx={{ px: 2, pb: 1, pt: 2 }}>
+                    <Box display="flex" justifyContent="space-between" alignItems="center">
+                        <Typography variant="h6" fontWeight="bold">Quick Edit</Typography>
+                        <Box display="flex" alignItems="center" gap={1}>
+                            {/* Accept Button or Status */}
+                            {isTaskAccepted && (
+                                <Chip
+                                    size="small"
+                                    icon={<CheckCircleIcon />}
+                                    label="Принял ✓"
+                                    color="success"
+                                    variant="outlined"
+                                />
+                            )}
+                            {canAcceptTask && (
+                                <Button
+                                    size="small"
+                                    variant="contained"
+                                    color="success"
+                                    onClick={handleAcceptTask}
+                                    startIcon={<CheckCircleIcon />}
+                                    sx={{ borderRadius: 2 }}
+                                >
+                                    Принял
+                                </Button>
+                            )}
+                        </Box>
+                    </Box>
+                    {/* Author and Created info */}
+                    <Box display="flex" gap={2} mt={0.5}>
+                        {task?.ownerName && (
+                            <Typography variant="caption" color="text.secondary">
+                                Автор: <strong>{task.ownerName}</strong>
+                            </Typography>
+                        )}
+                        {task?.createdAt && (
+                            <Typography variant="caption" color="text.secondary">
+                                Создано: {new Date(task.createdAt.seconds * 1000).toLocaleDateString()}
+                            </Typography>
+                        )}
+                    </Box>
                 </DialogTitle>
 
                 <DialogContent sx={{ px: 2, py: 1 }}>

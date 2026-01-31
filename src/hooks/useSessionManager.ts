@@ -127,17 +127,27 @@ export const useSessionManager = (userId?: string, userDisplayName?: string, use
                 closedSessionMsg = 'Previous session closed. ';
             }
 
-            // 2. Determine hourlyRate: task.hourlyRate → user.hourlyRate → 0
+            // 2. Determine hourlyRate: task.hourlyRate → user.hourlyRate → employee.hourlyRate → 0
             // Priority 1: Task-specific rate (for special projects/clients)
-            // Priority 2: User's default rate from profile
+            // Priority 2: User's default rate from profile (users collection)
+            // Priority 3: Employee's default rate (employees collection - set in Admin UI)
             let hourlyRate = task.hourlyRate || 0;
 
             if (!hourlyRate) {
                 try {
                     const { getDoc } = await import('firebase/firestore');
+                    // Try users collection first
                     const userDoc = await getDoc(doc(db, 'users', userId));
                     if (userDoc.exists()) {
                         hourlyRate = userDoc.data()?.hourlyRate || 0;
+                    }
+
+                    // Fallback to employees collection (Admin-set rate)
+                    if (!hourlyRate) {
+                        const employeeDoc = await getDoc(doc(db, 'employees', userId));
+                        if (employeeDoc.exists()) {
+                            hourlyRate = employeeDoc.data()?.hourlyRate || 0;
+                        }
                     }
                 } catch (e) {
                     console.warn('Could not fetch hourlyRate:', e);

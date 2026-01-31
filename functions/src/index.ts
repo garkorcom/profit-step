@@ -552,7 +552,7 @@ export { onWorkerBotMessage } from './triggers/telegram/onWorkerBotMessage';
 
 // Scheduled: Session Management
 export { finalizeExpiredSessions } from './scheduled/finalizeExpiredSessions';
-export { sendSessionReminders } from './scheduled/sendSessionReminders';
+// export { sendSessionReminders } from './scheduled/sendSessionReminders'; // DISABLED: Session reminders turned off
 
 export { forceFinishAllSessions } from './callable/admin/forceFinishAllSessions';
 export { closePayrollPeriod } from './callable/payroll/closePayrollPeriod';

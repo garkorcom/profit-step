@@ -325,6 +325,86 @@ export async function handleShoppingReceiptPhoto(
 }
 
 /**
+ * Handle goods photo upload (Double Proof Step 2)
+ * Saves goods photo URL and completes the Double Proof verification
+ */
+export async function handleGoodsPhoto(
+    chatId: number,
+    userId: number,
+    photoFileId: string
+): Promise<boolean> {
+    const sessionDoc = await admin.firestore().collection('user_sessions').doc(String(userId)).get();
+    if (!sessionDoc.exists) return false;
+
+    const session = sessionDoc.data();
+    if (!session?.awaitingGoodsPhoto || !session?.pendingReceiptId) return false;
+
+    const receiptId = session.pendingReceiptId;
+    const listId = session.shoppingListId;
+
+    try {
+        // 1. Download and upload photo to Storage
+        const fileResponse = await axios.get(
+            `https://api.telegram.org/bot${WORKER_BOT_TOKEN}/getFile?file_id=${photoFileId}`
+        );
+        const filePath = fileResponse.data.result.file_path;
+        const fileUrl = `https://api.telegram.org/file/bot${WORKER_BOT_TOKEN}/${filePath}`;
+
+        const imageResponse = await axios.get(fileUrl, { responseType: 'arraybuffer' });
+        const buffer = Buffer.from(imageResponse.data);
+
+        const bucket = admin.storage().bucket();
+        const fileName = `goods_photos/${listId}/${Date.now()}_${userId}.jpg`;
+        const file = bucket.file(fileName);
+
+        await file.save(buffer, {
+            metadata: { contentType: 'image/jpeg' },
+        });
+
+        await file.makePublic();
+        const publicUrl = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
+
+        // 2. Update receipt with goods photo (keeps awaiting status for payment source)
+        const result = await ShoppingService.addGoodsPhoto(receiptId, publicUrl);
+
+        if (!result.success) {
+            await sendMessage(chatId, "⚠️ Ошибка сохранения фото товаров.");
+            return true;
+        }
+
+        // 3. Set session to await payment source selection
+        await admin.firestore().collection('user_sessions').doc(String(userId)).update({
+            awaitingGoodsPhoto: false,
+            awaitingPaymentSource: true,  // NEW: Phase 2
+            pendingReceiptId: receiptId,
+            shoppingListId: listId,
+        });
+
+        // 4. Show payment source selection menu (Financial Constructor)
+        await sendMessage(chatId,
+            `✅ *Фото товаров сохранено!*\n\n` +
+            `💳 *Шаг 3: Откуда деньги?*\n\n` +
+            `Выберите способ оплаты:`,
+            {
+                inline_keyboard: [
+                    [{ text: '💳 Моя карта / Наличные', callback_data: `shop:payment:${receiptId}:personal` }],
+                    [{ text: '🏢 Корпоративная карта', callback_data: `shop:payment:${receiptId}:company_card` }],
+                    [{ text: '💰 Подотчёт (выданные)', callback_data: `shop:payment:${receiptId}:cash_advance` }],
+                    [{ text: '❌ Отмена', callback_data: `shop:cancel_receipt:${listId}` }]
+                ]
+            }
+        );
+
+        logger.info(`Goods photo uploaded: receipt ${receiptId}, awaiting payment source`);
+        return true;
+    } catch (error) {
+        logger.error('Error processing goods photo', error);
+        await sendMessage(chatId, "⚠️ Ошибка загрузки фото товаров.");
+        return true;
+    }
+}
+
+/**
  * Handle draft callbacks
  */
 export async function handleDraftCallback(
@@ -672,35 +752,43 @@ export async function handleShoppingCallback(
             }
 
             case 'confirm_amount': {
-                // User confirmed OCR-detected amount
+                // User confirmed OCR-detected amount -> Now request goods photo (Double Proof)
                 const receiptId = parts[2];
                 const amount = parseFloat(parts[3]);
 
                 if (receiptId && amount > 0) {
-                    // Update receipt with amount
+                    // Update receipt with amount (but keep awaiting_goods_photo status)
                     await admin.firestore().collection('receipts').doc(receiptId).update({
                         totalAmount: amount,
-                        status: 'needs_review' // Manager still needs to verify
+                        // status stays 'awaiting_goods_photo' until goods photo is added
                     });
 
-                    // Clear session
-                    await admin.firestore().collection('user_sessions').doc(String(userId)).update({
-                        pendingReceiptId: null,
-                        pendingReceiptAmount: null,
-                        shoppingListId: null,
-                    });
-
-                    // Get listId for back button
+                    // Get listId for cancel button
                     const receiptDoc = await admin.firestore().collection('receipts').doc(receiptId).get();
                     const receiptListId = receiptDoc.data()?.listId;
 
+                    // Set session to await goods photo
+                    await admin.firestore().collection('user_sessions').doc(String(userId)).update({
+                        pendingReceiptAmount: null,
+                        awaitingGoodsPhoto: true,          // NEW: Double Proof Step 2
+                        pendingReceiptId: receiptId,
+                        shoppingListId: receiptListId,
+                    });
+
+                    // Request goods photo (Double Proof)
                     await axios.post(`https://api.telegram.org/bot${WORKER_BOT_TOKEN}/editMessageText`, {
                         chat_id: chatId,
                         message_id: messageId,
-                        text: `✅ *Чек сохранён!*\n\n💰 Сумма: *$${amount.toFixed(2)}*\n\n_Чек отправлен на проверку менеджеру._`,
+                        text: `✅ *Сумма подтверждена: $${amount.toFixed(2)}*\n\n` +
+                            `🛍 *Шаг 2: Фото товаров*\n\n` +
+                            `📷 Сфотографируйте:\n` +
+                            `• Пакеты с покупками\n` +
+                            `• Открытый багажник\n` +
+                            `• Тележку\n\n` +
+                            `_Это подтверждает факт покупки._`,
                         parse_mode: 'Markdown',
                         reply_markup: {
-                            inline_keyboard: [[{ text: '🔙 К списку', callback_data: `shop:list:${receiptListId}` }]]
+                            inline_keyboard: [[{ text: '❌ Отмена', callback_data: `shop:cancel_receipt:${receiptListId}` }]]
                         }
                     });
                 }
@@ -725,6 +813,131 @@ export async function handleShoppingCallback(
                         inline_keyboard: [[{ text: '❌ Отмена', callback_data: `shop:menu` }]]
                     }
                 });
+                break;
+            }
+
+            case 'payment': {
+                // User selected payment source (Financial Constructor)
+                const receiptId = parts[2];
+                const paymentSource = parts[3] as 'personal' | 'company_card' | 'cash_advance';
+
+                // Get listId from receipt
+                const receiptDoc = await admin.firestore().collection('receipts').doc(receiptId).get();
+                if (!receiptDoc.exists) {
+                    await sendMessage(chatId, "⚠️ Чек не найден.");
+                    break;
+                }
+                const listId = receiptDoc.data()?.listId;
+
+                // Save payment source to receipt
+                await admin.firestore().collection('receipts').doc(receiptId).update({
+                    paymentSource: paymentSource,
+                });
+
+                // Update session for allocation step
+                await admin.firestore().collection('user_sessions').doc(String(userId)).update({
+                    awaitingPaymentSource: false,
+                    awaitingAllocation: true,
+                    pendingReceiptId: receiptId,
+                    selectedPaymentSource: paymentSource,
+                    shoppingListId: listId,
+                });
+
+                // Show allocation selection (Phase 3: Cost Center)
+                const paymentLabel = paymentSource === 'personal' ? '💳 Личные' :
+                    paymentSource === 'company_card' ? '🏢 Корп. карта' : '💰 Подотчёт';
+
+                await axios.post(`https://api.telegram.org/bot${WORKER_BOT_TOKEN}/editMessageText`, {
+                    chat_id: chatId,
+                    message_id: messageId,
+                    text: `✅ *Оплата: ${paymentLabel}*\n\n` +
+                        `📦 *Шаг 4: За чей счёт?*\n\n` +
+                        `Кому выставить счёт за покупку?`,
+                    parse_mode: 'Markdown',
+                    reply_markup: {
+                        inline_keyboard: [
+                            [{ text: '🏗 Клиенту (в счёт)', callback_data: `shop:allocate:${receiptId}:billable` }],
+                            [{ text: '🏢 Расход компании', callback_data: `shop:allocate:${receiptId}:internal` }],
+                            [{ text: '🍔 Личное (вычет из ЗП)', callback_data: `shop:allocate:${receiptId}:personal` }],
+                            [{ text: '❌ Отмена', callback_data: `shop:cancel_receipt:${listId}` }]
+                        ]
+                    }
+                });
+                break;
+            }
+
+            case 'allocate': {
+                // User selected cost center (Allocation)
+                const receiptId = parts[2];
+                const costCenter = parts[3] as 'billable' | 'internal' | 'personal';
+
+                // Get receipt data
+                const receiptDoc = await admin.firestore().collection('receipts').doc(receiptId).get();
+                if (!receiptDoc.exists) {
+                    await sendMessage(chatId, "⚠️ Чек не найден.");
+                    break;
+                }
+                const receiptData = receiptDoc.data()!;
+                const listId = receiptData.listId;
+                const paymentSource = receiptData.paymentSource;
+                const totalAmount = receiptData.totalAmount || 0;
+
+                // Determine initial billing/reimbursement status
+                let billingStatus: 'pending' | 'verified' = 'pending';
+                let reimbursementStatus: 'pending' | undefined;
+
+                if (paymentSource === 'personal') {
+                    reimbursementStatus = 'pending'; // Company owes employee
+                }
+
+                // Update receipt with allocation and complete the wizard
+                const updateData: any = {
+                    costCenter: costCenter,
+                    billingStatus: billingStatus,
+                    status: 'needs_review', // Ready for manager verification
+                };
+                if (reimbursementStatus) {
+                    updateData.reimbursementStatus = reimbursementStatus;
+                }
+                await admin.firestore().collection('receipts').doc(receiptId).update(updateData);
+
+                // Clear session completely
+                await admin.firestore().collection('user_sessions').doc(String(userId)).update({
+                    awaitingAllocation: false,
+                    awaitingPaymentSource: false,
+                    pendingReceiptId: null,
+                    selectedPaymentSource: null,
+                    shoppingListId: null,
+                });
+
+                // Build success message
+                const paymentLabel = paymentSource === 'personal' ? '💳 Личные' :
+                    paymentSource === 'company_card' ? '🏢 Корп. карта' : '💰 Подотчёт';
+                const allocationLabel = costCenter === 'billable' ? '🏗 Клиент' :
+                    costCenter === 'internal' ? '🏢 Компания' : '🍔 Личное';
+
+                let reimbursementText = '';
+                if (paymentSource === 'personal' && costCenter !== 'personal') {
+                    reimbursementText = `\n\n💵 *Возврат: $${totalAmount.toFixed(2)}*\n_Добавлено к возврату сотруднику._`;
+                }
+
+                await axios.post(`https://api.telegram.org/bot${WORKER_BOT_TOKEN}/editMessageText`, {
+                    chat_id: chatId,
+                    message_id: messageId,
+                    text: `✅ *Покупка оформлена!*\n\n` +
+                        `📸 Чек: ✓\n` +
+                        `🛍 Товары: ✓\n` +
+                        `💳 Оплата: ${paymentLabel}\n` +
+                        `📦 Счёт: ${allocationLabel}` +
+                        reimbursementText +
+                        `\n\n_Отправлено на проверку менеджеру._`,
+                    parse_mode: 'Markdown',
+                    reply_markup: {
+                        inline_keyboard: [[{ text: '🔙 К списку', callback_data: `shop:list:${listId}` }]]
+                    }
+                });
+
+                logger.info(`Receipt wizard completed: ${receiptId}, payment=${paymentSource}, costCenter=${costCenter}`);
                 break;
             }
 

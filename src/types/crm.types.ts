@@ -24,6 +24,7 @@ export interface Company {
   phone?: string;
   website?: string;
   address?: string;
+  paymentDetails?: string; // Bank info, Zelle, etc.
 
   // Flags
   isArchived?: boolean;
@@ -70,10 +71,11 @@ export type ClientType = 'person' | 'company';
 export type ClientStatus = 'new' | 'contacted' | 'qualified' | 'customer' | 'churned' | 'done';
 
 export interface ClientContact {
+  id: string;           // Unique ID for React key
+  name: string;         // Contact person name
+  position?: string;    // Job title/role
   phone: string;
-  email: string;
-  contactPerson?: string;
-  role?: string;
+  email?: string;
 }
 
 export interface Client {

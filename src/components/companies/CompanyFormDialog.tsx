@@ -39,6 +39,7 @@ interface FormData {
   phone: string;
   website: string;
   address: string;
+  paymentDetails: string;
 }
 
 export default function CompanyFormDialog({
@@ -62,6 +63,7 @@ export default function CompanyFormDialog({
       phone: '',
       website: '',
       address: '',
+      paymentDetails: '',
     },
   });
 
@@ -74,6 +76,7 @@ export default function CompanyFormDialog({
         phone: companyToEdit.phone || '',
         website: companyToEdit.website || '',
         address: companyToEdit.address || '',
+        paymentDetails: (companyToEdit as any).paymentDetails || '',
       });
     } else {
       reset({
@@ -82,6 +85,7 @@ export default function CompanyFormDialog({
         phone: '',
         website: '',
         address: '',
+        paymentDetails: '',
       });
     }
   }, [companyToEdit, reset]);
@@ -197,6 +201,24 @@ export default function CompanyFormDialog({
               control={control}
               render={({ field }) => (
                 <TextField {...field} label="Адрес" fullWidth multiline rows={2} />
+              )}
+            />
+
+            <Controller
+              name="paymentDetails"
+              control={control}
+              render={({ field }) => (
+                <TextField
+                  {...field}
+                  label="Платёжные реквизиты"
+                  fullWidth
+                  multiline
+                  rows={3}
+                  placeholder="Bank: JPMorgan Chase
+Account: 930821910
+Routing (ACH): 267084131
+Zelle: email@example.com"
+                />
               )}
             />
           </Box>

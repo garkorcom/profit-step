@@ -6,6 +6,7 @@ import EditIcon from '@mui/icons-material/Edit';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import FlagIcon from '@mui/icons-material/Flag';
 import PersonIcon from '@mui/icons-material/Person';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import DragIndicatorIcon from '@mui/icons-material/DragIndicator';
 import { GTDTask, PRIORITY_COLORS, GTDPriority } from '../../types/gtd.types';
 import { WorkSessionData } from '../../hooks/useActiveSession';
@@ -192,7 +193,6 @@ const GTDTaskCard: React.FC<GTDTaskCardProps> = ({ task, index, clientName, onCl
                             {/* Client Badge */}
                             {clientName && (
                                 <Chip
-                                    icon={<PersonIcon sx={{ fontSize: 14 }} />}
                                     label={clientName}
                                     size="small"
                                     sx={{
@@ -201,7 +201,25 @@ const GTDTaskCard: React.FC<GTDTaskCardProps> = ({ task, index, clientName, onCl
                                         bgcolor: '#fef3c7',
                                         color: '#92400e',
                                         border: '1px solid #fcd34d',
-                                        '& .MuiChip-icon': { ml: 0.5, color: '#92400e' }
+                                    }}
+                                />
+                            )}
+
+                            {/* Assignee Badge with Accepted indicator */}
+                            {task.assigneeName && (
+                                <Chip
+                                    icon={task.acceptedAt ?
+                                        <CheckCircleIcon sx={{ fontSize: 14, color: '#22c55e !important' }} /> :
+                                        <PersonIcon sx={{ fontSize: 14 }} />}
+                                    label={task.assigneeName}
+                                    size="small"
+                                    sx={{
+                                        height: 20,
+                                        fontSize: '0.65rem',
+                                        bgcolor: task.acceptedAt ? '#dcfce7' : '#dbeafe',
+                                        color: task.acceptedAt ? '#166534' : '#1e40af',
+                                        border: task.acceptedAt ? '1px solid #86efac' : '1px solid #93c5fd',
+                                        '& .MuiChip-icon': { ml: 0.5, color: task.acceptedAt ? '#22c55e' : '#1e40af' }
                                     }}
                                 />
                             )}

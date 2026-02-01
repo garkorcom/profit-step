@@ -26,9 +26,27 @@ interface Employee {
     photoUrl?: string; // Added for avatar if needed later
 }
 
+// Cost entry interface
+interface CostEntry {
+    id: string;
+    userId: string;
+    userName: string;
+    clientId: string;
+    clientName: string;
+    category: string;
+    categoryLabel: string;
+    amount: number;
+    originalAmount: number;
+    receiptPhotoUrl: string;
+    description?: string;
+    createdAt: Timestamp;
+    status: string;
+}
+
 const FinancePage: React.FC = () => {
     // Ledger now consists of WorkSessions (regular, correction, manual_adjustment)
     const [entries, setEntries] = useState<WorkSession[]>([]);
+    const [costs, setCosts] = useState<CostEntry[]>([]);
     const [loading, setLoading] = useState(true);
     const [startDate, setStartDate] = useState<Date>(subDays(startOfDay(new Date()), 30));
     const [endDate, setEndDate] = useState<Date>(endOfDay(new Date()));
@@ -59,6 +77,7 @@ const FinancePage: React.FC = () => {
     useEffect(() => {
         fetchLedger();
         fetchEmployees();
+        fetchCosts();
     }, [startDate, endDate]);
 
     const fetchLedger = async () => {
@@ -146,6 +165,25 @@ const FinancePage: React.FC = () => {
             }
         } catch (e) {
             console.error("Error fetching users collection", e);
+        }
+    };
+
+    const fetchCosts = async () => {
+        try {
+            const start = startOfDay(startDate);
+            const end = endOfDay(endDate);
+
+            const q = query(
+                collection(db, 'costs'),
+                where('createdAt', '>=', Timestamp.fromDate(start)),
+                where('createdAt', '<=', Timestamp.fromDate(end)),
+                orderBy('createdAt', 'desc')
+            );
+
+            const snapshot = await getDocs(q);
+            setCosts(snapshot.docs.map(d => ({ id: d.id, ...d.data() } as CostEntry)));
+        } catch (e) {
+            console.error("Error fetching costs:", e);
         }
     };
 
@@ -352,11 +390,14 @@ const FinancePage: React.FC = () => {
             totalMinutes += (e.durationMinutes || 0);
         });
 
-        const balance = salary - payments;
+        // Calculate expenses from costs array
+        const expenses = costs.reduce((sum, c) => sum + Math.abs(c.amount), 0);
+
+        const balance = salary - payments - expenses;
         const hours = totalMinutes / 60;
 
-        return { salary, payments, balance, hours };
-    }, [filteredEntries]);
+        return { salary, payments, expenses, balance, hours };
+    }, [filteredEntries, costs]);
 
     const breakdowns = useMemo(() => {
         const byEmployee: Record<string, { hours: number, money: number, name: string }> = {};
@@ -445,6 +486,14 @@ const FinancePage: React.FC = () => {
                         <CardContent>
                             <Typography variant="body2" sx={{ opacity: 0.8 }}>Payments</Typography>
                             <Typography variant="h4" fontWeight="bold">${stats.payments.toFixed(2)}</Typography>
+                        </CardContent>
+                    </Card>
+                </Box>
+                <Box sx={{ flex: 1, minWidth: 200 }}>
+                    <Card sx={{ bgcolor: '#ff9800', color: 'white', height: '100%' }}>
+                        <CardContent>
+                            <Typography variant="body2" sx={{ opacity: 0.8 }}>Expenses ({costs.length})</Typography>
+                            <Typography variant="h4" fontWeight="bold">${stats.expenses.toFixed(2)}</Typography>
                         </CardContent>
                     </Card>
                 </Box>

@@ -6,6 +6,7 @@ import * as crypto from 'crypto';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { findNearbyProject, saveProjectLocation, updateLocationLastUsed } from '../../utils/geoUtils';
 import * as ShoppingHandler from './handlers/shoppingHandler';
+import * as InboxHandler from './handlers/inboxHandler';
 import { sendMessage, getActiveSession, sendMainMenu } from './telegramUtils';
 
 // Initialize in the file if not already initialized
@@ -36,6 +37,12 @@ interface TelegramUpdate {
             id: number;
         };
         text?: string;
+        caption?: string;  // Photo/video caption
+        media_group_id?: string;  // Album grouping
+        forward_from?: {  // Forwarded message info
+            id: number;
+            first_name: string;
+        };
         photo?: {
             file_id: string;
             file_unique_id: string;
@@ -238,7 +245,21 @@ async function handleMessage(message: any) {
         // If not shopping related, proceed to work session media logic
         const activeSessionForMedia = await getActiveSession(userId);
         if (!activeSessionForMedia && message.photo) {
-            await handleUnsolicitedPhoto(chatId, userId, message);
+            // Check for forwarded message
+            if (message.forward_from) {
+                const platformUser = await InboxHandler.findPlatformUserForInbox(userId);
+                await InboxHandler.handleInboxForward({
+                    chatId, userId, userName, messageId: message.message_id,
+                    platformUserId: platformUser?.id
+                }, message.caption || '📷 Фото', message.forward_from);
+                return;
+            }
+            // Route to inbox for photos (unless starting work session)
+            const platformUser = await InboxHandler.findPlatformUserForInbox(userId);
+            await InboxHandler.handleInboxPhoto({
+                chatId, userId, userName, messageId: message.message_id,
+                platformUserId: platformUser?.id
+            }, message.photo, message.caption, message.media_group_id);
         } else {
             await handleMediaUpload(chatId, userId, message);
         }
@@ -248,8 +269,44 @@ async function handleMessage(message: any) {
             chatId, userId, message.voice.file_id
         );
         if (wasShoppingVoice) return;
-        // Regular voice handling
-        await handleVoiceMessage(chatId, userId, message);
+
+        // Check for active session
+        const activeSessionForVoice = await getActiveSession(userId);
+        if (activeSessionForVoice) {
+            // Regular voice handling (work report)
+            await handleVoiceMessage(chatId, userId, message);
+        } else {
+            // No session - route to inbox
+            const platformUser = await InboxHandler.findPlatformUserForInbox(userId);
+            await InboxHandler.handleInboxVoice({
+                chatId, userId, userName, messageId: message.message_id,
+                platformUserId: platformUser?.id
+            }, message.voice);
+        }
+    } else if (message.document) {
+        // Document without session - route to inbox
+        const activeSessionForDoc = await getActiveSession(userId);
+        if (!activeSessionForDoc) {
+            const platformUser = await InboxHandler.findPlatformUserForInbox(userId);
+            await InboxHandler.handleInboxDocument({
+                chatId, userId, userName, messageId: message.message_id,
+                platformUserId: platformUser?.id
+            }, message.document);
+            return;
+        }
+        // Else fall through to media upload handler
+        await handleMediaUpload(chatId, userId, message);
+    } else if (message.forward_from && message.text) {
+        // Forwarded text message
+        const activeSessionForFwd = await getActiveSession(userId);
+        if (!activeSessionForFwd) {
+            const platformUser = await InboxHandler.findPlatformUserForInbox(userId);
+            await InboxHandler.handleInboxForward({
+                chatId, userId, userName, messageId: message.message_id,
+                platformUserId: platformUser?.id
+            }, message.text, message.forward_from);
+            return;
+        }
     } else if (message.location) {
         await handleLocation(chatId, userId, message.location);
     } else if (text === '/me') {
@@ -264,9 +321,31 @@ async function handleMessage(message: any) {
         await sendTasksMenu(chatId, userId);
     } else if (text === '/shopping' || text === '🛒 Shopping') {
         await ShoppingHandler.handleShoppingCommand(chatId, userId);
+    } else if (text === '/inbox' || text === '📥 Inbox') {
+        // Inbox mode - explain how to use
+        await sendMessage(chatId, `📥 *Режим Inbox*
+
+Просто отправь мне:
+• 📝 Текст — запишу заметку
+• 🎙 Голосовое — транскрибирую AI
+• 📷 Фото — сохраню с подписью
+• 📎 Файл — сохраню документ
+
+Всё попадёт в твой Inbox для дальнейшей обработки.`);
     } else if (text && text.length > 0) {
-        // Handle text descriptions if awaiting
-        await handleText(chatId, userId, text);
+        // Handle text descriptions if awaiting, OR send to inbox
+        const activeSession = await getActiveSession(userId);
+        if (activeSession) {
+            // In work session - use old logic
+            await handleText(chatId, userId, text);
+        } else {
+            // No session - send to inbox
+            const platformUser = await InboxHandler.findPlatformUserForInbox(userId);
+            await InboxHandler.handleInboxText({
+                chatId, userId, userName, messageId: message.message_id,
+                platformUserId: platformUser?.id
+            }, text);
+        }
     } else if (text === '/help') {
         await handleHelp(chatId);
     } else {
@@ -332,6 +411,7 @@ async function handleCallbackQuery(query: any) {
             const params = parts.slice(2);
             await ShoppingHandler.handleDraftCallback(chatId, userId, action, params);
         }
+
     } catch (error) {
         logger.error('Error in handleCallbackQuery', error);
         await sendMessage(chatId, "⚠️ Error processing request.");
@@ -729,8 +809,10 @@ async function handleLocation(chatId: number, userId: number, location: any) {
  * Tries to extract GPS from EXIF metadata first.
  * If GPS found → auto-detect project (skip location request).
  * If no GPS → ask for location.
+ * 
+ * @deprecated Now handled by InboxHandler.handleInboxPhoto for inbox flow
  */
-async function handleUnsolicitedPhoto(chatId: number, userId: number, message: any) {
+export async function handleUnsolicitedPhotoLegacy(chatId: number, userId: number, message: any) {
     const fileId = message.photo[message.photo.length - 1].file_id;
 
     // Import extractGPSFromPhoto

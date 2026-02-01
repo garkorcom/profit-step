@@ -104,7 +104,7 @@ export async function sendMainMenu(chatId: number, userId: number = chatId) {
     } else {
         keyboard = [
             [{ text: "▶️ Start Work" }, { text: "🛒 Shopping" }],
-            [{ text: "📋 Tasks" }]
+            [{ text: "📥 Inbox" }, { text: "📋 Tasks" }]
         ];
     }
 

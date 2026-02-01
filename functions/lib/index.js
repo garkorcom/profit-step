@@ -9,7 +9,7 @@
  * - adminDeleteUser: Безопасное удаление пользователя администратором
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.checkLongBreaks = exports.updateWorkSession = exports.onReceiptUpdate = exports.onWorkSessionUpdate = exports.onWorkSessionCreate = exports.generateDailyPayroll = exports.closePayrollPeriod = exports.forceFinishAllSessions = exports.finalizeExpiredSessions = exports.onWorkerBotMessage = exports.estimateTask = exports.generateLeadSummary = exports.sendMessage = exports.onTelegramMessage = exports.onWhatsAppMessage = exports.onLeadCreate = exports.updateCompanyMemberCount_v2 = exports.trackUserActivation_v2 = exports.logUserUpdates_v2 = exports.incrementLoginCount_v2 = exports.inviteUser = exports.adminDeleteUser = exports.onUserDelete = exports.onUserCreate = exports.admin_createUserWithPassword = exports.logPaginationMetrics = exports.diagnoseBot = exports.logInvitationAccepted = exports.logInvitationSent = exports.logUserDeleted = exports.logUserCreated = exports.brevoWebhookHandler = exports.trackFirstInvite = exports.initializeUserActivation = exports.aggregateEngagementMetrics = exports.aggregateGrowthMetrics = exports.processAvatar = void 0;
+exports.checkLongBreaks = exports.updateWorkSession = exports.mergeNotes = exports.splitChecklistItem = exports.onNoteCreated = exports.onReceiptUpdate = exports.onWorkSessionUpdate = exports.onWorkSessionCreate = exports.generateDailyPayroll = exports.closePayrollPeriod = exports.forceFinishAllSessions = exports.finalizeExpiredSessions = exports.onCostsBotMessage = exports.onWorkerBotMessage = exports.estimateTask = exports.generateLeadSummary = exports.sendMessage = exports.onTelegramMessage = exports.onWhatsAppMessage = exports.onLeadCreate = exports.updateCompanyMemberCount_v2 = exports.trackUserActivation_v2 = exports.logUserUpdates_v2 = exports.incrementLoginCount_v2 = exports.inviteUser = exports.adminDeleteUser = exports.onUserDelete = exports.onUserCreate = exports.admin_createUserWithPassword = exports.logPaginationMetrics = exports.diagnoseBot = exports.logInvitationAccepted = exports.logInvitationSent = exports.logUserDeleted = exports.logUserCreated = exports.brevoWebhookHandler = exports.trackFirstInvite = exports.initializeUserActivation = exports.aggregateEngagementMetrics = exports.aggregateGrowthMetrics = exports.processAvatar = void 0;
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 const crypto = require("crypto");
@@ -433,6 +433,8 @@ var estimateTask_1 = require("./callable/ai/estimateTask");
 Object.defineProperty(exports, "estimateTask", { enumerable: true, get: function () { return estimateTask_1.estimateTask; } });
 var onWorkerBotMessage_1 = require("./triggers/telegram/onWorkerBotMessage");
 Object.defineProperty(exports, "onWorkerBotMessage", { enumerable: true, get: function () { return onWorkerBotMessage_1.onWorkerBotMessage; } });
+var onCostsBotMessage_1 = require("./triggers/telegram/onCostsBotMessage");
+Object.defineProperty(exports, "onCostsBotMessage", { enumerable: true, get: function () { return onCostsBotMessage_1.onCostsBotMessage; } });
 // Scheduled: Session Management
 var finalizeExpiredSessions_1 = require("./scheduled/finalizeExpiredSessions");
 Object.defineProperty(exports, "finalizeExpiredSessions", { enumerable: true, get: function () { return finalizeExpiredSessions_1.finalizeExpiredSessions; } });
@@ -450,6 +452,14 @@ Object.defineProperty(exports, "onWorkSessionUpdate", { enumerable: true, get: f
 // Receipts: Ledger integration
 var onReceiptUpdate_1 = require("./triggers/receipts/onReceiptUpdate");
 Object.defineProperty(exports, "onReceiptUpdate", { enumerable: true, get: function () { return onReceiptUpdate_1.onReceiptUpdate; } });
+// Notes: Inbox AI processing
+var onNoteCreated_1 = require("./triggers/firestore/onNoteCreated");
+Object.defineProperty(exports, "onNoteCreated", { enumerable: true, get: function () { return onNoteCreated_1.onNoteCreated; } });
+// Notes: Split & Merge operations
+var splitChecklistItem_1 = require("./callable/notes/splitChecklistItem");
+Object.defineProperty(exports, "splitChecklistItem", { enumerable: true, get: function () { return splitChecklistItem_1.splitChecklistItem; } });
+var mergeNotes_1 = require("./callable/notes/mergeNotes");
+Object.defineProperty(exports, "mergeNotes", { enumerable: true, get: function () { return mergeNotes_1.mergeNotes; } });
 // Sessions: Callable with validation
 var updateWorkSession_1 = require("./callable/sessions/updateWorkSession");
 Object.defineProperty(exports, "updateWorkSession", { enumerable: true, get: function () { return updateWorkSession_1.updateWorkSession; } });

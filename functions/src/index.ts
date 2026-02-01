@@ -549,6 +549,7 @@ export { sendMessage } from './callable/messaging/sendMessage';
 export { generateLeadSummary } from './callable/ai/generateLeadSummary';
 export { estimateTask } from './callable/ai/estimateTask';
 export { onWorkerBotMessage } from './triggers/telegram/onWorkerBotMessage';
+export { onCostsBotMessage } from './triggers/telegram/onCostsBotMessage';
 
 // Scheduled: Session Management
 export { finalizeExpiredSessions } from './scheduled/finalizeExpiredSessions';
@@ -563,7 +564,13 @@ export { onWorkSessionUpdate } from './triggers/workSessions/onWorkSessionUpdate
 // Receipts: Ledger integration
 export { onReceiptUpdate } from './triggers/receipts/onReceiptUpdate';
 
+// Notes: Inbox AI processing
+export { onNoteCreated } from './triggers/firestore/onNoteCreated';
+
+// Notes: Split & Merge operations
+export { splitChecklistItem } from './callable/notes/splitChecklistItem';
+export { mergeNotes } from './callable/notes/mergeNotes';
+
 // Sessions: Callable with validation
 export { updateWorkSession } from './callable/sessions/updateWorkSession';
 export { checkLongBreaks } from './scheduled/checkLongBreaks';
-

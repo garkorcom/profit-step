@@ -12,6 +12,7 @@ import AddIcon from '@mui/icons-material/Add';
 import SettingsIcon from '@mui/icons-material/Settings';
 import PrintIcon from '@mui/icons-material/Print';
 import DeleteIcon from '@mui/icons-material/Delete';
+import PaymentIcon from '@mui/icons-material/Payment';
 import { PayrollReport } from './PayrollReport';
 
 // ... (existing code)
@@ -48,6 +49,12 @@ const FinancePage: React.FC = () => {
 
     // Payroll Report
     const [showReport, setShowReport] = useState(false);
+
+    // Payment Dialog
+    const [openPaymentDialog, setOpenPaymentDialog] = useState(false);
+    const [paymentEmployee, setPaymentEmployee] = useState('');
+    const [paymentAmount, setPaymentAmount] = useState('');
+    const [paymentNote, setPaymentNote] = useState('');
 
     useEffect(() => {
         fetchLedger();
@@ -208,6 +215,40 @@ const FinancePage: React.FC = () => {
         }
     };
 
+    const handleAddPayment = async () => {
+        if (!paymentEmployee || !paymentAmount) return;
+
+        try {
+            const employee = employees.find(e => e.id === paymentEmployee);
+            const amount = parseFloat(paymentAmount);
+
+            const paymentSession: Partial<WorkSession> = {
+                type: 'payment',
+                startTime: Timestamp.now(),
+                employeeId: paymentEmployee,
+                employeeName: employee?.name || 'Unknown',
+                clientName: 'Payment',
+                clientId: 'payment',
+                status: 'completed',
+                durationMinutes: 0,
+                hourlyRate: 0,
+                sessionEarnings: -Math.abs(amount), // Negative = outflow
+                description: paymentNote || 'Salary payment',
+            };
+
+            await addDoc(collection(db, 'work_sessions'), paymentSession);
+
+            setOpenPaymentDialog(false);
+            setPaymentEmployee('');
+            setPaymentAmount('');
+            setPaymentNote('');
+            fetchLedger();
+        } catch (error) {
+            console.error("Error adding payment:", error);
+            alert("Failed to add payment");
+        }
+    };
+
     const handleVoidSubmit = async () => {
         if (!voidTarget || !voidReason) return;
 
@@ -298,11 +339,23 @@ const FinancePage: React.FC = () => {
     }, [entries, filterEmployee, filterClient, hideVoided]);
 
     const stats = useMemo(() => {
-        const totalMoney = filteredEntries.reduce((sum, e) => sum + (e.sessionEarnings || 0), 0);
-        const totalHours = filteredEntries.reduce((sum, e) => {
-            return sum + (e.durationMinutes || 0);
-        }, 0) / 60;
-        return { total: totalMoney, hours: totalHours };
+        let salary = 0;
+        let payments = 0;
+        let totalMinutes = 0;
+
+        filteredEntries.forEach(e => {
+            if (e.type === 'payment') {
+                payments += Math.abs(e.sessionEarnings || 0);
+            } else {
+                salary += (e.sessionEarnings || 0);
+            }
+            totalMinutes += (e.durationMinutes || 0);
+        });
+
+        const balance = salary - payments;
+        const hours = totalMinutes / 60;
+
+        return { salary, payments, balance, hours };
     }, [filteredEntries]);
 
     const breakdowns = useMemo(() => {
@@ -334,6 +387,7 @@ const FinancePage: React.FC = () => {
     }, [filteredEntries]);
 
     const getRowColor = (entry: WorkSession) => {
+        if (entry.type === 'payment') return 'rgba(76, 175, 80, 0.08)'; // Light Green
         if (entry.type === 'correction') return 'rgba(255, 152, 0, 0.08)'; // Light Orange
         if (entry.type === 'manual_adjustment') return 'rgba(33, 150, 243, 0.08)'; // Light Blue
         return 'inherit';
@@ -365,24 +419,47 @@ const FinancePage: React.FC = () => {
                     >
                         Add Ad-hoc Adjustment
                     </Button>
+                    <Button
+                        startIcon={<PaymentIcon />}
+                        variant="contained"
+                        color="success"
+                        onClick={() => setOpenPaymentDialog(true)}
+                    >
+                        Add Payment
+                    </Button>
                 </Box>
             </Box>
 
             {/* Stats */}
-            {/* Stats */}
             <Box sx={{ display: 'flex', gap: 3, mb: 4, flexWrap: 'wrap' }}>
-                <Box sx={{ flex: 1, minWidth: 300 }}>
+                <Box sx={{ flex: 1, minWidth: 200 }}>
                     <Card sx={{ bgcolor: '#2196f3', color: 'white', height: '100%' }}>
                         <CardContent>
-                            <Typography variant="body2" sx={{ opacity: 0.8 }}>Total Payroll (Period)</Typography>
-                            <Typography variant="h3" fontWeight="bold">${stats.total.toFixed(2)}</Typography>
+                            <Typography variant="body2" sx={{ opacity: 0.8 }}>Salary (Period)</Typography>
+                            <Typography variant="h4" fontWeight="bold">${stats.salary.toFixed(2)}</Typography>
                         </CardContent>
                     </Card>
                 </Box>
-                <Box sx={{ flex: 1, minWidth: 300 }}>
+                <Box sx={{ flex: 1, minWidth: 200 }}>
+                    <Card sx={{ bgcolor: '#9e9e9e', color: 'white', height: '100%' }}>
+                        <CardContent>
+                            <Typography variant="body2" sx={{ opacity: 0.8 }}>Payments</Typography>
+                            <Typography variant="h4" fontWeight="bold">${stats.payments.toFixed(2)}</Typography>
+                        </CardContent>
+                    </Card>
+                </Box>
+                <Box sx={{ flex: 1, minWidth: 200 }}>
+                    <Card sx={{ bgcolor: stats.balance >= 0 ? '#4caf50' : '#f44336', color: 'white', height: '100%' }}>
+                        <CardContent>
+                            <Typography variant="body2" sx={{ opacity: 0.8 }}>Balance</Typography>
+                            <Typography variant="h4" fontWeight="bold">${stats.balance.toFixed(2)}</Typography>
+                        </CardContent>
+                    </Card>
+                </Box>
+                <Box sx={{ flex: 1, minWidth: 200 }}>
                     <Card sx={{ height: '100%' }}>
                         <CardContent>
-                            <Typography color="textSecondary" variant="body2">Total Hours Paid</Typography>
+                            <Typography color="textSecondary" variant="body2">Total Hours</Typography>
                             <Typography variant="h4" fontWeight="bold">{stats.hours.toFixed(1)} h</Typography>
                         </CardContent>
                     </Card>
@@ -444,7 +521,7 @@ const FinancePage: React.FC = () => {
                             {/* Employee Breakdown */}
                             <Box flex={1} minWidth={200}>
                                 <Table size="small">
-                                    <TableHead><TableRow><TableCell>Employee</TableCell><TableCell align="right">Hours</TableCell><TableCell align="right">Pay</TableCell></TableRow></TableHead>
+                                    <TableHead><TableRow><TableCell>Employee</TableCell><TableCell align="right">Hours</TableCell><TableCell align="right">Salary</TableCell></TableRow></TableHead>
                                     <TableBody>
                                         {breakdowns.employee.slice(0, 5).map(b => (
                                             <TableRow key={b.name}>
@@ -534,6 +611,7 @@ const FinancePage: React.FC = () => {
                             filteredEntries.map((entry) => {
                                 const isCorrection = entry.type === 'correction';
                                 const isAdjustment = entry.type === 'manual_adjustment';
+                                const isPayment = entry.type === 'payment';
                                 const date = entry.startTime ? new Date(entry.startTime.seconds * 1000) : new Date();
                                 const isVoided = entry.isVoided;
 
@@ -558,10 +636,10 @@ const FinancePage: React.FC = () => {
                                         </TableCell>
                                         <TableCell>
                                             <Chip
-                                                label={entry.type === 'correction' ? 'Correction' : entry.type === 'manual_adjustment' ? 'Adj.' : 'Session'}
-                                                color={isCorrection ? 'warning' : isAdjustment ? 'info' : 'default'}
+                                                label={isPayment ? 'Payment' : isCorrection ? 'Correction' : isAdjustment ? 'Adj.' : 'Session'}
+                                                color={isPayment ? 'success' : isCorrection ? 'warning' : isAdjustment ? 'info' : 'default'}
                                                 size="small"
-                                                variant={isCorrection || isAdjustment ? 'filled' : 'outlined'}
+                                                variant={isPayment || isCorrection || isAdjustment ? 'filled' : 'outlined'}
                                             />
                                         </TableCell>
                                         <TableCell>{entry.employeeName}</TableCell>
@@ -708,6 +786,58 @@ const FinancePage: React.FC = () => {
                     <Button onClick={() => setOpenRatesDialog(false)}>Close</Button>
                 </DialogActions>
             </Dialog>
+
+            {/* Payment Dialog */}
+            <Dialog open={openPaymentDialog} onClose={() => setOpenPaymentDialog(false)} maxWidth="xs" fullWidth>
+                <DialogTitle>Add Payment</DialogTitle>
+                <DialogContent>
+                    <Box display="flex" flexDirection="column" gap={2} mt={1}>
+                        <FormControl fullWidth size="small" required>
+                            <InputLabel>Employee</InputLabel>
+                            <Select
+                                value={paymentEmployee}
+                                label="Employee"
+                                onChange={(e) => setPaymentEmployee(e.target.value)}
+                            >
+                                {employees.map(emp => (
+                                    <MenuItem key={emp.id} value={emp.id}>{emp.name}</MenuItem>
+                                ))}
+                            </Select>
+                        </FormControl>
+                        <TextField
+                            label="Amount ($)"
+                            type="number"
+                            fullWidth
+                            size="small"
+                            required
+                            helperText="Enter payment amount (can be negative for deductions)"
+                            value={paymentAmount}
+                            onChange={(e) => setPaymentAmount(e.target.value)}
+                        />
+                        <TextField
+                            label="Note (optional)"
+                            fullWidth
+                            multiline
+                            rows={2}
+                            size="small"
+                            value={paymentNote}
+                            onChange={(e) => setPaymentNote(e.target.value)}
+                        />
+                    </Box>
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setOpenPaymentDialog(false)}>Cancel</Button>
+                    <Button
+                        onClick={handleAddPayment}
+                        variant="contained"
+                        color="success"
+                        disabled={!paymentEmployee || !paymentAmount}
+                    >
+                        Save
+                    </Button>
+                </DialogActions>
+            </Dialog>
+
             {/* Payroll Report Overlay */}
             {showReport && (
                 <PayrollReport

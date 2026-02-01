@@ -28,7 +28,7 @@ export interface WorkSession {
     };
     hourlyRate?: number;
     sessionEarnings?: number;
-    type?: 'regular' | 'correction' | 'manual_adjustment';
+    type?: 'regular' | 'correction' | 'manual_adjustment' | 'payment';
     relatedSessionId?: string;
     correctionNote?: string;
     isVoided?: boolean;

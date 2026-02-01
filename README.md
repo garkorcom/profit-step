@@ -1,107 +1,78 @@
-# Profit Step - CRM Система
+# Profit Step — CRM & Team Management Platform
 
-Современная CRM система для управления бизнесом, построенная на React + TypeScript + Firebase.
+**Комплексная платформа управления командой и бизнес-процессами**
 
-## 🚀 Технологии
-
-- **Frontend**: React 18 + TypeScript
-- **UI**: Material-UI v7
-- **Backend**: Firebase (Firestore, Auth, Storage)
-- **Routing**: React Router v7
-
-## 📦 Установка
+## 🚀 Быстрый старт
 
 ```bash
 # Установка зависимостей
 npm install
+cd functions && npm install && cd ..
 
-# Создание .env.local файла
-cp .env.example .env.local
-# Заполните .env.local своими Firebase credentials
-```
-
-## 🔥 Firebase Setup
-
-1. Создайте проект в [Firebase Console](https://console.firebase.google.com/)
-2. Включите Authentication (Email/Password)
-3. Создайте Firestore Database
-4. Включите Storage
-5. Скопируйте конфигурацию в `.env.local`
-
-## 📂 Структура проекта
-
-```
-src/
-├── api/           # Firebase API layer
-├── auth/          # Компоненты аутентификации
-├── components/    # Переиспользуемые UI компоненты
-├── contexts/      # React Context для глобального состояния
-├── firebase/      # Firebase конфигурация
-├── hooks/         # Custom React hooks
-├── pages/         # Страницы приложения
-├── router/        # Настройка роутинга
-├── types/         # TypeScript типы
-└── utils/         # Утилиты и хелперы
-```
-
-## 🎯 Модули
-
-### 1. Клиенты/Контрагенты
-- Управление клиентами и партнерами
-- История взаимодействий
-- Контактная информация
-
-### 2. Проекты/Сделки
-- Управление проектами
-- Tracking прогресса
-- Связь с клиентами
-
-### 3. Задачи/Календарь
-- Task management
-- Планирование
-- Дедлайны и напоминания
-
-### 4. Документы/Файлы
-- Хранение документов
-- Версионирование
-- Связь с проектами
-
-## 🛠️ Команды
-
-```bash
-# Запуск dev сервера
+# Локальный запуск
 npm start
 
-# Сборка production
-npm run build
-
-# Запуск тестов
-npm test
+# Деплой
+firebase deploy
 ```
 
-## 📝 Разработка
+## 📁 Структура проекта
 
-Проект находится в стадии разработки. Базовая структура создана, ожидается ТЗ для реализации модулей.
+```
+profit-step/
+├── src/                    # React Frontend
+│   ├── components/         # UI компоненты
+│   ├── pages/             # Страницы
+│   ├── hooks/             # React хуки
+│   ├── features/          # Модули фич
+│   ├── services/          # API сервисы
+│   └── types/             # TypeScript типы
+├── functions/             # Firebase Cloud Functions
+│   └── src/
+│       ├── triggers/      # Telegram боты
+│       └── services/      # Бизнес-логика
+├── docs/                  # Документация
+└── firestore.rules        # Правила безопасности
+```
 
----
+## 🔧 Модули системы
 
-## Getting Started with Create React App
+| Модуль | Описание | Документация |
+|--------|----------|--------------|
+| **Time Tracking** | Учёт рабочего времени | [Docs](docs/TIME_TRACKING.md) |
+| **GTD Tasks** | Управление задачами (Kanban) | [Docs](docs/GTD_TASK_CREATION.md) |
+| **Finance** | Зарплаты и расчёты | [Docs](docs/FINANCE_MODULE.md) |
+| **Shopping** | Закупки и чеки | [Docs](docs/SHOPPING_MODULE.md) |
+| **Clients/CRM** | Управление клиентами | [Docs](docs/CRM_MODULE.md) |
+| **Telegram Bot** | Рабочий бот | [Docs](docs/TELEGRAM_BOT.md) |
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+## 🤖 Telegram Bot
 
-### Available Scripts
+- **@ProfitStepWorkerBot** — бот для работников
+- Учёт времени, голосовые отчёты, закупки
+- Подробнее: [docs/TELEGRAM_BOT.md](docs/TELEGRAM_BOT.md)
 
-In the project directory, you can run:
+## 🌐 URLs
 
-#### `npm start`
+- **Production:** https://profit-step.web.app
+- **Firebase Console:** https://console.firebase.google.com/project/profit-step
 
-Runs the app in the development mode.
-Open [http://localhost:3000](http://localhost:3000) to view it in the browser.
+## 👥 Роли пользователей
 
-#### `npm test`
+| Роль | Доступ |
+|------|--------|
+| **Owner** | Полный доступ |
+| **Admin** | Управление командой |
+| **Manager** | Клиенты, задачи, отчёты |
+| **Worker** | Свои задачи, время |
 
-Launches the test runner in the interactive watch mode.
+## 🛠 Tech Stack
 
-#### `npm run build`
+- **Frontend:** React 18, TypeScript, MUI v6
+- **Backend:** Firebase (Firestore, Functions, Auth, Storage)
+- **Bot:** Telegram Bot API
+- **AI:** Gemini (голосовое распознавание)
 
-Builds the app for production to the `build` folder.
+## 📞 Поддержка
+
+Telegram: @garkor

@@ -1,13 +1,19 @@
 /**
- * @fileoverview Inbox Handler for Telegram Bot
+ * @fileoverview Inbox Handler for Telegram Bot (v2 - Stability Update)
  * 
  * "Fire & Forget" pattern - instant response, async processing.
  * Handles: text, voice, photo, album, document, forward.
+ * 
+ * v2 Improvements:
+ * - Better album grouping via Firestore query fallback
+ * - Smart text detection for AI processing
+ * - UX: Edit message after AI completes
  * 
  * @module triggers/telegram/handlers/inboxHandler
  */
 
 import * as admin from 'firebase-admin';
+import * as functions from 'firebase-functions';
 import { logger } from 'firebase-functions';
 import axios from 'axios';
 import { sendMessage } from '../telegramUtils';
@@ -15,7 +21,7 @@ import { sendMessage } from '../telegramUtils';
 const db = admin.firestore();
 const storage = admin.storage();
 
-const WORKER_BOT_TOKEN = process.env.WORKER_BOT_TOKEN;
+const WORKER_BOT_TOKEN = process.env.WORKER_BOT_TOKEN || functions.config().worker_bot?.token;
 
 // ═══════════════════════════════════════════════════════════
 // TYPES
@@ -34,7 +40,10 @@ interface InboxContext {
 // ═══════════════════════════════════════════════════════════
 
 /**
- * Handle text message → Create note immediately
+ * Handle text message → Create note with smart AI detection
+ * 
+ * FIX #3: If text is complex (multiline, long, contains list markers),
+ * set aiStatus: 'pending' to trigger list parsing
  */
 export async function handleInboxText(
     ctx: InboxContext,
@@ -42,18 +51,42 @@ export async function handleInboxText(
 ): Promise<void> {
     const title = text.length > 50 ? text.substring(0, 50) + '...' : text;
 
+    // Smart text detection: multiline, long, or contains list markers
+    const isComplex =
+        text.includes('\n') ||
+        text.length > 100 ||
+        /\d\.\s/.test(text) ||           // "1. item"
+        /[-•]\s/.test(text) ||           // "- item" or "• item"
+        /первое|второе|третье/i.test(text);  // Russian list markers
+
+    // If complex, send to AI for list parsing
+    const aiStatus = isComplex ? 'pending' : 'none';
+
+    let botReplyId: number | undefined;
+
+    if (isComplex) {
+        // FIX #4: Send processing message, save ID for later edit
+        const result = await sendMessageWithId(ctx.chatId, '⏳ Анализирую текст...');
+        botReplyId = result?.message_id;
+    }
+
     await createNote({
         ctx,
         title,
         description: text,
-        aiStatus: 'none'
+        aiStatus,
+        botReplyId
     });
 
-    await sendMessage(ctx.chatId, '✅ Записано');
+    if (!isComplex) {
+        await sendMessage(ctx.chatId, '✅ Записано');
+    }
 }
 
 /**
  * Handle voice message → Upload audio, create note, trigger AI
+ * 
+ * FIX #4: Save bot reply message ID for later editing
  */
 export async function handleInboxVoice(
     ctx: InboxContext,
@@ -65,8 +98,9 @@ export async function handleInboxVoice(
         timeZone: 'America/New_York'
     });
 
-    // Immediate response
-    await sendMessage(ctx.chatId, '🎙 Голосовое принято, обрабатываю...');
+    // FIX #4: Send processing message and save ID
+    const result = await sendMessageWithId(ctx.chatId, '🎙 Голосовое принято, обрабатываю...');
+    const botReplyId = result?.message_id;
 
     // Upload to Storage
     const audioUrl = await saveTelegramFile(
@@ -74,7 +108,7 @@ export async function handleInboxVoice(
         `notes/${ctx.userId}/voice_${Date.now()}.ogg`
     );
 
-    // Create note with pending AI
+    // Create note with pending AI and botReplyId
     await createNote({
         ctx,
         title: `🎙 Аудиозаметка от ${timeStr}`,
@@ -84,12 +118,15 @@ export async function handleInboxVoice(
             url: audioUrl,
             mimeType: voice.mime_type || 'audio/ogg'
         }],
-        originalAudioUrl: audioUrl
+        originalAudioUrl: audioUrl,
+        botReplyId
     });
 }
 
 /**
  * Handle photo message → Check for album, create note
+ * 
+ * FIX #1: Better album handling with Firestore query fallback
  */
 export async function handleInboxPhoto(
     ctx: InboxContext,
@@ -99,8 +136,36 @@ export async function handleInboxPhoto(
 ): Promise<void> {
     const largestPhoto = photo[photo.length - 1];
 
-    // If part of album, delegate to album handler
+    // FIX #1: If part of album, check existing notes first
     if (mediaGroupId) {
+        // Check if note with this mediaGroupId already exists (created in last 2 min)
+        const twoMinAgo = admin.firestore.Timestamp.fromMillis(Date.now() - 2 * 60 * 1000);
+        const existingNotes = await db.collection('notes')
+            .where('source.mediaGroupId', '==', mediaGroupId)
+            .where('createdAt', '>', twoMinAgo)
+            .limit(1)
+            .get();
+
+        if (!existingNotes.empty) {
+            // Add photo to existing note
+            const photoUrl = await saveTelegramFile(
+                largestPhoto.file_id,
+                `notes/${ctx.userId}/album_${mediaGroupId}_${Date.now()}.jpg`
+            );
+
+            await existingNotes.docs[0].ref.update({
+                attachments: admin.firestore.FieldValue.arrayUnion({
+                    type: 'image',
+                    url: photoUrl
+                }),
+                updatedAt: admin.firestore.FieldValue.serverTimestamp()
+            });
+
+            logger.info(`📷 Added photo to existing album note: ${existingNotes.docs[0].id}`);
+            return;
+        }
+
+        // First photo in album - use pending_albums for grouping
         await handleAlbumPhoto(ctx, largestPhoto.file_id, caption, mediaGroupId);
         return;
     }
@@ -115,11 +180,14 @@ export async function handleInboxPhoto(
         ? (caption.length > 50 ? caption.substring(0, 50) + '...' : caption)
         : `📷 Фото от ${new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`;
 
+    // If caption is long, might contain list - trigger AI
+    const aiStatus = caption && caption.length > 100 ? 'pending' : 'none';
+
     await createNote({
         ctx,
         title,
         description: caption,
-        aiStatus: 'none',
+        aiStatus,
         attachments: [{
             type: 'image',
             url: photoUrl
@@ -296,10 +364,11 @@ interface CreateNoteParams {
     originalAudioUrl?: string;
     mediaGroupId?: string;
     forwardFrom?: { name: string; id?: number };
+    botReplyId?: number;  // FIX #4: Store for later editing
 }
 
 async function createNote(params: CreateNoteParams): Promise<string> {
-    const { ctx, title, description, aiStatus, attachments, originalAudioUrl, mediaGroupId, forwardFrom } = params;
+    const { ctx, title, description, aiStatus, attachments, originalAudioUrl, mediaGroupId, forwardFrom, botReplyId } = params;
 
     const noteData: any = {
         stage: 'inbox',
@@ -309,7 +378,8 @@ async function createNote(params: CreateNoteParams): Promise<string> {
             senderName: ctx.userName,
             chatId: ctx.chatId,
             ...(mediaGroupId && { mediaGroupId }),
-            ...(forwardFrom && { forwardFrom })
+            ...(forwardFrom && { forwardFrom }),
+            ...(botReplyId && { botReplyId })  // FIX #4
         },
         ownerId: ctx.platformUserId || String(ctx.userId),
         ownerName: ctx.userName,
@@ -324,9 +394,29 @@ async function createNote(params: CreateNoteParams): Promise<string> {
     if (originalAudioUrl) noteData.originalAudioUrl = originalAudioUrl;
 
     const docRef = await db.collection('notes').add(noteData);
-    logger.info(`📝 Note created: ${docRef.id}`, { title, aiStatus });
+    logger.info(`📝 Note created: ${docRef.id}`, { title, aiStatus, hasBotReplyId: !!botReplyId });
 
     return docRef.id;
+}
+
+/**
+ * Send message and return message ID for later editing
+ */
+async function sendMessageWithId(chatId: number, text: string): Promise<{ message_id: number } | null> {
+    try {
+        const response = await axios.post(
+            `https://api.telegram.org/bot${WORKER_BOT_TOKEN}/sendMessage`,
+            {
+                chat_id: chatId,
+                text,
+                parse_mode: 'Markdown'
+            }
+        );
+        return response.data?.result;
+    } catch (error) {
+        logger.error('Failed to send message with ID', error);
+        return null;
+    }
 }
 
 /**

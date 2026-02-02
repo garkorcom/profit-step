@@ -120,6 +120,13 @@ export interface Client {
   updatedAt: Timestamp;
   lastContactedAt?: Timestamp;
 
+  /**
+   * AI-friendly aliases for project matching (RAG context)
+   * Examples: ["Вилла", "Ванила", "Майами", "Villa"]
+   * Used by Smart Dispatcher to match voice mentions to project IDs
+   */
+  aliases?: string[];
+
   customFields?: Record<string, any>;
 }
 

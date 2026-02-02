@@ -15,7 +15,7 @@ import * as functions from 'firebase-functions';
 import { logger } from 'firebase-functions';
 import * as admin from 'firebase-admin';
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import { sendMessage } from '../telegram/telegramUtils';
+import { sendMessage, editMessage } from '../telegram/telegramUtils';
 
 if (admin.apps.length === 0) {
     admin.initializeApp();
@@ -24,31 +24,10 @@ if (admin.apps.length === 0) {
 const db = admin.firestore();
 const storage = admin.storage();
 
-// ═══════════════════════════════════════════════════════════
-// AI PROMPTS
-// ═══════════════════════════════════════════════════════════
+// API Key with fallback to functions.config()
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || functions.config().gemini?.api_key;
 
-const LIST_DETECTION_PROMPT = `You are an AI assistant for a construction management app.
-Analyze this voice message transcription from a foreman.
-
-Your task:
-1. If the user lists MULTIPLE tasks/actions (using words like "первое", "второе", "список", numbered items, or comma-separated actions), extract them as a checklist.
-2. If single task/note, return empty checklist.
-3. Try to detect project name if mentioned (client name, location like "Вилла", "Кухня на Барбери").
-4. Try to detect deadline if mentioned ("завтра", "в пятницу", "до конца недели").
-
-Return ONLY valid JSON (no markdown):
-{
-  "title": "Summary title for the list or single task",
-  "checklist": [
-    {"text": "First task"},
-    {"text": "Second task"}
-  ],
-  "projectName": "Villa" or null,
-  "deadlineHint": "tomorrow" or "friday" or null
-}
-
-If single task, checklist should be empty array [].`;
+// Prompts are defined in RAG CONTEXT FUNCTIONS section below
 
 // ═══════════════════════════════════════════════════════════
 // INTERFACES
@@ -58,7 +37,22 @@ interface AIParseResult {
     title: string;
     checklist: { text: string }[];
     projectName?: string | null;
+    projectId?: string | null;
     deadlineHint?: string | null;
+    // Smart Dispatcher: Assignee detection
+    assigneeName?: string | null;
+    assigneeId?: string | null;
+    // Confidence levels for UI highlighting
+    projectConfidence?: 'high' | 'low';
+    assigneeConfidence?: 'high' | 'low';
+}
+
+/**
+ * RAG context data for AI prompt
+ */
+interface ContextData {
+    projects: string;
+    users: string;
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -126,15 +120,19 @@ export const onNoteCreated = functions
 
             logger.info(`Transcription: ${transcription.substring(0, 100)}...`);
 
-            // Step 2: Parse for list detection
-            logger.info('Parsing for list structure...');
-            const parsed = await parseForList(transcription);
+            // Step 2: Load full RAG context (projects + users with aliases)
+            logger.info('Loading RAG context...');
+            const context = await loadFullContext();
 
-            // Step 3: Resolve project if mentioned
-            let projectId: string | undefined;
-            let projectName: string | undefined;
+            // Step 3: Parse with Smart Dispatcher (list + project + assignee detection)
+            logger.info('Running Smart Dispatcher...');
+            const parsed = await parseWithSmartDispatcher(transcription, context, note.ownerId, note.ownerName);
 
-            if (parsed.projectName) {
+            // Step 4: Use projectId from AI if valid, otherwise resolve
+            let projectId = parsed.projectId || undefined;
+            let projectName = parsed.projectName || undefined;
+
+            if (!projectId && parsed.projectName) {
                 const project = await resolveProject(parsed.projectName);
                 if (project) {
                     projectId = project.id;
@@ -142,14 +140,14 @@ export const onNoteCreated = functions
                 }
             }
 
-            // Step 4: Build checklist if detected
-            const checklist = parsed.checklist.map(item => ({
+            // Step 5: Build checklist if detected
+            const checklist = parsed.checklist.map((item: { text: string }) => ({
                 id: generateUUID(),
                 text: item.text,
                 isDone: false
             }));
 
-            // Step 5: Parse deadline hint
+            // Step 6: Parse deadline hint
             const deadline = parsed.deadlineHint
                 ? parseDeadlineHint(parsed.deadlineHint)
                 : undefined;
@@ -181,6 +179,33 @@ export const onNoteCreated = functions
                 updateData.deadline = deadline;
             }
 
+            // Smart Dispatcher: Handle assignee
+            let assigneeId = parsed.assigneeId || undefined;
+            let assigneeName = parsed.assigneeName || undefined;
+
+            if (assigneeId) {
+                updateData.assigneeIds = [assigneeId];
+                updateData.assigneeNames = [assigneeName || 'Unknown'];
+
+                // Auto-Controller Rule: If assignee ≠ owner, owner becomes controller
+                if (assigneeId !== note.ownerId) {
+                    updateData.controllerId = note.ownerId;
+                    updateData.controllerName = note.ownerName || 'Owner';
+                    updateData.gates = {
+                        internalDone: false,
+                        verified: false
+                    };
+                    logger.info(`🎯 Auto-controller set: ${note.ownerName} controls task for ${assigneeName}`);
+                }
+            }
+
+            // AI Metadata for UI highlighting
+            updateData.aiMetadata = {
+                isProjectPredicted: !!projectId,
+                isAssigneePredicted: !!assigneeId,
+                confidence: (parsed.projectConfidence === 'high' || parsed.assigneeConfidence === 'high') ? 'high' : 'low'
+            };
+
             await snap.ref.update(updateData);
 
             logger.info(`✅ Note processed: ${noteId}`, {
@@ -190,16 +215,27 @@ export const onNoteCreated = functions
                 hasDeadline: !!deadline
             });
 
-            // Send Telegram notification
+            // FIX #4: Edit original "processing" message or send new one
             if (note.telegramId) {
                 let message = `✅ *Распознано:*\n\n${title}`;
                 if (checklist.length > 0) {
-                    message += `\n\n📋 *Список (${checklist.length} пунктов)*`;
+                    const listItems = checklist.slice(0, 5).map(i => `▫️ ${i.text}`).join('\n');
+                    message += `\n\n📋 *Список (${checklist.length}):*\n${listItems}`;
+                    if (checklist.length > 5) message += `\n...и ещё ${checklist.length - 5}`;
                 }
                 if (projectName) {
-                    message += `\n📍 Проект: ${projectName}`;
+                    message += `\n\n📍 Проект: ${projectName}`;
                 }
-                await sendMessage(note.telegramId, message);
+                if (deadline) {
+                    message += `\n⏰ Дедлайн: ${deadline.toDate().toLocaleDateString('ru-RU')}`;
+                }
+
+                const botReplyId = note.source?.botReplyId;
+                if (botReplyId) {
+                    await editMessage(note.telegramId, botReplyId, message);
+                } else {
+                    await sendMessage(note.telegramId, message);
+                }
             }
 
             return null;
@@ -233,12 +269,11 @@ export const onNoteCreated = functions
  * Transcribe audio using Gemini
  */
 async function transcribeAudio(audioBuffer: Buffer, mimeType: string): Promise<string | null> {
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
+    if (!GEMINI_API_KEY) {
         throw new Error('GEMINI_API_KEY not configured');
     }
 
-    const genAI = new GoogleGenerativeAI(apiKey);
+    const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
     const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
 
     const audioBase64 = audioBuffer.toString('base64');
@@ -262,27 +297,121 @@ async function transcribeAudio(audioBuffer: Buffer, mimeType: string): Promise<s
     return response || null;
 }
 
+// ═══════════════════════════════════════════════════════════
+// RAG CONTEXT FUNCTIONS (Smart Dispatcher v2)
+// ═══════════════════════════════════════════════════════════
+
 /**
- * Parse transcription for list structure using AI
+ * Load full RAG context: projects and users with aliases
+ * Used by Smart Dispatcher to match voice mentions to exact IDs
  */
-async function parseForList(transcription: string): Promise<AIParseResult> {
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
+async function loadFullContext(): Promise<ContextData> {
+    try {
+        // Load projects/clients with aliases
+        const clientsSnap = await db.collection('clients')
+            .where('status', '!=', 'archived')
+            .limit(50)
+            .get();
+
+        const projects = clientsSnap.docs.map(d => {
+            const data = d.data();
+            const aliases = data.aliases?.length
+                ? `, aliases: [${data.aliases.map((a: string) => `"${a}"`).join(', ')}]`
+                : '';
+            return `{ id: "${d.id}", name: "${data.name}"${aliases} }`;
+        }).join('\n');
+
+        // Load active users with aliases
+        const usersSnap = await db.collection('users')
+            .where('status', '==', 'active')
+            .limit(30)
+            .get();
+
+        const users = usersSnap.docs.map(d => {
+            const data = d.data();
+            const aliases = data.aliases?.length
+                ? `, aliases: [${data.aliases.map((a: string) => `"${a}"`).join(', ')}]`
+                : '';
+            return `{ id: "${d.id}", name: "${data.displayName}"${aliases} }`;
+        }).join('\n');
+
+        logger.info(`RAG Context loaded: ${clientsSnap.size} projects, ${usersSnap.size} users`);
+
+        return { projects, users };
+    } catch (error) {
+        logger.warn('Failed to load RAG context', error);
+        return { projects: '(Error)', users: '(Error)' };
+    }
+}
+
+/**
+ * Smart Dispatcher Prompt Template
+ */
+const SMART_DISPATCHER_PROMPT = `Ты — умный диспетчер строительной компании.
+Проанализируй голосовое сообщение и извлеки структурированные данные.
+
+═══════════════════════════════════════════════════════════
+📁 СПРАВОЧНИК ПРОЕКТОВ (используй ТОЧНЫЕ ID из этого списка!):
+{projectContext}
+
+👥 СПРАВОЧНИК СОТРУДНИКОВ:
+{userContext}
+═══════════════════════════════════════════════════════════
+
+📝 СООБЩЕНИЕ от пользователя {ownerName} (ID: {ownerId}):
+"{transcription}"
+
+═══════════════════════════════════════════════════════════
+ИНСТРУКЦИИ:
+1. ПРОЕКТ: Если упоминается проект из списка (по имени или alias), верни его ТОЧНЫЙ ID.
+2. ИСПОЛНИТЕЛЬ: Если упоминается человек КРОМЕ автора, верни его ID как assigneeId.
+   - Используй aliases для сопоставления (Леша → Алексей)
+   - Если говорит "я сделаю", "сам" — НЕ ставь assigneeId
+3. ЧЕКЛИСТ: Если есть список действий (первое, второе, или перечисления), извлеки их.
+4. ДЕДЛАЙН: Если указано время ("завтра", "в пятницу"), укажи в deadlineHint.
+
+ВАЖНО: Возвращай ТОЛЬКО валидный JSON без markdown-разметки!
+═══════════════════════════════════════════════════════════
+
+{
+  "title": "Краткий заголовок задачи",
+  "checklist": [{"text": "Задача 1"}, {"text": "Задача 2"}],
+  "projectId": "точный_id_из_справочника" | null,
+  "projectName": "Название проекта" | null,
+  "projectConfidence": "high" | "low",
+  "assigneeId": "точный_id_пользователя" | null,
+  "assigneeName": "Имя исполнителя" | null,
+  "assigneeConfidence": "high" | "low",
+  "deadlineHint": "завтра" | "пятница" | null
+}`;
+
+/**
+ * Parse transcription using Smart Dispatcher with full RAG context
+ */
+async function parseWithSmartDispatcher(
+    transcription: string,
+    context: ContextData,
+    ownerId: string,
+    ownerName?: string
+): Promise<AIParseResult> {
+    if (!GEMINI_API_KEY) {
         throw new Error('GEMINI_API_KEY not configured');
     }
 
-    const genAI = new GoogleGenerativeAI(apiKey);
+    const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
     const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+
+    // Build prompt with context
+    const prompt = SMART_DISPATCHER_PROMPT
+        .replace('{projectContext}', context.projects || '(Нет проектов)')
+        .replace('{userContext}', context.users || '(Нет пользователей)')
+        .replace('{ownerName}', ownerName || 'Unknown')
+        .replace('{ownerId}', ownerId)
+        .replace('{transcription}', transcription);
 
     try {
         const result = await model.generateContent({
-            contents: [{
-                role: 'user',
-                parts: [
-                    { text: LIST_DETECTION_PROMPT },
-                    { text: `\n\nTranscription to analyze:\n"${transcription}"` }
-                ]
-            }]
+            contents: [{ role: 'user', parts: [{ text: prompt }] }]
         });
 
         const responseText = result.response.text().trim();
@@ -295,15 +424,26 @@ async function parseForList(transcription: string): Promise<AIParseResult> {
 
         const parsed = JSON.parse(jsonText);
 
+        logger.info('Smart Dispatcher result', {
+            projectId: parsed.projectId,
+            assigneeId: parsed.assigneeId,
+            checklistCount: parsed.checklist?.length || 0
+        });
+
         return {
             title: parsed.title || transcription.substring(0, 50),
             checklist: parsed.checklist || [],
             projectName: parsed.projectName || null,
-            deadlineHint: parsed.deadlineHint || null
+            projectId: parsed.projectId || null,
+            deadlineHint: parsed.deadlineHint || null,
+            assigneeName: parsed.assigneeName || null,
+            assigneeId: parsed.assigneeId || null,
+            projectConfidence: parsed.projectConfidence || 'low',
+            assigneeConfidence: parsed.assigneeConfidence || 'low'
         };
 
     } catch (error) {
-        logger.warn('List parsing failed, using simple transcription', error);
+        logger.warn('Smart Dispatcher parsing failed, falling back', error);
         return {
             title: transcription.length > 50
                 ? transcription.substring(0, 47) + '...'
@@ -314,6 +454,10 @@ async function parseForList(transcription: string): Promise<AIParseResult> {
         };
     }
 }
+
+// ═══════════════════════════════════════════════════════════
+// HELPER FUNCTIONS
+// ═══════════════════════════════════════════════════════════
 
 /**
  * Resolve project name to ID via Firestore lookup

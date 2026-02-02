@@ -357,6 +357,26 @@ service cloud.firestore {
       allow delete: if false; // Deletion only via admin or functions
     }
 
+    // Notes (INBOX - captured from Telegram bot)
+    match /notes/{noteId} {
+      // Read: any authenticated user can read notes (for INBOX page)
+      allow read: if isSignedIn();
+      
+      // Create: Cloud Functions only (from Telegram bot)
+      allow create: if false;
+      
+      // Update: authenticated users can archive/update notes
+      allow update: if isSignedIn();
+      
+      // Delete: only admin
+      allow delete: if isAdmin();
+    }
+
+    // Pending Albums (temporary collection for album grouping)
+    match /pending_albums/{albumId} {
+      allow read, write: if false; // Cloud Functions only
+    }
+
     // Employees Collection (for Rates & Mapping)
     match /employees/{employeeId} {
       allow read: if isSignedIn();

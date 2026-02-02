@@ -9,7 +9,7 @@
  * - adminDeleteUser: Безопасное удаление пользователя администратором
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.checkLongBreaks = exports.updateWorkSession = exports.mergeNotes = exports.splitChecklistItem = exports.onNoteCreated = exports.onReceiptUpdate = exports.onWorkSessionUpdate = exports.onWorkSessionCreate = exports.generateDailyPayroll = exports.closePayrollPeriod = exports.forceFinishAllSessions = exports.finalizeExpiredSessions = exports.onCostsBotMessage = exports.onWorkerBotMessage = exports.estimateTask = exports.generateLeadSummary = exports.sendMessage = exports.onTelegramMessage = exports.onWhatsAppMessage = exports.onLeadCreate = exports.updateCompanyMemberCount_v2 = exports.trackUserActivation_v2 = exports.logUserUpdates_v2 = exports.incrementLoginCount_v2 = exports.inviteUser = exports.adminDeleteUser = exports.onUserDelete = exports.onUserCreate = exports.admin_createUserWithPassword = exports.logPaginationMetrics = exports.diagnoseBot = exports.logInvitationAccepted = exports.logInvitationSent = exports.logUserDeleted = exports.logUserCreated = exports.brevoWebhookHandler = exports.trackFirstInvite = exports.initializeUserActivation = exports.aggregateEngagementMetrics = exports.aggregateGrowthMetrics = exports.processAvatar = void 0;
+exports.generatePriceEstimate = exports.syncActiveTimer = exports.onSessionChangeUpdateCost = exports.verifyTask = exports.submitForReview = exports.checkLongBreaks = exports.updateWorkSession = exports.mergeNotes = exports.splitChecklistItem = exports.onNoteCreated = exports.onReceiptUpdate = exports.onWorkSessionUpdate = exports.onWorkSessionCreate = exports.generateDailyPayroll = exports.closePayrollPeriod = exports.forceFinishAllSessions = exports.finalizeExpiredSessions = exports.onCostsBotMessage = exports.onWorkerBotMessage = exports.estimateTask = exports.generateLeadSummary = exports.sendMessage = exports.onTelegramMessage = exports.onWhatsAppMessage = exports.onLeadCreate = exports.updateCompanyMemberCount_v2 = exports.trackUserActivation_v2 = exports.logUserUpdates_v2 = exports.incrementLoginCount_v2 = exports.inviteUser = exports.adminDeleteUser = exports.onUserDelete = exports.onUserCreate = exports.admin_createUserWithPassword = exports.logPaginationMetrics = exports.diagnoseBot = exports.logInvitationAccepted = exports.logInvitationSent = exports.logUserDeleted = exports.logUserCreated = exports.brevoWebhookHandler = exports.trackFirstInvite = exports.initializeUserActivation = exports.aggregateEngagementMetrics = exports.aggregateGrowthMetrics = exports.processAvatar = void 0;
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 const crypto = require("crypto");
@@ -465,4 +465,15 @@ var updateWorkSession_1 = require("./callable/sessions/updateWorkSession");
 Object.defineProperty(exports, "updateWorkSession", { enumerable: true, get: function () { return updateWorkSession_1.updateWorkSession; } });
 var checkLongBreaks_1 = require("./scheduled/checkLongBreaks");
 Object.defineProperty(exports, "checkLongBreaks", { enumerable: true, get: function () { return checkLongBreaks_1.checkLongBreaks; } });
+// Quality Loop: Task verification workflow
+var qualityLoop_1 = require("./api/qualityLoop");
+Object.defineProperty(exports, "submitForReview", { enumerable: true, get: function () { return qualityLoop_1.submitForReview; } });
+Object.defineProperty(exports, "verifyTask", { enumerable: true, get: function () { return qualityLoop_1.verifyTask; } });
+// Cockpit View: Cost calculation and timer sync
+var calculateActualCost_1 = require("./triggers/firestore/calculateActualCost");
+Object.defineProperty(exports, "onSessionChangeUpdateCost", { enumerable: true, get: function () { return calculateActualCost_1.onSessionChangeUpdateCost; } });
+Object.defineProperty(exports, "syncActiveTimer", { enumerable: true, get: function () { return calculateActualCost_1.syncActiveTimer; } });
+// Cockpit View: AI Price Estimate
+var generatePriceEstimate_1 = require("./callable/notes/generatePriceEstimate");
+Object.defineProperty(exports, "generatePriceEstimate", { enumerable: true, get: function () { return generatePriceEstimate_1.generatePriceEstimate; } });
 //# sourceMappingURL=index.js.map

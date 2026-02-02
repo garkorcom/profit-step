@@ -10,13 +10,31 @@
 import { Timestamp } from 'firebase/firestore';
 
 /**
- * Note stage in the inbox pipeline
+ * Note stage in the pipeline
+ * 
+ * INTAKE:
  * - inbox: Just received, not processed
  * - processing: AI is transcribing/analyzing
  * - ready: Processed, ready for triage
- * - archived: Merged into another note (soft delete)
+ * 
+ * WORKFLOW (Cockpit View):
+ * - planning: Being enriched (project, assignee, estimate)
+ * - execution: Work in progress
+ * - review: Submitted for controller verification
+ * - done: Completed and verified
+ * 
+ * ARCHIVE:
+ * - archived: Soft deleted/merged
  */
-export type NoteStage = 'inbox' | 'processing' | 'ready' | 'archived';
+export type NoteStage =
+    | 'inbox'
+    | 'processing'
+    | 'ready'
+    | 'planning'
+    | 'execution'
+    | 'review'
+    | 'done'
+    | 'archived';
 
 /**
  * Source channel for the note
@@ -169,6 +187,151 @@ export interface Note {
     convertedToTask?: boolean;
     /** ID of created task (for traceability) */
     taskId?: string;
+
+    // ═══════════════════════════════════════════════════════════
+    // 👥 SMART DISPATCHER - ROLES
+    // ═══════════════════════════════════════════════════════════
+
+    /** 
+     * Assigned user IDs (detected by AI from voice mentions)
+     * Example: "Леша, сделай плитку" → assigneeIds: ["user_555"]
+     */
+    assigneeIds?: string[];
+    /** Assignee display names for UI */
+    assigneeNames?: string[];
+
+    /**
+     * Controller ID - who verifies the work
+     * Auto-set to ownerId when assignee ≠ owner
+     */
+    controllerId?: string;
+    /** Controller display name */
+    controllerName?: string;
+
+    // ═══════════════════════════════════════════════════════════
+    // 🤖 AI PREDICTION METADATA
+    // ═══════════════════════════════════════════════════════════
+
+    /**
+     * AI metadata for UI highlighting
+     * Shows which fields were auto-filled by Smart Dispatcher
+     */
+    aiMetadata?: {
+        /** Project was predicted by AI (show yellow border) */
+        isProjectPredicted: boolean;
+        /** Assignee was predicted by AI */
+        isAssigneePredicted: boolean;
+        /** AI confidence level */
+        confidence: 'high' | 'low';
+        /** Raw AI reasoning (debug) */
+        reasoning?: string;
+    };
+
+    // ═══════════════════════════════════════════════════════════
+    // 🚦 QUALITY LOOP GATES
+    // ═══════════════════════════════════════════════════════════
+
+    /**
+     * Quality control gates for delegated tasks
+     * Traffic light: Blue (in work) → Orange (submitted) → Green (verified)
+     */
+    gates?: {
+        /** Assignee clicked "Done" - submitted for review */
+        internalDone: boolean;
+        internalDoneAt?: Timestamp;
+        internalDoneBy?: string;
+
+        /** Controller clicked "Accept" - task verified */
+        verified: boolean;
+        verifiedAt?: Timestamp;
+        verifiedBy?: string;
+
+        /** Controller clicked "Return" with comment */
+        returnedAt?: Timestamp;
+        returnComment?: string;
+    };
+
+    /** Reason for archiving */
+    archivedReason?: 'converted_to_task' | 'merged' | 'manual' | 'verified';
+
+    /** ID of GTD Task created from this note (if converted) */
+    convertedToTaskId?: string;
+
+    // ═══════════════════════════════════════════════════════════
+    // 📅 COCKPIT VIEW - SCHEDULING
+    // ═══════════════════════════════════════════════════════════
+
+    /**
+     * Work schedule for the task
+     */
+    schedule?: {
+        /** Work start date */
+        start?: Timestamp;
+        /** Work end date (deadline) */
+        end?: Timestamp;
+        /** When to remind controller for check-in */
+        controlAt?: Timestamp;
+    };
+
+    // ═══════════════════════════════════════════════════════════
+    // 👤 COCKPIT VIEW - CLIENT OVERRIDE
+    // ═══════════════════════════════════════════════════════════
+
+    /**
+     * Client override (if different from project's client)
+     * For one-off jobs where client ≠ project owner
+     */
+    clientId?: string;
+    clientName?: string;
+
+    // ═══════════════════════════════════════════════════════════
+    // 💰 COCKPIT VIEW - FINANCE
+    // ═══════════════════════════════════════════════════════════
+
+    /**
+     * Financial data for the task
+     */
+    financials?: {
+        /** Price charged to client */
+        price?: number;
+        /** Actual cost (calculated from time + materials) */
+        actualCost?: number;
+        /** AI suggested price */
+        aiSuggestedPrice?: number;
+        /** Currency */
+        currency?: 'USD' | 'UAH';
+    };
+
+    /** Flag: requires cost estimator review */
+    isNeedsEstimate?: boolean;
+
+    // ═══════════════════════════════════════════════════════════
+    // ⏱️ COCKPIT VIEW - ACTIVE TIMER
+    // ═══════════════════════════════════════════════════════════
+
+    /**
+     * Currently running timer (for quick UI display)
+     * Synced via onSessionChange trigger
+     */
+    activeTimer?: {
+        sessionId: string;
+        startedAt: Timestamp;
+        employeeId: string;
+        employeeName: string;
+    };
+
+    // ═══════════════════════════════════════════════════════════
+    // 🏷️ COCKPIT VIEW - ORGANIZATION
+    // ═══════════════════════════════════════════════════════════
+
+    /** Task priority */
+    priority?: 'low' | 'medium' | 'high' | 'urgent';
+
+    /** Tags for filtering */
+    tags?: string[];
+
+    /** Location/site within project */
+    siteLocation?: string;
 }
 
 /**

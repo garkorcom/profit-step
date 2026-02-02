@@ -74,6 +74,13 @@ export interface UserProfile {
   signupMethod?: 'email' | 'google'; // Метод регистрации
   avatarUpdatedAt?: Timestamp | string; // Когда обновлен аватар
   timezone?: string;       // Часовой пояс (напр., 'America/New_York')
+
+  /**
+   * AI-friendly aliases for name matching (RAG context)
+   * Examples: ["Леша", "Алексей", "Алексею", "Alex"]
+   * Used by Smart Dispatcher to match voice mentions to user IDs
+   */
+  aliases?: string[];
 }
 
 /**

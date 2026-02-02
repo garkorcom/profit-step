@@ -15,6 +15,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
 import ShoppingCartIcon from '@mui/icons-material/ShoppingCart';
+import InboxIcon from '@mui/icons-material/Inbox';
 import GTDBoard from '../../components/gtd/GTDBoard';
 
 const GTDPage: React.FC = () => {
@@ -47,6 +48,15 @@ const GTDPage: React.FC = () => {
                         onClick={() => navigate('/crm/calendar')}
                     >
                         Calendar
+                    </Button>
+
+                    <Button
+                        variant="outlined"
+                        color="info"
+                        startIcon={<InboxIcon />}
+                        onClick={() => navigate('/crm/inbox')}
+                    >
+                        Inbox
                     </Button>
                 </Box>
             </Box>

@@ -341,7 +341,7 @@ const GTDTaskDetailsPage: React.FC = () => {
             bgcolor: '#f8fafc',
             pb: 4
         }}>
-            {/* Sticky Header */}
+            {/* Sticky Header - Cockpit Style */}
             <Box
                 sx={{
                     position: 'sticky',
@@ -354,6 +354,7 @@ const GTDTaskDetailsPage: React.FC = () => {
                 }}
             >
                 <Box display="flex" alignItems="center" gap={2} maxWidth={1400} mx="auto">
+                    {/* Left: Back & Breadcrumbs */}
                     <Tooltip title="Назад к списку">
                         <IconButton onClick={() => navigate('/crm/gtd')} size="small">
                             <ArrowBackIcon />
@@ -368,18 +369,45 @@ const GTDTaskDetailsPage: React.FC = () => {
                         </Typography>
                     </Breadcrumbs>
 
-                    {/* Timer in Header (when active) */}
-                    {isTaskActive && (
-                        <Box display="flex" alignItems="center" gap={1} sx={{ bgcolor: '#dcfce7', px: 2, py: 0.5, borderRadius: 2 }}>
-                            <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: '#22c55e', animation: 'pulse 1.5s infinite' }} />
-                            <Typography variant="body2" fontWeight="bold" fontFamily="monospace">
-                                {formatElapsedTime(elapsedTime)}
-                            </Typography>
-                            <IconButton size="small" color="error" onClick={handleStopTimer}>
-                                <StopIcon fontSize="small" />
+                    {/* Right: Action Buttons - Cockpit Style */}
+                    <Box display="flex" alignItems="center" gap={2}>
+                        {/* Cockpit Link (if has source note) */}
+                        {task.sourceNoteId && (
+                            <Chip
+                                label="📝 Open in Cockpit"
+                                color="info"
+                                variant="outlined"
+                                onClick={() => navigate(`/crm/inbox/${task.sourceNoteId}`)}
+                                sx={{ cursor: 'pointer' }}
+                            />
+                        )}
+
+                        {/* Timer Button */}
+                        <Button
+                            variant={isTaskActive ? 'contained' : 'outlined'}
+                            color={isTaskActive ? 'error' : 'success'}
+                            startIcon={isTaskActive ? <StopIcon /> : <PlayArrowIcon />}
+                            onClick={isTaskActive ? handleStopTimer : handleStartTimer}
+                            sx={{
+                                minWidth: 160,
+                                animation: isTaskActive ? 'pulse 1.5s infinite' : 'none',
+                                '@keyframes pulse': {
+                                    '0%': { opacity: 1 },
+                                    '50%': { opacity: 0.7 },
+                                    '100%': { opacity: 1 },
+                                }
+                            }}
+                        >
+                            {isTaskActive ? formatElapsedTime(elapsedTime) : 'Start Work'}
+                        </Button>
+
+                        {/* Delete Button */}
+                        <Tooltip title="Удалить задачу">
+                            <IconButton color="error" onClick={handleDeleteTask}>
+                                <DeleteIcon />
                             </IconButton>
-                        </Box>
-                    )}
+                        </Tooltip>
+                    </Box>
                 </Box>
             </Box>
 
@@ -549,6 +577,25 @@ const GTDTaskDetailsPage: React.FC = () => {
                                         }}
                                     >
                                         🎙️ Исходное голосовое сообщение
+                                    </Box>
+                                ) : task.sourceNoteId ? (
+                                    <Box
+                                        component="a"
+                                        href={`/crm/inbox/${task.sourceNoteId}`}
+                                        sx={{
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            gap: 1,
+                                            px: 2,
+                                            py: 1,
+                                            bgcolor: '#e0f2fe',
+                                            borderRadius: 2,
+                                            textDecoration: 'none',
+                                            color: '#0369a1',
+                                            '&:hover': { bgcolor: '#bae6fd' }
+                                        }}
+                                    >
+                                        📝 Open in Cockpit View
                                     </Box>
                                 ) : (
                                     <Box sx={{ bgcolor: '#f8fafc', p: 2, borderRadius: 2, border: '1px dashed #cbd5e1' }}>

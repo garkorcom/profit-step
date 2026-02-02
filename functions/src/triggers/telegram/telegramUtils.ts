@@ -114,3 +114,25 @@ export async function sendMainMenu(chatId: number, userId: number = chatId) {
         one_time_keyboard: false
     });
 }
+
+/**
+ * Edit an existing message (FIX #4: UX "presence effect")
+ */
+export async function editMessage(chatId: number, messageId: number, text: string): Promise<boolean> {
+    if (!WORKER_BOT_TOKEN) {
+        console.error("Missing WORKER_BOT_TOKEN");
+        return false;
+    }
+    try {
+        await axios.post(`https://api.telegram.org/bot${WORKER_BOT_TOKEN}/editMessageText`, {
+            chat_id: chatId,
+            message_id: messageId,
+            text: text,
+            parse_mode: 'Markdown'
+        });
+        return true;
+    } catch (error: any) {
+        console.error('Error editing message:', error?.response?.data || error.message);
+        return false;
+    }
+}

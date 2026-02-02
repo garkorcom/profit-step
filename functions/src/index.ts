@@ -574,3 +574,12 @@ export { mergeNotes } from './callable/notes/mergeNotes';
 // Sessions: Callable with validation
 export { updateWorkSession } from './callable/sessions/updateWorkSession';
 export { checkLongBreaks } from './scheduled/checkLongBreaks';
+
+// Quality Loop: Task verification workflow
+export { submitForReview, verifyTask } from './api/qualityLoop';
+
+// Cockpit View: Cost calculation and timer sync
+export { onSessionChangeUpdateCost, syncActiveTimer } from './triggers/firestore/calculateActualCost';
+
+// Cockpit View: AI Price Estimate
+export { generatePriceEstimate } from './callable/notes/generatePriceEstimate';

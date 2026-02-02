@@ -1,6 +1,6 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Card, CardContent, Typography, Box, Chip, IconButton, Link } from '@mui/material';
+import { Card, CardContent, Typography, Box, Chip, IconButton, Link, Tooltip } from '@mui/material';
 import { Draggable } from '@hello-pangea/dnd';
 import EditIcon from '@mui/icons-material/Edit';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
@@ -8,6 +8,7 @@ import FlagIcon from '@mui/icons-material/Flag';
 import PersonIcon from '@mui/icons-material/Person';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import DragIndicatorIcon from '@mui/icons-material/DragIndicator';
+import DescriptionIcon from '@mui/icons-material/Description';
 import { GTDTask, PRIORITY_COLORS, GTDPriority } from '../../types/gtd.types';
 import { WorkSessionData } from '../../hooks/useActiveSession';
 
@@ -59,6 +60,13 @@ const GTDTaskCard: React.FC<GTDTaskCardProps> = ({ task, index, clientName, onCl
             onStopSession(task);
         }
     }
+
+    const handleNoteClick = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        if (task.sourceNoteId) {
+            navigate(`/crm/inbox/${task.sourceNoteId}`);
+        }
+    };
 
     return (
         <Draggable draggableId={task.id} index={index}>
@@ -169,6 +177,25 @@ const GTDTaskCard: React.FC<GTDTaskCardProps> = ({ task, index, clientName, onCl
                                 >
                                     <EditIcon sx={{ fontSize: 16 }} />
                                 </IconButton>
+                                {task.sourceNoteId && (
+                                    <Tooltip title="Open in Cockpit">
+                                        <IconButton
+                                            size="small"
+                                            onClick={handleNoteClick}
+                                            sx={{
+                                                opacity: 0.6,
+                                                color: 'info.main',
+                                                '&:hover': {
+                                                    opacity: 1,
+                                                    bgcolor: 'info.light',
+                                                    transform: 'scale(1.1)'
+                                                }
+                                            }}
+                                        >
+                                            <DescriptionIcon sx={{ fontSize: 16 }} />
+                                        </IconButton>
+                                    </Tooltip>
+                                )}
                             </Box>
                         </Box>
 

@@ -1,7 +1,7 @@
 /**
  * @fileoverview GTD Page
  * 
- * Lookahead Schedule page - tasks board only.
+ * Cockpit page - tasks board only.
  * Shopping functionality moved to dedicated /crm/shopping page.
  */
 
@@ -15,7 +15,6 @@ import {
 import { useNavigate } from 'react-router-dom';
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
 import ShoppingCartIcon from '@mui/icons-material/ShoppingCart';
-import InboxIcon from '@mui/icons-material/Inbox';
 import GTDBoard from '../../components/gtd/GTDBoard';
 
 const GTDPage: React.FC = () => {
@@ -26,7 +25,7 @@ const GTDPage: React.FC = () => {
             {/* Header */}
             <Box mb={2} display="flex" justifyContent="space-between" alignItems="center">
                 <Box>
-                    <Typography variant="h4" fontWeight="bold">Lookahead Schedule</Typography>
+                    <Typography variant="h4" fontWeight="bold">Cockpit</Typography>
                     <Typography variant="body2" color="text.secondary">
                         GTD Planning: Drag tasks across stages. Move to 'Next Actions' to start working.
                     </Typography>
@@ -48,15 +47,6 @@ const GTDPage: React.FC = () => {
                         onClick={() => navigate('/crm/calendar')}
                     >
                         Calendar
-                    </Button>
-
-                    <Button
-                        variant="outlined"
-                        color="info"
-                        startIcon={<InboxIcon />}
-                        onClick={() => navigate('/crm/inbox')}
-                    >
-                        Inbox
                     </Button>
                 </Box>
             </Box>

@@ -548,12 +548,14 @@ export { sendMessage } from './callable/messaging/sendMessage';
 // AI
 export { generateLeadSummary } from './callable/ai/generateLeadSummary';
 export { estimateTask } from './callable/ai/estimateTask';
+export { parseSmartInput } from './callable/ai/parseSmartInput';
 export { onWorkerBotMessage } from './triggers/telegram/onWorkerBotMessage';
 export { onCostsBotMessage } from './triggers/telegram/onCostsBotMessage';
 
 // Scheduled: Session Management
 export { finalizeExpiredSessions } from './scheduled/finalizeExpiredSessions';
 // export { sendSessionReminders } from './scheduled/sendSessionReminders'; // DISABLED: Session reminders turned off
+export { sendDeadlineReminders } from './scheduled/deadlineReminders'; // GTD task deadline notifications
 
 export { forceFinishAllSessions } from './callable/admin/forceFinishAllSessions';
 export { closePayrollPeriod } from './callable/payroll/closePayrollPeriod';

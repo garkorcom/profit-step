@@ -1,100 +1,49 @@
 /**
- * @fileoverview Cockpit View - Unified task processing page
+ * @fileoverview UnifiedCockpitPage - Single page for all task details
+ * 
+ * Works with gtd_tasks collection directly.
+ * Replaces both NoteCockpitPage and GTDTaskDetailsPage.
  * 
  * Features:
- * - Sticky header with stage, timer, actions
- * - Main content: title, description, checklist, attachments
- * - Control panel: project, team, schedule, finance
+ * - Sticky header with status, timer, actions
+ * - Main content: title, description, checklist
+ * - Control panel: client, team, schedule, finance
  * 
- * @module pages/crm/NoteCockpitPage
+ * @module pages/crm/UnifiedCockpitPage
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
     Box, Typography, TextField, Button, IconButton, Paper,
     Breadcrumbs, Link, Chip, Select, MenuItem, FormControl,
-    InputLabel, Autocomplete, Avatar, Divider, Checkbox,
+    Autocomplete, Avatar, Divider, Checkbox,
     FormControlLabel, InputAdornment, Tooltip, CircularProgress,
-    Dialog, DialogTitle, DialogContent, DialogActions, Alert,
-    List, ListItem, ListItemIcon, ListItemText, Tab, Tabs
+    Alert, List, ListItem, ListItemIcon, Tab, Tabs
 } from '@mui/material';
 import {
     ArrowBack as BackIcon,
     PlayArrow as PlayIcon,
-    Pause as PauseIcon,
+    Stop as StopIcon,
     Save as SaveIcon,
-    Archive as ArchiveIcon,
+    Delete as DeleteIcon,
     AutoAwesome as AIIcon,
     Add as AddIcon,
-    CallSplit as SplitIcon,
     DragIndicator as DragIcon,
-    AttachFile as AttachIcon,
     AccessTime as TimeIcon,
     Person as PersonIcon,
-    CalendarToday as CalendarIcon,
-    AttachMoney as MoneyIcon,
-    CheckCircle as CheckIcon,
-    Warning as WarningIcon
 } from '@mui/icons-material';
-import { doc, getDoc, updateDoc, onSnapshot, Timestamp, collection, addDoc, getDocs, query, where } from 'firebase/firestore';
+import { doc, updateDoc, onSnapshot, Timestamp, collection, getDocs, query, where, deleteDoc } from 'firebase/firestore';
 import { db } from '../../firebase/firebase';
 import { useAuth } from '../../auth/AuthContext';
 import { httpsCallable } from 'firebase/functions';
 import { functions } from '../../firebase/firebase';
+import { GTDTask, GTDStatus, GTDPriority, ChecklistItem, PRIORITY_COLORS } from '../../types/gtd.types';
+import { useSessionManager } from '../../hooks/useSessionManager';
 
 // ═══════════════════════════════════════════════════════════
-// TYPES
+// HELPER TYPES
 // ═══════════════════════════════════════════════════════════
-
-type NoteStage = 'inbox' | 'processing' | 'ready' | 'planning' | 'execution' | 'review' | 'done' | 'archived';
-
-interface ChecklistItem {
-    id: string;
-    text: string;
-    isDone: boolean;
-}
-
-interface Note {
-    id: string;
-    stage: NoteStage;
-    title: string;
-    description?: string;
-    checklist?: ChecklistItem[];
-    projectId?: string;
-    projectName?: string;
-    clientId?: string;
-    clientName?: string;
-    assigneeIds?: string[];
-    assigneeNames?: string[];
-    controllerId?: string;
-    controllerName?: string;
-    schedule?: {
-        start?: Timestamp;
-        end?: Timestamp;
-        controlAt?: Timestamp;
-    };
-    financials?: {
-        price?: number;
-        actualCost?: number;
-        aiSuggestedPrice?: number;
-    };
-    isNeedsEstimate?: boolean;
-    priority?: 'low' | 'medium' | 'high' | 'urgent';
-    siteLocation?: string;
-    activeTimer?: {
-        sessionId: string;
-        startedAt: Timestamp;
-        employeeId: string;
-        employeeName: string;
-    };
-    ownerId: string;
-    ownerName?: string;
-    createdAt: Timestamp;
-    updatedAt?: Timestamp;
-    /** ID of GTD Task if this note was converted */
-    convertedToTaskId?: string;
-}
 
 interface User {
     id: string;
@@ -102,40 +51,47 @@ interface User {
     avatarUrl?: string;
 }
 
-interface Project {
+interface Client {
     id: string;
     name: string;
-    clientId?: string;
-    clientName?: string;
 }
 
-const STAGE_OPTIONS: { value: NoteStage; label: string; color: string }[] = [
+const STATUS_OPTIONS: { value: GTDStatus; label: string; color: string }[] = [
     { value: 'inbox', label: 'Inbox', color: '#9e9e9e' },
-    { value: 'ready', label: 'Ready', color: '#2196f3' },
-    { value: 'planning', label: 'Planning', color: '#ff9800' },
-    { value: 'execution', label: 'Execution', color: '#4caf50' },
-    { value: 'review', label: 'Review', color: '#9c27b0' },
+    { value: 'next_action', label: 'Next Actions', color: '#2196f3' },
+    { value: 'projects', label: 'Projects', color: '#ff9800' },
+    { value: 'waiting', label: 'Waiting', color: '#9c27b0' },
+    { value: 'estimate', label: 'Estimate', color: '#00bcd4' },
     { value: 'done', label: 'Done', color: '#00c853' },
 ];
 
-const PRIORITY_OPTIONS = [
-    { value: 'low', label: 'Low', color: '#9e9e9e' },
-    { value: 'medium', label: 'Medium', color: '#ff9800' },
-    { value: 'high', label: 'High', color: '#f44336' },
-    { value: 'urgent', label: 'Urgent', color: '#d50000' },
+const PRIORITY_OPTIONS: { value: GTDPriority; label: string; color: string }[] = [
+    { value: 'none', label: 'None', color: '#9e9e9e' },
+    { value: 'low', label: 'Low', color: '#3b82f6' },
+    { value: 'medium', label: 'Medium', color: '#f59e0b' },
+    { value: 'high', label: 'High', color: '#ef4444' },
 ];
 
 // ═══════════════════════════════════════════════════════════
 // MAIN COMPONENT
 // ═══════════════════════════════════════════════════════════
 
-const NoteCockpitPage: React.FC = () => {
-    const { noteId } = useParams<{ noteId: string }>();
+const UnifiedCockpitPage: React.FC = () => {
+    const { taskId } = useParams<{ taskId: string }>();
     const navigate = useNavigate();
     const { currentUser } = useAuth();
 
+    // Session manager for timer
+    const { activeSession, startSession, stopSession, loading: sessionLoading } = useSessionManager(
+        currentUser?.uid,
+        currentUser?.displayName || undefined
+    );
+
+    // Timer elapsed seconds (calculated from activeSession)
+    const [timerSeconds, setTimerSeconds] = useState(0);
+
     // State
-    const [note, setNote] = useState<Note | null>(null);
+    const [task, setTask] = useState<GTDTask | null>(null);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [hasChanges, setHasChanges] = useState(false);
@@ -143,24 +99,19 @@ const NoteCockpitPage: React.FC = () => {
     // Form state
     const [title, setTitle] = useState('');
     const [description, setDescription] = useState('');
-    const [stage, setStage] = useState<NoteStage>('inbox');
+    const [status, setStatus] = useState<GTDStatus>('inbox');
     const [checklist, setChecklist] = useState<ChecklistItem[]>([]);
-    const [projectId, setProjectId] = useState<string | null>(null);
-    const [projectName, setProjectName] = useState<string | null>(null);
-    const [assigneeIds, setAssigneeIds] = useState<string[]>([]);
-    const [controllerId, setControllerId] = useState<string | null>(null);
-    const [price, setPrice] = useState<number | ''>('');
-    const [isNeedsEstimate, setIsNeedsEstimate] = useState(false);
-    const [priority, setPriority] = useState<string>('medium');
-    const [siteLocation, setSiteLocation] = useState('');
+    const [clientId, setClientId] = useState<string | null>(null);
+    const [clientName, setClientName] = useState<string | null>(null);
+    const [assigneeId, setAssigneeId] = useState<string | null>(null);
+    const [assigneeName, setAssigneeName] = useState<string | null>(null);
+    const [estimatedCost, setEstimatedCost] = useState<number | ''>('');
+    const [needsEstimate, setNeedsEstimate] = useState(false);
+    const [priority, setPriority] = useState<GTDPriority>('none');
 
     // Reference data
-    const [projects, setProjects] = useState<Project[]>([]);
+    const [clients, setClients] = useState<Client[]>([]);
     const [users, setUsers] = useState<User[]>([]);
-
-    // Timer state
-    const [timerRunning, setTimerRunning] = useState(false);
-    const [timerSeconds, setTimerSeconds] = useState(0);
 
     // AI state
     const [estimating, setEstimating] = useState(false);
@@ -174,50 +125,37 @@ const NoteCockpitPage: React.FC = () => {
     // ─────────────────────────────────────────────────────────
 
     useEffect(() => {
-        if (!noteId) return;
+        if (!taskId) return;
 
-        // Real-time subscription to note
-        const unsubscribe = onSnapshot(doc(db, 'notes', noteId), (snap) => {
+        // Real-time subscription to task
+        const unsubscribe = onSnapshot(doc(db, 'gtd_tasks', taskId), (snap) => {
             if (snap.exists()) {
-                const data = { id: snap.id, ...snap.data() } as Note;
-                setNote(data);
+                const data = { id: snap.id, ...snap.data() } as GTDTask;
+                setTask(data);
 
                 // Initialize form state
                 setTitle(data.title || '');
                 setDescription(data.description || '');
-                setStage(data.stage);
-                setChecklist(data.checklist || []);
-                setProjectId(data.projectId || null);
-                setProjectName(data.projectName || null);
-                setAssigneeIds(data.assigneeIds || []);
-                setControllerId(data.controllerId || null);
-                setPrice(data.financials?.price || '');
-                setIsNeedsEstimate(data.isNeedsEstimate || false);
-                setPriority(data.priority || 'medium');
-                setSiteLocation(data.siteLocation || '');
-
-                // Timer state
-                if (data.activeTimer) {
-                    setTimerRunning(true);
-                    const startTime = data.activeTimer.startedAt.toDate();
-                    const elapsed = Math.floor((Date.now() - startTime.getTime()) / 1000);
-                    setTimerSeconds(elapsed);
-                } else {
-                    setTimerRunning(false);
-                }
+                setStatus(data.status);
+                setChecklist(data.checklistItems || []);
+                setClientId(data.clientId || null);
+                setClientName(data.clientName || null);
+                setAssigneeId(data.assigneeId || null);
+                setAssigneeName(data.assigneeName || null);
+                setEstimatedCost(data.estimatedCost || '');
+                setNeedsEstimate(data.needsEstimate || false);
+                setPriority(data.priority || 'none');
 
                 setLoading(false);
             }
         });
 
-        // Load projects
+        // Load clients
         getDocs(query(collection(db, 'clients'), where('status', '!=', 'archived')))
             .then(snap => {
-                setProjects(snap.docs.map(d => ({
+                setClients(snap.docs.map(d => ({
                     id: d.id,
-                    name: d.data().name,
-                    clientId: d.id,
-                    clientName: d.data().name
+                    name: d.data().name
                 })));
             });
 
@@ -232,39 +170,50 @@ const NoteCockpitPage: React.FC = () => {
             });
 
         return () => unsubscribe();
-    }, [noteId]);
+    }, [taskId]);
 
-    // Timer tick
+    // Timer tick - calculate elapsed time from activeSession startTime
     useEffect(() => {
-        if (!timerRunning) return;
-        const interval = setInterval(() => {
-            setTimerSeconds(s => s + 1);
-        }, 1000);
+        const isTimerRunningForThisTask = activeSession?.relatedTaskId === taskId;
+        if (!isTimerRunningForThisTask || !activeSession?.startTime) {
+            setTimerSeconds(0);
+            return;
+        }
+
+        // Initial calculation
+        const startTime = activeSession.startTime.toDate();
+        const updateTimer = () => {
+            const elapsed = Math.floor((Date.now() - startTime.getTime()) / 1000);
+            setTimerSeconds(elapsed);
+        };
+        updateTimer();
+
+        // Tick every second
+        const interval = setInterval(updateTimer, 1000);
         return () => clearInterval(interval);
-    }, [timerRunning]);
+    }, [activeSession, taskId]);
 
     // ─────────────────────────────────────────────────────────
     // HANDLERS
     // ─────────────────────────────────────────────────────────
 
     const handleSave = async () => {
-        if (!noteId) return;
+        if (!taskId) return;
         setSaving(true);
 
         try {
-            await updateDoc(doc(db, 'notes', noteId), {
+            await updateDoc(doc(db, 'gtd_tasks', taskId), {
                 title,
                 description,
-                stage,
-                checklist,
-                projectId,
-                projectName,
-                assigneeIds,
-                controllerId,
-                'financials.price': price || null,
-                isNeedsEstimate,
+                status,
+                checklistItems: checklist,
+                clientId: clientId || null,
+                clientName: clientName || null,
+                assigneeId: assigneeId || null,
+                assigneeName: assigneeName || null,
+                estimatedCost: estimatedCost || null,
+                needsEstimate,
                 priority,
-                siteLocation,
                 updatedAt: Timestamp.now()
             });
             setHasChanges(false);
@@ -275,140 +224,36 @@ const NoteCockpitPage: React.FC = () => {
         }
     };
 
-    // Save and promote to GTD Task
-    const handleSaveAndPromote = async () => {
-        if (!noteId || !currentUser || !note) return;
-        setSaving(true);
-
-        try {
-            const mappedChecklist = checklist.map(item => ({
-                id: item.id,
-                text: item.text,
-                completed: item.isDone,
-                createdAt: Timestamp.now(),
-            }));
-
-            // If already has linked GTD task → UPDATE it
-            if (note.convertedToTaskId) {
-                await updateDoc(doc(db, 'gtd_tasks', note.convertedToTaskId), {
-                    title,
-                    description,
-                    priority: priority || 'none',
-                    checklistItems: mappedChecklist,
-                    ...(projectId && {
-                        projectId,
-                        clientId: projectId,
-                        clientName: projectName || ''
-                    }),
-                    ...(assigneeIds?.length && {
-                        assigneeId: assigneeIds[0],
-                        assigneeName: users.find(u => u.id === assigneeIds[0])?.displayName || ''
-                    }),
-                    updatedAt: Timestamp.now(),
-                });
-
-                // Update note too
-                await updateDoc(doc(db, 'notes', noteId), {
-                    title,
-                    description,
-                    checklist,
-                    projectId,
-                    projectName,
-                    assigneeIds,
-                    priority,
-                    updatedAt: Timestamp.now()
-                });
-            } else {
-                // Create NEW GTD task
-                const newTask = {
-                    title,
-                    description,
-                    status: 'inbox',
-                    priority: priority || 'none',
-                    createdAt: Timestamp.now(),
-                    ownerId: currentUser.uid,
-                    ownerName: currentUser.displayName || 'Unknown',
-                    context: '',
-                    ...(assigneeIds?.length && {
-                        assigneeId: assigneeIds[0],
-                        assigneeName: users.find(u => u.id === assigneeIds[0])?.displayName || ''
-                    }),
-                    ...(projectId && {
-                        projectId,
-                        clientId: projectId,
-                        clientName: projectName || ''
-                    }),
-                    checklistItems: mappedChecklist,
-                    sourceNoteId: noteId,
-                };
-
-                const taskRef = await addDoc(collection(db, 'gtd_tasks'), newTask);
-
-                // Archive note & link to task
-                await updateDoc(doc(db, 'notes', noteId), {
-                    stage: 'archived' as NoteStage,
-                    archivedAt: Timestamp.now(),
-                    archivedReason: 'converted_to_task',
-                    convertedToTaskId: taskRef.id
-                });
-            }
-
-            setHasChanges(false);
-
-            // Navigate to GTD board
-            navigate('/crm/gtd');
-
-        } catch (error) {
-            console.error('Save & promote failed:', error);
-        } finally {
-            setSaving(false);
-        }
-    };
-
-    const handleStageChange = (newStage: NoteStage) => {
-        // Validation: can't leave inbox without project
-        if (stage === 'inbox' && newStage !== 'inbox' && !projectId) {
-            alert('Please select a project before moving out of Inbox');
-            return;
-        }
-        setStage(newStage);
+    const handleStatusChange = (newStatus: GTDStatus) => {
+        setStatus(newStatus);
         setHasChanges(true);
     };
 
     const handleTimerToggle = async () => {
-        if (!noteId || !currentUser) return;
+        if (!taskId || !currentUser || !task) return;
 
-        if (timerRunning) {
-            // TODO: Pause timer - end current session
-            alert('Pause functionality coming soon');
+        const isTimerRunningForThisTask = activeSession?.relatedTaskId === taskId;
+
+        if (isTimerRunningForThisTask) {
+            await stopSession();
         } else {
-            // Start timer - create session
-            try {
-                await addDoc(collection(db, 'sessions'), {
-                    employeeId: currentUser.uid,
-                    employeeName: currentUser.displayName || 'User',
-                    clientId: projectId || '',
-                    clientName: projectName || 'No Project',
-                    relatedNoteId: noteId,
-                    startTime: Timestamp.now(),
-                    status: 'active',
-                    hourlyRate: 25 // TODO: Get from user profile
-                });
-                setTimerRunning(true);
-                setTimerSeconds(0);
-            } catch (error) {
-                console.error('Failed to start timer:', error);
-            }
+            // Pass task object for startSession
+            await startSession({
+                id: taskId,
+                title,
+                clientId: clientId || '',
+                clientName: clientName || '',
+            } as GTDTask);
         }
     };
 
     const handleAIEstimate = async () => {
-        if (!noteId) return;
+        if (!taskId) return;
         setEstimating(true);
 
         try {
             const generatePriceEstimate = httpsCallable(functions, 'generatePriceEstimate');
-            const result = await generatePriceEstimate({ noteId });
+            const result = await generatePriceEstimate({ taskId });
             const data = result.data as { lowPrice: number; highPrice: number; suggestedPrice: number };
             setEstimateResult({
                 low: data.lowPrice,
@@ -424,7 +269,7 @@ const NoteCockpitPage: React.FC = () => {
 
     const applyEstimate = () => {
         if (estimateResult) {
-            setPrice(estimateResult.suggested);
+            setEstimatedCost(estimateResult.suggested);
             setHasChanges(true);
             setEstimateResult(null);
         }
@@ -432,7 +277,7 @@ const NoteCockpitPage: React.FC = () => {
 
     const handleChecklistToggle = (itemId: string) => {
         setChecklist(prev => prev.map(item =>
-            item.id === itemId ? { ...item, isDone: !item.isDone } : item
+            item.id === itemId ? { ...item, completed: !item.completed } : item
         ));
         setHasChanges(true);
     };
@@ -441,7 +286,8 @@ const NoteCockpitPage: React.FC = () => {
         const newItem: ChecklistItem = {
             id: crypto.randomUUID(),
             text: '',
-            isDone: false
+            completed: false,
+            createdAt: Timestamp.now()
         };
         setChecklist(prev => [...prev, newItem]);
         setHasChanges(true);
@@ -452,6 +298,14 @@ const NoteCockpitPage: React.FC = () => {
             item.id === itemId ? { ...item, text } : item
         ));
         setHasChanges(true);
+    };
+
+    const handleDelete = async () => {
+        if (!taskId) return;
+        if (!window.confirm('Delete this task?')) return;
+
+        await deleteDoc(doc(db, 'gtd_tasks', taskId));
+        navigate('/crm/gtd');
     };
 
     const formatTime = (seconds: number) => {
@@ -473,20 +327,18 @@ const NoteCockpitPage: React.FC = () => {
         );
     }
 
-    if (!note) {
+    if (!task) {
         return (
             <Box p={3}>
-                <Alert severity="error">Note not found</Alert>
-                <Button onClick={() => navigate('/crm/inbox')} sx={{ mt: 2 }}>
-                    Back to Inbox
+                <Alert severity="error">Task not found</Alert>
+                <Button onClick={() => navigate('/crm/gtd')} sx={{ mt: 2 }}>
+                    Back to Cockpit
                 </Button>
             </Box>
         );
     }
 
-    const actualCost = note.financials?.actualCost || 0;
-    const priceNum = typeof price === 'number' ? price : 0;
-    const isLoss = actualCost > priceNum && priceNum > 0;
+    const isTimerRunningForThisTask = activeSession?.relatedTaskId === taskId;
 
     return (
         <Box sx={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
@@ -506,37 +358,37 @@ const NoteCockpitPage: React.FC = () => {
                 <Box display="flex" alignItems="center" justifyContent="space-between">
                     {/* Left: Navigation */}
                     <Box display="flex" alignItems="center" gap={2}>
-                        <IconButton onClick={() => navigate('/crm/inbox')}>
+                        <IconButton onClick={() => navigate('/crm/gtd')}>
                             <BackIcon />
                         </IconButton>
                         <Breadcrumbs>
                             <Link
                                 component="button"
                                 variant="body2"
-                                onClick={() => navigate('/crm/inbox')}
+                                onClick={() => navigate('/crm/gtd')}
                                 underline="hover"
                             >
-                                Inbox
+                                Cockpit
                             </Link>
-                            {projectName && (
+                            {clientName && (
                                 <Typography variant="body2" color="text.primary">
-                                    {projectName}
+                                    {clientName}
                                 </Typography>
                             )}
                         </Breadcrumbs>
                     </Box>
 
-                    {/* Center: Stage Selector */}
+                    {/* Center: Status Selector */}
                     <FormControl size="small" sx={{ minWidth: 150 }}>
                         <Select
-                            value={stage}
-                            onChange={(e) => handleStageChange(e.target.value as NoteStage)}
+                            value={status}
+                            onChange={(e) => handleStatusChange(e.target.value as GTDStatus)}
                             sx={{
-                                bgcolor: STAGE_OPTIONS.find(s => s.value === stage)?.color + '20',
+                                bgcolor: STATUS_OPTIONS.find(s => s.value === status)?.color + '20',
                                 '& .MuiSelect-select': { py: 1 }
                             }}
                         >
-                            {STAGE_OPTIONS.map(opt => (
+                            {STATUS_OPTIONS.map(opt => (
                                 <MenuItem key={opt.value} value={opt.value}>
                                     <Chip
                                         size="small"
@@ -550,26 +402,28 @@ const NoteCockpitPage: React.FC = () => {
 
                     {/* Right: Timer & Actions */}
                     <Box display="flex" alignItems="center" gap={2}>
-                        {/* Link to GTD Task (if converted) */}
-                        {note?.convertedToTaskId && (
+                        {/* Source Audio Link */}
+                        {task?.sourceAudioUrl && (
                             <Chip
-                                label="📋 GTD Task"
+                                label="🎙️ Voice"
                                 color="info"
                                 variant="outlined"
-                                onClick={() => navigate(`/crm/gtd/${note.convertedToTaskId}`)}
-                                sx={{ cursor: 'pointer' }}
+                                component="a"
+                                href={task.sourceAudioUrl}
+                                target="_blank"
+                                clickable
                             />
                         )}
 
                         {/* Timer Button */}
                         <Button
-                            variant={timerRunning ? 'contained' : 'outlined'}
-                            color={timerRunning ? 'error' : 'success'}
-                            startIcon={timerRunning ? <PauseIcon /> : <PlayIcon />}
+                            variant={isTimerRunningForThisTask ? 'contained' : 'outlined'}
+                            color={isTimerRunningForThisTask ? 'error' : 'success'}
+                            startIcon={isTimerRunningForThisTask ? <StopIcon /> : <PlayIcon />}
                             onClick={handleTimerToggle}
                             sx={{
                                 minWidth: 160,
-                                animation: timerRunning ? 'pulse 1.5s infinite' : 'none',
+                                animation: isTimerRunningForThisTask ? 'pulse 1.5s infinite' : 'none',
                                 '@keyframes pulse': {
                                     '0%': { opacity: 1 },
                                     '50%': { opacity: 0.7 },
@@ -577,33 +431,23 @@ const NoteCockpitPage: React.FC = () => {
                                 }
                             }}
                         >
-                            {timerRunning ? formatTime(timerSeconds) : 'Start Work'}
+                            {isTimerRunningForThisTask ? formatTime(timerSeconds) : 'Start Work'}
                         </Button>
 
-                        {/* Save Draft Button */}
+                        {/* Save Button */}
                         <Button
-                            variant="outlined"
+                            variant="contained"
+                            color="primary"
                             startIcon={saving ? <CircularProgress size={16} /> : <SaveIcon />}
                             onClick={handleSave}
                             disabled={!hasChanges || saving}
                         >
-                            Save Draft
+                            Save
                         </Button>
 
-                        {/* Save & Create/Update GTD Task Button */}
-                        <Button
-                            variant="contained"
-                            color="primary"
-                            startIcon={saving ? <CircularProgress size={16} /> : <CheckIcon />}
-                            onClick={handleSaveAndPromote}
-                            disabled={saving}
-                        >
-                            {note?.convertedToTaskId ? 'Update GTD Task' : 'Save & Create Task'}
-                        </Button>
-
-                        {/* Archive Button */}
-                        <IconButton color="default">
-                            <ArchiveIcon />
+                        {/* Delete Button */}
+                        <IconButton color="error" onClick={handleDelete}>
+                            <DeleteIcon />
                         </IconButton>
                     </Box>
                 </Box>
@@ -646,7 +490,7 @@ const NoteCockpitPage: React.FC = () => {
 
                             {/* Checklist */}
                             <Typography variant="h6" gutterBottom>
-                                Checklist ({checklist.filter(i => i.isDone).length}/{checklist.length})
+                                Checklist ({checklist.filter(i => i.completed).length}/{checklist.length})
                             </Typography>
 
                             <List dense>
@@ -654,7 +498,7 @@ const NoteCockpitPage: React.FC = () => {
                                     <ListItem
                                         key={item.id}
                                         sx={{
-                                            bgcolor: item.isDone ? 'action.hover' : 'transparent',
+                                            bgcolor: item.completed ? 'action.hover' : 'transparent',
                                             borderRadius: 1,
                                             mb: 0.5
                                         }}
@@ -665,7 +509,7 @@ const NoteCockpitPage: React.FC = () => {
                                             </IconButton>
                                         </ListItemIcon>
                                         <Checkbox
-                                            checked={item.isDone}
+                                            checked={item.completed}
                                             onChange={() => handleChecklistToggle(item.id)}
                                             size="small"
                                         />
@@ -676,15 +520,10 @@ const NoteCockpitPage: React.FC = () => {
                                             onChange={(e) => handleChecklistTextChange(item.id, e.target.value)}
                                             placeholder={`Step ${index + 1}`}
                                             sx={{
-                                                textDecoration: item.isDone ? 'line-through' : 'none',
-                                                opacity: item.isDone ? 0.6 : 1
+                                                textDecoration: item.completed ? 'line-through' : 'none',
+                                                opacity: item.completed ? 0.6 : 1
                                             }}
                                         />
-                                        <Tooltip title="Split to new task">
-                                            <IconButton size="small">
-                                                <SplitIcon fontSize="small" />
-                                            </IconButton>
-                                        </Tooltip>
                                     </ListItem>
                                 ))}
                             </List>
@@ -708,14 +547,14 @@ const NoteCockpitPage: React.FC = () => {
                             {activeTab === 0 && (
                                 <Box sx={{ py: 2 }}>
                                     <Typography color="text.secondary">
-                                        {note.activeTimer
-                                            ? `🟢 ${note.activeTimer.employeeName} is working...`
-                                            : 'No active work sessions'
+                                        {isTimerRunningForThisTask
+                                            ? `🟢 Working...`
+                                            : 'No active work session'
                                         }
                                     </Typography>
-                                    {actualCost > 0 && (
+                                    {task.totalTimeSpentMinutes && task.totalTimeSpentMinutes > 0 && (
                                         <Typography variant="body2" sx={{ mt: 1 }}>
-                                            Total labor cost: <strong>${actualCost.toFixed(2)}</strong>
+                                            Total time: <strong>{Math.round(task.totalTimeSpentMinutes / 60)}h {task.totalTimeSpentMinutes % 60}m</strong>
                                         </Typography>
                                     )}
                                 </Box>
@@ -726,37 +565,27 @@ const NoteCockpitPage: React.FC = () => {
                     {/* RIGHT COLUMN: Control Panel (35%) */}
                     <Box sx={{ flex: { xs: '1 1 100%', md: '1 1 35%' }, minWidth: 0 }}>
                         <Paper sx={{ p: 3 }}>
-                            {/* Block A: Context */}
+                            {/* Block A: Client */}
                             <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                                📍 Context
+                                🏢 Client
                             </Typography>
 
                             <Autocomplete
-                                value={projects.find(p => p.id === projectId) || null}
-                                options={projects}
+                                value={clients.find(c => c.id === clientId) || null}
+                                options={clients}
                                 getOptionLabel={(opt) => opt.name}
                                 onChange={(_, newVal) => {
-                                    setProjectId(newVal?.id || null);
-                                    setProjectName(newVal?.name || null);
+                                    setClientId(newVal?.id || null);
+                                    setClientName(newVal?.name || null);
                                     setHasChanges(true);
                                 }}
                                 renderInput={(params) => (
                                     <TextField
                                         {...params}
-                                        label="Project"
+                                        label="Client"
                                         size="small"
-                                        error={stage !== 'inbox' && !projectId}
                                     />
                                 )}
-                                sx={{ mb: 2 }}
-                            />
-
-                            <TextField
-                                fullWidth
-                                size="small"
-                                label="Location (Floor/Room)"
-                                value={siteLocation}
-                                onChange={(e) => { setSiteLocation(e.target.value); setHasChanges(true); }}
                                 sx={{ mb: 3 }}
                             />
 
@@ -764,42 +593,28 @@ const NoteCockpitPage: React.FC = () => {
 
                             {/* Block B: Team */}
                             <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                                👥 Team
+                                👤 Assignee
                             </Typography>
 
                             <Autocomplete
-                                multiple
-                                value={users.filter(u => assigneeIds.includes(u.id))}
+                                value={users.find(u => u.id === assigneeId) || null}
                                 options={users}
                                 getOptionLabel={(opt) => opt.displayName}
                                 onChange={(_, newVal) => {
-                                    setAssigneeIds(newVal.map(u => u.id));
+                                    setAssigneeId(newVal?.id || null);
+                                    setAssigneeName(newVal?.displayName || null);
                                     setHasChanges(true);
                                 }}
                                 renderInput={(params) => (
-                                    <TextField {...params} label="Assignees" size="small" />
+                                    <TextField {...params} label="Assignee" size="small" />
                                 )}
                                 renderOption={(props, option) => (
                                     <li {...props}>
-                                        <Avatar sx={{ width: 24, height: 24, mr: 1 }}>
-                                            {option.displayName[0]}
+                                        <Avatar sx={{ width: 24, height: 24, mr: 1 }} src={option.avatarUrl}>
+                                            {option.displayName?.charAt(0)}
                                         </Avatar>
                                         {option.displayName}
                                     </li>
-                                )}
-                                sx={{ mb: 2 }}
-                            />
-
-                            <Autocomplete
-                                value={users.find(u => u.id === controllerId) || null}
-                                options={users}
-                                getOptionLabel={(opt) => opt.displayName}
-                                onChange={(_, newVal) => {
-                                    setControllerId(newVal?.id || null);
-                                    setHasChanges(true);
-                                }}
-                                renderInput={(params) => (
-                                    <TextField {...params} label="Controller" size="small" />
                                 )}
                                 sx={{ mb: 3 }}
                             />
@@ -811,22 +626,21 @@ const NoteCockpitPage: React.FC = () => {
                                 🎯 Priority
                             </Typography>
 
-                            <FormControl fullWidth size="small" sx={{ mb: 3 }}>
-                                <Select
-                                    value={priority}
-                                    onChange={(e) => { setPriority(e.target.value); setHasChanges(true); }}
-                                >
-                                    {PRIORITY_OPTIONS.map(opt => (
-                                        <MenuItem key={opt.value} value={opt.value}>
-                                            <Chip
-                                                size="small"
-                                                label={opt.label}
-                                                sx={{ bgcolor: opt.color + '30', color: opt.color }}
-                                            />
-                                        </MenuItem>
-                                    ))}
-                                </Select>
-                            </FormControl>
+                            <Box display="flex" gap={1} flexWrap="wrap" mb={3}>
+                                {PRIORITY_OPTIONS.map(opt => (
+                                    <Chip
+                                        key={opt.value}
+                                        label={opt.label}
+                                        onClick={() => { setPriority(opt.value); setHasChanges(true); }}
+                                        sx={{
+                                            bgcolor: priority === opt.value ? opt.color : 'transparent',
+                                            color: priority === opt.value ? 'white' : opt.color,
+                                            border: `1px solid ${opt.color}`,
+                                            cursor: 'pointer'
+                                        }}
+                                    />
+                                ))}
+                            </Box>
 
                             <Divider sx={{ my: 2 }} />
 
@@ -838,39 +652,38 @@ const NoteCockpitPage: React.FC = () => {
                             <FormControlLabel
                                 control={
                                     <Checkbox
-                                        checked={isNeedsEstimate}
-                                        onChange={(e) => { setIsNeedsEstimate(e.target.checked); setHasChanges(true); }}
+                                        checked={needsEstimate}
+                                        onChange={(e) => { setNeedsEstimate(e.target.checked); setHasChanges(true); }}
                                     />
                                 }
-                                label="Requires estimate"
+                                label="Needs estimate"
                                 sx={{ mb: 2 }}
                             />
 
                             <TextField
                                 fullWidth
                                 size="small"
-                                label="Price (Client)"
+                                label="Estimated Cost"
                                 type="number"
-                                value={price}
-                                onChange={(e) => { setPrice(e.target.value ? Number(e.target.value) : ''); setHasChanges(true); }}
+                                value={estimatedCost}
+                                onChange={(e) => { setEstimatedCost(e.target.value ? Number(e.target.value) : ''); setHasChanges(true); }}
                                 InputProps={{
-                                    startAdornment: <InputAdornment position="start">$</InputAdornment>,
-                                    endAdornment: (
-                                        <InputAdornment position="end">
-                                            <Tooltip title="AI Estimate">
-                                                <IconButton
-                                                    size="small"
-                                                    onClick={handleAIEstimate}
-                                                    disabled={estimating}
-                                                >
-                                                    {estimating ? <CircularProgress size={16} /> : <AIIcon />}
-                                                </IconButton>
-                                            </Tooltip>
-                                        </InputAdornment>
-                                    )
+                                    startAdornment: <InputAdornment position="start">$</InputAdornment>
                                 }}
                                 sx={{ mb: 2 }}
                             />
+
+                            {/* AI Estimate */}
+                            <Button
+                                fullWidth
+                                variant="outlined"
+                                startIcon={estimating ? <CircularProgress size={16} /> : <AIIcon />}
+                                onClick={handleAIEstimate}
+                                disabled={estimating}
+                                sx={{ mb: 2 }}
+                            >
+                                {estimating ? 'Estimating...' : 'AI Estimate'}
+                            </Button>
 
                             {estimateResult && (
                                 <Alert
@@ -882,26 +695,13 @@ const NoteCockpitPage: React.FC = () => {
                                     }
                                     sx={{ mb: 2 }}
                                 >
-                                    Market: ${estimateResult.low} - ${estimateResult.high}
+                                    AI suggests: ${estimateResult.suggested}
+                                    <br />
+                                    <Typography variant="caption">
+                                        Range: ${estimateResult.low} - ${estimateResult.high}
+                                    </Typography>
                                 </Alert>
                             )}
-
-                            <Box
-                                sx={{
-                                    p: 2,
-                                    bgcolor: isLoss ? 'error.main' : 'grey.100',
-                                    color: isLoss ? 'white' : 'text.primary',
-                                    borderRadius: 1
-                                }}
-                            >
-                                <Typography variant="caption" display="block">
-                                    Actual Cost
-                                </Typography>
-                                <Typography variant="h5">
-                                    ${actualCost.toFixed(2)}
-                                    {isLoss && <WarningIcon sx={{ ml: 1, fontSize: 20 }} />}
-                                </Typography>
-                            </Box>
                         </Paper>
                     </Box>
                 </Box>
@@ -910,4 +710,4 @@ const NoteCockpitPage: React.FC = () => {
     );
 };
 
-export default NoteCockpitPage;
+export default UnifiedCockpitPage;

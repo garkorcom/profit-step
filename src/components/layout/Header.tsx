@@ -44,7 +44,6 @@ import {
   Campaign as MarketingIcon,
   Build as ToolsIcon,
   ShoppingCart as ShoppingCartIcon,
-  Inbox as InboxIcon,
 } from '@mui/icons-material';
 import { useActiveSession } from '../../hooks/useActiveSession';
 import ActiveSessionIndicator from './ActiveSessionIndicator';
@@ -131,8 +130,7 @@ const Header: React.FC = () => {
       { path: '/crm/calendar', label: 'Календарь', icon: <CalendarIcon sx={{ mr: 0.5 }} /> },
       { path: '/crm/time-tracking', label: 'Time Tracking', icon: <DescriptionIcon sx={{ mr: 0.5 }} /> },
       { path: '/crm/finance', label: 'Финансы', icon: <AttachMoneyIcon sx={{ mr: 0.5 }} /> },
-      { path: '/crm/gtd', label: 'Lookahead', icon: <TaskIcon sx={{ mr: 0.5 }} /> },
-      { path: '/crm/inbox', label: 'Inbox', icon: <InboxIcon sx={{ mr: 0.5 }} /> },
+      { path: '/crm/gtd', label: 'Cockpit', icon: <TaskIcon sx={{ mr: 0.5 }} /> },
       { path: '/crm/shopping', label: 'Закупки', icon: <ShoppingCartIcon sx={{ mr: 0.5 }} /> },
     ];
 
@@ -144,7 +142,7 @@ const Header: React.FC = () => {
     // "Settings" group as requested (Team, Companies, Tasks, Calculator)
     const settingsGroupLinks = [
       { path: '/crm/tasks', label: 'Задачи', icon: <TaskIcon sx={{ mr: 0.5 }} /> },
-      // { path: '/crm/gtd', label: 'Lookahead', icon: <TaskIcon sx={{ mr: 0.5 }} /> }, // Moved
+      // { path: '/crm/gtd', label: 'Cockpit', icon: <TaskIcon sx={{ mr: 0.5 }} /> }, // Moved
       { path: '/estimates/electrical', label: 'Калькулятор', icon: <CalculateIcon sx={{ mr: 0.5 }} /> },
     ];
 

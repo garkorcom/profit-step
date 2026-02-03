@@ -27,3 +27,43 @@ export async function estimateTask(request: AIEstimateRequest): Promise<AIEstima
     const result = await callable(request);
     return result.data;
 }
+
+// Smart Input types
+interface SmartInputRequest {
+    description: string;
+    existingTasks?: string[];
+    clientNames?: string[];
+}
+
+interface SmartInputResponse {
+    suggestedType?: string;
+    typeConfidence: number;
+    suggestedDate?: string;
+    suggestedTime?: string;
+    datePhrase?: string;
+    suggestedClientName?: string;
+    suggestedPriority?: 'low' | 'medium' | 'high';
+    priorityPhrase?: string;
+    possibleDuplicates?: Array<{
+        taskTitle: string;
+        similarity: number;
+    }>;
+}
+
+/**
+ * Parse task description with AI to extract type, date, client, priority, and duplicates
+ * 
+ * @param description - Task description from user input
+ * @param existingTasks - Optional list of existing task titles for duplicate detection
+ * @param clientNames - Optional list of client names for matching
+ * @returns AI-parsed results with suggestions
+ */
+export async function parseSmartInput(
+    description: string,
+    existingTasks?: string[],
+    clientNames?: string[]
+): Promise<SmartInputResponse> {
+    const callable = httpsCallable<SmartInputRequest, SmartInputResponse>(functions, 'parseSmartInput');
+    const result = await callable({ description, existingTasks, clientNames });
+    return result.data;
+}

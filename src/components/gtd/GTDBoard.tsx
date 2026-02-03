@@ -20,6 +20,7 @@
  */
 
 import React, { useState, useEffect, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Box, Snackbar, Alert, Fab, Tab, Tabs, Badge, Dialog, DialogTitle, DialogContent, TextField, DialogActions, Button, useMediaQuery, useTheme, Chip } from '@mui/material';
 import { startOfDay, endOfDay, addDays, startOfWeek, endOfWeek, isBefore, isAfter, isWithinInterval } from 'date-fns';
 import { DragDropContext, DropResult } from '@hello-pangea/dnd';
@@ -52,8 +53,8 @@ import { useSessionManager } from '../../hooks/useSessionManager';
  * - Адаптивный дизайн (tabs на мобильных)
  */
 const GTDBoard: React.FC = () => {
-    // ==================== АУТЕНТИФИКАЦИЯ ====================
     const { currentUser, userProfile } = useAuth();
+    const navigate = useNavigate();
 
     // ==================== СОСТОЯНИЕ ОТОБРАЖЕНИЯ ЗАДАЧ ====================
     const [showAllTasks, setShowAllTasks] = useState(false); // false = мои задачи, true = все
@@ -338,7 +339,7 @@ const GTDBoard: React.FC = () => {
                     <Button
                         variant="contained"
                         startIcon={<AddIcon />}
-                        onClick={() => setQuickAddOpen(true)}
+                        onClick={() => navigate(`/crm/gtd/new?column=${activeColumn?.id || 'inbox'}`)}
                         sx={{ ml: 'auto', height: 40 }}
                     >
                         Add Task
@@ -444,7 +445,7 @@ const GTDBoard: React.FC = () => {
                 <Fab
                     color="primary"
                     aria-label="add task"
-                    onClick={() => setQuickAddOpen(true)}
+                    onClick={() => navigate(`/crm/gtd/new?column=${activeColumn?.id || 'inbox'}`)}
                     sx={{
                         position: 'fixed',
                         bottom: 24,

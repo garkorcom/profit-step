@@ -84,9 +84,10 @@ export async function handleInboxText(
 }
 
 /**
- * Handle voice message → Upload audio, create note, trigger AI
+ * Handle voice message → Upload audio, CREATE GTD TASK (not note!)
  * 
- * FIX #4: Save bot reply message ID for later editing
+ * Updated: Voice messages now create GTD tasks directly in Inbox.
+ * AI will transcribe and update the task title.
  */
 export async function handleInboxVoice(
     ctx: InboxContext,
@@ -98,29 +99,38 @@ export async function handleInboxVoice(
         timeZone: 'America/New_York'
     });
 
-    // FIX #4: Send processing message and save ID
-    const result = await sendMessageWithId(ctx.chatId, '🎙 Голосовое принято, обрабатываю...');
+    // Send processing message
+    const result = await sendMessageWithId(ctx.chatId, '🎙 Голосовое принято, создаю задачу...');
     const botReplyId = result?.message_id;
 
     // Upload to Storage
     const audioUrl = await saveTelegramFile(
         voice.file_id,
-        `notes/${ctx.userId}/voice_${Date.now()}.ogg`
+        `gtd_voice/${ctx.userId}/voice_${Date.now()}.ogg`
     );
 
-    // Create note with pending AI and botReplyId
-    await createNote({
-        ctx,
-        title: `🎙 Аудиозаметка от ${timeStr}`,
+    // Create GTD task (not note!) 
+    const taskRef = await admin.firestore().collection('gtd_tasks').add({
+        title: `🎙 Голосовая задача от ${timeStr}`,
+        description: '',
+        status: 'inbox',
+        priority: 'medium',
+        taskType: null,
+        estimatedHours: 1,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        createdBy: ctx.platformUserId || String(ctx.userId),
+        createdByName: ctx.userName,
+        source: 'telegram_voice',
+        telegramUserId: ctx.userId,
+        // AI processing fields
         aiStatus: 'pending',
-        attachments: [{
-            type: 'audio',
-            url: audioUrl,
-            mimeType: voice.mime_type || 'audio/ogg'
-        }],
         originalAudioUrl: audioUrl,
-        botReplyId
+        botReplyId: botReplyId,
+        botChatId: ctx.chatId,
     });
+
+    logger.info(`✅ Voice task created`, { taskId: taskRef.id, userId: ctx.userId });
 }
 
 /**

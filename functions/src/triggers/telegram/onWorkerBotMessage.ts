@@ -7,7 +7,10 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import { findNearbyProject, saveProjectLocation, updateLocationLastUsed } from '../../utils/geoUtils';
 import * as ShoppingHandler from './handlers/shoppingHandler';
 import * as InboxHandler from './handlers/inboxHandler';
+import * as GtdHandler from './handlers/gtdHandler';
 import { sendMessage, getActiveSession, sendMainMenu } from './telegramUtils';
+// TODO Phase 1: Use UserContext for optimized DB calls
+// import { buildUserContext, UserContext, toInboxContext } from './userContext';
 
 // Initialize in the file if not already initialized
 if (admin.apps.length === 0) {
@@ -176,27 +179,22 @@ async function handleMessage(message: any) {
 4️⃣ После авторизации появится в системе
 
 ━━━━━━━━━━━━━━━━━━
-*🎙 Как создать задачу голосом:*
+*📝 Быстрое создание задачи:*
 
-Задачи создаются автоматически при завершении работы:
+\`/task Купить краску для Смирнова\`
 
-1️⃣ Начни сессию: *▶️ Start Work*
-2️⃣ Выбери клиента
-3️⃣ Работай...
-4️⃣ Заверши: *⏹️ Finish Work*
-5️⃣ *Запиши голосовое* с отчётом
+→ Создаст задачу в Inbox!
+🤖 AI определит тип, приоритет и дату.
 
-🤖 *AI автоматически распознает задачи* из твоего голосового сообщения и создаст их в GTD!
+━━━━━━━━━━━━━━━━━━
+*🎙 Голосовые задачи:*
 
-Пример: _"Сегодня закончил плитку в ванной. Завтра нужно купить затирку и закончить межкомнатные двери."_
-
-→ AI создаст 2 задачи:
-• Купить затирку
-• Закончить межкомнатные двери
+Просто отправь голосовое → AI транскрибирует и создаст задачу в Inbox!
 
 ━━━━━━━━━━━━━━━━━━
 *Доступные команды:*
 /start - Главное меню
+/task <описание> - Создать задачу
 /? или /help - Эта справка
 🛒 Закупки - Списки покупок
 
@@ -214,7 +212,7 @@ async function handleMessage(message: any) {
         await pauseWorkSession(chatId, userId);
     } else if (text === '▶️ Resume Work') {
         await resumeWorkSession(chatId, userId);
-    } else if (text === '❌ Cancel') {
+    } else if (text === '❌ Cancel' || text === '/cancel') {
         await handleCancel(chatId, userId);
     } else if (text === '⏩ Skip') {
         await handleSkipMedia(chatId, userId);
@@ -318,7 +316,15 @@ async function handleMessage(message: any) {
         const timezone = text.substring(10).trim();
         await handleTimezone(chatId, userId, timezone);
     } else if (text === '/tasks' || text === '📋 Tasks') {
-        await sendTasksMenu(chatId, userId);
+        await GtdHandler.sendTasksMenu(chatId, userId);
+    } else if (text && text.startsWith('/task ')) {
+        // Quick task creation: /task <description>
+        const taskDescription = text.substring(6).trim();
+        if (taskDescription.length < 3) {
+            await sendMessage(chatId, '⚠️ Описание задачи слишком короткое.\n\nПример: `/task Купить краску для объекта`');
+            return;
+        }
+        await GtdHandler.handleQuickTask(chatId, userId, taskDescription, userName);
     } else if (text === '/shopping' || text === '🛒 Shopping') {
         await ShoppingHandler.handleShoppingCommand(chatId, userId);
     } else if (text === '/inbox' || text === '📥 Inbox') {
@@ -346,8 +352,6 @@ async function handleMessage(message: any) {
                 platformUserId: platformUser?.id
             }, text);
         }
-    } else if (text === '/help') {
-        await handleHelp(chatId);
     } else {
         await sendMessage(chatId, "I didn't understand that. Please use the menu or type /help.");
     }
@@ -383,11 +387,8 @@ async function handleCallbackQuery(query: any) {
             await extendSession(chatId, userId, 30); // Snooze for 30 mins
         }
         // --- GTD TASKS HANDLERS ---
-        else if (data === 'tasks_back') {
-            await sendTasksMenu(chatId, userId);
-        } else if (data.startsWith('tasks:')) {
-            const status = data.split(':')[1];
-            await sendTaskList(chatId, userId, status);
+        else if (data === 'tasks_back' || data.startsWith('tasks:') || data.startsWith('task_view:') || data.startsWith('task_done:') || data.startsWith('task_move:')) {
+            await GtdHandler.handleGtdCallback(chatId, userId, data);
         }
         // --- LOCATION FLOW HANDLERS (Photo-First) ---
         else if (data === 'location_confirm_start') {
@@ -618,7 +619,10 @@ async function initWorkSession(chatId: number, userId: number, clientId: string,
         service: serviceName || null, // Create field if exists
         awaitingLocation: true,
         awaitingStartPhoto: false,
-        hourlyRate: hourlyRate // Snapshot rate
+        hourlyRate: hourlyRate, // Snapshot rate
+        // Phase 5: Task linking (optional, for future "Start from Task")
+        taskId: null,
+        taskTitle: null
     });
 
     await sendMessage(chatId, `${autoSwitchMsg}📍 Client selected: *${clientName}*\n\nPlease share your **Live Location** or current **Location** to verify attendance.\n(Click the 📎 attachment icon -> Location)`,
@@ -804,132 +808,7 @@ async function handleLocation(chatId: number, userId: number, location: any) {
     }
 }
 
-/**
- * Handle photo sent without an active session (Photo-First Flow).
- * Tries to extract GPS from EXIF metadata first.
- * If GPS found → auto-detect project (skip location request).
- * If no GPS → ask for location.
- * 
- * @deprecated Now handled by InboxHandler.handleInboxPhoto for inbox flow
- */
-export async function handleUnsolicitedPhotoLegacy(chatId: number, userId: number, message: any) {
-    const fileId = message.photo[message.photo.length - 1].file_id;
 
-    // Import extractGPSFromPhoto
-    const { extractGPSFromPhoto } = await import('../../utils/geoUtils');
-
-    // Get file path from Telegram
-    const fileInfoResponse = await axios.get(
-        `https://api.telegram.org/bot${WORKER_BOT_TOKEN}/getFile?file_id=${fileId}`
-    );
-    const filePath = fileInfoResponse.data.result.file_path;
-
-    // Download file as buffer to check EXIF
-    const fileResponse = await axios.get(
-        `https://api.telegram.org/file/bot${WORKER_BOT_TOKEN}/${filePath}`,
-        { responseType: 'arraybuffer' }
-    );
-    const fileBuffer = Buffer.from(fileResponse.data);
-
-    // Try to extract GPS from EXIF
-    const exifGPS = await extractGPSFromPhoto(fileBuffer);
-
-    // Save photo to storage
-    const url = await saveTelegramFile(fileId, `pending_photos/${userId}/photo_${Date.now()}.jpg`);
-
-    if (exifGPS) {
-        // GPS found in EXIF! Try to auto-detect project
-        const matchedProject = await findNearbyProject(exifGPS.latitude, exifGPS.longitude);
-
-        if (matchedProject) {
-            // Found a match! Show confirmation
-            await updateLocationLastUsed(matchedProject.id);
-
-            // Store for callback
-            await db.collection('pending_photos').doc(String(userId)).set({
-                fileId: fileId,
-                url: url,
-                userId: userId,
-                chatId: chatId,
-                location: exifGPS,
-                matchedProjectId: matchedProject.id,
-                matchedClientId: matchedProject.clientId,
-                matchedClientName: matchedProject.clientName,
-                matchedServiceName: matchedProject.serviceName || null,
-                createdAt: admin.firestore.Timestamp.now(),
-                gpsSource: 'exif'
-            });
-
-            const serviceSuffix = matchedProject.serviceName ? ` - ${matchedProject.serviceName}` : '';
-            await sendMessage(chatId,
-                `📍 *Локация из фото!*\n\n` +
-                `🏢 Проект: *${matchedProject.clientName}${serviceSuffix}*\n\n` +
-                `Начать работу здесь?`,
-                {
-                    inline_keyboard: [
-                        [{ text: '✅ Да, начать', callback_data: 'location_confirm_start' }],
-                        [{ text: '🔄 Другой проект', callback_data: 'location_pick_other' }],
-                        [{ text: '❌ Отмена', callback_data: 'location_cancel' }]
-                    ]
-                }
-            );
-            return;
-        } else {
-            // GPS found but no matching project → save for new location
-            await db.collection('pending_photos').doc(String(userId)).set({
-                fileId: fileId,
-                url: url,
-                userId: userId,
-                chatId: chatId,
-                location: exifGPS,
-                createdAt: admin.firestore.Timestamp.now(),
-                gpsSource: 'exif'
-            });
-
-            await sendMessage(chatId,
-                `📍 *GPS из фото получен!*\n\n` +
-                `Эта локация не найдена в базе.\nВыбери проект:`,
-                { remove_keyboard: true }
-            );
-
-            // Show client list
-            const snapshot = await db.collection('clients').orderBy('createdAt', 'desc').limit(20).get();
-            if (!snapshot.empty) {
-                const inlineKeyboard: any[][] = [];
-                snapshot.docs.forEach(doc => {
-                    const client = doc.data();
-                    // Filter out 'done' clients
-                    if (client.status === 'done') return;
-                    inlineKeyboard.push([{ text: client.name, callback_data: `location_new_client_${doc.id}` }]);
-                });
-                if (inlineKeyboard.length > 0) {
-                    inlineKeyboard.push([{ text: '❌ Отмена', callback_data: 'location_cancel' }]);
-                    await sendMessage(chatId, '🏢 Выбери проект:', { inline_keyboard: inlineKeyboard });
-                }
-            }
-            return;
-        }
-    }
-
-    // No GPS in EXIF → ask for location (original flow)
-    await db.collection('pending_photos').doc(String(userId)).set({
-        fileId: fileId,
-        url: url,
-        userId: userId,
-        chatId: chatId,
-        createdAt: admin.firestore.Timestamp.now(),
-        gpsSource: null
-    });
-
-    await sendMessage(chatId,
-        `📸 *Фото получено!*\n\n` +
-        `📍 GPS не найден в фото.\nОтправь свою *локацию*.`,
-        {
-            keyboard: [[{ text: '📍 Отправить локацию', request_location: true }], [{ text: '❌ Отмена' }]],
-            resize_keyboard: true
-        }
-    );
-}
 
 /**
  * User confirmed auto-detected project - start session.
@@ -988,7 +867,9 @@ async function handleLocationConfirmStart(chatId: number, userId: number) {
         awaitingStartPhoto: false,
         awaitingStartVoice: true, // Go to voice step
         hourlyRate: hourlyRate,
-        photoFirstFlow: true // Mark as photo-first
+        photoFirstFlow: true, // Mark as photo-first
+        taskId: null,
+        taskTitle: null
     });
 
     // Cleanup pending photo
@@ -1113,7 +994,9 @@ async function handleLocationNewClient(chatId: number, userId: number, clientId:
         awaitingStartPhoto: false,
         awaitingStartVoice: true,
         hourlyRate: hourlyRate,
-        photoFirstFlow: true
+        photoFirstFlow: true,
+        taskId: null,
+        taskTitle: null
     });
 
     // Cleanup
@@ -1762,48 +1645,20 @@ async function handleVoiceMessage(chatId: number, userId: number, message: any) 
             updates.awaitingEndVoice = false;
             updates.description = aiData.description; // Use AI description as main description
 
-            // --- PROCESS TASKS (NEW) ---
+            // --- PROCESS TASKS ---
             let newTasksCount = 0;
             if (aiData.tasks && Array.isArray(aiData.tasks) && aiData.tasks.length > 0) {
-                const platformUser = await findPlatformUser(userId);
-                if (platformUser) {
-                    const batch = db.batch();
-                    const now = admin.firestore.Timestamp.now();
-
-                    for (const task of aiData.tasks) {
-                        const taskRef = db.collection('gtd_tasks').doc(); // GLOBAL collection
-                        let dueDate = null;
-                        if (task.dueDate) {
-                            // Try to parse YYYY-MM-DD
-                            try {
-                                const d = new Date(task.dueDate);
-                                if (!isNaN(d.getTime())) {
-                                    dueDate = admin.firestore.Timestamp.fromDate(d);
-                                }
-                            } catch (e) { }
-                        }
-
-                        batch.set(taskRef, {
-                            ownerId: platformUser.id,
-                            ownerName: platformUser.displayName || 'Worker',
-                            title: task.title || 'Новая задача',
-                            description: `🎙 Создано из голосового отчета.\nКонтекст: ${aiData.summary}\n[Аудио](${voiceUrl})`,
-                            status: 'inbox',
-                            priority: task.priority || 'medium', // Default to medium per plan
-                            clientId: sessionData.clientId || null,
-                            clientName: sessionData.clientName || null,
-                            sourceAudioUrl: voiceUrl,
-                            context: '@bot',
-                            dueDate: dueDate,
-                            estimatedDurationMinutes: task.estimatedDurationMinutes || null,
-                            createdAt: now,
-                            updatedAt: now
-                        });
-                        newTasksCount++;
-                    }
-                    await batch.commit();
-                    logger.info(`✅ Created ${newTasksCount} tasks for user ${platformUser.id}`);
-                }
+                newTasksCount = await GtdHandler.createTasksFromVoiceReport({
+                    userId,
+                    sessionId: activeSession.ref.id,
+                    sessionData: {
+                        clientId: sessionData.clientId,
+                        clientName: sessionData.clientName
+                    },
+                    aiTasks: aiData.tasks,
+                    voiceUrl,
+                    summary: aiData.summary
+                });
             }
 
             // Notify admin if issues detected
@@ -1884,28 +1739,7 @@ async function handleTimezone(chatId: number, userId: number, timezone: string) 
     await sendMessage(chatId, `✅ Timezone set to: **${timezone}**`);
 }
 
-async function handleHelp(chatId: number) {
-    const helpText = `👷‍♂️ *Worker Bot Manual*
-
-*Commands:*
-/start - Open Main Menu
-/me - Show Profile
-/me - Show Profile
-/name [Name] - Change Name
-/timezone [Zone] - Set Timezone (e.g. America/New_York)
-/help - Show this message
-
-*Workflow:*
-1. **Start Work**: Choose client -> Send Location -> Send Start Photo.
-2. **Break**: Pauses timer.
-3. **Finish Work**: Send End Photo -> Write Report.
-
-*FAQ:*
-- If menu disappears, type /start
-- Send photos as *Photo* (not File)
-`;
-    await sendMessage(chatId, helpText);
-}
+// handleHelp removed - /help now handled inline in handleMessage
 
 async function sendAdminNotification(text: string) {
     if (!ADMIN_GROUP_ID) return;
@@ -2129,158 +1963,8 @@ async function findPlatformUser(telegramId: number): Promise<any | null> {
     return null;
 }
 
-// --- GTD Tasks Functions ---
 
-const GTD_COLUMNS = [
-    { id: 'inbox', title: '📥 Inbox', emoji: '📥' },
-    { id: 'next_action', title: '▶️ Next', emoji: '▶️' },
-    { id: 'projects', title: '📂 Projects', emoji: '📂' },
-    { id: 'waiting', title: '⏳ Waiting', emoji: '⏳' },
-    { id: 'someday', title: '💭 Someday', emoji: '💭' },
-    { id: 'done', title: '✅ Done', emoji: '✅' }
-];
-
-const PRIORITY_EMOJI: Record<string, string> = {
-    high: '🔴',
-    medium: '🟠',
-    low: '🔵',
-    none: '⚪'
-};
-
-async function sendTasksMenu(chatId: number, telegramId: number) {
-    const platformUser = await findPlatformUser(telegramId);
-
-    if (!platformUser) {
-        await sendMessage(chatId, "❌ *No linked account*\n\nTo view tasks, link your Telegram to your platform account.\n\nGo to Profile → Settings → Link Telegram");
-        return;
-    }
-
-    try {
-        // Fetch all tasks for this user
-        // Fetch all tasks for this user (GLOBAL collection)
-        const tasksSnapshot = await db.collection('gtd_tasks')
-            .where('ownerId', '==', platformUser.id)
-            .get();
-
-        // Count by status
-        const counts: Record<string, number> = {};
-        GTD_COLUMNS.forEach(col => { counts[col.id] = 0; });
-
-        tasksSnapshot.forEach(doc => {
-            const status = doc.data().status;
-            if (counts[status] !== undefined) {
-                counts[status]++;
-            }
-        });
-
-        const totalTasks = tasksSnapshot.size;
-
-        // Build inline keyboard (2 columns)
-        const inlineKeyboard: any[][] = [];
-        for (let i = 0; i < GTD_COLUMNS.length; i += 2) {
-            const row: any[] = [];
-            row.push({
-                text: `${GTD_COLUMNS[i].emoji} ${GTD_COLUMNS[i].id === 'next_action' ? 'Next' : GTD_COLUMNS[i].title.split(' ')[1]} (${counts[GTD_COLUMNS[i].id]})`,
-                callback_data: `tasks:${GTD_COLUMNS[i].id}`
-            });
-            if (GTD_COLUMNS[i + 1]) {
-                row.push({
-                    text: `${GTD_COLUMNS[i + 1].emoji} ${GTD_COLUMNS[i + 1].id === 'next_action' ? 'Next' : GTD_COLUMNS[i + 1].title.split(' ')[1]} (${counts[GTD_COLUMNS[i + 1].id]})`,
-                    callback_data: `tasks:${GTD_COLUMNS[i + 1].id}`
-                });
-            }
-            inlineKeyboard.push(row);
-        }
-
-        await sendMessage(chatId, `📋 *Your Tasks* (${totalTasks} total)\n\nTap a column to view:`, {
-            inline_keyboard: inlineKeyboard
-        });
-
-    } catch (error) {
-        console.error('Error fetching tasks:', error);
-        await sendMessage(chatId, "⚠️ Error loading tasks. Please try again.");
-    }
-}
-
-async function sendTaskList(chatId: number, telegramId: number, status: string) {
-    const platformUser = await findPlatformUser(telegramId);
-
-    if (!platformUser) {
-        await sendMessage(chatId, "❌ Account not linked.");
-        return;
-    }
-
-    try {
-        // Fetch tasks with this status
-        // Fetch tasks with this status (GLOBAL collection)
-        const tasksSnapshot = await db.collection('gtd_tasks')
-            .where('ownerId', '==', platformUser.id)
-            .where('status', '==', status)
-            .orderBy('createdAt', 'desc')
-            .limit(10)
-            .get();
-
-        const column = GTD_COLUMNS.find(c => c.id === status);
-        const columnTitle = column?.title || status;
-
-        if (tasksSnapshot.empty) {
-            await sendMessage(chatId, `${columnTitle}\n\n_No tasks in this column_`, {
-                inline_keyboard: [[{ text: '◀️ Back', callback_data: 'tasks_back' }]]
-            });
-            return;
-        }
-
-        // Build task list
-        let taskList = `${columnTitle}\n\n`;
-        let index = 1;
-
-        for (const doc of tasksSnapshot.docs) {
-            const task = doc.data();
-            const priority = PRIORITY_EMOJI[task.priority || 'none'];
-            const title = task.title || 'Untitled';
-
-            // Get client name if exists
-            let clientNote = '';
-            if (task.clientId) {
-                try {
-                    const clientDoc = await db.collection('clients').doc(task.clientId).get();
-                    if (clientDoc.exists) {
-                        clientNote = ` · ${clientDoc.data()?.name}`;
-                    }
-                } catch (e) {
-                    // Ignore client fetch errors
-                }
-            }
-
-            // Format due date if exists
-            let dueNote = '';
-            if (task.dueDate) {
-                const dueDate = task.dueDate.toDate();
-                const today = new Date();
-                const isOverdue = dueDate < today;
-                const dateStr = dueDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-                dueNote = isOverdue ? ` ⚠️ ${dateStr}` : ` 📅 ${dateStr}`;
-            }
-
-            taskList += `${index}. ${priority} ${title}${clientNote}${dueNote}\n`;
-            index++;
-        }
-
-        if (tasksSnapshot.size >= 10) {
-            taskList += `\n_...and more. View all in web app._`;
-        }
-
-        await sendMessage(chatId, taskList, {
-            inline_keyboard: [[{ text: '◀️ Back to Menu', callback_data: 'tasks_back' }]]
-        });
-
-    } catch (error) {
-        console.error('Error fetching task list:', error);
-        await sendMessage(chatId, "⚠️ Error loading tasks.", {
-            inline_keyboard: [[{ text: '◀️ Back', callback_data: 'tasks_back' }]]
-        });
-    }
-}
+// GTD Tasks Functions moved to handlers/gtdHandler.ts
 
 // ============================================
 // SHOPPING HANDLERS
@@ -2345,3 +2029,4 @@ async function sendTaskList(chatId: number, telegramId: number, status: string) 
  * Handle draft callbacks (delete, save, more, clear)
  */
 
+// handleQuickTask moved to handlers/gtdHandler.ts

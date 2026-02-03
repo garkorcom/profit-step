@@ -63,9 +63,8 @@ const GTDTaskCard: React.FC<GTDTaskCardProps> = ({ task, index, clientName, onCl
 
     const handleNoteClick = (e: React.MouseEvent) => {
         e.stopPropagation();
-        if (task.sourceNoteId) {
-            navigate(`/crm/inbox/${task.sourceNoteId}`);
-        }
+        // Legacy: sourceNoteId was used for notes, now just open the task itself
+        navigate(`/crm/gtd/${task.id}`);
     };
 
     return (

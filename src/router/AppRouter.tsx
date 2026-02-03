@@ -36,12 +36,11 @@ const LeadDetailsPage = React.lazy(() => import('../pages/crm/LeadDetailsPage'))
 const TimeTrackingPage = React.lazy(() => import('../pages/crm/TimeTrackingPage'));
 const FinancePage = React.lazy(() => import('../pages/crm/FinancePage'));
 const GTDPage = React.lazy(() => import('../pages/crm/GTDPage'));
-const GTDTaskDetailsPage = React.lazy(() => import('../pages/crm/GTDTaskDetailsPage'));
+const GTDCreatePage = React.lazy(() => import('../pages/crm/GTDCreatePage'));
+const UnifiedCockpitPage = React.lazy(() => import('../pages/crm/UnifiedCockpitPage'));
 const ShoppingPage = React.lazy(() => import('../pages/crm/ShoppingPage'));
 const PayrollPeriodsPage = React.lazy(() => import('../pages/crm/PayrollPeriodsPage'));
 const CostsReportPage = React.lazy(() => import('../pages/crm/CostsReportPage'));
-const InboxPage = React.lazy(() => import('../pages/crm/InboxPage'));
-const NoteCockpitPage = React.lazy(() => import('../pages/crm/NoteCockpitPage'));
 const RolesPage = React.lazy(() => import('../pages/admin/RolesPage'));
 
 // Loading fallback component
@@ -168,9 +167,11 @@ const AppRouter: React.FC = () => {
           <Route path="/crm/leads/:id" element={<LeadDetailsPage />} />
           <Route path="/crm/tasks" element={<TasksPage />} />
           <Route path="/crm/gtd" element={<GTDPage />} />
-          <Route path="/crm/gtd/:taskId" element={<GTDTaskDetailsPage />} />
-          <Route path="/crm/inbox" element={<InboxPage />} />
-          <Route path="/crm/inbox/:noteId" element={<NoteCockpitPage />} />
+          <Route path="/crm/gtd/new" element={<GTDCreatePage />} />
+          <Route path="/crm/gtd/:taskId" element={<UnifiedCockpitPage />} />
+          <Route path="/crm/cockpit/:taskId" element={<UnifiedCockpitPage />} />
+          {/* Legacy Inbox route - redirect to GTD */}
+          <Route path="/crm/inbox" element={<Navigate to="/crm/gtd" replace />} />
           <Route path="/crm/shopping" element={<ShoppingPage />} />
           <Route path="/crm/scheduler" element={<div>Scheduler (Coming Soon)</div>} />
           <Route path="/crm/time-tracking" element={<TimeTrackingPage />} />

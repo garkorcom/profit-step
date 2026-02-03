@@ -253,6 +253,14 @@ export interface GTDTask {
     // SOURCE LINKING
     // ═══════════════════════════════════════
 
+    /**
+     * Source of task creation
+     * - telegram: created via Telegram bot
+     * - web: created via web UI
+     * - voice: created via voice message
+     */
+    source?: 'telegram' | 'web' | 'voice';
+
     /** 
      * ID исходной заметки (Note) из которой была создана задача
      * Позволяет открыть Cockpit View для подробного редактирования

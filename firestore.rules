@@ -397,6 +397,37 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // Costs Collection (Operational Expenses)
+    match /costs/{costId} {
+      // Read: any authenticated user can view costs
+      allow read: if isSignedIn();
+      
+      // Create: Cloud Functions (from @gcostsbot) or authenticated users
+      allow create: if isSignedIn();
+      
+      // Update: authenticated users can update costs (add prices, etc)
+      allow update: if isSignedIn();
+      
+      // Delete: only admin
+      allow delete: if isAdmin();
+    }
+
+    // Receipts Collection (Receipt photos with OCR)
+    match /receipts/{receiptId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update: if isSignedIn();
+      allow delete: if isAdmin();
+    }
+
+    // Project Ledger (Project-level accounting)
+    match /project_ledger/{entryId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
     // ==================== DEFAULT DENY ====================
 
     // Запретить доступ ко всем остальным документам

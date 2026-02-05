@@ -585,3 +585,21 @@ export { onSessionChangeUpdateCost, syncActiveTimer } from './triggers/firestore
 
 // Cockpit View: AI Price Estimate
 export { generatePriceEstimate } from './callable/notes/generatePriceEstimate';
+
+// GTD: AI Day Planner
+export { generateDayPlan } from './callable/gtd/generateDayPlan';
+export { scheduledDayPlan } from './scheduled/scheduledDayPlan';
+
+// ========================================
+// DATA WAREHOUSE & ANALYTICS
+// BigQuery audit logging and weekly digest
+// ========================================
+
+// Task event triggers
+export { onTaskUpdate } from './triggers/firestore/onTaskUpdate';
+
+// Cost event triggers
+export { onCostCreated, onCostUpdate } from './triggers/firestore/onCostCreated';
+
+// Weekly analytics digest (v1 - stable)
+export { sendWeeklyDigest } from './scheduled/weeklyDigest';

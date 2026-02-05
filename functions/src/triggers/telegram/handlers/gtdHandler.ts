@@ -2,15 +2,18 @@
  * GTD Handler - Task management for Telegram bot
  * 
  * Extracted from onWorkerBotMessage.ts for better modularity.
- * Handles: /task command, /tasks menu, task lists, and callbacks
+ * Handles: /task command, /tasks menu, /plan command, task lists, and callbacks
  */
 
 import * as admin from 'firebase-admin';
+import * as functions from 'firebase-functions';
 import { logger } from 'firebase-functions';
 import { sendMessage } from '../telegramUtils';
 import { findPlatformUserForInbox } from './inboxHandler';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 
 const db = admin.firestore();
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || functions.config().gemini?.api_key;
 
 // ═══════════════════════════════════════════════════════════
 // CONSTANTS
@@ -557,4 +560,347 @@ export async function moveTask(chatId: number, userId: number, taskId: string, n
         console.error('Error moving task:', error);
         await sendMessage(chatId, "⚠️ Error moving task.");
     }
+}
+
+// ═══════════════════════════════════════════════════════════
+// /plan COMMAND - AI DAY PLANNER
+// ═══════════════════════════════════════════════════════════
+
+/**
+ * Handle /plan command - generate AI-powered day/week plan
+ * Usage:
+ *   /plan - today's plan
+ *   /plan week - week plan
+ *   /plan tomorrow - tomorrow's plan
+ */
+export async function handlePlanCommand(
+    chatId: number,
+    userId: number,
+    args: string
+): Promise<void> {
+    try {
+        // Find platform user
+        const platformUser = await findPlatformUser(userId);
+
+        if (!platformUser) {
+            await sendMessage(chatId, "❌ *Аккаунт не привязан*\n\nПривяжи Telegram в настройках профиля.");
+            return;
+        }
+
+        // Determine plan type
+        const lowerArgs = args.toLowerCase().trim();
+        let planType: 'day' | 'week' = 'day';
+        let targetDate = new Date();
+
+        if (lowerArgs.includes('week') || lowerArgs.includes('недел')) {
+            planType = 'week';
+        } else if (lowerArgs.includes('tomorrow') || lowerArgs.includes('завтра')) {
+            targetDate.setDate(targetDate.getDate() + 1);
+        }
+
+        await sendMessage(chatId, "⏳ *Генерирую план...*");
+
+        // Generate plan
+        const plan = await generateDayPlanLocal(platformUser.id, targetDate, planType);
+
+        if (planType === 'week') {
+            await sendWeekPlanMessage(chatId, plan as any);
+        } else {
+            await sendDayPlanMessage(chatId, plan);
+        }
+
+    } catch (error: any) {
+        logger.error('Plan command failed', error);
+        await sendMessage(chatId, "❌ Ошибка при генерации плана. Попробуй позже.");
+    }
+}
+
+/**
+ * Generate day plan (inline version to avoid circular imports)
+ */
+async function generateDayPlanLocal(
+    userId: string,
+    date: Date,
+    type: 'day' | 'week'
+): Promise<any> {
+    // Load tasks
+    const [ownerTasks, assigneeTasks] = await Promise.all([
+        db.collection('gtd_tasks')
+            .where('ownerId', '==', userId)
+            .where('status', 'in', ['inbox', 'next_action', 'waiting', 'scheduled'])
+            .get(),
+        db.collection('gtd_tasks')
+            .where('assigneeId', '==', userId)
+            .where('status', 'in', ['inbox', 'next_action', 'waiting', 'scheduled'])
+            .get()
+    ]);
+
+    const taskMap = new Map<string, any>();
+    const today = new Date(date);
+    today.setHours(0, 0, 0, 0);
+
+    const processDoc = (doc: FirebaseFirestore.QueryDocumentSnapshot) => {
+        if (taskMap.has(doc.id)) return;
+        const data = doc.data();
+        const dueDate = data.dueDate?.toDate?.() || (data.dueDate ? new Date(data.dueDate) : undefined);
+
+        let isOverdue = false;
+        let isDueToday = false;
+
+        if (dueDate) {
+            const dueDateOnly = new Date(dueDate);
+            dueDateOnly.setHours(0, 0, 0, 0);
+            isOverdue = dueDateOnly < today;
+            isDueToday = dueDateOnly.getTime() === today.getTime();
+        }
+
+        taskMap.set(doc.id, {
+            id: doc.id,
+            title: data.title || 'Без названия',
+            priority: data.priority || 'medium',
+            estimatedHours: data.estimatedHours || 1,
+            clientName: data.clientName,
+            isOverdue,
+            isDueToday
+        });
+    };
+
+    ownerTasks.docs.forEach(processDoc);
+    assigneeTasks.docs.forEach(processDoc);
+
+    // Sort: overdue > due today > high priority
+    const tasks = Array.from(taskMap.values());
+    tasks.sort((a, b) => {
+        if (a.isOverdue !== b.isOverdue) return a.isOverdue ? -1 : 1;
+        if (a.isDueToday !== b.isDueToday) return a.isDueToday ? -1 : 1;
+        const priorityOrder: Record<string, number> = { high: 0, medium: 1, low: 2 };
+        return (priorityOrder[a.priority] || 1) - (priorityOrder[b.priority] || 1);
+    });
+
+    // AI-optimized scheduling with gemini-2.0-pro
+    const slots = await optimizeScheduleWithAI(tasks, date);
+
+    const dayOfWeek = date.toLocaleDateString('ru-RU', { weekday: 'long' });
+    const formattedDate = date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
+
+    return {
+        date: date.toISOString().split('T')[0],
+        dayOfWeek,
+        greeting: `🌅 План на ${dayOfWeek}, ${formattedDate}:`,
+        slots,
+        summary: {
+            totalTasks: slots.length,
+            totalMinutes: slots.reduce((sum: number, s: any) => sum + s.estimatedMinutes, 0),
+            highPriority: slots.filter((s: any) => s.priority === 'high').length,
+            overdue: tasks.filter(t => t.isOverdue).length
+        },
+        aiTip: tasks.filter(t => t.isOverdue).length > 0
+            ? `⚠️ ${tasks.filter(t => t.isOverdue).length} просроченных задач!`
+            : slots.length > 0
+                ? `✅ Отличный день! ${slots.length} задач запланировано.`
+                : `📭 Нет задач. Добавь через /task`
+    };
+}
+
+// ═══════════════════════════════════════════════════════════
+// AI SCHEDULE OPTIMIZATION (gemini-2.0-pro)
+// ═══════════════════════════════════════════════════════════
+
+const PLANNER_PROMPT = `Ты — умный планировщик для строительной бригады.
+Распредели задачи на рабочий день ОПТИМАЛЬНО.
+
+СЕГОДНЯ: {todayDate} ({dayOfWeek})
+
+ПРАВИЛА ПЛАНИРОВАНИЯ:
+1. Рабочий день: 08:00 - 18:00
+2. ГРУППИРУЙ задачи по клиенту/локации (одно место = подряд)
+3. Сначала срочные и просроченные задачи  
+4. Сложные задачи — утром (08:00-12:00)
+5. Встречи/звонки — середина дня (11:00-14:00)
+6. Рутина — после обеда (14:00-18:00)
+7. Буфер 15 минут между задачами в разных локациях
+8. Не планируй больше 8 часов работы
+
+ЗАДАЧИ:
+{tasksJson}
+
+Распредели и верни JSON массив (только самое важное, до 8 задач):
+[
+  {
+    "taskId": "task_id",
+    "startTime": "09:00",
+    "endTime": "10:30"
+  }
+]
+
+Группируй задачи одного клиента вместе!
+Возвращай ТОЛЬКО валидный JSON массив!`;
+
+async function optimizeScheduleWithAI(tasks: any[], date: Date): Promise<any[]> {
+    if (tasks.length === 0) return [];
+
+    // Fallback to simple scheduling if no API key
+    if (!GEMINI_API_KEY) {
+        logger.warn('No GEMINI_API_KEY, using simple scheduling');
+        return simpleSchedule(tasks);
+    }
+
+    const todayDate = date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
+    const dayOfWeek = date.toLocaleDateString('ru-RU', { weekday: 'long' });
+
+    const tasksJson = JSON.stringify(tasks.slice(0, 12).map(t => ({
+        id: t.id,
+        title: t.title,
+        priority: t.priority,
+        estimatedHours: t.estimatedHours,
+        clientName: t.clientName || 'Без клиента',
+        isOverdue: t.isOverdue,
+        isDueToday: t.isDueToday
+    })), null, 2);
+
+    const prompt = PLANNER_PROMPT
+        .replace('{todayDate}', todayDate)
+        .replace('{dayOfWeek}', dayOfWeek)
+        .replace('{tasksJson}', tasksJson);
+
+    try {
+        const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+        // Use gemini-2.0-pro for better reasoning and grouping
+        const model = genAI.getGenerativeModel({ model: 'gemini-2.0-pro' });
+
+        const result = await model.generateContent({
+            contents: [{ role: 'user', parts: [{ text: prompt }] }]
+        });
+
+        const responseText = result.response.text().trim();
+        const jsonText = responseText
+            .replace(/```json\n?/g, '')
+            .replace(/```\n?/g, '')
+            .trim();
+
+        logger.info('AI Planner response', { model: 'gemini-2.0-pro', responseLength: jsonText.length });
+
+        const schedule = JSON.parse(jsonText);
+        const taskMap = new Map(tasks.map(t => [t.id, t]));
+
+        return schedule.map((slot: any) => {
+            const task = taskMap.get(slot.taskId);
+            if (!task) return null;
+
+            return {
+                startTime: slot.startTime,
+                endTime: slot.endTime,
+                taskId: task.id,
+                title: task.title,
+                priority: task.priority,
+                clientName: task.clientName,
+                estimatedMinutes: Math.round(task.estimatedHours * 60)
+            };
+        }).filter(Boolean);
+
+    } catch (error) {
+        logger.warn('AI optimization failed, using simple schedule', error);
+        return simpleSchedule(tasks);
+    }
+}
+
+/**
+ * Simple scheduling fallback (no AI)
+ */
+function simpleSchedule(tasks: any[]): any[] {
+    const slots: any[] = [];
+    let currentMinutes = 8 * 60;
+
+    for (const task of tasks.slice(0, 8)) {
+        const duration = Math.round(task.estimatedHours * 60);
+        const endMinutes = currentMinutes + duration;
+
+        if (endMinutes > 18 * 60) break;
+
+        slots.push({
+            startTime: formatTime(currentMinutes),
+            endTime: formatTime(endMinutes),
+            taskId: task.id,
+            title: task.title,
+            priority: task.priority,
+            clientName: task.clientName,
+            estimatedMinutes: duration
+        });
+
+        currentMinutes = endMinutes + 15;
+    }
+
+    return slots;
+}
+
+function formatTime(minutes: number): string {
+    const h = Math.floor(minutes / 60);
+    const m = minutes % 60;
+    return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+}
+
+/**
+ * Send formatted day plan message
+ */
+async function sendDayPlanMessage(chatId: number, plan: any): Promise<void> {
+    const lines: string[] = [plan.greeting, ''];
+
+    if (plan.slots.length === 0) {
+        lines.push('📭 _Нет задач на этот день_');
+        lines.push('');
+        lines.push('Добавь задачу: `/task Описание задачи`');
+    } else {
+        for (const slot of plan.slots) {
+            const emoji = slot.priority === 'high' ? '🔴' :
+                slot.priority === 'medium' ? '🟡' : '🟢';
+
+            lines.push(`${emoji} *${slot.startTime}-${slot.endTime}* — ${escapeMarkdown(slot.title)}`);
+
+            const details: string[] = [];
+            if (slot.clientName) details.push(`📍 ${escapeMarkdown(slot.clientName)}`);
+            details.push(`⏱ ${Math.round(slot.estimatedMinutes / 60 * 10) / 10}ч`);
+            lines.push(`    ${details.join(' | ')}`);
+            lines.push('');
+        }
+
+        lines.push('═══════════════════════════');
+        const hours = Math.round(plan.summary.totalMinutes / 60 * 10) / 10;
+        lines.push(`📊 ${plan.summary.totalTasks} задач | ⏱ ${hours}ч`);
+    }
+
+    if (plan.aiTip) {
+        lines.push(plan.aiTip);
+    }
+
+    await sendMessage(chatId, lines.join('\n'));
+}
+
+/**
+ * Send formatted week plan message
+ */
+async function sendWeekPlanMessage(chatId: number, weekPlan: any): Promise<void> {
+    // For week, just show summary per day
+    const lines: string[] = ['📅 *План на неделю*', ''];
+
+    for (const day of weekPlan.days || []) {
+        const date = new Date(day.date);
+        const dayName = date.toLocaleDateString('ru-RU', { weekday: 'short', day: 'numeric' });
+        const taskCount = day.slots?.length || 0;
+        const hours = Math.round((day.summary?.totalMinutes || 0) / 60 * 10) / 10;
+
+        if (taskCount > 0) {
+            lines.push(`📌 *${dayName}*: ${taskCount} задач (${hours}ч)`);
+        } else {
+            lines.push(`◻️ *${dayName}*: _свободно_`);
+        }
+    }
+
+    lines.push('');
+    lines.push('Детали: `/plan` (сегодня) или `/plan завтра`');
+
+    await sendMessage(chatId, lines.join('\n'));
+}
+
+function escapeMarkdown(text: string): string {
+    return text.replace(/[_*[\]()~`>#+\-=|{}.!]/g, '\\$&');
 }

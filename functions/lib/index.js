@@ -9,7 +9,8 @@
  * - adminDeleteUser: Безопасное удаление пользователя администратором
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.generatePriceEstimate = exports.syncActiveTimer = exports.onSessionChangeUpdateCost = exports.verifyTask = exports.submitForReview = exports.checkLongBreaks = exports.updateWorkSession = exports.mergeNotes = exports.splitChecklistItem = exports.onNoteCreated = exports.onReceiptUpdate = exports.onWorkSessionUpdate = exports.onWorkSessionCreate = exports.generateDailyPayroll = exports.closePayrollPeriod = exports.forceFinishAllSessions = exports.sendDeadlineReminders = exports.finalizeExpiredSessions = exports.onCostsBotMessage = exports.onWorkerBotMessage = exports.parseSmartInput = exports.estimateTask = exports.generateLeadSummary = exports.sendMessage = exports.onTelegramMessage = exports.onWhatsAppMessage = exports.onLeadCreate = exports.updateCompanyMemberCount_v2 = exports.trackUserActivation_v2 = exports.logUserUpdates_v2 = exports.incrementLoginCount_v2 = exports.inviteUser = exports.adminDeleteUser = exports.onUserDelete = exports.onUserCreate = exports.admin_createUserWithPassword = exports.logPaginationMetrics = exports.diagnoseBot = exports.logInvitationAccepted = exports.logInvitationSent = exports.logUserDeleted = exports.logUserCreated = exports.brevoWebhookHandler = exports.trackFirstInvite = exports.initializeUserActivation = exports.aggregateEngagementMetrics = exports.aggregateGrowthMetrics = exports.processAvatar = void 0;
+exports.scheduledDayPlan = exports.generateDayPlan = exports.generatePriceEstimate = exports.syncActiveTimer = exports.onSessionChangeUpdateCost = exports.verifyTask = exports.submitForReview = exports.checkLongBreaks = exports.updateWorkSession = exports.mergeNotes = exports.splitChecklistItem = exports.onNoteCreated = exports.onReceiptUpdate = exports.onWorkSessionUpdate = exports.onWorkSessionCreate = exports.generateDailyPayroll = exports.closePayrollPeriod = exports.forceFinishAllSessions = exports.sendDeadlineReminders = exports.finalizeExpiredSessions = exports.onCostsBotMessage = exports.onWorkerBotMessage = exports.parseSmartInput = exports.estimateTask = exports.generateLeadSummary = exports.sendMessage = exports.onTelegramMessage = exports.onWhatsAppMessage = exports.onLeadCreate = exports.updateCompanyMemberCount_v2 = exports.trackUserActivation_v2 = exports.logUserUpdates_v2 = exports.incrementLoginCount_v2 = exports.inviteUser = exports.adminDeleteUser = exports.onUserDelete = exports.onUserCreate = exports.admin_createUserWithPassword = exports.logPaginationMetrics = exports.diagnoseBot = exports.logInvitationAccepted = exports.logInvitationSent = exports.logUserDeleted = exports.logUserCreated = exports.brevoWebhookHandler = exports.trackFirstInvite = exports.initializeUserActivation = exports.aggregateEngagementMetrics = exports.aggregateGrowthMetrics = exports.processAvatar = void 0;
+exports.sendWeeklyDigest = exports.onCostUpdate = exports.onCostCreated = exports.onTaskUpdate = void 0;
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 const crypto = require("crypto");
@@ -480,4 +481,23 @@ Object.defineProperty(exports, "syncActiveTimer", { enumerable: true, get: funct
 // Cockpit View: AI Price Estimate
 var generatePriceEstimate_1 = require("./callable/notes/generatePriceEstimate");
 Object.defineProperty(exports, "generatePriceEstimate", { enumerable: true, get: function () { return generatePriceEstimate_1.generatePriceEstimate; } });
+// GTD: AI Day Planner
+var generateDayPlan_1 = require("./callable/gtd/generateDayPlan");
+Object.defineProperty(exports, "generateDayPlan", { enumerable: true, get: function () { return generateDayPlan_1.generateDayPlan; } });
+var scheduledDayPlan_1 = require("./scheduled/scheduledDayPlan");
+Object.defineProperty(exports, "scheduledDayPlan", { enumerable: true, get: function () { return scheduledDayPlan_1.scheduledDayPlan; } });
+// ========================================
+// DATA WAREHOUSE & ANALYTICS
+// BigQuery audit logging and weekly digest
+// ========================================
+// Task event triggers
+var onTaskUpdate_1 = require("./triggers/firestore/onTaskUpdate");
+Object.defineProperty(exports, "onTaskUpdate", { enumerable: true, get: function () { return onTaskUpdate_1.onTaskUpdate; } });
+// Cost event triggers
+var onCostCreated_1 = require("./triggers/firestore/onCostCreated");
+Object.defineProperty(exports, "onCostCreated", { enumerable: true, get: function () { return onCostCreated_1.onCostCreated; } });
+Object.defineProperty(exports, "onCostUpdate", { enumerable: true, get: function () { return onCostCreated_1.onCostUpdate; } });
+// Weekly analytics digest (v1 - stable)
+var weeklyDigest_1 = require("./scheduled/weeklyDigest");
+Object.defineProperty(exports, "sendWeeklyDigest", { enumerable: true, get: function () { return weeklyDigest_1.sendWeeklyDigest; } });
 //# sourceMappingURL=index.js.map

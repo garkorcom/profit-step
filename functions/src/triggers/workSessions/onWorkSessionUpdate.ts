@@ -5,12 +5,14 @@
  * 1. Check if the related task has AI estimation data
  * 2. If yes, log the comparison between predicted and actual time
  * 3. This data enables continuous learning and estimate refinement
+ * 4. Log TIMER_STOP event to BigQuery for analytics
  */
 
 import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
 import { AIAccuracyLog, ACCURACY_CONFIG } from '../../types/aiAccuracy';
 import { normalizeDescription } from '../../utils/aiCacheUtils';
+import { logAuditEvent } from '../../utils/auditLogger';
 
 const db = admin.firestore();
 
@@ -34,6 +36,26 @@ export const onWorkSessionUpdate = functions.firestore
         const startTime = after.startTime?.toDate?.() || new Date(after.startTime);
         const endTime = after.endTime?.toDate?.() || new Date(after.endTime);
         const actualMinutes = Math.round((endTime.getTime() - startTime.getTime()) / (1000 * 60));
+
+        // ═══════════════════════════════════════════════════
+        // BigQuery Audit: TIMER_STOP event (non-blocking)
+        // ═══════════════════════════════════════════════════
+        logAuditEvent({
+            entityType: 'work_session',
+            entityId: sessionId,
+            eventCode: 'TIMER_STOP',
+            actorUid: String(after.employeeId),
+            projectId: after.clientId,
+            companyId: after.companyId,
+            before: { status: before.status },
+            after: {
+                status: after.status,
+                durationMinutes: actualMinutes,
+                hourlyRate: after.hourlyRate,
+            },
+            financialImpact: after.sessionEarnings || (actualMinutes / 60 * (after.hourlyRate || 0)),
+            timeImpact: actualMinutes,
+        });
 
         // Skip very short sessions (likely noise/mistakes)
         if (actualMinutes < ACCURACY_CONFIG.MIN_SESSION_MINUTES) {

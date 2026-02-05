@@ -42,6 +42,7 @@ const ShoppingPage = React.lazy(() => import('../pages/crm/ShoppingPage'));
 const PayrollPeriodsPage = React.lazy(() => import('../pages/crm/PayrollPeriodsPage'));
 const CostsReportPage = React.lazy(() => import('../pages/crm/CostsReportPage'));
 const RolesPage = React.lazy(() => import('../pages/admin/RolesPage'));
+const AIReportsPage = React.lazy(() => import('../pages/AIReportsPage'));
 
 // Loading fallback component
 const PageLoader = () => (
@@ -179,6 +180,7 @@ const AppRouter: React.FC = () => {
           <Route path="/crm/costs" element={<CostsReportPage />} />
           <Route path="/crm/payroll-periods" element={<PayrollPeriodsPage />} />
           <Route path="/reports" element={<div>Reports Hub (Coming Soon)</div>} />
+          <Route path="/ai-reports" element={<AIReportsPage />} />
 
           {/* Legacy Redirects */}
           <Route path="/clients" element={<Navigate to="/crm/clients" replace />} />

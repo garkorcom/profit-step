@@ -21,7 +21,8 @@ import {
     TimeTrackingFilters,
     TimeTrackingSummary,
     TimeTrackingCharts,
-    TimeTrackingTable
+    TimeTrackingTable,
+    TimeTrackingAnalytics,
 } from '../../components/time-tracking';
 
 // Dialogs
@@ -303,6 +304,12 @@ const TimeTrackingPage: React.FC = () => {
         };
 
         return sessions.filter(s => {
+            // Exclude finance-only entries from Time Tracking
+            // These are visible only in Finance page
+            if (['payment', 'correction', 'manual_adjustment'].includes(s.type || '')) {
+                return false;
+            }
+
             const matchEmployee = filterEmployeeId ? String(s.employeeId) === filterEmployeeId : true;
             const matchClient = filterClient ? s.clientName === filterClient : true;
 
@@ -440,6 +447,13 @@ const TimeTrackingPage: React.FC = () => {
                 activeSessions={stats.activeSessions}
                 totalBreakMinutes={stats.totalBreakMinutes}
                 sessionCount={stats.sessionCount}
+            />
+
+            {/* Analytics Section */}
+            <TimeTrackingAnalytics
+                sessions={filteredSessions}
+                startDate={startDate}
+                endDate={endDate}
             />
 
             {/* Charts (List Mode Only) */}

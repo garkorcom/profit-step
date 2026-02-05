@@ -73,6 +73,10 @@ const FinancePage: React.FC = () => {
     const [paymentEmployee, setPaymentEmployee] = useState('');
     const [paymentAmount, setPaymentAmount] = useState('');
     const [paymentNote, setPaymentNote] = useState('');
+    const [paymentDate, setPaymentDate] = useState<Date>(new Date());
+
+    // Employee Payment History Dialog
+    const [historyEmployee, setHistoryEmployee] = useState<{ id: string; name: string } | null>(null);
 
     useEffect(() => {
         fetchLedger();
@@ -221,6 +225,7 @@ const FinancePage: React.FC = () => {
                 clientName: 'Manual Adjustment', // Placeholder or allow selection?
                 clientId: 'manual_adj',
                 status: 'completed', // Adjustments are instantly completed
+                finalizationStatus: 'finalized', // Make visible in Finance immediately
                 durationMinutes: 0, // No time, just money
                 hourlyRate: 0,
                 sessionEarnings: parseFloat(adjAmount),
@@ -262,12 +267,13 @@ const FinancePage: React.FC = () => {
 
             const paymentSession: Partial<WorkSession> = {
                 type: 'payment',
-                startTime: Timestamp.now(),
+                startTime: Timestamp.fromDate(paymentDate), // Use selected date
                 employeeId: paymentEmployee,
                 employeeName: employee?.name || 'Unknown',
                 clientName: 'Payment',
                 clientId: 'payment',
                 status: 'completed',
+                finalizationStatus: 'finalized', // Make visible in Finance immediately
                 durationMinutes: 0,
                 hourlyRate: 0,
                 sessionEarnings: -Math.abs(amount), // Negative = outflow
@@ -280,6 +286,7 @@ const FinancePage: React.FC = () => {
             setPaymentEmployee('');
             setPaymentAmount('');
             setPaymentNote('');
+            setPaymentDate(new Date()); // Reset to today
             fetchLedger();
         } catch (error) {
             console.error("Error adding payment:", error);
@@ -691,7 +698,22 @@ const FinancePage: React.FC = () => {
                                                 variant={isPayment || isCorrection || isAdjustment ? 'filled' : 'outlined'}
                                             />
                                         </TableCell>
-                                        <TableCell>{entry.employeeName}</TableCell>
+                                        <TableCell>
+                                            <Typography
+                                                variant="body2"
+                                                sx={{
+                                                    cursor: 'pointer',
+                                                    color: 'primary.main',
+                                                    '&:hover': { textDecoration: 'underline' }
+                                                }}
+                                                onClick={() => setHistoryEmployee({
+                                                    id: String(entry.employeeId),
+                                                    name: entry.employeeName
+                                                })}
+                                            >
+                                                {entry.employeeName}
+                                            </Typography>
+                                        </TableCell>
                                         <TableCell>{entry.clientName}</TableCell>
                                         <TableCell>
                                             <Tooltip title={isVoided ? `REASON: ${entry.voidReason}` : (entry.description || '')}>
@@ -854,6 +876,15 @@ const FinancePage: React.FC = () => {
                             </Select>
                         </FormControl>
                         <TextField
+                            label="Payment Date"
+                            type="date"
+                            fullWidth
+                            size="small"
+                            value={format(paymentDate, 'yyyy-MM-dd')}
+                            onChange={(e) => setPaymentDate(e.target.value ? new Date(e.target.value) : new Date())}
+                            InputLabelProps={{ shrink: true }}
+                        />
+                        <TextField
                             label="Amount ($)"
                             type="number"
                             fullWidth
@@ -894,6 +925,144 @@ const FinancePage: React.FC = () => {
                     onClose={() => setShowReport(false)}
                 />
             )}
+
+            {/* Employee Payment History Dialog */}
+            <Dialog
+                open={!!historyEmployee}
+                onClose={() => setHistoryEmployee(null)}
+                maxWidth="md"
+                fullWidth
+            >
+                <DialogTitle>
+                    💰 История платежей: {historyEmployee?.name}
+                </DialogTitle>
+                <DialogContent>
+                    {historyEmployee && (() => {
+                        const employeeEntries = entries.filter(e =>
+                            String(e.employeeId) === historyEmployee.id
+                        );
+                        const payments = employeeEntries.filter(e => e.type === 'payment');
+                        const adjustments = employeeEntries.filter(e => e.type === 'manual_adjustment');
+                        const sessions = employeeEntries.filter(e => !e.type || e.type === 'regular');
+
+                        const totalEarned = sessions.reduce((sum, e) => sum + (e.sessionEarnings || 0), 0);
+                        const totalPaid = payments.reduce((sum, e) => sum + Math.abs(e.sessionEarnings || 0), 0);
+                        const totalAdj = adjustments.reduce((sum, e) => sum + (e.sessionEarnings || 0), 0);
+                        const balance = totalEarned + totalAdj - totalPaid;
+
+                        return (
+                            <Box>
+                                {/* Summary Cards */}
+                                <Box sx={{ display: 'flex', gap: 2, mb: 3, flexWrap: 'wrap' }}>
+                                    <Paper sx={{ p: 2, flex: 1, minWidth: 120, bgcolor: '#e3f2fd' }}>
+                                        <Typography variant="caption" color="text.secondary">Заработано</Typography>
+                                        <Typography variant="h6" fontWeight="bold" color="info.main">
+                                            ${totalEarned.toFixed(2)}
+                                        </Typography>
+                                    </Paper>
+                                    <Paper sx={{ p: 2, flex: 1, minWidth: 120, bgcolor: '#fff3e0' }}>
+                                        <Typography variant="caption" color="text.secondary">Выплачено</Typography>
+                                        <Typography variant="h6" fontWeight="bold" color="warning.main">
+                                            ${totalPaid.toFixed(2)}
+                                        </Typography>
+                                    </Paper>
+                                    <Paper sx={{ p: 2, flex: 1, minWidth: 120, bgcolor: balance >= 0 ? '#e8f5e9' : '#ffebee' }}>
+                                        <Typography variant="caption" color="text.secondary">Баланс</Typography>
+                                        <Typography variant="h6" fontWeight="bold" color={balance >= 0 ? 'success.main' : 'error.main'}>
+                                            ${balance.toFixed(2)}
+                                        </Typography>
+                                    </Paper>
+                                </Box>
+
+                                {/* Payments Table */}
+                                <Typography variant="subtitle2" fontWeight="bold" gutterBottom>
+                                    Платежи ({payments.length})
+                                </Typography>
+                                {payments.length > 0 ? (
+                                    <TableContainer component={Paper} sx={{ mb: 3 }}>
+                                        <Table size="small">
+                                            <TableHead>
+                                                <TableRow>
+                                                    <TableCell>Дата</TableCell>
+                                                    <TableCell>Сумма</TableCell>
+                                                    <TableCell>Примечание</TableCell>
+                                                </TableRow>
+                                            </TableHead>
+                                            <TableBody>
+                                                {payments.map(p => (
+                                                    <TableRow key={p.id}>
+                                                        <TableCell>
+                                                            {new Date(p.startTime.seconds * 1000).toLocaleDateString()}
+                                                        </TableCell>
+                                                        <TableCell sx={{ color: 'success.main', fontWeight: 'bold' }}>
+                                                            ${Math.abs(p.sessionEarnings || 0).toFixed(2)}
+                                                        </TableCell>
+                                                        <TableCell>{p.description}</TableCell>
+                                                    </TableRow>
+                                                ))}
+                                            </TableBody>
+                                        </Table>
+                                    </TableContainer>
+                                ) : (
+                                    <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+                                        Нет платежей
+                                    </Typography>
+                                )}
+
+                                {/* Adjustments */}
+                                {adjustments.length > 0 && (
+                                    <>
+                                        <Typography variant="subtitle2" fontWeight="bold" gutterBottom>
+                                            Корректировки ({adjustments.length})
+                                        </Typography>
+                                        <TableContainer component={Paper}>
+                                            <Table size="small">
+                                                <TableHead>
+                                                    <TableRow>
+                                                        <TableCell>Дата</TableCell>
+                                                        <TableCell>Сумма</TableCell>
+                                                        <TableCell>Описание</TableCell>
+                                                    </TableRow>
+                                                </TableHead>
+                                                <TableBody>
+                                                    {adjustments.map(a => (
+                                                        <TableRow key={a.id}>
+                                                            <TableCell>
+                                                                {new Date(a.startTime.seconds * 1000).toLocaleDateString()}
+                                                            </TableCell>
+                                                            <TableCell sx={{
+                                                                color: (a.sessionEarnings || 0) >= 0 ? 'success.main' : 'error.main',
+                                                                fontWeight: 'bold'
+                                                            }}>
+                                                                ${(a.sessionEarnings || 0).toFixed(2)}
+                                                            </TableCell>
+                                                            <TableCell>{a.description}</TableCell>
+                                                        </TableRow>
+                                                    ))}
+                                                </TableBody>
+                                            </Table>
+                                        </TableContainer>
+                                    </>
+                                )}
+                            </Box>
+                        );
+                    })()}
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setHistoryEmployee(null)}>Закрыть</Button>
+                    <Button
+                        variant="contained"
+                        color="success"
+                        onClick={() => {
+                            setPaymentEmployee(historyEmployee?.id || '');
+                            setOpenPaymentDialog(true);
+                            setHistoryEmployee(null);
+                        }}
+                    >
+                        + Добавить платёж
+                    </Button>
+                </DialogActions>
+            </Dialog>
         </Container>
     );
 };

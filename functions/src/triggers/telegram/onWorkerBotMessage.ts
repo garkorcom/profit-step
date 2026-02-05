@@ -325,6 +325,10 @@ async function handleMessage(message: any) {
             return;
         }
         await GtdHandler.handleQuickTask(chatId, userId, taskDescription, userName);
+    } else if (text && text.startsWith('/plan')) {
+        // AI Day Planner: /plan | /plan week | /plan tomorrow
+        const args = text.length > 5 ? text.substring(5).trim() : '';
+        await GtdHandler.handlePlanCommand(chatId, userId, args);
     } else if (text === '/shopping' || text === '🛒 Shopping') {
         await ShoppingHandler.handleShoppingCommand(chatId, userId);
     } else if (text === '/inbox' || text === '📥 Inbox') {

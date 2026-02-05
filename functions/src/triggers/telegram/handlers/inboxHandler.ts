@@ -16,7 +16,9 @@ import * as admin from 'firebase-admin';
 import * as functions from 'firebase-functions';
 import { logger } from 'firebase-functions';
 import axios from 'axios';
-import { sendMessage } from '../telegramUtils';
+import { sendMessage, editMessage } from '../telegramUtils';
+import { transcribeVoice } from '../../../services/costsAIService';
+import { parseVoiceTask } from '../../../services/smartDispatcherService';
 
 const db = admin.firestore();
 const storage = admin.storage();
@@ -84,53 +86,150 @@ export async function handleInboxText(
 }
 
 /**
- * Handle voice message → Upload audio, CREATE GTD TASK (not note!)
+ * Handle voice message → Transcribe with AI, CREATE GTD TASK
  * 
- * Updated: Voice messages now create GTD tasks directly in Inbox.
- * AI will transcribe and update the task title.
+ * v3 Update: Inline transcription - no longer relies on Firestore trigger.
+ * Voice messages are transcribed synchronously before creating the GTD task.
  */
 export async function handleInboxVoice(
     ctx: InboxContext,
     voice: { file_id: string; duration: number; mime_type?: string }
 ): Promise<void> {
-    const timeStr = new Date().toLocaleTimeString('ru-RU', {
-        hour: '2-digit',
-        minute: '2-digit',
-        timeZone: 'America/New_York'
-    });
-
     // Send processing message
-    const result = await sendMessageWithId(ctx.chatId, '🎙 Голосовое принято, создаю задачу...');
+    const result = await sendMessageWithId(ctx.chatId, '🎙 Расшифровываю голосовое...');
     const botReplyId = result?.message_id;
 
-    // Upload to Storage
-    const audioUrl = await saveTelegramFile(
-        voice.file_id,
-        `gtd_voice/${ctx.userId}/voice_${Date.now()}.ogg`
-    );
+    try {
+        // 1. Download voice file from Telegram
+        const fileRes = await axios.get(
+            `https://api.telegram.org/bot${WORKER_BOT_TOKEN}/getFile?file_id=${voice.file_id}`
+        );
+        const filePath = fileRes.data.result.file_path;
+        const downloadUrl = `https://api.telegram.org/file/bot${WORKER_BOT_TOKEN}/${filePath}`;
 
-    // Create GTD task (not note!) 
-    const taskRef = await admin.firestore().collection('gtd_tasks').add({
-        title: `🎙 Голосовая задача от ${timeStr}`,
-        description: '',
-        status: 'inbox',
-        priority: 'medium',
-        taskType: null,
-        estimatedHours: 1,
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        createdBy: ctx.platformUserId || String(ctx.userId),
-        createdByName: ctx.userName,
-        source: 'telegram_voice',
-        telegramUserId: ctx.userId,
-        // AI processing fields
-        aiStatus: 'pending',
-        originalAudioUrl: audioUrl,
-        botReplyId: botReplyId,
-        botChatId: ctx.chatId,
-    });
+        const audioResponse = await axios.get(downloadUrl, { responseType: 'arraybuffer' });
+        const audioBuffer = Buffer.from(audioResponse.data);
 
-    logger.info(`✅ Voice task created`, { taskId: taskRef.id, userId: ctx.userId });
+        logger.info(`🎤 Voice downloaded`, { size: audioBuffer.length, userId: ctx.userId });
+
+        // 2. Upload to Storage (for history)
+        const audioUrl = await saveBufferToStorage(
+            audioBuffer,
+            `gtd_voice/${ctx.userId}/voice_${Date.now()}.ogg`,
+            'audio/ogg'
+        );
+
+        // 3. Transcribe with AI
+        const transcription = await transcribeVoice(audioBuffer, 'audio/ogg');
+
+        if (!transcription) {
+            throw new Error('Transcription returned empty');
+        }
+
+        logger.info(`🎙 Transcription result`, { text: transcription.substring(0, 100), userId: ctx.userId });
+
+        // 4. Smart Dispatcher: extract assignee, client, priority from transcription
+        const entities = await parseVoiceTask(
+            transcription,
+            ctx.platformUserId || String(ctx.userId),
+            ctx.userName
+        );
+
+        logger.info(`🎯 Smart Dispatcher result`, {
+            assigneeId: entities.assigneeId,
+            clientId: entities.clientId,
+            confidence: entities.confidence
+        });
+
+        // 5. Create GTD task with extracted entities
+        const taskRef = await admin.firestore().collection('gtd_tasks').add({
+            title: entities.title,
+            description: transcription,
+            status: 'inbox',
+            priority: entities.priority || 'medium',
+            taskType: null,
+            estimatedHours: 1,
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            ownerId: ctx.platformUserId || String(ctx.userId),
+            createdBy: ctx.platformUserId || String(ctx.userId),
+            createdByName: ctx.userName,
+            // Smart Dispatcher extracted fields
+            assigneeId: entities.assigneeId || null,
+            assigneeName: entities.assigneeName || null,
+            clientId: entities.clientId || null,
+            clientName: entities.clientName || null,
+            dueDate: entities.dueDate || null,
+            // Metadata
+            source: 'telegram_voice',
+            telegramUserId: ctx.userId,
+            aiStatus: 'completed',
+            aiConfidence: entities.confidence,
+            originalAudioUrl: audioUrl,
+        });
+
+        logger.info(`✅ Voice task created`, { taskId: taskRef.id, userId: ctx.userId });
+
+        // 6. Build rich response message
+        let responseMsg = `✅ Задача создана:\n\n📝 *${entities.title}*`;
+        if (entities.assigneeName) {
+            responseMsg += `\n👤 Исполнитель: ${entities.assigneeName}`;
+        }
+        if (entities.clientName) {
+            responseMsg += `\n📍 Клиент: ${entities.clientName}`;
+        }
+        if (entities.dueDate) {
+            const date = entities.dueDate.toDate();
+            responseMsg += `\n📅 Дедлайн: ${date.toLocaleDateString('ru-RU')}`;
+        }
+
+        if (botReplyId) {
+            await editMessage(ctx.chatId, botReplyId, responseMsg);
+        } else {
+            await sendMessage(ctx.chatId, responseMsg);
+        }
+
+    } catch (error: any) {
+        logger.error('Voice transcription failed', { error: error.message, userId: ctx.userId });
+
+        // Fallback: create task without transcription
+        const timeStr = new Date().toLocaleTimeString('ru-RU', {
+            hour: '2-digit',
+            minute: '2-digit',
+            timeZone: 'America/New_York'
+        });
+
+        // Upload audio anyway
+        const audioUrl = await saveTelegramFile(
+            voice.file_id,
+            `gtd_voice/${ctx.userId}/voice_${Date.now()}.ogg`
+        );
+
+        await admin.firestore().collection('gtd_tasks').add({
+            title: `🎙 Голосовая задача от ${timeStr}`,
+            description: '⚠️ Не удалось расшифровать. Прослушайте аудио.',
+            status: 'inbox',
+            priority: 'medium',
+            taskType: null,
+            estimatedHours: 1,
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            ownerId: ctx.platformUserId || String(ctx.userId), // Required for GTD board visibility
+            createdBy: ctx.platformUserId || String(ctx.userId),
+            createdByName: ctx.userName,
+            source: 'telegram_voice',
+            telegramUserId: ctx.userId,
+            aiStatus: 'failed',
+            aiError: error.message,
+            originalAudioUrl: audioUrl,
+        });
+
+        if (botReplyId) {
+            await editMessage(ctx.chatId, botReplyId, '⚠️ Не удалось расшифровать голосовое, но задача сохранена.');
+        } else {
+            await sendMessage(ctx.chatId, '⚠️ Не удалось расшифровать голосовое, но задача сохранена.');
+        }
+    }
 }
 
 /**
@@ -467,6 +566,25 @@ function getContentType(path: string): string {
     if (path.endsWith('.png')) return 'image/png';
     if (path.endsWith('.pdf')) return 'application/pdf';
     return 'application/octet-stream';
+}
+
+/**
+ * Save buffer directly to Firebase Storage
+ */
+async function saveBufferToStorage(
+    buffer: Buffer,
+    storagePath: string,
+    contentType: string
+): Promise<string> {
+    const bucket = storage.bucket();
+    const file = bucket.file(storagePath);
+
+    await file.save(buffer, {
+        metadata: { contentType }
+    });
+
+    await file.makePublic();
+    return `https://storage.googleapis.com/${bucket.name}/${storagePath}`;
 }
 
 /**

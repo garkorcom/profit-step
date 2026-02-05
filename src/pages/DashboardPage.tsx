@@ -15,6 +15,7 @@ import {
 import { useAuth } from '../auth/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import Footer from '../components/layout/Footer';
+import AIReportsSection from '../components/dashboard/AIReportsSection';
 
 const DashboardPage: React.FC = () => {
   const { currentUser, userProfile, signOut } = useAuth();
@@ -92,9 +93,12 @@ const DashboardPage: React.FC = () => {
         <Typography variant="h5" gutterBottom>
           Панель управления
         </Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 4 }}>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
           Выберите модуль для работы
         </Typography>
+
+        {/* AI Reports Section */}
+        <AIReportsSection />
 
         <Box
           sx={{
@@ -110,29 +114,29 @@ const DashboardPage: React.FC = () => {
           {modules.map((module) => (
             <Paper
               key={module.title}
-                elevation={2}
-                sx={{
-                  p: 3,
-                  textAlign: 'center',
-                  cursor: 'pointer',
-                  transition: 'all 0.3s',
-                  '&:hover': {
-                    elevation: 6,
-                    transform: 'translateY(-4px)',
-                  },
-                }}
-                onClick={() => navigate(module.path)}
-              >
-                <Box sx={{ color: module.color, mb: 2 }}>
-                  {module.icon}
-                </Box>
-                <Typography variant="h6" gutterBottom>
-                  {module.title}
-                </Typography>
-                <Typography variant="body2" color="text.secondary">
-                  {module.description}
-                </Typography>
-              </Paper>
+              elevation={2}
+              sx={{
+                p: 3,
+                textAlign: 'center',
+                cursor: 'pointer',
+                transition: 'all 0.3s',
+                '&:hover': {
+                  elevation: 6,
+                  transform: 'translateY(-4px)',
+                },
+              }}
+              onClick={() => navigate(module.path)}
+            >
+              <Box sx={{ color: module.color, mb: 2 }}>
+                {module.icon}
+              </Box>
+              <Typography variant="h6" gutterBottom>
+                {module.title}
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                {module.description}
+              </Typography>
+            </Paper>
           ))}
         </Box>
 

@@ -44,6 +44,7 @@ import {
   Campaign as MarketingIcon,
   Build as ToolsIcon,
   ShoppingCart as ShoppingCartIcon,
+  SmartToy as AIIcon,
 } from '@mui/icons-material';
 import { useActiveSession } from '../../hooks/useActiveSession';
 import ActiveSessionIndicator from './ActiveSessionIndicator';
@@ -132,6 +133,7 @@ const Header: React.FC = () => {
       { path: '/crm/finance', label: 'Финансы', icon: <AttachMoneyIcon sx={{ mr: 0.5 }} /> },
       { path: '/crm/gtd', label: 'Cockpit', icon: <TaskIcon sx={{ mr: 0.5 }} /> },
       { path: '/crm/shopping', label: 'Закупки', icon: <ShoppingCartIcon sx={{ mr: 0.5 }} /> },
+      { path: '/ai-reports', label: 'AI Отчёты', icon: <AIIcon sx={{ mr: 0.5 }} /> },
     ];
 
     const marketingLinks = [

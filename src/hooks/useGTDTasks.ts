@@ -33,7 +33,8 @@ export const useGTDTasks = (currentUser: any, showAllTasks: boolean = false) => 
                 collection(db, 'gtd_tasks'),
                 or(
                     where('ownerId', '==', currentUser.uid),
-                    where('assigneeId', '==', currentUser.uid)
+                    where('assigneeId', '==', currentUser.uid),
+                    where('coAssigneeIds', 'array-contains', currentUser.uid)
                 )
             );
 

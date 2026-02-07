@@ -21,18 +21,70 @@ interface GTDColumnProps {
     onStopSession?: (task: GTDTask) => void;
 }
 
-// Column specific colors
-const COLUMN_STYLES: Record<GTDStatus, { bg: string; headerBg: string; icon?: React.ReactNode }> = {
-    inbox: { bg: '#ebecf0', headerBg: '#e2e4e9' },
-    next_action: { bg: '#fef3c7', headerBg: '#fde68a' },
-    projects: { bg: '#dbeafe', headerBg: '#bfdbfe' },
-    waiting: { bg: '#fce7f3', headerBg: '#fbcfe8' },
-    estimate: { bg: '#fff7ed', headerBg: '#fed7aa' },  // Orange for Estimate
-    someday: { bg: '#e0e7ff', headerBg: '#c7d2fe' },
-    done: { bg: '#d1fae5', headerBg: '#a7f3d0', icon: <CheckCircleIcon sx={{ fontSize: 18, color: '#059669', mr: 0.5 }} /> }
+// Apple-style column colors - subtle and elegant
+const COLUMN_STYLES: Record<GTDStatus, {
+    bg: string;
+    headerBg: string;
+    headerText: string;
+    accent: string;
+    icon?: React.ReactNode
+}> = {
+    inbox: {
+        bg: 'rgba(245, 245, 247, 0.8)',
+        headerBg: 'rgba(255, 255, 255, 0.72)',
+        headerText: '#1d1d1f',
+        accent: '#86868b'
+    },
+    next_action: {
+        bg: 'rgba(255, 249, 240, 0.9)',
+        headerBg: 'rgba(255, 159, 10, 0.12)',
+        headerText: '#c93400',
+        accent: '#ff9500'
+    },
+    projects: {
+        bg: 'rgba(240, 247, 255, 0.9)',
+        headerBg: 'rgba(0, 122, 255, 0.08)',
+        headerText: '#0066cc',
+        accent: '#007aff'
+    },
+    waiting: {
+        bg: 'rgba(252, 244, 250, 0.9)',
+        headerBg: 'rgba(175, 82, 222, 0.08)',
+        headerText: '#8944ab',
+        accent: '#af52de'
+    },
+    estimate: {
+        bg: 'rgba(255, 251, 245, 0.9)',
+        headerBg: 'rgba(255, 159, 10, 0.08)',
+        headerText: '#b25000',
+        accent: '#ff9500'
+    },
+    someday: {
+        bg: 'rgba(245, 245, 250, 0.9)',
+        headerBg: 'rgba(88, 86, 214, 0.08)',
+        headerText: '#5856d6',
+        accent: '#5856d6'
+    },
+    done: {
+        bg: 'rgba(240, 253, 244, 0.9)',
+        headerBg: 'rgba(52, 199, 89, 0.12)',
+        headerText: '#1a7f37',
+        accent: '#34c759',
+        icon: <CheckCircleIcon sx={{ fontSize: 18, color: '#34c759', mr: 0.75 }} />
+    }
 };
 
-const GTDColumn: React.FC<GTDColumnProps> = ({ columnId, title, tasks, clientsMap, onTaskClick, onAddTask, onStartSession, activeSession, onStopSession }) => {
+const GTDColumn: React.FC<GTDColumnProps> = ({
+    columnId,
+    title,
+    tasks,
+    clientsMap,
+    onTaskClick,
+    onAddTask,
+    onStartSession,
+    activeSession,
+    onStopSession
+}) => {
     const [newTitle, setNewTitle] = useState('');
     const [isAdding, setIsAdding] = useState(false);
     const isDone = columnId === 'done';
@@ -59,43 +111,70 @@ const GTDColumn: React.FC<GTDColumnProps> = ({ columnId, title, tasks, clientsMa
             elevation={0}
             sx={{
                 width: '100%',
-                minWidth: 280,
-                maxWidth: 450,
-                flex: '1 0 280px',
+                minWidth: 300,
+                maxWidth: 380,
+                flex: '1 0 300px',
                 height: '100%',
                 display: 'flex',
                 flexDirection: 'column',
+                // Apple-style glassmorphism
                 bgcolor: styles.bg,
-                borderRadius: 2,
+                backdropFilter: 'blur(20px)',
+                WebkitBackdropFilter: 'blur(20px)',
+                borderRadius: '20px',
+                border: '1px solid rgba(255, 255, 255, 0.3)',
+                boxShadow: '0 4px 30px rgba(0, 0, 0, 0.05)',
                 maxHeight: 'calc(100vh - 180px)',
-                transition: 'all 0.2s ease'
+                transition: 'all 0.3s cubic-bezier(0.25, 0.1, 0.25, 1)',
+                overflow: 'hidden',
+                '&:hover': {
+                    boxShadow: '0 8px 40px rgba(0, 0, 0, 0.08)',
+                }
             }}
         >
-            {/* Header */}
+            {/* Apple-style Header with frosted glass */}
             <Box
-                px={2}
-                py={1.5}
+                px={2.5}
+                py={2}
                 sx={{
                     bgcolor: styles.headerBg,
-                    borderTopLeftRadius: 8,
-                    borderTopRightRadius: 8,
+                    backdropFilter: 'blur(10px)',
+                    WebkitBackdropFilter: 'blur(10px)',
+                    borderBottom: '1px solid rgba(0, 0, 0, 0.04)',
                     display: 'flex',
-                    alignItems: 'center'
+                    alignItems: 'center',
+                    position: 'sticky',
+                    top: 0,
+                    zIndex: 10
                 }}
             >
                 {styles.icon}
-                <Typography variant="subtitle2" fontWeight="bold" sx={{ flex: 1 }}>
+                <Typography
+                    variant="subtitle1"
+                    sx={{
+                        flex: 1,
+                        fontWeight: 600,
+                        fontSize: '15px',
+                        letterSpacing: '-0.01em',
+                        color: styles.headerText,
+                        fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, sans-serif',
+                    }}
+                >
                     {title}
                 </Typography>
                 <Typography
                     component="span"
-                    variant="caption"
                     sx={{
-                        bgcolor: 'rgba(0,0,0,0.1)',
-                        px: 1,
-                        py: 0.25,
-                        borderRadius: 10,
-                        fontWeight: 600
+                        bgcolor: styles.accent,
+                        color: 'white',
+                        px: 1.25,
+                        py: 0.5,
+                        borderRadius: '12px',
+                        fontSize: '13px',
+                        fontWeight: 600,
+                        fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif',
+                        minWidth: 28,
+                        textAlign: 'center'
                     }}
                 >
                     {tasks.length}
@@ -109,16 +188,30 @@ const GTDColumn: React.FC<GTDColumnProps> = ({ columnId, title, tasks, clientsMa
                         ref={provided.innerRef}
                         {...provided.droppableProps}
                         sx={{
-                            p: 1,
+                            p: 1.5,
                             flexGrow: 1,
                             overflowY: 'auto',
-                            transition: 'background-color 0.2s ease',
-                            bgcolor: snapshot.isDraggingOver ? 'rgba(0,0,0,0.08)' : 'transparent',
-                            minHeight: 80
+                            overflowX: 'hidden',
+                            transition: 'background-color 0.3s ease',
+                            bgcolor: snapshot.isDraggingOver ? 'rgba(0, 122, 255, 0.06)' : 'transparent',
+                            minHeight: 100,
+                            // Apple-style scrollbar
+                            '&::-webkit-scrollbar': {
+                                width: 6,
+                            },
+                            '&::-webkit-scrollbar-track': {
+                                background: 'transparent',
+                            },
+                            '&::-webkit-scrollbar-thumb': {
+                                background: 'rgba(0, 0, 0, 0.15)',
+                                borderRadius: 3,
+                                '&:hover': {
+                                    background: 'rgba(0, 0, 0, 0.25)'
+                                }
+                            }
                         }}
                     >
                         {tasks.map((task, index) => {
-                            // Don't show timer in Done or Someday columns
                             const showTimer = columnId !== 'done' && columnId !== 'someday';
                             return (
                                 <GTDTaskCard
@@ -138,8 +231,8 @@ const GTDColumn: React.FC<GTDColumnProps> = ({ columnId, title, tasks, clientsMa
                 )}
             </Droppable>
 
-            {/* Quick Add - Available for ALL columns */}
-            <Box px={1} pb={1} sx={{ flexShrink: 0 }}>
+            {/* Apple-style Quick Add */}
+            <Box px={1.5} pb={1.5} sx={{ flexShrink: 0 }}>
                 {isAdding ? (
                     <Box>
                         <TextField
@@ -151,40 +244,81 @@ const GTDColumn: React.FC<GTDColumnProps> = ({ columnId, title, tasks, clientsMa
                             onChange={(e) => setNewTitle(e.target.value)}
                             onKeyDown={handleKeyDown}
                             sx={{
-                                bgcolor: 'white',
                                 mb: 1,
                                 '& .MuiOutlinedInput-root': {
-                                    borderRadius: 1.5
+                                    borderRadius: '12px',
+                                    bgcolor: 'white',
+                                    fontSize: '15px',
+                                    fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif',
+                                    '& fieldset': {
+                                        border: '1px solid rgba(0, 0, 0, 0.08)',
+                                    },
+                                    '&:hover fieldset': {
+                                        border: '1px solid rgba(0, 0, 0, 0.15)',
+                                    },
+                                    '&.Mui-focused fieldset': {
+                                        border: '2px solid #007aff',
+                                    }
                                 }
                             }}
                         />
-                        <Box display="flex" gap={0.5}>
+                        <Box display="flex" gap={1}>
                             <Button
                                 variant="contained"
                                 size="small"
                                 onClick={handleAdd}
-                                sx={{ textTransform: 'none', borderRadius: 1.5 }}
+                                sx={{
+                                    textTransform: 'none',
+                                    borderRadius: '10px',
+                                    bgcolor: '#007aff',
+                                    fontWeight: 600,
+                                    fontSize: '14px',
+                                    px: 2.5,
+                                    py: 0.75,
+                                    boxShadow: 'none',
+                                    '&:hover': {
+                                        bgcolor: '#0066cc',
+                                        boxShadow: 'none'
+                                    }
+                                }}
                             >
                                 Add
                             </Button>
-                            <IconButton size="small" onClick={() => { setNewTitle(''); setIsAdding(false); }}>
-                                <CloseIcon fontSize="small" />
+                            <IconButton
+                                size="small"
+                                onClick={() => { setNewTitle(''); setIsAdding(false); }}
+                                sx={{
+                                    width: 32,
+                                    height: 32,
+                                    bgcolor: 'rgba(0, 0, 0, 0.05)',
+                                    '&:hover': {
+                                        bgcolor: 'rgba(0, 0, 0, 0.1)'
+                                    }
+                                }}
+                            >
+                                <CloseIcon sx={{ fontSize: 18 }} />
                             </IconButton>
                         </Box>
                     </Box>
                 ) : (
                     <Button
                         fullWidth
-                        startIcon={<AddIcon />}
+                        startIcon={<AddIcon sx={{ fontSize: 20 }} />}
                         aria-label="add-task"
                         sx={{
                             justifyContent: 'flex-start',
-                            color: 'text.secondary',
+                            color: '#86868b',
                             textTransform: 'none',
-                            borderRadius: 1.5,
-                            py: 0.5,
+                            borderRadius: '12px',
+                            py: 1.25,
+                            px: 1.5,
+                            fontSize: '14px',
+                            fontWeight: 500,
+                            fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif',
+                            transition: 'all 0.2s ease',
                             '&:hover': {
-                                bgcolor: 'rgba(0,0,0,0.05)'
+                                bgcolor: 'rgba(0, 0, 0, 0.04)',
+                                color: '#1d1d1f'
                             }
                         }}
                         onClick={() => setIsAdding(true)}

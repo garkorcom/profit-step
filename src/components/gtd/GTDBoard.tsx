@@ -19,9 +19,9 @@
  * @module components/gtd/GTDBoard
  */
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Box, Snackbar, Alert, Fab, Tab, Tabs, Badge, Dialog, DialogTitle, DialogContent, TextField, DialogActions, Button, useMediaQuery, useTheme, Chip } from '@mui/material';
+import { Box, Snackbar, Alert, Fab, Tab, Tabs, Badge, Dialog, DialogTitle, DialogContent, TextField, DialogActions, Button, useMediaQuery, useTheme, Chip, Slide } from '@mui/material';
 import { startOfDay, endOfDay, addDays, startOfWeek, endOfWeek, isBefore, isAfter, isWithinInterval } from 'date-fns';
 import { DragDropContext, DropResult } from '@hello-pangea/dnd';
 import { collection, query, orderBy, getDocs } from 'firebase/firestore';
@@ -35,11 +35,15 @@ import EventIcon from '@mui/icons-material/Event';
 import AddIcon from '@mui/icons-material/Add';
 import PersonIcon from '@mui/icons-material/Person';
 import FilterListIcon from '@mui/icons-material/FilterList';
+import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
+import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import GTDColumn from './GTDColumn';
 import GTDEditDialog from './GTDEditDialog';
 import GTDQuickAddDialog, { AIEstimateData } from './GTDQuickAddDialog';
+import ColumnIndicator from './ColumnIndicator';
 import { useGTDTasks } from '../../hooks/useGTDTasks';
 import { useSessionManager } from '../../hooks/useSessionManager';
+import { useSwipeGesture, triggerHaptic } from '../../hooks/useSwipeGesture';
 
 /**
  * GTDBoard — основной компонент Kanban-доски
@@ -93,6 +97,43 @@ const GTDBoard: React.FC = () => {
     // ==================== МОБИЛЬНОЕ СОСТОЯНИЕ ====================
     const [selectedTab, setSelectedTab] = useState(0);    // Активная вкладка (мобильный)
     const [showFilters, setShowFilters] = useState(false); // Показать фильтры (мобильный)
+    const [isHeaderCompact, setIsHeaderCompact] = useState(false); // Compact header state
+
+    // ==================== SWIPE NAVIGATION ====================
+    const handleSwipeLeft = useCallback(() => {
+        if (selectedTab < GTD_COLUMNS.length - 1) {
+            setSelectedTab(prev => prev + 1);
+            triggerHaptic('light');
+        }
+    }, [selectedTab]);
+
+    const handleSwipeRight = useCallback(() => {
+        if (selectedTab > 0) {
+            setSelectedTab(prev => prev - 1);
+            triggerHaptic('light');
+        }
+    }, [selectedTab]);
+
+    const swipeContainerRef = useSwipeGesture<HTMLDivElement>({
+        onSwipeLeft: handleSwipeLeft,
+        onSwipeRight: handleSwipeRight,
+        threshold: 75,
+    });
+
+    // ==================== SCROLL LISTENER FOR COMPACT HEADER ====================
+    const containerRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        const container = containerRef.current;
+        if (!container) return;
+
+        const handleScroll = () => {
+            setIsHeaderCompact(container.scrollTop > 50);
+        };
+
+        container.addEventListener('scroll', handleScroll);
+        return () => container.removeEventListener('scroll', handleScroll);
+    }, []);
 
     // ==================== QUICK ADD DIALOG ====================
     const [quickAddOpen, setQuickAddOpen] = useState(false);
@@ -380,46 +421,129 @@ const GTDBoard: React.FC = () => {
 
             {/* Mobile: Tabs for columns */}
             {isMobile && (
-                <Tabs
-                    value={selectedTab}
-                    onChange={(_, newValue) => setSelectedTab(newValue)}
-                    variant="scrollable"
-                    scrollButtons="auto"
-                    sx={{
-                        minHeight: 40,
-                        '& .MuiTab-root': { minHeight: 40, py: 0.5, px: 1.5, fontSize: '0.75rem', fontWeight: 600 }
-                    }}
-                >
-                    {GTD_COLUMNS.map((col, idx) => (
-                        <Tab
-                            key={col.id}
-                            label={
-                                <Badge badgeContent={filteredColumns[col.id]?.length || 0} color="primary" max={99}>
-                                    <Box sx={{ pr: 1.5 }}>{col.title}</Box>
-                                </Badge>
+                <Box>
+                    <Tabs
+                        value={selectedTab}
+                        onChange={(_, newValue) => {
+                            setSelectedTab(newValue);
+                            triggerHaptic('light');
+                        }}
+                        variant="scrollable"
+                        scrollButtons="auto"
+                        sx={{
+                            minHeight: 44,
+                            '& .MuiTab-root': {
+                                minHeight: 44,
+                                py: 1,
+                                px: 2,
+                                fontSize: '0.8rem',
+                                fontWeight: 600,
+                                fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif',
                             }
-                        />
-                    ))}
-                </Tabs>
+                        }}
+                    >
+                        {GTD_COLUMNS.map((col, idx) => (
+                            <Tab
+                                key={col.id}
+                                label={
+                                    <Badge badgeContent={filteredColumns[col.id]?.length || 0} color="primary" max={99}>
+                                        <Box sx={{ pr: 1.5 }}>{col.title}</Box>
+                                    </Badge>
+                                }
+                            />
+                        ))}
+                    </Tabs>
+
+                    {/* Column Indicator Dots */}
+                    <ColumnIndicator
+                        total={GTD_COLUMNS.length}
+                        current={selectedTab}
+                        onChange={(index) => {
+                            setSelectedTab(index);
+                            triggerHaptic('light');
+                        }}
+                    />
+
+                    {/* Swipe hint */}
+                    <Box sx={{
+                        display: 'flex',
+                        justifyContent: 'center',
+                        alignItems: 'center',
+                        gap: 1,
+                        py: 0.5,
+                        color: '#86868b',
+                        fontSize: '0.7rem',
+                    }}>
+                        <ChevronLeftIcon sx={{ fontSize: 14 }} />
+                        <Typography variant="caption" sx={{ color: 'inherit' }}>
+                            Свайп для переключения
+                        </Typography>
+                        <ChevronRightIcon sx={{ fontSize: 14 }} />
+                    </Box>
+                </Box>
             )}
 
             {/* Content: Desktop=all columns, Mobile=single column */}
-            <Box sx={{ flex: 1, display: 'flex', overflowX: 'auto', overflowY: 'hidden', gap: 2 }}>
+            <Box
+                sx={{
+                    flex: 1,
+                    display: 'flex',
+                    overflowX: 'auto',
+                    overflowY: 'hidden',
+                    gap: 2,
+                    px: 1,
+                    // Apple-style scroll behavior
+                    WebkitOverflowScrolling: 'touch',
+                    scrollBehavior: 'smooth',
+                    // CSS Scroll Snap for iPad
+                    '@media (max-width: 1194px)': {
+                        scrollSnapType: 'x mandatory',
+                        '& > *': {
+                            scrollSnapAlign: 'start',
+                            flexShrink: 0,
+                        }
+                    },
+                    // Hide scrollbar but keep functionality
+                    '&::-webkit-scrollbar': {
+                        height: 8,
+                    },
+                    '&::-webkit-scrollbar-track': {
+                        background: '#f5f5f7',
+                        borderRadius: 4,
+                    },
+                    '&::-webkit-scrollbar-thumb': {
+                        background: '#c7c7cc',
+                        borderRadius: 4,
+                        '&:hover': {
+                            background: '#a1a1a6'
+                        }
+                    }
+                }}
+            >
                 <DragDropContext onDragEnd={onDragEnd}>
                     {isMobile ? (
-                        // Mobile: Show only active column
-                        <GTDColumn
-                            key={activeColumn?.id}
-                            columnId={activeColumn?.id}
-                            title={activeColumn?.title}
-                            tasks={filteredColumns[activeColumn?.id] || []}
-                            clientsMap={clientsMap}
-                            onTaskClick={setEditingTask}
-                            onAddTask={handleAddTaskWrapper}
-                            onStartSession={startSession}
-                            activeSession={activeSession}
-                            onStopSession={stopSession}
-                        />
+                        // Mobile: Show only active column with swipe support
+                        <Box
+                            ref={swipeContainerRef}
+                            sx={{
+                                flex: 1,
+                                display: 'flex',
+                                touchAction: 'pan-y', // Allow vertical scroll, detect horizontal swipe
+                            }}
+                        >
+                            <GTDColumn
+                                key={activeColumn?.id}
+                                columnId={activeColumn?.id}
+                                title={activeColumn?.title}
+                                tasks={filteredColumns[activeColumn?.id] || []}
+                                clientsMap={clientsMap}
+                                onTaskClick={setEditingTask}
+                                onAddTask={handleAddTaskWrapper}
+                                onStartSession={startSession}
+                                activeSession={activeSession}
+                                onStopSession={stopSession}
+                            />
+                        </Box>
                     ) : (
                         // Desktop: Show all columns
                         GTD_COLUMNS.map(column => (

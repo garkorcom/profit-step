@@ -10,6 +10,7 @@
  */
 
 import React, { useState, useEffect, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
     Box,
     Typography,
@@ -182,8 +183,16 @@ const CalendarPage: React.FC = () => {
     const { currentUser } = useAuth();
     const theme = useTheme();
     const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
+    const [searchParams] = useSearchParams();
 
-    const [currentDate, setCurrentDate] = useState(new Date());
+    const [currentDate, setCurrentDate] = useState(() => {
+        const dateParam = searchParams.get('date');
+        if (dateParam) {
+            const parsed = parseISO(dateParam);
+            if (isValid(parsed)) return parsed;
+        }
+        return new Date();
+    });
     const [tasks, setTasks] = useState<GTDTask[]>([]);
     const [clients, setClients] = useState<Client[]>([]);
     const [loading, setLoading] = useState(true);
@@ -236,7 +245,11 @@ const CalendarPage: React.FC = () => {
         if (!currentUser) return;
         const q = query(
             collection(db, 'gtd_tasks'),
-            or(where('ownerId', '==', currentUser.uid), where('assigneeId', '==', currentUser.uid))
+            or(
+                where('ownerId', '==', currentUser.uid),
+                where('assigneeId', '==', currentUser.uid),
+                where('coAssigneeIds', 'array-contains', currentUser.uid)
+            )
         );
         const unsubscribe = onSnapshot(q, (snapshot) => {
             const data = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as GTDTask));

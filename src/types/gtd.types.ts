@@ -11,6 +11,7 @@
  */
 
 import { Timestamp } from 'firebase/firestore';
+import { TaskMaterial } from './inventory.types';
 
 /**
  * Возможные статусы задачи (колонки на Kanban-доске)
@@ -94,6 +95,32 @@ export interface Project {
  *   assigneeId: 'user456'
  * };
  */
+
+/** Роль соисполнителя */
+export type CoAssigneeRole = 'executor' | 'reviewer' | 'observer';
+
+export const CO_ASSIGNEE_ROLE_LABELS: Record<CoAssigneeRole, string> = {
+    executor: 'Исполнитель',
+    reviewer: 'Ревьюер',
+    observer: 'Наблюдатель',
+};
+
+/** Событие истории изменений задачи */
+export interface TaskHistoryEvent {
+    /** Тип события */
+    type: 'created' | 'assigned' | 'co_assignee_added' | 'co_assignee_removed' | 'status_changed' | 'updated' | 'completed';
+    /** Описание события */
+    description: string;
+    /** ID пользователя, совершившего действие */
+    userId?: string;
+    /** Имя пользователя */
+    userName?: string;
+    /** Временная метка */
+    timestamp: any; // Firestore Timestamp
+    /** Дополнительные метаданные */
+    meta?: Record<string, any>;
+}
+
 export interface GTDTask {
     /** Уникальный ID задачи (Firestore document ID) */
     id: string;
@@ -116,6 +143,24 @@ export interface GTDTask {
 
     /** Отображаемое имя исполнителя */
     assigneeName?: string;
+
+    /** 
+     * Соисполнители задачи (дополнительные работники)
+     * Массив объектов с id, именем и ролью
+     */
+    coAssignees?: Array<{ id: string; name: string; role: 'executor' | 'reviewer' | 'observer' }>;
+
+    /**
+     * Плоский массив ID соисполнителей для Firestore array-contains запросов
+     * Синхронизируется с coAssignees при сохранении
+     */
+    coAssigneeIds?: string[];
+
+    /**
+     * История изменений задачи
+     * Каждое событие содержит тип, описание и метаданные
+     */
+    taskHistory?: TaskHistoryEvent[];
 
     /** Название задачи */
     title: string;
@@ -266,6 +311,19 @@ export interface GTDTask {
      * Позволяет открыть Cockpit View для подробного редактирования
      */
     sourceNoteId?: string;
+
+    // ═══════════════════════════════════════
+    // INVENTORY INTEGRATION
+    // ═══════════════════════════════════════
+
+    /** Структурированные материалы задачи (связь с инвентарём) */
+    materials?: TaskMaterial[];
+
+    /** Общая стоимость материалов (план) */
+    materialsCostPlanned?: number;
+
+    /** Общая стоимость материалов (факт) */
+    materialsCostActual?: number;
 }
 
 /**

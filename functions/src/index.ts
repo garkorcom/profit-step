@@ -603,3 +603,11 @@ export { onCostCreated, onCostUpdate } from './triggers/firestore/onCostCreated'
 
 // Weekly analytics digest (v1 - stable)
 export { sendWeeklyDigest } from './scheduled/weeklyDigest';
+
+// ========================================
+// BANK STATEMENTS (Tax Module)
+// Standalone module for tax categorization
+// ========================================
+
+export { uploadBankStatement } from './callable/finance/uploadBankStatement';
+export { categorizeBankTransactions } from './callable/finance/categorizeBankTransactions';

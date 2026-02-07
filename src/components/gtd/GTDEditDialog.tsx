@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from 'react';
+import { nanoid } from 'nanoid';
 import {
     Dialog, DialogTitle, DialogContent, DialogActions,
     TextField, Button, FormControl, InputLabel, Select, MenuItem,
     Box, Chip, Typography, Grid, Accordion, AccordionSummary, AccordionDetails,
-    useTheme, alpha, Paper, IconButton, InputAdornment, CircularProgress, Alert
+    useTheme, alpha, Paper, IconButton, InputAdornment, CircularProgress, Alert,
+    Avatar, Autocomplete
 } from '@mui/material';
 import FlagIcon from '@mui/icons-material/Flag';
 import PersonIcon from '@mui/icons-material/Person';
@@ -12,6 +14,9 @@ import CalendarTodayIcon from '@mui/icons-material/CalendarToday';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import CheckBoxOutlineBlankIcon from '@mui/icons-material/CheckBoxOutlineBlank';
+import CheckBoxIcon from '@mui/icons-material/CheckBox';
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import InboxIcon from '@mui/icons-material/Inbox';
 import AddIcon from '@mui/icons-material/Add';
 import RemoveIcon from '@mui/icons-material/Remove';
@@ -20,7 +25,7 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 import CloseIcon from '@mui/icons-material/Close';
 
 import { useForm, Controller } from 'react-hook-form';
-import { GTDTask, GTDStatus, GTD_COLUMNS, GTDPriority, PRIORITY_COLORS } from '../../types/gtd.types';
+import { GTDTask, GTDStatus, GTD_COLUMNS, GTDPriority, PRIORITY_COLORS, ChecklistItem } from '../../types/gtd.types';
 import { Client } from '../../types/crm.types';
 import { UserProfile } from '../../types/user.types';
 import { Timestamp, collection, getDocs, query, orderBy, where } from 'firebase/firestore';
@@ -95,6 +100,13 @@ const GTDEditDialog: React.FC<GTDEditDialogProps> = ({ open, onClose, task, onSa
     const [newTool, setNewTool] = useState('');
     const [hasAiData, setHasAiData] = useState(false);
 
+    // Checklist State
+    const [checklistItems, setChecklistItems] = useState<ChecklistItem[]>([]);
+    const [newChecklistText, setNewChecklistText] = useState('');
+
+    // Co-assignees state
+    const [coAssignees, setCoAssignees] = useState<Array<{ id: string; name: string; role: 'executor' | 'reviewer' | 'observer' }>>([]);
+
     const HOURLY_RATE = 95; // Default hourly rate
 
     useEffect(() => {
@@ -163,6 +175,17 @@ const GTDEditDialog: React.FC<GTDEditDialogProps> = ({ open, onClose, task, onSa
             setLocalMaterials(task.selectedMaterials || task.aiMaterials || []);
             setLocalTools(task.selectedTools || task.aiTools || []);
             setHasAiData(!!task.aiEstimateUsed);
+
+            // Initialize checklist
+            setChecklistItems(task.checklistItems || []);
+            setNewChecklistText('');
+
+            // Initialize co-assignees
+            setCoAssignees((task.coAssignees || []).map((ca: any) => ({
+                id: ca.id,
+                name: ca.name,
+                role: ca.role || 'executor'
+            })));
         }
     }, [task, reset, userProfile]);
 
@@ -298,6 +321,13 @@ const GTDEditDialog: React.FC<GTDEditDialogProps> = ({ open, onClose, task, onSa
         if (hasAiData) {
             updates.aiEstimateUsed = true;
         }
+
+        // Checklist items
+        updates.checklistItems = checklistItems.length > 0 ? checklistItems : [];
+
+        // Co-assignees
+        updates.coAssignees = coAssignees.length > 0 ? coAssignees : [];
+        (updates as any).coAssigneeIds = coAssignees.map(c => c.id);
 
         try {
             await onSave(task.id, updates);
@@ -459,6 +489,115 @@ const GTDEditDialog: React.FC<GTDEditDialogProps> = ({ open, onClose, task, onSa
                             )}
                         />
 
+                        {/* 4.5. Checklist Section */}
+                        <Box sx={{ mb: 2 }}>
+                            <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block', textTransform: 'uppercase', letterSpacing: 1, fontWeight: 'bold' }}>
+                                📋 Чек-лист {checklistItems.length > 0 && `(${checklistItems.filter(i => i.completed).length}/${checklistItems.length})`}
+                            </Typography>
+
+                            {checklistItems.length > 0 && (
+                                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, mb: 1 }}>
+                                    {checklistItems.map((item) => (
+                                        <Box
+                                            key={item.id}
+                                            sx={{
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: 0.5,
+                                                p: 0.75,
+                                                borderRadius: 1.5,
+                                                bgcolor: item.completed ? alpha(theme.palette.success.main, 0.08) : 'transparent',
+                                                '&:hover': { bgcolor: alpha(theme.palette.action.hover, 0.08) },
+                                                transition: 'all 0.2s',
+                                            }}
+                                        >
+                                            <IconButton
+                                                size="small"
+                                                onClick={() => {
+                                                    setChecklistItems(prev => prev.map(ci =>
+                                                        ci.id === item.id
+                                                            ? {
+                                                                ...ci,
+                                                                completed: !ci.completed,
+                                                                completedAt: !ci.completed ? Timestamp.now() : undefined
+                                                            }
+                                                            : ci
+                                                    ));
+                                                }}
+                                                sx={{ p: 0.5 }}
+                                            >
+                                                {item.completed
+                                                    ? <CheckBoxIcon fontSize="small" color="success" />
+                                                    : <CheckBoxOutlineBlankIcon fontSize="small" color="action" />
+                                                }
+                                            </IconButton>
+                                            <Typography
+                                                sx={{
+                                                    flex: 1,
+                                                    fontSize: '0.875rem',
+                                                    textDecoration: item.completed ? 'line-through' : 'none',
+                                                    color: item.completed ? 'text.secondary' : 'text.primary',
+                                                }}
+                                            >
+                                                {item.text}
+                                            </Typography>
+                                            <IconButton
+                                                size="small"
+                                                onClick={() => setChecklistItems(prev => prev.filter(ci => ci.id !== item.id))}
+                                                sx={{ p: 0.5, opacity: 0.5, '&:hover': { opacity: 1 } }}
+                                            >
+                                                <DeleteOutlineIcon fontSize="small" />
+                                            </IconButton>
+                                        </Box>
+                                    ))}
+                                </Box>
+                            )}
+
+                            {/* Add new checklist item */}
+                            <TextField
+                                fullWidth
+                                size="small"
+                                value={newChecklistText}
+                                onChange={(e) => setNewChecklistText(e.target.value)}
+                                placeholder="Добавить пункт..."
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter' && newChecklistText.trim()) {
+                                        e.preventDefault();
+                                        const newItem: ChecklistItem = {
+                                            id: nanoid(10),
+                                            text: newChecklistText.trim(),
+                                            completed: false,
+                                            createdAt: Timestamp.now(),
+                                        };
+                                        setChecklistItems(prev => [...prev, newItem]);
+                                        setNewChecklistText('');
+                                    }
+                                }}
+                                InputProps={{
+                                    endAdornment: (
+                                        <IconButton
+                                            size="small"
+                                            onClick={() => {
+                                                if (newChecklistText.trim()) {
+                                                    const newItem: ChecklistItem = {
+                                                        id: nanoid(10),
+                                                        text: newChecklistText.trim(),
+                                                        completed: false,
+                                                        createdAt: Timestamp.now(),
+                                                    };
+                                                    setChecklistItems(prev => [...prev, newItem]);
+                                                    setNewChecklistText('');
+                                                }
+                                            }}
+                                            disabled={!newChecklistText.trim()}
+                                        >
+                                            <AddIcon fontSize="small" />
+                                        </IconButton>
+                                    )
+                                }}
+                            />
+                        </Box>
+
                         {/* 5. Resources & Finance (Accordion) */}
                         <Accordion expanded={resourcesExpanded} onChange={() => setResourcesExpanded(!resourcesExpanded)} disableGutters elevation={0} sx={{ border: '1px solid #e0e0e0', borderRadius: '8px !important', '&:before': { display: 'none' }, bgcolor: alpha(theme.palette.grey[500], 0.05) }}>
                             <AccordionSummary expandIcon={<ExpandMoreIcon />}>
@@ -488,6 +627,62 @@ const GTDEditDialog: React.FC<GTDEditDialogProps> = ({ open, onClose, task, onSa
                                                 </Select>
                                             </FormControl>
                                         )}
+                                    />
+
+                                    {/* Co-assignees */}
+                                    <Typography variant="caption" color="text.secondary" sx={{ mb: 0.5, mt: 1.5, display: 'block' }}>
+                                        Соисполнители
+                                    </Typography>
+                                    {coAssignees.length > 0 && (
+                                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, mb: 1 }}>
+                                            {coAssignees.map(ca => (
+                                                <Box key={ca.id} display="flex" alignItems="center" gap={0.5}>
+                                                    <Chip
+                                                        label={ca.name}
+                                                        size="small"
+                                                        avatar={<Avatar sx={{ width: 18, height: 18 }}>{ca.name?.charAt(0)}</Avatar>}
+                                                        onDelete={() => setCoAssignees(prev => prev.filter(c => c.id !== ca.id))}
+                                                        sx={{ flexShrink: 0 }}
+                                                    />
+                                                    <Box
+                                                        component="select"
+                                                        value={ca.role}
+                                                        onChange={(e: any) => setCoAssignees(prev => prev.map(c =>
+                                                            c.id === ca.id ? { ...c, role: e.target.value } : c
+                                                        ))}
+                                                        style={{
+                                                            border: '1px solid #ccc',
+                                                            borderRadius: 4,
+                                                            padding: '2px 4px',
+                                                            fontSize: '0.7rem',
+                                                            background: 'transparent',
+                                                            cursor: 'pointer',
+                                                        }}
+                                                    >
+                                                        <option value="executor">Исполнитель</option>
+                                                        <option value="reviewer">Ревьюер</option>
+                                                        <option value="observer">Наблюдатель</option>
+                                                    </Box>
+                                                </Box>
+                                            ))}
+                                        </Box>
+                                    )}
+                                    <Autocomplete
+                                        value={null}
+                                        options={users.filter(u => !coAssignees.some(ca => ca.id === u.id))}
+                                        getOptionLabel={(opt) => opt.displayName || ''}
+                                        onChange={(_, newVal) => {
+                                            if (newVal) {
+                                                setCoAssignees(prev => [...prev, { id: newVal.id, name: newVal.displayName || '', role: 'executor' as const }]);
+                                            }
+                                        }}
+                                        renderInput={(params) => (
+                                            <TextField {...params} label="Добавить соисполнителя" size="small" />
+                                        )}
+                                        size="small"
+                                        blurOnSelect
+                                        clearOnBlur
+                                        sx={{ mb: 1 }}
                                     />
 
                                     <Box sx={{ display: 'flex', gap: 1.5, alignItems: 'center', flexWrap: 'wrap' }}>

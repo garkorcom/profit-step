@@ -4,6 +4,7 @@ import { ThemeProvider, createTheme, CssBaseline } from '@mui/material';
 import { Toaster } from 'react-hot-toast';
 import AppRouter from './router/AppRouter';
 import { AuthProvider } from './auth/AuthContext';
+import PWAInstallBanner from './components/pwa/PWAInstallBanner';
 
 // Создание зеленой темы (аналогично my-business-app)
 const theme = createTheme({
@@ -22,7 +23,7 @@ const theme = createTheme({
     },
   },
   typography: {
-    fontFamily: '"Roboto", "Helvetica", "Arial", sans-serif',
+    fontFamily: '\"Roboto\", \"Helvetica\", \"Arial\", sans-serif',
   },
   components: {
     MuiButton: {
@@ -43,6 +44,7 @@ function App() {
       <BrowserRouter>
         <AuthProvider>
           <AppRouter />
+          <PWAInstallBanner />
         </AuthProvider>
       </BrowserRouter>
     </ThemeProvider>
@@ -50,3 +52,4 @@ function App() {
 }
 
 export default App;
+

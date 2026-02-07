@@ -1,6 +1,6 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Card, CardContent, Typography, Box, Chip, IconButton, Link, Tooltip } from '@mui/material';
+import { Card, CardContent, Typography, Box, Chip, IconButton, Tooltip, Avatar, AvatarGroup } from '@mui/material';
 import { Draggable } from '@hello-pangea/dnd';
 import EditIcon from '@mui/icons-material/Edit';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
@@ -8,7 +8,6 @@ import FlagIcon from '@mui/icons-material/Flag';
 import PersonIcon from '@mui/icons-material/Person';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import DragIndicatorIcon from '@mui/icons-material/DragIndicator';
-import DescriptionIcon from '@mui/icons-material/Description';
 import { GTDTask, PRIORITY_COLORS, GTDPriority } from '../../types/gtd.types';
 import { WorkSessionData } from '../../hooks/useActiveSession';
 
@@ -32,13 +31,34 @@ const PRIORITY_LABELS: Record<GTDPriority, string> = {
     none: ''
 };
 
-const GTDTaskCard: React.FC<GTDTaskCardProps> = ({ task, index, clientName, onClick, onStartSession, activeSession, onStopSession }) => {
+// Apple-style colors
+const APPLE_COLORS = {
+    background: '#ffffff',
+    backgroundHover: '#f5f5f7',
+    backgroundActive: '#e8f5e9',
+    border: 'rgba(0, 0, 0, 0.04)',
+    textPrimary: '#1d1d1f',
+    textSecondary: '#86868b',
+    accent: '#007aff',
+    success: '#34c759',
+    warning: '#ff9500',
+    danger: '#ff3b30',
+    gray: '#f5f5f7',
+};
+
+const GTDTaskCard: React.FC<GTDTaskCardProps> = ({
+    task,
+    index,
+    clientName,
+    onClick,
+    onStartSession,
+    activeSession,
+    onStopSession
+}) => {
     const navigate = useNavigate();
     const isDone = task.status === 'done';
     const priorityColor = PRIORITY_COLORS[task.priority || 'none'];
     const hasPriority = task.priority && task.priority !== 'none';
-
-    // Check if this task is active
     const isActive = activeSession && activeSession.relatedTaskId === task.id;
 
     const handleTitleClick = (e: React.MouseEvent) => {
@@ -49,22 +69,12 @@ const GTDTaskCard: React.FC<GTDTaskCardProps> = ({ task, index, clientName, onCl
 
     const handlePlayClick = (e: React.MouseEvent) => {
         e.stopPropagation();
-        if (onStartSession) {
-            onStartSession(task);
-        }
+        if (onStartSession) onStartSession(task);
     };
 
     const handleStopClick = (e: React.MouseEvent) => {
         e.stopPropagation();
-        if (onStopSession) {
-            onStopSession(task);
-        }
-    }
-
-    const handleNoteClick = (e: React.MouseEvent) => {
-        e.stopPropagation();
-        // Legacy: sourceNoteId was used for notes, now just open the task itself
-        navigate(`/crm/gtd/${task.id}`);
+        if (onStopSession) onStopSession(task);
     };
 
     return (
@@ -75,205 +85,285 @@ const GTDTaskCard: React.FC<GTDTaskCardProps> = ({ task, index, clientName, onCl
                     {...provided.draggableProps}
                     {...provided.dragHandleProps}
                     sx={{
+                        // Apple-style card design
                         mb: 1.5,
-                        backgroundColor: isActive ? '#f0fdf4' : (snapshot.isDragging ? '#f0f9ff' : isDone ? '#f9fafb' : 'white'),
-                        boxShadow: snapshot.isDragging ? 4 : (isActive ? 3 : 1),
+                        backgroundColor: isActive
+                            ? APPLE_COLORS.backgroundActive
+                            : (snapshot.isDragging ? '#f0f9ff' : isDone ? '#fafafa' : APPLE_COLORS.background),
+                        borderRadius: '16px',
+                        boxShadow: snapshot.isDragging
+                            ? '0 20px 40px rgba(0,0,0,0.15)'
+                            : (isActive
+                                ? '0 4px 20px rgba(52, 199, 89, 0.2)'
+                                : '0 1px 3px rgba(0,0,0,0.04), 0 4px 12px rgba(0,0,0,0.04)'),
+                        border: isActive
+                            ? `2px solid ${APPLE_COLORS.success}`
+                            : `1px solid ${APPLE_COLORS.border}`,
                         cursor: 'grab',
-                        borderLeft: isActive ? '4px solid #22c55e' : (hasPriority ? `4px solid ${priorityColor}` : 'none'),
-                        opacity: isDone ? 0.7 : 1,
-                        transition: 'all 0.2s ease-in-out',
-                        transform: snapshot.isDragging ? 'rotate(3deg)' : 'none',
+                        opacity: isDone ? 0.6 : 1,
+                        transition: 'all 0.3s cubic-bezier(0.25, 0.1, 0.25, 1)',
+                        transform: snapshot.isDragging ? 'scale(1.02) rotate(2deg)' : 'none',
+                        overflow: 'visible',
                         '&:hover': {
-                            boxShadow: 3,
+                            boxShadow: '0 4px 20px rgba(0,0,0,0.08)',
                             transform: 'translateY(-2px)',
-                            backgroundColor: isActive ? '#dcfce7' : (isDone ? '#f3f4f6' : '#fafafa')
+                            backgroundColor: isDone ? '#f5f5f7' : APPLE_COLORS.backgroundHover
+                        },
+                        '&:active': {
+                            transform: 'scale(0.98)',
                         }
                     }}
                     onClick={() => onClick(task)}
                 >
-                    <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
-                        <Box display="flex" justifyContent="space-between" alignItems="flex-start">
-                            {/* Drag Handle - shows on hover */}
+                    <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
+                        {/* Header: Drag Handle + Title */}
+                        <Box display="flex" alignItems="flex-start" gap={1}>
+                            {/* Drag Handle - Apple style */}
                             <Box
                                 sx={{
                                     display: 'flex',
                                     alignItems: 'center',
-                                    mr: 0.5,
-                                    ml: -0.5,
-                                    opacity: 0.4,
-                                    transition: 'opacity 0.2s',
-                                    '&:hover': { opacity: 0.8 }
+                                    justifyContent: 'center',
+                                    width: 28,
+                                    height: 28,
+                                    borderRadius: '8px',
+                                    backgroundColor: 'transparent',
+                                    transition: 'all 0.2s',
+                                    '&:hover': {
+                                        backgroundColor: APPLE_COLORS.gray
+                                    }
                                 }}
                             >
-                                <DragIndicatorIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
+                                <DragIndicatorIcon sx={{ fontSize: 18, color: APPLE_COLORS.textSecondary }} />
                             </Box>
+
+                            {/* Title */}
                             <Typography
-                                component={Link}
-                                href={`/crm/gtd/${task.id}`}
-                                variant="body2"
-                                fontWeight="medium"
+                                component="span"
                                 onClick={handleTitleClick}
                                 sx={{
-                                    textDecoration: isDone ? 'line-through' : 'none',
-                                    color: isDone ? 'text.secondary' : 'text.primary',
                                     flex: 1,
-                                    pr: 1,
+                                    fontSize: '15px',
+                                    fontWeight: 600,
+                                    lineHeight: 1.4,
+                                    letterSpacing: '-0.01em',
+                                    color: isDone ? APPLE_COLORS.textSecondary : APPLE_COLORS.textPrimary,
+                                    textDecoration: isDone ? 'line-through' : 'none',
                                     cursor: 'pointer',
-                                    '&:hover': { color: 'primary.main', textDecoration: 'underline' }
+                                    fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, sans-serif',
+                                    '&:hover': {
+                                        color: APPLE_COLORS.accent
+                                    }
                                 }}
                             >
                                 {task.title}
                             </Typography>
-                            <Box display="flex" gap={0.5} sx={{ mt: -0.5, mr: -0.5 }}>
-                                {!isDone && (
-                                    <>
-                                        {isActive && onStopSession ? (
-                                            <IconButton
-                                                size="small"
-                                                onClick={handleStopClick}
-                                                sx={{
-                                                    transition: 'all 0.2s',
-                                                    color: 'error.main',
-                                                    '&:hover': {
-                                                        bgcolor: 'error.light',
-                                                        transform: 'scale(1.1)'
-                                                    }
-                                                }}
-                                                title="Stop Timer"
-                                            >
-                                                <StopIcon sx={{ fontSize: 18 }} />
-                                            </IconButton>
-                                        ) : (
-                                            onStartSession && (
-                                                <IconButton
-                                                    size="small"
-                                                    className="play-button"
-                                                    onClick={handlePlayClick}
-                                                    sx={{
-                                                        opacity: 0.7, // Visible by default for mobile
-                                                        transition: 'all 0.2s',
-                                                        color: 'success.main',
-                                                        '&:hover': {
-                                                            opacity: 1,
-                                                            bgcolor: 'success.light',
-                                                            transform: 'scale(1.1)'
-                                                        }
-                                                    }}
-                                                    title="Start Timer"
-                                                >
-                                                    <PlayArrowIcon sx={{ fontSize: 18 }} />
-                                                </IconButton>
-                                            )
-                                        )}
-                                    </>
-                                )}
-                                <IconButton
-                                    size="small"
-                                    sx={{
-                                        opacity: 0.5,
-                                        '&:hover': { opacity: 1 }
-                                    }}
-                                >
-                                    <EditIcon sx={{ fontSize: 16 }} />
-                                </IconButton>
-                                {task.sourceNoteId && (
-                                    <Tooltip title="Open in Cockpit">
-                                        <IconButton
-                                            size="small"
-                                            onClick={handleNoteClick}
-                                            sx={{
-                                                opacity: 0.6,
-                                                color: 'info.main',
-                                                '&:hover': {
-                                                    opacity: 1,
-                                                    bgcolor: 'info.light',
-                                                    transform: 'scale(1.1)'
-                                                }
-                                            }}
-                                        >
-                                            <DescriptionIcon sx={{ fontSize: 16 }} />
-                                        </IconButton>
-                                    </Tooltip>
-                                )}
-                            </Box>
-                        </Box>
 
-                        <Box display="flex" gap={0.5} flexWrap="wrap" mt={1} alignItems="center">
-                            {/* Priority Badge */}
+                            {/* Priority indicator - subtle dot */}
                             {hasPriority && (
-                                <Chip
-                                    icon={<FlagIcon sx={{ fontSize: 14, color: `${priorityColor} !important` }} />}
-                                    label={PRIORITY_LABELS[task.priority!] || 'Priority'}
-                                    size="small"
+                                <Box
                                     sx={{
-                                        height: 20,
-                                        fontSize: '0.65rem',
-                                        bgcolor: `${priorityColor}15`,
-                                        color: priorityColor,
-                                        border: `1px solid ${priorityColor}40`,
-                                        '& .MuiChip-icon': { ml: 0.5 }
+                                        width: 8,
+                                        height: 8,
+                                        borderRadius: '50%',
+                                        backgroundColor: priorityColor,
+                                        flexShrink: 0,
+                                        mt: 0.8
                                     }}
                                 />
                             )}
+                        </Box>
 
-                            {/* Client Badge */}
+                        {/* Tags Row - Apple style chips */}
+                        <Box display="flex" gap={0.75} flexWrap="wrap" mt={1.5} alignItems="center">
                             {clientName && (
                                 <Chip
                                     label={clientName}
                                     size="small"
                                     sx={{
-                                        height: 20,
-                                        fontSize: '0.65rem',
-                                        bgcolor: '#fef3c7',
-                                        color: '#92400e',
-                                        border: '1px solid #fcd34d',
+                                        height: 26,
+                                        fontSize: '12px',
+                                        fontWeight: 500,
+                                        borderRadius: '8px',
+                                        bgcolor: '#fff3cd',
+                                        color: '#856404',
+                                        border: 'none',
+                                        fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif',
                                     }}
                                 />
                             )}
 
-                            {/* Assignee Badge with Accepted indicator */}
                             {task.assigneeName && (
                                 <Chip
-                                    icon={task.acceptedAt ?
-                                        <CheckCircleIcon sx={{ fontSize: 14, color: '#22c55e !important' }} /> :
-                                        <PersonIcon sx={{ fontSize: 14 }} />}
+                                    icon={task.acceptedAt
+                                        ? <CheckCircleIcon sx={{ fontSize: 14, color: `${APPLE_COLORS.success} !important` }} />
+                                        : <PersonIcon sx={{ fontSize: 14 }} />
+                                    }
                                     label={task.assigneeName}
                                     size="small"
                                     sx={{
-                                        height: 20,
-                                        fontSize: '0.65rem',
-                                        bgcolor: task.acceptedAt ? '#dcfce7' : '#dbeafe',
-                                        color: task.acceptedAt ? '#166534' : '#1e40af',
-                                        border: task.acceptedAt ? '1px solid #86efac' : '1px solid #93c5fd',
-                                        '& .MuiChip-icon': { ml: 0.5, color: task.acceptedAt ? '#22c55e' : '#1e40af' }
+                                        height: 26,
+                                        fontSize: '12px',
+                                        fontWeight: 500,
+                                        borderRadius: '8px',
+                                        bgcolor: task.acceptedAt ? '#dcfce7' : APPLE_COLORS.gray,
+                                        color: task.acceptedAt ? '#166534' : APPLE_COLORS.textPrimary,
+                                        border: 'none',
+                                        '& .MuiChip-icon': { ml: 0.5 }
                                     }}
                                 />
                             )}
 
-                            {/* Context Badge */}
+                            {/* Co-assignee avatars */}
+                            {task.coAssignees && task.coAssignees.length > 0 && (
+                                <Tooltip title={task.coAssignees.map(ca => `${ca.name} (${ca.role === 'executor' ? 'Исп.' : ca.role === 'reviewer' ? 'Рев.' : 'Набл.'})`).join(', ')}>
+                                    <AvatarGroup
+                                        max={3}
+                                        sx={{
+                                            '& .MuiAvatar-root': {
+                                                width: 22,
+                                                height: 22,
+                                                fontSize: '0.65rem',
+                                                fontWeight: 600,
+                                                border: '2px solid #fff',
+                                                bgcolor: '#6366f1',
+                                                color: '#fff'
+                                            }
+                                        }}
+                                    >
+                                        {task.coAssignees.map(ca => (
+                                            <Avatar key={ca.id}>{ca.name?.charAt(0).toUpperCase()}</Avatar>
+                                        ))}
+                                    </AvatarGroup>
+                                </Tooltip>
+                            )}
+
                             {task.context && (
                                 <Chip
                                     label={task.context}
                                     size="small"
                                     sx={{
-                                        height: 20,
-                                        fontSize: '0.65rem',
+                                        height: 26,
+                                        fontSize: '12px',
+                                        fontWeight: 500,
+                                        borderRadius: '8px',
                                         bgcolor: '#e0e7ff',
-                                        color: '#4338ca'
+                                        color: '#4338ca',
+                                        border: 'none',
                                     }}
                                 />
                             )}
 
-                            {/* Due Date */}
                             {task.dueDate && (
-                                <Box display="flex" alignItems="center" color="text.secondary" ml="auto">
-                                    <AccessTimeIcon sx={{ fontSize: 14, mr: 0.3 }} />
-                                    <Typography variant="caption" sx={{ fontSize: '0.65rem' }}>
+                                <Box display="flex" alignItems="center" color={APPLE_COLORS.textSecondary} ml="auto">
+                                    <AccessTimeIcon sx={{ fontSize: 14, mr: 0.5 }} />
+                                    <Typography
+                                        variant="caption"
+                                        sx={{
+                                            fontSize: '12px',
+                                            fontWeight: 500,
+                                            fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif'
+                                        }}
+                                    >
                                         {new Date(task.dueDate.seconds * 1000).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
                                     </Typography>
                                 </Box>
                             )}
                         </Box>
+
+                        {/* Action Buttons Row - Apple 44pt touch targets */}
+                        {!isDone && (
+                            <Box
+                                display="flex"
+                                justifyContent="space-between"
+                                alignItems="center"
+                                mt={2}
+                                pt={1.5}
+                                sx={{
+                                    borderTop: `1px solid ${APPLE_COLORS.border}`
+                                }}
+                            >
+                                {/* Play/Stop Button */}
+                                {isActive && onStopSession ? (
+                                    <Tooltip title="Stop Timer" arrow>
+                                        <IconButton
+                                            onClick={handleStopClick}
+                                            sx={{
+                                                width: 44,
+                                                height: 44,
+                                                borderRadius: '12px',
+                                                backgroundColor: 'rgba(255, 59, 48, 0.12)',
+                                                color: APPLE_COLORS.danger,
+                                                transition: 'all 0.2s cubic-bezier(0.25, 0.1, 0.25, 1)',
+                                                '&:hover': {
+                                                    backgroundColor: APPLE_COLORS.danger,
+                                                    color: 'white',
+                                                    transform: 'scale(1.05)'
+                                                },
+                                                '&:active': {
+                                                    transform: 'scale(0.95)'
+                                                }
+                                            }}
+                                        >
+                                            <StopIcon sx={{ fontSize: 24 }} />
+                                        </IconButton>
+                                    </Tooltip>
+                                ) : (
+                                    onStartSession && (
+                                        <Tooltip title="Start Timer" arrow>
+                                            <IconButton
+                                                onClick={handlePlayClick}
+                                                sx={{
+                                                    width: 44,
+                                                    height: 44,
+                                                    borderRadius: '12px',
+                                                    backgroundColor: 'rgba(52, 199, 89, 0.12)',
+                                                    color: APPLE_COLORS.success,
+                                                    transition: 'all 0.2s cubic-bezier(0.25, 0.1, 0.25, 1)',
+                                                    '&:hover': {
+                                                        backgroundColor: APPLE_COLORS.success,
+                                                        color: 'white',
+                                                        transform: 'scale(1.05)'
+                                                    },
+                                                    '&:active': {
+                                                        transform: 'scale(0.95)'
+                                                    }
+                                                }}
+                                            >
+                                                <PlayArrowIcon sx={{ fontSize: 24 }} />
+                                            </IconButton>
+                                        </Tooltip>
+                                    )
+                                )}
+
+                                {/* Spacer when no play button */}
+                                {!onStartSession && !isActive && <Box />}
+
+                                {/* Edit Button */}
+                                <Tooltip title="Edit Task" arrow>
+                                    <IconButton
+                                        sx={{
+                                            width: 44,
+                                            height: 44,
+                                            borderRadius: '12px',
+                                            backgroundColor: APPLE_COLORS.gray,
+                                            color: APPLE_COLORS.textSecondary,
+                                            transition: 'all 0.2s cubic-bezier(0.25, 0.1, 0.25, 1)',
+                                            '&:hover': {
+                                                backgroundColor: '#e5e5e7',
+                                                color: APPLE_COLORS.textPrimary,
+                                                transform: 'scale(1.05)'
+                                            },
+                                            '&:active': {
+                                                transform: 'scale(0.95)'
+                                            }
+                                        }}
+                                    >
+                                        <EditIcon sx={{ fontSize: 20 }} />
+                                    </IconButton>
+                                </Tooltip>
+                            </Box>
+                        )}
                     </CardContent>
                 </Card>
             )}

@@ -45,6 +45,8 @@ import {
     Delete as DeleteIcon,
     CalendarMonth as CalendarIcon,
     AccessTime as TimeIcon,
+    Search as SearchIcon,
+    OpenInNew as OpenInNewIcon,
 } from '@mui/icons-material';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
@@ -161,6 +163,7 @@ const GTDCreatePage: React.FC = () => {
     const [clients, setClients] = useState<Client[]>([]);
     const [users, setUsers] = useState<UserProfile[]>([]);
     const [newSubtask, setNewSubtask] = useState('');
+    const [clientSearch, setClientSearch] = useState('');
 
     // Target column from URL
     const targetColumn = (searchParams.get('column') as GTDStatus) || 'inbox';
@@ -371,6 +374,12 @@ const GTDCreatePage: React.FC = () => {
                 createdAt: Timestamp.now(),
             }));
 
+            // Build co-assignees from assignees[1..] (first is main assignee)
+            const coAssigneeUsers = formData.assignees.slice(1).map(id => {
+                const u = users.find(user => user.id === id);
+                return { id, name: u?.displayName || '', role: 'executor' as const };
+            });
+
             // Create task
             const taskData = {
                 ownerId: currentUser.uid,
@@ -388,6 +397,8 @@ const GTDCreatePage: React.FC = () => {
                 assigneeName: formData.assignees[0]
                     ? users.find(u => u.id === formData.assignees[0])?.displayName
                     : null,
+                coAssignees: coAssigneeUsers.length > 0 ? coAssigneeUsers : [],
+                coAssigneeIds: coAssigneeUsers.map(c => c.id),
                 checklistItems: checklistItems.length > 0 ? checklistItems : null,
                 context: '@office',
                 source: 'web',
@@ -567,42 +578,137 @@ const GTDCreatePage: React.FC = () => {
                             </Collapse>
                         )}
 
+                        {/* Checklist - Available from Step 1 */}
+                        <Box sx={{ mb: 3 }}>
+                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                                <Typography variant="body2" color="text.secondary">
+                                    📋 Чек-лист (опционально)
+                                </Typography>
+                            </Box>
+
+                            {formData.subtasks.length > 0 && (
+                                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, mb: 1 }}>
+                                    {formData.subtasks.map((s, i) => (
+                                        <Paper key={s.id} sx={{ p: 1, borderRadius: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
+                                            <Typography color="text.secondary" sx={{ width: 24, fontSize: '0.85rem' }}>{i + 1}</Typography>
+                                            <Typography sx={{ flex: 1, fontSize: '0.9rem' }}>{s.text}</Typography>
+                                            <IconButton size="small" onClick={() => removeSubtask(s.id)}>
+                                                <DeleteIcon fontSize="small" />
+                                            </IconButton>
+                                        </Paper>
+                                    ))}
+                                </Box>
+                            )}
+
+                            <TextField
+                                fullWidth
+                                size="small"
+                                value={newSubtask}
+                                onChange={e => setNewSubtask(e.target.value)}
+                                placeholder="Добавить пункт чек-листа..."
+                                onKeyDown={e => e.key === 'Enter' && addSubtask()}
+                                sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+                                InputProps={{
+                                    endAdornment: (
+                                        <InputAdornment position="end">
+                                            <IconButton size="small" onClick={addSubtask}>
+                                                <AddIcon />
+                                            </IconButton>
+                                        </InputAdornment>
+                                    )
+                                }}
+                            />
+                        </Box>
+
                         {/* Project/Client Selection */}
                         <Typography variant="body2" color="text.secondary" gutterBottom>
                             Проект (опционально)
                         </Typography>
+
+                        {/* Client Search */}
+                        {clients.length > 5 && (
+                            <TextField
+                                fullWidth
+                                size="small"
+                                value={clientSearch}
+                                onChange={e => setClientSearch(e.target.value)}
+                                placeholder="Поиск проекта..."
+                                sx={{ mb: 1, '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+                                InputProps={{
+                                    startAdornment: (
+                                        <InputAdornment position="start">
+                                            <SearchIcon fontSize="small" color="action" />
+                                        </InputAdornment>
+                                    ),
+                                    endAdornment: clientSearch ? (
+                                        <InputAdornment position="end">
+                                            <IconButton size="small" onClick={() => setClientSearch('')}>
+                                                <CloseIcon fontSize="small" />
+                                            </IconButton>
+                                        </InputAdornment>
+                                    ) : null
+                                }}
+                            />
+                        )}
+
                         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                            {clients.slice(0, 5).map(client => (
-                                <Paper
-                                    key={client.id}
-                                    onClick={() => setFormData(prev => ({
-                                        ...prev,
-                                        clientId: prev.clientId === client.id ? null : client.id,
-                                        clientName: prev.clientId === client.id ? null : client.name,
-                                    }))}
-                                    sx={{
-                                        p: 2,
-                                        borderRadius: 2,
-                                        cursor: 'pointer',
-                                        border: 2,
-                                        borderColor: formData.clientId === client.id
-                                            ? 'primary.main'
-                                            : 'divider',
-                                        bgcolor: formData.clientId === client.id
-                                            ? alpha(theme.palette.primary.main, 0.08)
-                                            : 'background.paper',
-                                        transition: 'all 0.2s',
-                                        '&:active': { transform: 'scale(0.98)' }
-                                    }}
-                                >
-                                    <Typography fontWeight="medium">{client.name}</Typography>
-                                    {client.address && (
-                                        <Typography variant="caption" color="text.secondary">
-                                            {client.address}
-                                        </Typography>
-                                    )}
-                                </Paper>
-                            ))}
+                            {clients
+                                .filter(c => !clientSearch || c.name.toLowerCase().includes(clientSearch.toLowerCase()))
+                                .map(client => (
+                                    <Paper
+                                        key={client.id}
+                                        onClick={() => setFormData(prev => ({
+                                            ...prev,
+                                            clientId: prev.clientId === client.id ? null : client.id,
+                                            clientName: prev.clientId === client.id ? null : client.name,
+                                        }))}
+                                        sx={{
+                                            p: 2,
+                                            borderRadius: 2,
+                                            cursor: 'pointer',
+                                            border: 2,
+                                            borderColor: formData.clientId === client.id
+                                                ? 'primary.main'
+                                                : 'divider',
+                                            bgcolor: formData.clientId === client.id
+                                                ? alpha(theme.palette.primary.main, 0.08)
+                                                : 'background.paper',
+                                            transition: 'all 0.2s',
+                                            '&:active': { transform: 'scale(0.98)' }
+                                        }}
+                                    >
+                                        <Typography fontWeight="medium">{client.name}</Typography>
+                                        {client.address && (
+                                            <Typography variant="caption" color="text.secondary">
+                                                {client.address}
+                                            </Typography>
+                                        )}
+                                    </Paper>
+                                ))}
+
+                            {/* Add New Project Link */}
+                            <Paper
+                                onClick={() => navigate('/crm/clients/new')}
+                                sx={{
+                                    p: 2,
+                                    borderRadius: 2,
+                                    cursor: 'pointer',
+                                    border: 2,
+                                    borderColor: 'divider',
+                                    borderStyle: 'dashed',
+                                    bgcolor: 'background.paper',
+                                    transition: 'all 0.2s',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 1,
+                                    '&:hover': { borderColor: 'primary.main', bgcolor: alpha(theme.palette.primary.main, 0.04) },
+                                    '&:active': { transform: 'scale(0.98)' }
+                                }}
+                            >
+                                <AddIcon color="primary" fontSize="small" />
+                                <Typography fontWeight="medium" color="primary.main">Добавить проект</Typography>
+                                <OpenInNewIcon fontSize="small" color="action" sx={{ ml: 'auto' }} />
+                            </Paper>
                         </Box>
                     </Box>
                 </Fade>

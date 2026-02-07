@@ -420,12 +420,75 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // ==================== INVENTORY ====================
+
+    // Inventory Catalog (materials, tools, equipment)
+    match /inventory_catalog/{itemId} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn();
+      allow delete: if isAdmin();
+    }
+
+    // Inventory Transactions (journal — append-only)
+    match /inventory_transactions/{txId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update: if isAdmin();
+      allow delete: if false; // NEVER delete transactions
+    }
+
+    // Inventory Locations (warehouses, vehicles, jobsites)
+    match /inventory_locations/{locId} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn();
+      allow delete: if isAdmin();
+    }
+
+    // Inventory Reservations
+    match /inventory_reservations/{resId} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn();
+      allow delete: if isAdmin();
+    }
+
     // Project Ledger (Project-level accounting)
     match /project_ledger/{entryId} {
       allow read: if isSignedIn();
       allow create: if isSignedIn();
       allow update: if isAdmin();
       allow delete: if isAdmin();
+    }
+
+    // Bank Statements (Tax sorting module)
+    match /bank_statements/{statementId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update: if isSignedIn();
+      allow delete: if isAdmin();
+    }
+
+    // Bank Transactions (Individual parsed transactions)
+    match /bank_transactions/{txId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update: if isSignedIn();
+      allow delete: if isAdmin();
+    }
+
+    // Bank Category Rules (AI learning)
+    match /bank_category_rules/{ruleId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update: if isSignedIn();
+      allow delete: if isAdmin();
+    }
+
+    // Vendor Rules (User-defined category mappings)
+    match /vendor_rules/{ruleId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update: if isSignedIn();
+      allow delete: if isSignedIn();
     }
 
     // ==================== DEFAULT DENY ====================

@@ -18,6 +18,7 @@ const DashboardPage = React.lazy(() => import('../pages/DashboardPage'));
 const ProfilePage = React.lazy(() => import('../pages/ProfilePage'));
 const SettingsPage = React.lazy(() => import('../pages/SettingsPage'));
 const TeamAdminPage = React.lazy(() => import('../pages/admin/TeamAdminPage'));
+const UserDetailPage = React.lazy(() => import('../pages/admin/UserDetailPage'));
 const EstimatesPage = React.lazy(() => import('../pages/estimates/EstimatesPage'));
 const EstimateBuilderPage = React.lazy(() => import('../pages/estimates/EstimateBuilderPage'));
 const ElectricalEstimatorPage = React.lazy(() => import('../pages/estimates/ElectricalEstimatorPage'));
@@ -129,6 +130,7 @@ const AppRouter: React.FC = () => {
 
           {/* Управление командой */}
           <Route path="/admin/team" element={<TeamAdminPage />} />
+          <Route path="/admin/team/:userId" element={<UserDetailPage />} />
 
           {/* Роли и права доступа */}
           <Route path="/admin/roles" element={<RolesPage />} />

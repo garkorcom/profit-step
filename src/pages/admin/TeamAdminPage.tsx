@@ -51,6 +51,7 @@ import {
   AccountTree as TreeIcon,
 } from '@mui/icons-material';
 import { useAuth } from '../../auth/AuthContext';
+import { useNavigate } from 'react-router-dom';
 import { UserProfile, UserRole, UserStatus, DEPARTMENT_LABELS } from '../../types/user.types';
 import {
   updateUserRole,
@@ -105,6 +106,7 @@ interface CachedPage {
 
 const TeamAdminPage: React.FC = () => {
   const { userProfile } = useAuth();
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 
   // ============================================
@@ -913,6 +915,9 @@ const TeamAdminPage: React.FC = () => {
       )}
       {/* Actions Menu */}
       <Menu anchorEl={anchorEl} open={Boolean(anchorEl)} onClose={handleMenuClose}>
+        <MenuItem onClick={() => { handleMenuClose(); menuUser && navigate(`/admin/team/${menuUser.id}`); }}>
+          Управление
+        </MenuItem>
         <MenuItem onClick={() => menuUser && handleEditProfile(menuUser)}>
           Редактировать профиль
         </MenuItem>

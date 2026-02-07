@@ -54,6 +54,9 @@ export {
 // Admin: Create user with password and hierarchy
 export { admin_createUserWithPassword } from './adminCreateUserWithPassword';
 
+// Admin: User management (password reset, force logout, email change, telegram)
+export { admin_manageUser } from './adminManageUser';
+
 const db = admin.firestore();
 
 /**

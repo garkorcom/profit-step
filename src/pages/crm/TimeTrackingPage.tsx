@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import {
     Container, Typography, Box, Paper, Button, Tabs, Tab,
     CircularProgress
@@ -67,6 +67,10 @@ const TimeTrackingPage: React.FC = () => {
 
     // Refresh trigger
     const [refreshKey, setRefreshKey] = useState(0);
+
+    // Employee identity normalization maps
+    const telegramIdToUidRef = useRef<Map<string, string>>(new Map());
+    const uidToNameRef = useRef<Map<string, string>>(new Map());
 
     // --- Handlers ---
 
@@ -240,6 +244,27 @@ const TimeTrackingPage: React.FC = () => {
         const fetchSessions = async () => {
             setLoading(true);
             try {
+                // First, build employee identity mapping if not yet built
+                if (telegramIdToUidRef.current.size === 0) {
+                    try {
+                        const usersSnap = await getDocs(collection(db, 'users'));
+                        const tgMap = new Map<string, string>();
+                        const nameMap = new Map<string, string>();
+                        usersSnap.docs.forEach(d => {
+                            const data = d.data();
+                            const name = data.displayName || data.name || 'Unknown';
+                            nameMap.set(d.id, name);
+                            if (data.telegramId) {
+                                tgMap.set(String(data.telegramId), d.id);
+                            }
+                        });
+                        telegramIdToUidRef.current = tgMap;
+                        uidToNameRef.current = nameMap;
+                    } catch (e) {
+                        console.error('Error fetching users for normalization:', e);
+                    }
+                }
+
                 const startTs = Timestamp.fromDate(startDate);
                 const endTs = Timestamp.fromDate(endDate);
 
@@ -251,10 +276,30 @@ const TimeTrackingPage: React.FC = () => {
                 );
 
                 const snapshot = await getDocs(q);
-                const data = snapshot.docs.map(doc => ({
+                const rawData = snapshot.docs.map(doc => ({
                     id: doc.id,
                     ...doc.data()
                 })) as WorkSession[];
+
+                // Normalize employeeId: map Telegram numeric IDs to user UIDs
+                const data = rawData.map(session => {
+                    const rawId = String(session.employeeId);
+                    const mappedUid = telegramIdToUidRef.current.get(rawId);
+                    if (mappedUid) {
+                        return {
+                            ...session,
+                            employeeId: mappedUid,
+                            employeeName: uidToNameRef.current.get(mappedUid) || session.employeeName
+                        };
+                    }
+                    if (uidToNameRef.current.has(rawId)) {
+                        return {
+                            ...session,
+                            employeeName: uidToNameRef.current.get(rawId) || session.employeeName
+                        };
+                    }
+                    return session;
+                });
 
                 setSessions(data);
             } catch (error) {
@@ -271,16 +316,45 @@ const TimeTrackingPage: React.FC = () => {
 
     // Group employees by ID to avoid duplicates from name variations
     const uniqueEmployees = useMemo(() => {
+        // First pass: collect by employeeId
         const empMap = new Map<string, string>();
         sessions.forEach(s => {
-            if (s.employeeId && !empMap.has(String(s.employeeId))) {
+            if (s.employeeId && s.employeeName) {
                 empMap.set(String(s.employeeId), s.employeeName);
             }
         });
-        return Array.from(empMap.entries())
-            .map(([id, name]) => ({ id, name }))
-            .sort((a, b) => a.name.localeCompare(b.name));
+
+        // Second pass: deduplicate by normalized name
+        const byNormalizedName = new Map<string, { id: string; name: string }>();
+        empMap.forEach((name, id) => {
+            const cleanName = name.replace(/[\u200B-\u200D\uFEFF\u3164\s]+/g, ' ').trim();
+            const normalizedKey = cleanName.toLowerCase();
+            if (!byNormalizedName.has(normalizedKey)) {
+                byNormalizedName.set(normalizedKey, { id, name: cleanName });
+            }
+        });
+
+        return Array.from(byNormalizedName.values()).sort((a, b) => a.name.localeCompare(b.name));
     }, [sessions]);
+
+    // Build mapping from canonical employee ID to all associated IDs
+    const employeeIdGroups = useMemo(() => {
+        const groups = new Map<string, Set<string>>();
+        const nameToIds = new Map<string, Set<string>>();
+        sessions.forEach(s => {
+            if (s.employeeId && s.employeeName) {
+                const cleanName = s.employeeName.replace(/[\u200B-\u200D\uFEFF\u3164\s]+/g, ' ').trim().toLowerCase();
+                if (!nameToIds.has(cleanName)) nameToIds.set(cleanName, new Set());
+                nameToIds.get(cleanName)!.add(String(s.employeeId));
+            }
+        });
+        uniqueEmployees.forEach(emp => {
+            const normalizedName = emp.name.toLowerCase();
+            const allIds = nameToIds.get(normalizedName) || new Set([emp.id]);
+            groups.set(emp.id, allIds);
+        });
+        return groups;
+    }, [sessions, uniqueEmployees]);
 
     const uniqueClients = useMemo(() =>
         Array.from(new Set(sessions.map(s => s.clientName))).sort(),
@@ -310,7 +384,10 @@ const TimeTrackingPage: React.FC = () => {
                 return false;
             }
 
-            const matchEmployee = filterEmployeeId ? String(s.employeeId) === filterEmployeeId : true;
+            // Use employeeIdGroups to match all IDs for a deduped employee
+            const matchEmployee = filterEmployeeId
+                ? (employeeIdGroups.get(filterEmployeeId)?.has(String(s.employeeId)) ?? String(s.employeeId) === filterEmployeeId)
+                : true;
             const matchClient = filterClient ? s.clientName === filterClient : true;
 
             // Enhanced status filtering
@@ -333,7 +410,7 @@ const TimeTrackingPage: React.FC = () => {
 
             return matchEmployee && matchClient && matchStatus;
         });
-    }, [sessions, filterEmployeeId, filterClient, filterStatus]);
+    }, [sessions, filterEmployeeId, filterClient, filterStatus, employeeIdGroups]);
 
     const stats = useMemo(() => {
         let totalMinutes = 0;

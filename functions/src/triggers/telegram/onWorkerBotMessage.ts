@@ -8,9 +8,8 @@ import { findNearbyProject, saveProjectLocation, updateLocationLastUsed } from '
 import * as ShoppingHandler from './handlers/shoppingHandler';
 import * as InboxHandler from './handlers/inboxHandler';
 import * as GtdHandler from './handlers/gtdHandler';
-import { sendMessage, getActiveSession, sendMainMenu } from './telegramUtils';
-// TODO Phase 1: Use UserContext for optimized DB calls
-// import { buildUserContext, UserContext, toInboxContext } from './userContext';
+import { sendMessage, getActiveSession, getActiveSessionStrict, sendMainMenu, findPlatformUser } from './telegramUtils';
+import { resolveHourlyRate } from './rateUtils';
 
 // Initialize in the file if not already initialized
 if (admin.apps.length === 0) {
@@ -245,7 +244,7 @@ async function handleMessage(message: any) {
         if (!activeSessionForMedia && message.photo) {
             // Check for forwarded message
             if (message.forward_from) {
-                const platformUser = await InboxHandler.findPlatformUserForInbox(userId);
+                const platformUser = await findPlatformUser(userId);
                 await InboxHandler.handleInboxForward({
                     chatId, userId, userName, messageId: message.message_id,
                     platformUserId: platformUser?.id
@@ -253,7 +252,7 @@ async function handleMessage(message: any) {
                 return;
             }
             // Route to inbox for photos (unless starting work session)
-            const platformUser = await InboxHandler.findPlatformUserForInbox(userId);
+            const platformUser = await findPlatformUser(userId);
             await InboxHandler.handleInboxPhoto({
                 chatId, userId, userName, messageId: message.message_id,
                 platformUserId: platformUser?.id
@@ -269,13 +268,13 @@ async function handleMessage(message: any) {
         if (wasShoppingVoice) return;
 
         // Check for active session
-        const activeSessionForVoice = await getActiveSession(userId);
+        const activeSessionForVoice = await getActiveSessionStrict(userId);
         if (activeSessionForVoice) {
             // Regular voice handling (work report)
             await handleVoiceMessage(chatId, userId, message);
         } else {
             // No session - route to inbox
-            const platformUser = await InboxHandler.findPlatformUserForInbox(userId);
+            const platformUser = await findPlatformUser(userId);
             await InboxHandler.handleInboxVoice({
                 chatId, userId, userName, messageId: message.message_id,
                 platformUserId: platformUser?.id
@@ -285,7 +284,7 @@ async function handleMessage(message: any) {
         // Document without session - route to inbox
         const activeSessionForDoc = await getActiveSession(userId);
         if (!activeSessionForDoc) {
-            const platformUser = await InboxHandler.findPlatformUserForInbox(userId);
+            const platformUser = await findPlatformUser(userId);
             await InboxHandler.handleInboxDocument({
                 chatId, userId, userName, messageId: message.message_id,
                 platformUserId: platformUser?.id
@@ -298,7 +297,7 @@ async function handleMessage(message: any) {
         // Forwarded text message
         const activeSessionForFwd = await getActiveSession(userId);
         if (!activeSessionForFwd) {
-            const platformUser = await InboxHandler.findPlatformUserForInbox(userId);
+            const platformUser = await findPlatformUser(userId);
             await InboxHandler.handleInboxForward({
                 chatId, userId, userName, messageId: message.message_id,
                 platformUserId: platformUser?.id
@@ -350,7 +349,7 @@ async function handleMessage(message: any) {
             await handleText(chatId, userId, text);
         } else {
             // No session - send to inbox
-            const platformUser = await InboxHandler.findPlatformUserForInbox(userId);
+            const platformUser = await findPlatformUser(userId);
             await InboxHandler.handleInboxText({
                 chatId, userId, userName, messageId: message.message_id,
                 platformUserId: platformUser?.id
@@ -370,11 +369,11 @@ async function handleCallbackQuery(query: any) {
         if (data.startsWith('start_client_')) {
             const clientId = data.split('start_client_')[1];
             await handleClientSelection(chatId, userId, clientId);
-        } else if (data.startsWith('start_service_idx_')) {
-            // Format: start_service_idx_<clientId>_<serviceIndex>
-            const parts = data.split('_');
-            const clientId = parts[3];
-            const serviceIndex = parseInt(parts[4]);
+        } else if (data.startsWith('svc|')) {
+            // Format: svc|<clientId>|<serviceIndex>
+            const parts = data.split('|');
+            const clientId = parts[1];
+            const serviceIndex = parseInt(parts[2]);
             await handleServiceSelection(chatId, userId, clientId, serviceIndex);
         } else if (data === 'cancel_selection') {
             await sendMessage(chatId, "Selection cancelled.");
@@ -528,7 +527,7 @@ async function handleClientSelection(chatId: number, userId: number, clientId: s
     if (services.length > 0) {
         // Show Service Selection Menu
         const inlineKeyboard = services.map((service: string, index: number) => {
-            return [{ text: service, callback_data: `start_service_idx_${clientId}_${index}` }];
+            return [{ text: service, callback_data: `svc|${clientId}|${index}` }];
         });
         inlineKeyboard.push([{ text: "🔙 Back", callback_data: "start_client_" + clientId }]); // Loopback or cancel? Better just cancel or re-list. Let's do cancel for simplicity or restart list.
         // Actually "Back" to client list is better but we need to re-fetch.
@@ -577,37 +576,16 @@ async function initWorkSession(chatId: number, userId: number, clientId: string,
         clientName = `${clientName} - ${serviceName}`;
     }
 
-    // 3. Identity Sync
-    const platformUser = await findPlatformUser(userId);
-    let employeeName = 'Worker';
-    let platformUserId = null;
-    let companyId = null;
-    let hourlyRate = 0; // Default rate
-
-    // First get employee record (always exists for bot workers)
-    const empDoc = await db.collection('employees').doc(String(userId)).get();
-    const empData = empDoc.exists ? empDoc.data() : null;
+    // 3. Identity Sync & Rate Resolution
+    const { hourlyRate, platformUser, platformUserId, companyId, employeeName } = await resolveHourlyRate(userId);
 
     if (platformUser) {
-        employeeName = platformUser.displayName || 'Worker';
-        platformUserId = platformUser.id;
-        companyId = platformUser.companyId;
-        // Priority: platformUser.hourlyRate -> employees.hourlyRate
-        hourlyRate = platformUser.hourlyRate || empData?.hourlyRate || 0;
-
         // Sync local employee record to match platform name
         await db.collection('employees').doc(String(userId)).set({
             name: employeeName,
             telegramId: userId,
-            // We preserve role if it exists, or default to worker
             updatedAt: admin.firestore.FieldValue.serverTimestamp()
         }, { merge: true });
-    } else {
-        // Fallback to local employee record only
-        if (empData) {
-            employeeName = empData.name || 'Worker';
-            hourlyRate = empData.hourlyRate || 0; // Get rate from employee doc
-        }
     }
 
     // 4. Create Session (Pending Location)
@@ -722,7 +700,7 @@ async function handleLocation(chatId: number, userId: number, location: any) {
 
             if (matchedProject && matchedProject.clientId === clientId) {
                 // Perfectly matches!
-                const timeStr = new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+                const timeStr = new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', timeZone: 'America/New_York' });
                 await sendMessage(chatId, `✅ Фото принято! Объект *${sessionData.clientName}* время старта *${timeStr}*`);
                 await sendMessage(chatId, "🚀 Сессия начата, удачной работы!");
             } else {
@@ -735,70 +713,6 @@ async function handleLocation(chatId: number, userId: number, location: any) {
             await sendMessage(chatId, "✅ Локация сохранена.");
         }
 
-        // Save location and move to next step (Skip Photo step as per new requirement? 
-        // OLD REQUIREMENT says: "If locations match... Photo accepted". 
-        // Wait, "Photo accepted" implies we already sent a photo? 
-        // In this flow (CASE 2), we just sent LOCATION. We haven't sent PHOTO yet.
-        // The prompt says: "Implement logic of comparing 3 coordinates... If match... Bot replies: 'Photo accepted!'"
-        // This implies the user sends a PHOTO with GEO.
-        // BUT here we are in `handleLocation` which handles "InputMediaLocation" or "Location Share".
-
-        // Let's re-read: "Implement logic comparing... User Location ... Project Coords ... Photo Geotag".
-        // "If locations match... Bot replies 'Photo accepted'".
-        // This suggests THIS logic belongs in `handleUnsolicitedPhoto` or `handleMediaUpload` (Start Photo).
-        // OR it suggests the flow is: Select Client -> Send Photo (with geo) -> Verify.
-        // Currently flow is: Select Client -> Send Location -> Send Photo -> Voice.
-
-        // The Prompt says: "After checking location proceed to voice request." (Screen 4).
-        // It seems to imply we SKIP the separate photo step if we do validation here?
-        // Or maybe verification happens at the Photo step?
-        // Let's look at `handleMediaUpload` (Start Photo).
-        // Currently: Awaiting Location -> Awaiting Start Photo.
-
-        // Let's implement this verification in `handleLocation` first (User shares Live Location).
-        // And we will ALSO implement it in `handleMediaUpload` if they send a photo with geodata.
-
-        // UPDATED FLOW: 
-        // 1. User sends Location.
-        // 2. We verify.
-        // 3. We reply and ask for Photo? Or Voice?
-        // Prompt says: "After checking location transition to voice request".
-        // This implies we MIGHT skip the separate text photo request? 
-        // But Screen 3 title is "Geolocation and Photo".
-        // Let's keep the Photo step but maybe the verification happens THERE?
-
-        // Actually, the prompt says "Implement logic to compare... Location sent by user... Coords of object...".
-        // "If match... Bot says: Photo accepted!". 
-        // This phrasing "Photo accepted" strongly implies this check happens when the PHOTO is received.
-        // So I should modify `handleMediaUpload` (Start Session Photo) to check the location (if available from previous step or metadata).
-
-        // HOWEVER, the `handleLocation` function is where we receive the explicit location.
-        // If the user sends location separate from photo, we store it.
-
-        // Let's update `handleLocation` to just store it.
-        // And update `handleMediaUpload` to do the check?
-        // BUT, `handleMediaUpload` (Start Photo) comes AFTER `handleLocation`.
-        // If we want to verify, we verify when we have both (or one if strict).
-
-        // Let's stick to the current flow: Location -> Photo -> Voice.
-        // I will add the check in `handleLocation` (validation of the location itself).
-        // And I will add the check in `handleUnsolicitedPhoto` (Photo-First).
-
-        // Wait, if I delete the "Photo accepted" message from here, where do I put it?
-        // The prompt says: "If locations match... Bot answers: 'Photo accepted! ... Start time ...'".
-        // Then "Session started...".
-        // Then "Voice report...".
-
-        // So the flow:
-        // 1. Client selected.
-        // 2. Request Location.
-        // 3. User sends Location. -> Bot validates.
-        // 4. Request Photo.
-        // 5. User sends Photo. -> Bot says "Photo accepted".
-
-        // Okay, I will implement validation in `handleLocation` but keep the "Photo" message for the photo step?
-        // "If locations match (with allowed radius): Bot answers 'Photo accepted!...'".
-        // This implies the check is done WHEN THE PHOTO IS SENT (using the location from the previous step).
 
         await activeSession.ref.update({
             startLocation: location,
@@ -834,26 +748,7 @@ async function handleLocationConfirmStart(chatId: number, userId: number) {
     const location = data.location;
 
     // Create session directly (skip location step since we have it)
-    const platformUser = await findPlatformUser(userId);
-    let employeeName = 'Worker';
-    let platformUserId = null;
-    let companyId = null;
-    let hourlyRate = 0;
-
-    // Check employees collection for rate (Admin UI saves here)
-    const empDoc = await db.collection('employees').doc(String(userId)).get();
-    const empData = empDoc.exists ? empDoc.data() : null;
-
-    if (platformUser) {
-        employeeName = platformUser.displayName || 'Worker';
-        platformUserId = platformUser.id;
-        companyId = platformUser.companyId;
-        // Priority: platformUser.hourlyRate -> employees.hourlyRate
-        hourlyRate = platformUser.hourlyRate || empData?.hourlyRate || 0;
-    } else if (empData) {
-        employeeName = empData.name || 'Worker';
-        hourlyRate = empData.hourlyRate || 0;
-    }
+    const { hourlyRate, platformUserId, companyId, employeeName } = await resolveHourlyRate(userId);
 
     await db.collection('work_sessions').add({
         employeeId: userId,
@@ -962,26 +857,7 @@ async function handleLocationNewClient(chatId: number, userId: number, clientId:
     );
 
     // Create session
-    const platformUser = await findPlatformUser(userId);
-    let employeeName = 'Worker';
-    let platformUserId = null;
-    let companyId = null;
-    let hourlyRate = 0;
-
-    // Check employees collection for rate (Admin UI saves here)
-    const empDoc = await db.collection('employees').doc(String(userId)).get();
-    const empData = empDoc.exists ? empDoc.data() : null;
-
-    if (platformUser) {
-        employeeName = platformUser.displayName || 'Worker';
-        platformUserId = platformUser.id;
-        companyId = platformUser.companyId;
-        // Priority: platformUser.hourlyRate -> employees.hourlyRate
-        hourlyRate = platformUser.hourlyRate || empData?.hourlyRate || 0;
-    } else if (empData) {
-        employeeName = empData.name || 'Worker';
-        hourlyRate = empData.hourlyRate || 0;
-    }
+    const { hourlyRate, platformUserId, companyId, employeeName } = await resolveHourlyRate(userId);
 
     await db.collection('work_sessions').add({
         employeeId: userId,
@@ -1260,7 +1136,7 @@ async function handleMediaUpload(chatId: number, userId: number, message: any) {
         }
 
         // --- REPLY MESSAGES ---
-        const timeStr = new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+        const timeStr = new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', timeZone: 'America/New_York' });
 
         if (isLocationMatch || sessionData.clientId === 'no_project') {
             await sendMessage(chatId, `✅ Фото принято! Объект *${sessionData.clientName}* время старта *${timeStr}*\n\n🚀 Сессия начата, удачной работы!`);
@@ -1349,24 +1225,10 @@ async function finalizeSession(chatId: number, userId: number, activeSession: an
 
     let hourlyRate = sessionData.hourlyRate;
 
-    // FAILSAFE: If no snapshot rate (old session), fetch current profile rate
-    // UPDATED: Check for default_rate in User Profile first!
+    // FAILSAFE: If no snapshot rate (old session), resolve from profile
     if (hourlyRate === undefined || hourlyRate === null || hourlyRate === 0) {
-        const platformUser = await findPlatformUser(userId);
-
-        // Priority: UserProfile.defaultRate -> UserProfile.hourlyRate -> Employee.hourlyRate
-        if (platformUser) {
-            if (platformUser.defaultRate) {
-                hourlyRate = platformUser.defaultRate;
-            } else if (platformUser.hourlyRate) {
-                hourlyRate = platformUser.hourlyRate;
-            }
-        }
-
-        if (!hourlyRate) {
-            const empDoc = await db.collection('employees').doc(String(userId)).get();
-            hourlyRate = empDoc.data()?.hourlyRate || 0;
-        }
+        const rateResult = await resolveHourlyRate(userId);
+        hourlyRate = rateResult.hourlyRate;
 
         // Update the session with this rate so we have it for history
         await activeSession.ref.update({ hourlyRate: hourlyRate });
@@ -1682,10 +1544,15 @@ async function handleVoiceMessage(chatId: number, userId: number, message: any) 
 
             // Now finalize the session (move to description step or complete)
             updates.awaitingDescription = true;
-            await sendMessage(chatId, "📝 Хочешь добавить текстовое описание? (Или напиши 'Skip')");
         }
 
+        // IMPORTANT: Persist updates BEFORE sending prompts to avoid race condition
         await activeSession.ref.update(updates);
+
+        // Send description prompt AFTER state is persisted
+        if (context === 'END_SHIFT') {
+            await sendMessage(chatId, "📝 Хочешь добавить текстовое описание? (Или напиши 'Skip')");
+        }
 
     } catch (error: any) {
         logger.error('Error transcribing voice:', error);
@@ -1851,7 +1718,8 @@ async function calculateDailyStats(userId: number, currentSessionMinutes = 0, cu
         }
 
         // Fallback to employees collection for timezone
-        if (timezone === 'UTC') {
+        // Fallback to employees collection if platformUser had no timezone
+        if (!platformUser?.timezone) {
             const empDoc = await db.collection('employees').doc(String(userId)).get();
             if (empDoc.exists && empDoc.data()?.timezone) {
                 timezone = empDoc.data()?.timezone;
@@ -1909,12 +1777,11 @@ async function autoFinishActiveSession(activeSession: FirebaseFirestore.QueryDoc
     const endTime = admin.firestore.Timestamp.now();
     const startTime = sessionData.startTime;
 
-    // Determine hourly rate (snapshot or fallback)
+    // Determine hourly rate (snapshot or full resolution)
     let hourlyRate = sessionData.hourlyRate;
-    if (hourlyRate === undefined || hourlyRate === null) {
-        // Fallback fetch if missing
-        const empDoc = await db.collection('employees').doc(String(userId)).get();
-        hourlyRate = empDoc.data()?.hourlyRate || 0;
+    if (hourlyRate === undefined || hourlyRate === null || hourlyRate === 0) {
+        const rateResult = await resolveHourlyRate(userId);
+        hourlyRate = rateResult.hourlyRate;
         await activeSession.ref.update({ hourlyRate: hourlyRate });
     }
 
@@ -1948,24 +1815,6 @@ async function autoFinishActiveSession(activeSession: FirebaseFirestore.QueryDoc
 }
 
 
-
-
-async function findPlatformUser(telegramId: number): Promise<any | null> {
-    try {
-        const snapshot = await db.collection('users')
-            .where('telegramId', '==', String(telegramId))
-            .limit(1)
-            .get();
-
-        if (!snapshot.empty) {
-            const doc = snapshot.docs[0];
-            return { id: doc.id, ...doc.data() };
-        }
-    } catch (error) {
-        console.error("Error finding platform user:", error);
-    }
-    return null;
-}
 
 
 // GTD Tasks Functions moved to handlers/gtdHandler.ts

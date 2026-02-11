@@ -109,6 +109,15 @@ async function handleMessage(message: any) {
     const userId = message.from.id;
     const text = message.text;
 
+    // Auth check: only registered employees can use the bot
+    const empDoc = await db.collection('employees').doc(String(userId)).get();
+    if (!empDoc.exists) {
+        if (text === '/start' || text === '/help') {
+            await sendMessage(chatId, '❌ Вы не зарегистрированы. Обратитесь к администратору.');
+        }
+        return;
+    }
+
     // Start command
     if (text === '/start') {
         await sendMainMenu(chatId);
@@ -362,8 +371,12 @@ async function handlePhotoUpload(chatId: number, userId: number, photoFileId: st
             metadata: { contentType: 'image/jpeg' }
         });
 
-        await file.makePublic();
-        const publicUrl = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
+        // Generate signed URL (7-day expiry) instead of making public
+        const [signedUrl] = await file.getSignedUrl({
+            action: 'read',
+            expires: Date.now() + 7 * 24 * 60 * 60 * 1000 // 7 days
+        });
+        const publicUrl = signedUrl;
 
         // Send "analyzing" message
         await sendMessage(chatId, '🔍 Анализирую чек...');
@@ -416,6 +429,7 @@ async function handlePhotoUpload(chatId: number, userId: number, photoFileId: st
 async function handleVoiceMessage(chatId: number, userId: number, voiceFileId: string) {
     const session = await getSession(userId);
     if (!session || session.state !== 'enter_description') {
+        await sendMessage(chatId, '❌ Сначала начните оформление затраты. Нажмите /start');
         return;
     }
 
@@ -455,9 +469,17 @@ async function saveCostEntry(
     description?: string,
     voiceNoteUrl?: string
 ) {
-    const userDoc = await db.collection('telegram_users').doc(userId.toString()).get();
-    const userData = userDoc.data();
-    const userName = userData?.firstName || 'Unknown';
+    // Try multiple sources for user name
+    let userName = 'Unknown';
+    const empDoc = await db.collection('employees').doc(userId.toString()).get();
+    if (empDoc.exists && empDoc.data()?.name) {
+        userName = empDoc.data()!.name;
+    } else {
+        const userDoc = await db.collection('telegram_users').doc(userId.toString()).get();
+        if (userDoc.exists && userDoc.data()?.firstName) {
+            userName = userDoc.data()!.firstName;
+        }
+    }
 
     const costEntry = {
         userId: userId.toString(),

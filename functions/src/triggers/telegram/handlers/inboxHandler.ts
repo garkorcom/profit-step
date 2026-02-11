@@ -587,27 +587,3 @@ async function saveBufferToStorage(
     return `https://storage.googleapis.com/${bucket.name}/${storagePath}`;
 }
 
-/**
- * Find platform user by Telegram ID
- */
-export async function findPlatformUserForInbox(telegramId: number): Promise<{ id: string; displayName: string } | null> {
-    const snapshot = await db.collection('users')
-        .where('telegramId', '==', String(telegramId))
-        .limit(1)
-        .get();
-
-    if (snapshot.empty) {
-        // Try as number
-        const snapshot2 = await db.collection('users')
-            .where('telegramId', '==', telegramId)
-            .limit(1)
-            .get();
-
-        if (snapshot2.empty) return null;
-        const doc = snapshot2.docs[0];
-        return { id: doc.id, displayName: doc.data().displayName || 'Unknown' };
-    }
-
-    const doc = snapshot.docs[0];
-    return { id: doc.id, displayName: doc.data().displayName || 'Unknown' };
-}

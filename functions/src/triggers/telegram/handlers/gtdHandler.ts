@@ -8,8 +8,7 @@
 import * as admin from 'firebase-admin';
 import * as functions from 'firebase-functions';
 import { logger } from 'firebase-functions';
-import { sendMessage } from '../telegramUtils';
-import { findPlatformUserForInbox } from './inboxHandler';
+import { sendMessage, findPlatformUser } from '../telegramUtils';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
 const db = admin.firestore();
@@ -43,26 +42,7 @@ const TYPE_EMOJI: Record<string, string> = {
     'bring': '🚚'
 };
 
-// ═══════════════════════════════════════════════════════════
-// PLATFORM USER HELPER
-// ═══════════════════════════════════════════════════════════
 
-async function findPlatformUser(telegramId: number): Promise<{ id: string;[key: string]: any } | null> {
-    try {
-        const snapshot = await db.collection('users')
-            .where('telegramId', '==', String(telegramId))
-            .limit(1)
-            .get();
-
-        if (!snapshot.empty) {
-            const doc = snapshot.docs[0];
-            return { id: doc.id, ...doc.data() };
-        }
-    } catch (error) {
-        console.error("Error finding platform user:", error);
-    }
-    return null;
-}
 
 // ═══════════════════════════════════════════════════════════
 // /task COMMAND
@@ -80,7 +60,7 @@ export async function handleQuickTask(
 ): Promise<void> {
     try {
         // 1. Find platform user for linking
-        const platformUser = await findPlatformUserForInbox(userId);
+        const platformUser = await findPlatformUser(userId);
 
         // 2. Try AI parsing for task type and date (optional enhancement)
         let taskType: string | null = null;

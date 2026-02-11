@@ -6,8 +6,42 @@ import * as ShoppingAI from '../../services/shoppingAIService';
 if (admin.apps.length === 0) {
     admin.initializeApp();
 }
-// const db = admin.firestore(); // Use admin.firestore() directly
+const db = admin.firestore();
 const WORKER_BOT_TOKEN = process.env.WORKER_BOT_TOKEN || functions.config().worker_bot?.token;
+
+/**
+ * Find platform user by Telegram ID.
+ * Tries string match first, then numeric match as fallback.
+ * Single source of truth — import from here instead of duplicating.
+ */
+export async function findPlatformUser(telegramId: number): Promise<{ id: string;[key: string]: any } | null> {
+    try {
+        // Try as string first (most common storage format)
+        let snapshot = await db.collection('users')
+            .where('telegramId', '==', String(telegramId))
+            .limit(1)
+            .get();
+
+        if (!snapshot.empty) {
+            const doc = snapshot.docs[0];
+            return { id: doc.id, ...doc.data() };
+        }
+
+        // Fallback: try as number
+        snapshot = await db.collection('users')
+            .where('telegramId', '==', telegramId)
+            .limit(1)
+            .get();
+
+        if (!snapshot.empty) {
+            const doc = snapshot.docs[0];
+            return { id: doc.id, ...doc.data() };
+        }
+    } catch (error) {
+        console.error("Error finding platform user:", error);
+    }
+    return null;
+}
 
 /**
  * Send a message to Telegram
@@ -85,6 +119,20 @@ export async function getActiveSession(userId: number) {
     }
 
     return null;
+}
+
+/**
+ * Get ONLY active session (not paused). Use when you need strictly running sessions.
+ */
+export async function getActiveSessionStrict(userId: number) {
+    const qs = await admin.firestore().collection('work_sessions')
+        .where('employeeId', '==', userId)
+        .where('status', '==', 'active')
+        .orderBy('startTime', 'desc')
+        .limit(1)
+        .get();
+
+    return !qs.empty ? qs.docs[0] : null;
 }
 
 export async function sendMainMenu(chatId: number, userId: number = chatId) {

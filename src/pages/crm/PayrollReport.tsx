@@ -1,11 +1,13 @@
 import React, { useMemo } from 'react';
-import { Box, Typography, Table, TableBody, TableCell, TableHead, TableRow, Paper, Button, Divider } from '@mui/material';
+import { Box, Typography, Button } from '@mui/material';
 import { WorkSession } from '../../types/timeTracking.types';
 import { format } from 'date-fns';
 
 interface PayrollReportProps {
     entries: WorkSession[];
     onClose: () => void;
+    employeeIdGroups: Map<string, Set<string>>;
+    uniqueEmployees: { id: string; name: string }[];
 }
 
 interface ProjectStats {
@@ -28,56 +30,63 @@ interface MonthGroup {
     employees: Record<string, EmployeeMonthStats>;
 }
 
-export const PayrollReport: React.FC<PayrollReportProps> = ({ entries, onClose }) => {
+export const PayrollReport: React.FC<PayrollReportProps> = ({ entries, onClose, employeeIdGroups, uniqueEmployees }) => {
 
     const reportData = useMemo(() => {
+        // Build reverse map: any raw ID → canonical ID
+        const rawToCanonical = new Map<string, string>();
+        employeeIdGroups.forEach((allIds, canonicalId) => {
+            allIds.forEach(rawId => rawToCanonical.set(rawId, canonicalId));
+        });
+
         const months: Record<string, MonthGroup> = {};
 
         entries.forEach(entry => {
             if (entry.isVoided) return; // Skip voided in report
 
             const date = entry.startTime ? new Date(entry.startTime.seconds * 1000) : new Date();
-            const monthKey = format(date, 'MMM.yy').toLowerCase(); // "nov.25"
-            const empId = String(entry.employeeId);
+            const monthKey = format(date, 'yyyy-MM'); // Sortable key
+            const monthLabel = format(date, 'MMM.yy').toLowerCase();
+            const rawId = String(entry.employeeId);
+            const canonicalId = rawToCanonical.get(rawId) || rawId;
+            const canonicalName = uniqueEmployees.find(u => u.id === canonicalId)?.name || entry.employeeName || 'Unknown';
             const client = entry.clientName || 'Unknown';
 
             if (!months[monthKey]) {
-                months[monthKey] = { monthLabel: monthKey, employees: {} };
+                months[monthKey] = { monthLabel, employees: {} };
             }
 
             const monthGroup = months[monthKey];
 
-            if (!monthGroup.employees[empId]) {
-                monthGroup.employees[empId] = {
-                    employeeId: empId,
-                    employeeName: entry.employeeName || 'Unknown',
+            if (!monthGroup.employees[canonicalId]) {
+                monthGroup.employees[canonicalId] = {
+                    employeeId: canonicalId,
+                    employeeName: canonicalName,
                     projects: {},
                     totalHours: 0,
                     totalMoney: 0
                 };
             }
 
-            const empStats = monthGroup.employees[empId];
+            const empStats = monthGroup.employees[canonicalId];
 
             if (!empStats.projects[client]) {
                 empStats.projects[client] = {
                     client,
                     hours: 0,
-                    hourlyRate: entry.hourlyRate || 0, // Assume rate is consistent or take latest/first?
+                    hourlyRate: entry.hourlyRate || 0,
                     money: 0
                 };
             }
 
             const projStats = empStats.projects[client];
 
-            // Correction handling
             const duration = (entry.durationMinutes || 0) / 60;
             const money = entry.sessionEarnings || 0;
 
             projStats.hours += duration;
             projStats.money += money;
 
-            // Update rate if it looks zero (maybe session was zero but rate exists?)
             if (projStats.hourlyRate === 0 && entry.hourlyRate) {
                 projStats.hourlyRate = entry.hourlyRate;
             }
@@ -86,14 +95,12 @@ export const PayrollReport: React.FC<PayrollReportProps> = ({ entries, onClose }
             empStats.totalMoney += money;
         });
 
-        // Sort months? keys are "nov.25", hard to sort.
-        // Better to use sortable key YYYY-MM
-        return Object.values(months).sort((a, b) => a.monthLabel.localeCompare(b.monthLabel));
-        // Need better sort logic if spanning years, but for now simple. 
-        // Actually, let's just rely on the order derived from 'entries' if they are sorted by date desc?
-        // If entries are sorted desc, we get Dec, Nov. Report usually wants Desc or Asc.
+        // Sort by chronological key (yyyy-MM)
+        return Object.entries(months)
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([, group]) => group);
 
-    }, [entries]);
+    }, [entries, employeeIdGroups, uniqueEmployees]);
 
     const handlePrint = () => {
         window.print();

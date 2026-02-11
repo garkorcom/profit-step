@@ -1,13 +1,13 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import {
     Container, Typography, Box, Paper, Table, TableBody, TableCell, TableContainer, TableHead,
-    TableRow, Chip, CircularProgress, Grid, Card, CardContent, Button, TextField,
+    TableRow, Chip, CircularProgress, Card, CardContent, Button, TextField,
     Dialog, DialogTitle, DialogContent, DialogActions, FormControl, InputLabel, Select, MenuItem,
-    Tooltip, IconButton, Checkbox, FormControlLabel
+    Tooltip, IconButton, Checkbox, FormControlLabel, TablePagination
 } from '@mui/material';
 import { collection, query, orderBy, getDocs, where, Timestamp, addDoc, doc, updateDoc } from 'firebase/firestore';
 import { db } from '../../firebase/firebase';
-import { startOfDay, endOfDay, subDays, format } from 'date-fns';
+import { startOfDay, endOfDay, subDays, format, isValid } from 'date-fns';
 import AddIcon from '@mui/icons-material/Add';
 import SettingsIcon from '@mui/icons-material/Settings';
 import PrintIcon from '@mui/icons-material/Print';
@@ -65,6 +65,11 @@ const FinancePage: React.FC = () => {
     const [openRatesDialog, setOpenRatesDialog] = useState(false);
     const [employees, setEmployees] = useState<Employee[]>([]);
 
+    // Mapping: telegramId (string) -> user doc ID (UID)
+    const telegramIdToUidRef = useRef<Map<string, string>>(new Map());
+    // Mapping: user doc ID (UID) -> canonical displayName
+    const uidToNameRef = useRef<Map<string, string>>(new Map());
+
     // Payroll Report
     const [showReport, setShowReport] = useState(false);
 
@@ -79,9 +84,12 @@ const FinancePage: React.FC = () => {
     const [historyEmployee, setHistoryEmployee] = useState<{ id: string; name: string } | null>(null);
 
     useEffect(() => {
-        fetchLedger();
-        fetchEmployees();
-        fetchCosts();
+        const loadData = async () => {
+            await fetchEmployees(); // Must run first to build telegramId mapping
+            await fetchLedger();    // Uses the mapping to normalize
+            fetchCosts();
+        };
+        loadData();
     }, [startDate, endDate]);
 
     const fetchLedger = async () => {
@@ -137,7 +145,28 @@ const FinancePage: React.FC = () => {
                 return false;
             });
 
-            setEntries(finalizedSessions);
+            // Normalize employeeId: map Telegram IDs to user UIDs
+            const normalized = finalizedSessions.map(session => {
+                const rawId = String(session.employeeId);
+                const mappedUid = telegramIdToUidRef.current.get(rawId);
+                if (mappedUid) {
+                    return {
+                        ...session,
+                        employeeId: mappedUid,
+                        employeeName: uidToNameRef.current.get(mappedUid) || session.employeeName
+                    };
+                }
+                // Also normalize name if employeeId is already a UID
+                if (uidToNameRef.current.has(rawId)) {
+                    return {
+                        ...session,
+                        employeeName: uidToNameRef.current.get(rawId) || session.employeeName
+                    };
+                }
+                return session;
+            });
+
+            setEntries(normalized);
         } catch (error) {
             console.error("Error fetching ledger:", error);
         } finally {
@@ -160,12 +189,28 @@ const FinancePage: React.FC = () => {
         try {
             const userSnap = await getDocs(collection(db, 'users'));
             if (!userSnap.empty) {
-                setEmployees(userSnap.docs.map(d => ({
-                    id: d.id,
-                    name: d.data().displayName || d.data().name || 'Unknown',
-                    hourlyRate: d.data().hourlyRate || 0,
-                    ...d.data()
-                } as Employee)));
+                // Build telegramId -> UID and UID -> name mappings for normalization
+                const tgMap = new Map<string, string>();
+                const nameMap = new Map<string, string>();
+
+                const emps = userSnap.docs.map(d => {
+                    const data = d.data();
+                    const name = data.displayName || data.name || 'Unknown';
+                    nameMap.set(d.id, name);
+                    if (data.telegramId) {
+                        tgMap.set(String(data.telegramId), d.id);
+                    }
+                    return {
+                        id: d.id,
+                        name,
+                        hourlyRate: data.hourlyRate || 0,
+                        ...data
+                    } as Employee;
+                });
+
+                telegramIdToUidRef.current = tgMap;
+                uidToNameRef.current = nameMap;
+                setEmployees(emps);
             }
         } catch (e) {
             console.error("Error fetching users collection", e);
@@ -191,7 +236,7 @@ const FinancePage: React.FC = () => {
         }
     };
 
-    // Fallback 2: Populate employees from Ledger Entries if fetch fails completely (e.g. strict permissions)
+    // Fallback: If users collection fetch fails, derive employees from session entries
     useEffect(() => {
         if (employees.length === 0 && entries.length > 0) {
             const derived = new Map<string, Employee>();
@@ -210,35 +255,48 @@ const FinancePage: React.FC = () => {
         }
     }, [employees.length, entries]);
 
+    // Pagination
+    const [page, setPage] = useState(0);
+    const [rowsPerPage, setRowsPerPage] = useState(25);
+
+    // Confirmation
+    const [confirmAction, setConfirmAction] = useState<{ type: 'payment' | 'adjustment'; summary: string; execute: () => Promise<void> } | null>(null);
+
     const handleAddAdjustment = async () => {
         if (!adjEmployee || !adjAmount || !adjDesc) return;
 
         try {
-            const employee = employees.find(e => e.id === adjEmployee);
+            const employee = uniqueEmployees.find(e => e.id === adjEmployee) || employees.find(e => e.id === adjEmployee);
+            const amt = parseFloat(adjAmount);
 
-            // Create a specialized WorkSession for adjustment
-            const adjustmentSession: Partial<WorkSession> = {
-                type: 'manual_adjustment',
-                startTime: Timestamp.now(), // Recorded at current time
-                employeeId: adjEmployee,
-                employeeName: employee?.name || 'Unknown',
-                clientName: 'Manual Adjustment', // Placeholder or allow selection?
-                clientId: 'manual_adj',
-                status: 'completed', // Adjustments are instantly completed
-                finalizationStatus: 'finalized', // Make visible in Finance immediately
-                durationMinutes: 0, // No time, just money
-                hourlyRate: 0,
-                sessionEarnings: parseFloat(adjAmount),
-                description: adjDesc,
-            };
+            setConfirmAction({
+                type: 'adjustment',
+                summary: `${employee?.name || 'Unknown'}: ${amt >= 0 ? '+' : ''}$${amt.toFixed(2)} — ${adjDesc}`,
+                execute: async () => {
+                    const adjustmentSession: Partial<WorkSession> = {
+                        type: 'manual_adjustment',
+                        startTime: Timestamp.now(),
+                        employeeId: adjEmployee,
+                        employeeName: employee?.name || 'Unknown',
+                        clientName: 'Manual Adjustment',
+                        clientId: 'manual_adj',
+                        status: 'completed',
+                        finalizationStatus: 'finalized',
+                        durationMinutes: 0,
+                        hourlyRate: 0,
+                        sessionEarnings: amt,
+                        description: adjDesc,
+                    };
 
-            await addDoc(collection(db, 'work_sessions'), adjustmentSession);
+                    await addDoc(collection(db, 'work_sessions'), adjustmentSession);
 
-            setOpenAdjDialog(false);
-            setAdjEmployee('');
-            setAdjAmount('');
-            setAdjDesc('');
-            fetchLedger();
+                    setOpenAdjDialog(false);
+                    setAdjEmployee('');
+                    setAdjAmount('');
+                    setAdjDesc('');
+                    fetchLedger();
+                }
+            });
         } catch (error) {
             console.error("Error adding adjustment:", error);
             alert("Failed to add adjustment");
@@ -262,32 +320,38 @@ const FinancePage: React.FC = () => {
         if (!paymentEmployee || !paymentAmount) return;
 
         try {
-            const employee = employees.find(e => e.id === paymentEmployee);
+            const employee = uniqueEmployees.find(e => e.id === paymentEmployee) || employees.find(e => e.id === paymentEmployee);
             const amount = parseFloat(paymentAmount);
 
-            const paymentSession: Partial<WorkSession> = {
+            setConfirmAction({
                 type: 'payment',
-                startTime: Timestamp.fromDate(paymentDate), // Use selected date
-                employeeId: paymentEmployee,
-                employeeName: employee?.name || 'Unknown',
-                clientName: 'Payment',
-                clientId: 'payment',
-                status: 'completed',
-                finalizationStatus: 'finalized', // Make visible in Finance immediately
-                durationMinutes: 0,
-                hourlyRate: 0,
-                sessionEarnings: -Math.abs(amount), // Negative = outflow
-                description: paymentNote || 'Salary payment',
-            };
+                summary: `${employee?.name || 'Unknown'}: -$${Math.abs(amount).toFixed(2)} (${format(paymentDate, 'dd.MM.yyyy')})${paymentNote ? ` — ${paymentNote}` : ''}`,
+                execute: async () => {
+                    const paymentSession: Partial<WorkSession> = {
+                        type: 'payment',
+                        startTime: Timestamp.fromDate(paymentDate),
+                        employeeId: paymentEmployee,
+                        employeeName: employee?.name || 'Unknown',
+                        clientName: 'Payment',
+                        clientId: 'payment',
+                        status: 'completed',
+                        finalizationStatus: 'finalized',
+                        durationMinutes: 0,
+                        hourlyRate: 0,
+                        sessionEarnings: -Math.abs(amount),
+                        description: paymentNote || 'Salary payment',
+                    };
 
-            await addDoc(collection(db, 'work_sessions'), paymentSession);
+                    await addDoc(collection(db, 'work_sessions'), paymentSession);
 
-            setOpenPaymentDialog(false);
-            setPaymentEmployee('');
-            setPaymentAmount('');
-            setPaymentNote('');
-            setPaymentDate(new Date()); // Reset to today
-            fetchLedger();
+                    setOpenPaymentDialog(false);
+                    setPaymentEmployee('');
+                    setPaymentAmount('');
+                    setPaymentNote('');
+                    setPaymentDate(new Date());
+                    fetchLedger();
+                }
+            });
         } catch (error) {
             console.error("Error adding payment:", error);
             alert("Failed to add payment");
@@ -316,11 +380,7 @@ const FinancePage: React.FC = () => {
                 status: 'completed',
                 description: `VOID REF: ${voidTarget.description || '-'}`,
                 correctionNote: `Voided: ${voidReason}`,
-                isVoided: true, // This logic is tricky. The correction ITSELF acts as the voiding transaction. 
-                // But maybe we want to hide THIS negating entry from "Active" lists too? 
-                // For Finance, we want to see it to balance the math. 
-                // Let's leave isVoided false for the CORRECTION itself, so it counts.
-                // The ORIGINAL gets isVoided = true for visual strikethrough.
+                isVoided: false, // Correction must stay visible to balance the math
             };
 
             await addDoc(collection(db, 'work_sessions'), correction);
@@ -349,39 +409,82 @@ const FinancePage: React.FC = () => {
     const [hideVoided, setHideVoided] = useState(true);
 
     // Derived State
+    const SYNTHETIC_CLIENTS = useMemo(() => new Set(['Manual Adjustment', 'Payment', 'Voided Record']), []);
+
     const uniqueClients = useMemo(() => {
-        const clients = new Set(entries.map(e => e.clientName).filter(Boolean));
+        const clients = new Set(entries.map(e => e.clientName).filter(c => c && !SYNTHETIC_CLIENTS.has(c)));
         return Array.from(clients).sort();
-    }, [entries]);
+    }, [entries, SYNTHETIC_CLIENTS]);
 
     const uniqueEmployees = useMemo(() => {
-        const emps = new Map<string, string>();
+        // First pass: collect by employeeId
+        const empsById = new Map<string, string>();
         entries.forEach(e => {
             if (e.employeeId && e.employeeName) {
-                emps.set(String(e.employeeId), e.employeeName);
+                empsById.set(String(e.employeeId), e.employeeName);
             }
         });
-        return Array.from(emps.entries()).map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
+
+        // Second pass: deduplicate by normalized name (trim + lowercase)
+        // This catches cases where the same person has sessions with different IDs
+        // (e.g. Telegram ID not linked to user record)
+        const byNormalizedName = new Map<string, { id: string; name: string }>();
+        empsById.forEach((name, id) => {
+            // Strip invisible/whitespace characters and normalize
+            const cleanName = name.replace(/[\u200B-\u200D\uFEFF\u3164\s]+/g, ' ').trim();
+            const normalizedKey = cleanName.toLowerCase();
+            if (!byNormalizedName.has(normalizedKey)) {
+                byNormalizedName.set(normalizedKey, { id, name: cleanName });
+            }
+            // If already exists, keep the first one (which is typically the canonical UID)
+        });
+
+        return Array.from(byNormalizedName.values()).sort((a, b) => a.name.localeCompare(b.name));
     }, [entries]);
+
+    // Build a mapping from each canonical employee ID to ALL associated IDs
+    // This is needed because the same person can have sessions under different IDs
+    const employeeIdGroups = useMemo(() => {
+        const groups = new Map<string, Set<string>>();
+        // Map each name -> all IDs, then map canonical ID -> all IDs for that name
+        const nameToIds = new Map<string, Set<string>>();
+        entries.forEach(e => {
+            if (e.employeeId && e.employeeName) {
+                const cleanName = e.employeeName.replace(/[\u200B-\u200D\uFEFF\u3164\s]+/g, ' ').trim().toLowerCase();
+                if (!nameToIds.has(cleanName)) nameToIds.set(cleanName, new Set());
+                nameToIds.get(cleanName)!.add(String(e.employeeId));
+            }
+        });
+        // For each uniqueEmployee, find all IDs that share the same normalized name
+        uniqueEmployees.forEach(emp => {
+            const normalizedName = emp.name.toLowerCase();
+            const allIds = nameToIds.get(normalizedName) || new Set([emp.id]);
+            groups.set(emp.id, allIds);
+        });
+        return groups;
+    }, [entries, uniqueEmployees]);
 
     const filteredEntries = useMemo(() => {
         return entries.filter(entry => {
             if (hideVoided && entry.isVoided) return false;
 
-            const matchesEmployee = filterEmployee === 'all' || String(entry.employeeId) === filterEmployee;
+            // Use employeeIdGroups to match all IDs for a deduped employee
+            const matchesEmployee = filterEmployee === 'all' ||
+                (employeeIdGroups.get(filterEmployee)?.has(String(entry.employeeId)) ?? String(entry.employeeId) === filterEmployee);
             const matchesClient = filterClient === 'all' || entry.clientName === filterClient;
 
             if (!matchesEmployee || !matchesClient) return false;
 
-            if (hideVoided) {
-                if (entry.isVoided) return false;
-                if (entry.type === 'correction' && (entry.description?.startsWith('VOID REF:') || entry.correctionNote?.startsWith('Voided:'))) {
-                    return false;
-                }
+            if (hideVoided && entry.type === 'correction' &&
+                (entry.description?.startsWith('VOID REF:') || entry.correctionNote?.startsWith('Voided:'))) {
+                return false;
             }
             return true;
         });
-    }, [entries, filterEmployee, filterClient, hideVoided]);
+    }, [entries, filterEmployee, filterClient, hideVoided, employeeIdGroups]);
+
+    // Reset page on filter change
+    useEffect(() => { setPage(0); }, [filterEmployee, filterClient, hideVoided]);
 
     const stats = useMemo(() => {
         let salary = 0;
@@ -397,33 +500,49 @@ const FinancePage: React.FC = () => {
             totalMinutes += (e.durationMinutes || 0);
         });
 
-        // Calculate expenses from costs array
-        const expenses = costs.reduce((sum, c) => sum + Math.abs(c.amount), 0);
+        // Filter costs by employee if specific employee is selected
+        const filteredCosts = filterEmployee === 'all'
+            ? costs
+            : costs.filter(c => {
+                const groupIds = employeeIdGroups.get(filterEmployee);
+                return groupIds?.has(c.userId) ?? c.userId === filterEmployee;
+            });
+        const expenses = filteredCosts.reduce((sum, c) => sum + Math.abs(c.amount), 0);
 
         const balance = salary - payments - expenses;
         const hours = totalMinutes / 60;
 
-        return { salary, payments, expenses, balance, hours };
-    }, [filteredEntries, costs]);
+        return { salary, payments, expenses, balance, hours, costsCount: filteredCosts.length };
+    }, [filteredEntries, costs, filterEmployee, employeeIdGroups]);
 
     const breakdowns = useMemo(() => {
+        // Build reverse map: any raw ID → canonical ID
+        const rawToCanonical = new Map<string, string>();
+        employeeIdGroups.forEach((allIds, canonicalId) => {
+            allIds.forEach(rawId => rawToCanonical.set(rawId, canonicalId));
+        });
+
         const byEmployee: Record<string, { hours: number, money: number, name: string }> = {};
         const byClient: Record<string, { hours: number, money: number }> = {};
 
         filteredEntries.forEach(e => {
-            // Employee Breakdown
-            const empId = String(e.employeeId);
-            if (!byEmployee[empId]) {
-                byEmployee[empId] = { hours: 0, money: 0, name: e.employeeName };
+            // Employee Breakdown — use canonical ID
+            const rawId = String(e.employeeId);
+            const canonicalId = rawToCanonical.get(rawId) || rawId;
+            const canonicalName = uniqueEmployees.find(u => u.id === canonicalId)?.name || e.employeeName;
+            if (!byEmployee[canonicalId]) {
+                byEmployee[canonicalId] = { hours: 0, money: 0, name: canonicalName };
             }
-            byEmployee[empId].hours += (e.durationMinutes || 0) / 60;
-            byEmployee[empId].money += (e.sessionEarnings || 0);
+            byEmployee[canonicalId].hours += (e.durationMinutes || 0) / 60;
+            byEmployee[canonicalId].money += (e.sessionEarnings || 0);
 
-            // Client Breakdown
+            // Client Breakdown — exclude synthetic
             const client = e.clientName || 'Unknown';
-            if (!byClient[client]) byClient[client] = { hours: 0, money: 0 };
-            byClient[client].hours += (e.durationMinutes || 0) / 60;
-            byClient[client].money += (e.sessionEarnings || 0);
+            if (!SYNTHETIC_CLIENTS.has(client)) {
+                if (!byClient[client]) byClient[client] = { hours: 0, money: 0 };
+                byClient[client].hours += (e.durationMinutes || 0) / 60;
+                byClient[client].money += (e.sessionEarnings || 0);
+            }
         });
 
         return {
@@ -432,7 +551,7 @@ const FinancePage: React.FC = () => {
                 .map(([name, data]) => ({ name, ...data }))
                 .sort((a, b) => b.money - a.money)
         };
-    }, [filteredEntries]);
+    }, [filteredEntries, employeeIdGroups, uniqueEmployees, SYNTHETIC_CLIENTS]);
 
     const getRowColor = (entry: WorkSession) => {
         if (entry.type === 'payment') return 'rgba(76, 175, 80, 0.08)'; // Light Green
@@ -483,7 +602,9 @@ const FinancePage: React.FC = () => {
                 <Box sx={{ flex: 1, minWidth: 200 }}>
                     <Card sx={{ bgcolor: '#2196f3', color: 'white', height: '100%' }}>
                         <CardContent>
-                            <Typography variant="body2" sx={{ opacity: 0.8 }}>Salary (Period)</Typography>
+                            <Tooltip title="Начисления за период (с учётом коррекций)" arrow>
+                                <Typography variant="body2" sx={{ opacity: 0.8 }}>Salary (Period)</Typography>
+                            </Tooltip>
                             <Typography variant="h4" fontWeight="bold">${stats.salary.toFixed(2)}</Typography>
                         </CardContent>
                     </Card>
@@ -499,7 +620,7 @@ const FinancePage: React.FC = () => {
                 <Box sx={{ flex: 1, minWidth: 200 }}>
                     <Card sx={{ bgcolor: '#ff9800', color: 'white', height: '100%' }}>
                         <CardContent>
-                            <Typography variant="body2" sx={{ opacity: 0.8 }}>Expenses ({costs.length})</Typography>
+                            <Typography variant="body2" sx={{ opacity: 0.8 }}>Expenses ({stats.costsCount})</Typography>
                             <Typography variant="h4" fontWeight="bold">${stats.expenses.toFixed(2)}</Typography>
                         </CardContent>
                     </Card>
@@ -507,7 +628,9 @@ const FinancePage: React.FC = () => {
                 <Box sx={{ flex: 1, minWidth: 200 }}>
                     <Card sx={{ bgcolor: stats.balance >= 0 ? '#4caf50' : '#f44336', color: 'white', height: '100%' }}>
                         <CardContent>
-                            <Typography variant="body2" sx={{ opacity: 0.8 }}>Balance</Typography>
+                            <Tooltip title="Salary − Payments − Expenses" arrow>
+                                <Typography variant="body2" sx={{ opacity: 0.8 }}>Balance</Typography>
+                            </Tooltip>
                             <Typography variant="h4" fontWeight="bold">${stats.balance.toFixed(2)}</Typography>
                         </CardContent>
                     </Card>
@@ -620,7 +743,10 @@ const FinancePage: React.FC = () => {
                             fullWidth
                             size="small"
                             value={format(startDate, 'yyyy-MM-dd')}
-                            onChange={(e) => setStartDate(e.target.value ? new Date(e.target.value) : new Date())}
+                            onChange={(e) => {
+                                const d = new Date(e.target.value);
+                                if (isValid(d)) setStartDate(d);
+                            }}
                             InputLabelProps={{ shrink: true }}
                         />
                     </Box>
@@ -631,7 +757,10 @@ const FinancePage: React.FC = () => {
                             fullWidth
                             size="small"
                             value={format(endDate, 'yyyy-MM-dd')}
-                            onChange={(e) => setEndDate(e.target.value ? new Date(e.target.value) : new Date())}
+                            onChange={(e) => {
+                                const d = new Date(e.target.value);
+                                if (isValid(d)) setEndDate(d);
+                            }}
                             InputLabelProps={{ shrink: true }}
                         />
                     </Box>
@@ -664,90 +793,131 @@ const FinancePage: React.FC = () => {
                                 <TableCell colSpan={9} align="center">No records found (Check filters)</TableCell>
                             </TableRow>
                         ) : (
-                            filteredEntries.map((entry) => {
-                                const isCorrection = entry.type === 'correction';
-                                const isAdjustment = entry.type === 'manual_adjustment';
-                                const isPayment = entry.type === 'payment';
-                                const date = entry.startTime ? new Date(entry.startTime.seconds * 1000) : new Date();
-                                const isVoided = entry.isVoided;
+                            filteredEntries
+                                .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
+                                .map((entry) => {
+                                    const isCorrection = entry.type === 'correction';
+                                    const isAdjustment = entry.type === 'manual_adjustment';
+                                    const isPayment = entry.type === 'payment';
+                                    const date = entry.startTime ? new Date(entry.startTime.seconds * 1000) : new Date();
+                                    const isVoided = entry.isVoided;
 
-                                return (
-                                    <TableRow
-                                        key={entry.id}
-                                        hover
-                                        sx={{
-                                            bgcolor: getRowColor(entry),
-                                            textDecoration: isVoided ? 'line-through' : 'none',
-                                            opacity: isVoided ? 0.6 : 1
-                                        }}
-                                    >
-                                        <TableCell>
-                                            <Typography variant="body2" fontWeight="bold">
-                                                {date.toLocaleDateString()}
-                                            </Typography>
-                                            <Typography variant="caption" color="textSecondary">
-                                                {date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                            </Typography>
-                                            {isVoided && <Typography variant="caption" color="error" display="block">DELETED</Typography>}
-                                        </TableCell>
-                                        <TableCell>
-                                            <Chip
-                                                label={isPayment ? 'Payment' : isCorrection ? 'Correction' : isAdjustment ? 'Adj.' : 'Session'}
-                                                color={isPayment ? 'success' : isCorrection ? 'warning' : isAdjustment ? 'info' : 'default'}
-                                                size="small"
-                                                variant={isPayment || isCorrection || isAdjustment ? 'filled' : 'outlined'}
-                                            />
-                                        </TableCell>
-                                        <TableCell>
-                                            <Typography
-                                                variant="body2"
-                                                sx={{
-                                                    cursor: 'pointer',
-                                                    color: 'primary.main',
-                                                    '&:hover': { textDecoration: 'underline' }
-                                                }}
-                                                onClick={() => setHistoryEmployee({
-                                                    id: String(entry.employeeId),
-                                                    name: entry.employeeName
-                                                })}
-                                            >
-                                                {entry.employeeName}
-                                            </Typography>
-                                        </TableCell>
-                                        <TableCell>{entry.clientName}</TableCell>
-                                        <TableCell>
-                                            <Tooltip title={isVoided ? `REASON: ${entry.voidReason}` : (entry.description || '')}>
-                                                <Typography variant="body2" noWrap sx={{ maxWidth: 200 }}>
-                                                    {isCorrection ? (entry.correctionNote || entry.description) : entry.description}
+                                    return (
+                                        <TableRow
+                                            key={entry.id}
+                                            hover
+                                            sx={{
+                                                bgcolor: getRowColor(entry),
+                                                textDecoration: isVoided ? 'line-through' : 'none',
+                                                opacity: isVoided ? 0.6 : 1
+                                            }}
+                                        >
+                                            <TableCell>
+                                                <Typography variant="body2" fontWeight="bold">
+                                                    {date.toLocaleDateString()}
                                                 </Typography>
-                                            </Tooltip>
-                                        </TableCell>
-                                        <TableCell align="right">
-                                            {entry.durationMinutes ? `${(entry.durationMinutes / 60).toFixed(2)}h` : '-'}
-                                        </TableCell>
-                                        <TableCell align="right">
-                                            {entry.hourlyRate ? `$${entry.hourlyRate}` : '-'}
-                                        </TableCell>
-                                        <TableCell align="right" sx={{ fontWeight: 'bold', color: (entry.sessionEarnings || 0) >= 0 ? 'green' : 'red' }}>
-                                            ${(entry.sessionEarnings || 0).toFixed(2)}
-                                        </TableCell>
-                                        <TableCell align="right">
-                                            {!isVoided && (
-                                                <IconButton size="small" color="error" onClick={() => {
-                                                    setVoidTarget(entry);
-                                                    setVoidReason('');
-                                                }}>
-                                                    <DeleteIcon fontSize="small" />
-                                                </IconButton>
-                                            )}
-                                        </TableCell>
-                                    </TableRow>
-                                );
-                            })
+                                                <Typography variant="caption" color="textSecondary">
+                                                    {date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                </Typography>
+                                                {isVoided && <Typography variant="caption" color="error" display="block">DELETED</Typography>}
+                                            </TableCell>
+                                            <TableCell>
+                                                <Chip
+                                                    label={isPayment ? 'Payment' : isCorrection ? 'Correction' : isAdjustment ? 'Adj.' : 'Session'}
+                                                    color={isPayment ? 'success' : isCorrection ? 'warning' : isAdjustment ? 'info' : 'default'}
+                                                    size="small"
+                                                    variant={isPayment || isCorrection || isAdjustment ? 'filled' : 'outlined'}
+                                                />
+                                            </TableCell>
+                                            <TableCell>
+                                                <Typography
+                                                    variant="body2"
+                                                    sx={{
+                                                        cursor: 'pointer',
+                                                        color: 'primary.main',
+                                                        '&:hover': { textDecoration: 'underline' }
+                                                    }}
+                                                    onClick={() => setHistoryEmployee({
+                                                        id: String(entry.employeeId),
+                                                        name: entry.employeeName
+                                                    })}
+                                                >
+                                                    {entry.employeeName}
+                                                </Typography>
+                                            </TableCell>
+                                            <TableCell>{entry.clientName}</TableCell>
+                                            <TableCell>
+                                                <Tooltip title={isVoided ? `REASON: ${entry.voidReason}` : (entry.description || '')}>
+                                                    <Typography variant="body2" noWrap sx={{ maxWidth: 200 }}>
+                                                        {isCorrection ? (entry.correctionNote || entry.description) : entry.description}
+                                                    </Typography>
+                                                </Tooltip>
+                                            </TableCell>
+                                            <TableCell align="right">
+                                                {entry.durationMinutes ? `${(entry.durationMinutes / 60).toFixed(2)}h` : '-'}
+                                            </TableCell>
+                                            <TableCell align="right">
+                                                {entry.hourlyRate ? `$${entry.hourlyRate}` : '-'}
+                                            </TableCell>
+                                            <TableCell align="right" sx={{ fontWeight: 'bold', color: (entry.sessionEarnings || 0) >= 0 ? 'green' : 'red' }}>
+                                                ${(entry.sessionEarnings || 0).toFixed(2)}
+                                            </TableCell>
+                                            <TableCell align="right">
+                                                {!isVoided && (
+                                                    <IconButton size="small" color="error" onClick={() => {
+                                                        setVoidTarget(entry);
+                                                        setVoidReason('');
+                                                    }}>
+                                                        <DeleteIcon fontSize="small" />
+                                                    </IconButton>
+                                                )}
+                                            </TableCell>
+                                        </TableRow>
+                                    );
+                                })
                         )}
                     </TableBody>
                 </Table>
+                <TablePagination
+                    component="div"
+                    count={filteredEntries.length}
+                    page={page}
+                    onPageChange={(_, newPage) => setPage(newPage)}
+                    rowsPerPage={rowsPerPage}
+                    onRowsPerPageChange={(e) => { setRowsPerPage(parseInt(e.target.value, 10)); setPage(0); }}
+                    rowsPerPageOptions={[10, 25, 50, 100]}
+                    labelRowsPerPage="Записей:"
+                />
             </TableContainer>
+
+            {/* Confirmation Dialog */}
+            <Dialog open={!!confirmAction} onClose={() => setConfirmAction(null)} maxWidth="xs" fullWidth>
+                <DialogTitle>
+                    {confirmAction?.type === 'payment' ? '✅ Подтвердить платёж' : '✅ Подтвердить корректировку'}
+                </DialogTitle>
+                <DialogContent>
+                    <Typography sx={{ mt: 1 }}>{confirmAction?.summary}</Typography>
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setConfirmAction(null)}>Отмена</Button>
+                    <Button
+                        variant="contained"
+                        color={confirmAction?.type === 'payment' ? 'success' : 'primary'}
+                        onClick={async () => {
+                            try {
+                                await confirmAction?.execute();
+                            } catch (error) {
+                                console.error('Confirm action failed:', error);
+                                alert('Operation failed');
+                            } finally {
+                                setConfirmAction(null);
+                            }
+                        }}
+                    >
+                        Подтвердить
+                    </Button>
+                </DialogActions>
+            </Dialog>
 
             {/* Adjustment Dialog */}
             <Dialog open={openAdjDialog} onClose={() => setOpenAdjDialog(false)} maxWidth="xs" fullWidth>
@@ -761,7 +931,7 @@ const FinancePage: React.FC = () => {
                                 label="Employee"
                                 onChange={(e) => setAdjEmployee(e.target.value)}
                             >
-                                {employees.map(emp => (
+                                {uniqueEmployees.map(emp => (
                                     <MenuItem key={emp.id} value={emp.id}>{emp.name}</MenuItem>
                                 ))}
                             </Select>
@@ -842,6 +1012,7 @@ const FinancePage: React.FC = () => {
                                         <TextField
                                             type="number"
                                             size="small"
+                                            key={`${emp.id}-${emp.hourlyRate}`}
                                             defaultValue={emp.hourlyRate || 0}
                                             onBlur={(e) => handleUpdateRate(emp.id, e.target.value)}
                                             InputProps={{ startAdornment: <Typography sx={{ mr: 1 }}>$</Typography> }}
@@ -870,7 +1041,7 @@ const FinancePage: React.FC = () => {
                                 label="Employee"
                                 onChange={(e) => setPaymentEmployee(e.target.value)}
                             >
-                                {employees.map(emp => (
+                                {uniqueEmployees.map(emp => (
                                     <MenuItem key={emp.id} value={emp.id}>{emp.name}</MenuItem>
                                 ))}
                             </Select>
@@ -923,6 +1094,8 @@ const FinancePage: React.FC = () => {
                 <PayrollReport
                     entries={filteredEntries}
                     onClose={() => setShowReport(false)}
+                    employeeIdGroups={employeeIdGroups}
+                    uniqueEmployees={uniqueEmployees}
                 />
             )}
 
@@ -938,8 +1111,9 @@ const FinancePage: React.FC = () => {
                 </DialogTitle>
                 <DialogContent>
                     {historyEmployee && (() => {
+                        const groupIds = employeeIdGroups.get(historyEmployee.id);
                         const employeeEntries = entries.filter(e =>
-                            String(e.employeeId) === historyEmployee.id
+                            groupIds?.has(String(e.employeeId)) ?? String(e.employeeId) === historyEmployee.id
                         );
                         const payments = employeeEntries.filter(e => e.type === 'payment');
                         const adjustments = employeeEntries.filter(e => e.type === 'manual_adjustment');

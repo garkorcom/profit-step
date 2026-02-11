@@ -265,7 +265,15 @@ const GTDTaskCard: React.FC<GTDTaskCardProps> = ({
                                             fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif'
                                         }}
                                     >
-                                        {new Date(task.dueDate.seconds * 1000).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                                        {(() => {
+                                            const raw = task.dueDate as any;
+                                            const d = raw?.seconds
+                                                ? new Date(raw.seconds * 1000)
+                                                : raw?.toDate
+                                                    ? raw.toDate()
+                                                    : new Date(raw);
+                                            return isNaN(d.getTime()) ? '—' : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+                                        })()}
                                     </Typography>
                                 </Box>
                             )}

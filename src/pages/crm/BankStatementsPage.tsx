@@ -7,7 +7,7 @@
  * @module pages/crm/BankStatementsPage
  */
 
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import {
     Box,
     Typography,
@@ -51,10 +51,18 @@ import {
     DeleteSweep as ClearIcon,
     PictureAsPdf as PdfIcon,
     AutoFixHigh as RuleIcon,
-    Add as AddIcon,
+    ContentCut as SplitIcon,
+    BarChart as ChartIcon,
+    Search as SearchIcon,
+    Receipt as ReceiptIcon,
+    Repeat as RepeatIcon,
+    LightbulbOutlined as SuggestIcon,
+    AttachFile as AttachIcon,
 } from '@mui/icons-material';
+import { BarChart, Bar, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveContainer, Cell } from 'recharts';
 import { collection, query, where, orderBy, getDocs, updateDoc, doc, deleteDoc, writeBatch, addDoc, serverTimestamp } from 'firebase/firestore';
-import { db } from '../../firebase/firebase';
+import { db, storage } from '../../firebase/firebase';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import jsPDF from 'jspdf';
 import 'jspdf-autotable';
@@ -73,6 +81,15 @@ interface BankTransaction {
     isDeductible: boolean;
     notes?: string;
     year: number;
+    // Split transaction support
+    parentId?: string;
+    isSplit?: boolean;
+    // Tax deductibility percentage
+    deductibilityPercent?: number;
+    // Receipt attachment
+    receiptUrl?: string;
+    // Refund flag
+    isRefund?: boolean;
 }
 
 interface BankStatement {
@@ -239,6 +256,44 @@ const CATEGORY_LABELS: Record<TaxCategory, string> = {
 
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
+// Schedule C (IRS Form 1040) line mapping
+const SCHEDULE_C_MAP: Partial<Record<TaxCategory, string>> = {
+    advertising: 'Line 8 – Advertising',
+    car_repair: 'Line 9 – Car/Truck Expenses',
+    insurance: 'Line 15 – Insurance',
+    office_rent: 'Line 20b – Rent (Business)',
+    office_supplies: 'Line 22 – Supplies',
+    materials: 'Line 22 – Supplies',
+    office_equipment: 'Line 13 – Depreciation',
+    fuel: 'Line 9 – Car/Truck Expenses',
+    parking: 'Line 9 – Car/Truck Expenses',
+    meals: 'Line 24b – Meals (50%)',
+    software: 'Line 27a – Other Expenses',
+    apps_work: 'Line 27a – Other Expenses',
+    business_services: 'Line 17 – Legal/Prof Services',
+    permits_licenses: 'Line 27a – Other Expenses',
+    payroll: 'Line 26 – Wages',
+    payroll_taxes: 'Line 23 – Taxes/Licenses',
+    fees: 'Line 27a – Other Expenses',
+    subcontractor: 'Line 11 – Contract Labor',
+    hotels: 'Line 24a – Travel',
+};
+
+// Ambiguous vendors that always need manual review
+const AMBIGUOUS_VENDORS = ['AMAZON', 'WALMART', 'TARGET', 'COSTCO', 'PAYPAL', 'VENMO', 'EBAY', 'HOME DEPOT', 'LOWES'];
+
+// Default deductibility percentages by category
+const DEFAULT_DEDUCTIBILITY: Partial<Record<TaxCategory, number>> = {
+    meals: 50,
+    hotels: 50,
+    car_repair: 50,
+    fuel: 50,
+    parking: 50,
+    private: 0,
+    internal_transfer: 0,
+    paypal_transfer: 0,
+};
+
 export const BankStatementsPage: React.FC = () => {
     const [transactions, setTransactions] = useState<BankTransaction[]>([]);
     const [statements, setStatements] = useState<BankStatement[]>([]);
@@ -252,8 +307,36 @@ export const BankStatementsPage: React.FC = () => {
     const [showRulesDialog, setShowRulesDialog] = useState(false);
     const [newRulePattern, setNewRulePattern] = useState('');
     const [newRuleCategory, setNewRuleCategory] = useState<TaxCategory>('business_expense');
-    const [activeTab, setActiveTab] = useState<'business' | 'private'>('business');
+    const [activeTab, setActiveTab] = useState<'business' | 'private' | 'review'>('business');
     const fileInputRef = useRef<HTMLInputElement>(null);
+
+    // Drag & drop state
+    const [isDragOver, setIsDragOver] = useState(false);
+
+    // Bulk selection state
+    const [selectedTxIds, setSelectedTxIds] = useState<Set<string>>(new Set());
+    const [bulkCategory, setBulkCategory] = useState<TaxCategory>('business_expense');
+
+    // Split transaction state
+    const [splitTx, setSplitTx] = useState<BankTransaction | null>(null);
+    const [splitParts, setSplitParts] = useState<Array<{ amount: string; category: TaxCategory }>>([
+        { amount: '', category: 'business_expense' },
+        { amount: '', category: 'private' },
+    ]);
+
+    // Chart visibility
+    const [showChart, setShowChart] = useState(true);
+
+    // Vendor search filter
+    const [vendorSearch, setVendorSearch] = useState('');
+
+    // Receipt viewer
+    const [receiptViewer, setReceiptViewer] = useState<{ open: boolean; url: string; vendor: string }>({ open: false, url: '', vendor: '' });
+    const receiptInputRef = useRef<HTMLInputElement>(null);
+    const [uploadingReceipt, setUploadingReceipt] = useState<string | null>(null);
+
+    // Auto-rule suggestion
+    const [ruleSuggestion, setRuleSuggestion] = useState<{ vendor: string; category: TaxCategory; count: number } | null>(null);
 
     // Notification state
     const [notification, setNotification] = useState<{ open: boolean; message: string; severity: 'success' | 'error' | 'info' }>({
@@ -1224,8 +1307,9 @@ export const BankStatementsPage: React.FC = () => {
         });
     };
 
-    // Filter by year first, then by month
+    // Filter by year first, then by month (exclude split parents)
     const yearFilteredTransactions = transactions.filter(tx => {
+        if (tx.isSplit) return false; // hide split parents, show children instead
         const txDate = new Date(tx.date.seconds * 1000);
         return txDate.getFullYear() === selectedYear;
     });
@@ -1237,10 +1321,19 @@ export const BankStatementsPage: React.FC = () => {
             return txDate.getMonth() + 1 === selectedMonth;
         });
 
+    // Auto-detect refunds: positive amounts in expense categories
+    const withRefundFlags = monthFilteredTransactions.map(tx => {
+        if (tx.amount > 0 && !INCOME_CATEGORIES.includes(tx.category) && !TRANSFER_CATEGORIES.includes(tx.category) && tx.category !== 'private' && tx.category !== 'uncategorized') {
+            return { ...tx, isRefund: true };
+        }
+        return tx;
+    });
+
     // Calculate totals (on month-filtered data)
-    const totals = monthFilteredTransactions.reduce((acc, tx) => {
+    const totals = withRefundFlags.reduce((acc, tx) => {
         if (tx.category !== 'uncategorized') {
-            acc[tx.category] = (acc[tx.category] || 0) + Math.abs(tx.amount);
+            const amount = Math.abs(tx.amount);
+            acc[tx.category] = (acc[tx.category] || 0) + (tx.isRefund ? 0 : amount);
         }
         // Group by type
         if (INCOME_CATEGORIES.includes(tx.category)) {
@@ -1248,22 +1341,352 @@ export const BankStatementsPage: React.FC = () => {
         } else if (TRANSFER_CATEGORIES.includes(tx.category)) {
             acc.transfers = (acc.transfers || 0) + Math.abs(tx.amount);
         } else if (tx.category !== 'uncategorized') {
-            acc.expenses = (acc.expenses || 0) + Math.abs(tx.amount);
+            if (tx.isRefund) {
+                acc.expenses = (acc.expenses || 0) - Math.abs(tx.amount);
+            } else {
+                acc.expenses = (acc.expenses || 0) + Math.abs(tx.amount);
+            }
         }
         acc.total = (acc.total || 0) + Math.abs(tx.amount);
         return acc;
     }, {} as Record<string, number>);
 
+    // Chart data: top 10 expense categories
+    const chartData = useMemo(() => {
+        const expenseEntries = Object.entries(totals)
+            .filter(([cat]) =>
+                !['income', 'expenses', 'transfers', 'total', 'uncategorized', 'private'].includes(cat) &&
+                !INCOME_CATEGORIES.includes(cat as TaxCategory) &&
+                !TRANSFER_CATEGORIES.includes(cat as TaxCategory)
+            )
+            .map(([cat, amount]) => ({
+                name: (CATEGORY_LABELS[cat as TaxCategory] || cat).replace(/ - Expense$/, '').replace(/^[^\s]+ /, ''),
+                amount: Math.round(amount),
+                color: CATEGORY_COLORS[cat as TaxCategory] || '#999',
+            }))
+            .sort((a, b) => b.amount - a.amount)
+            .slice(0, 10);
+        return expenseEntries;
+    }, [totals]);
+
+    // Review needed: transactions from ambiguous vendors
+    const reviewNeededTransactions = withRefundFlags.filter(tx =>
+        AMBIGUOUS_VENDORS.some(v => tx.vendor.toUpperCase().includes(v)) ||
+        tx.category === 'uncategorized'
+    );
 
     // Then filter by category
     const categoryFiltered = filterCategory === 'all'
-        ? monthFilteredTransactions
-        : monthFilteredTransactions.filter(tx => tx.category === filterCategory);
+        ? withRefundFlags
+        : withRefundFlags.filter(tx => tx.category === filterCategory);
 
-    // Filter by tab (business vs private)
+    // Filter by tab (business vs private vs review)
     const filteredTransactions = activeTab === 'private'
         ? categoryFiltered.filter(tx => tx.category === 'private')
-        : categoryFiltered.filter(tx => tx.category !== 'private');
+        : activeTab === 'review'
+            ? reviewNeededTransactions
+            : categoryFiltered.filter(tx => tx.category !== 'private');
+
+    // --- Drag & Drop handlers ---
+    const handleDragOver = useCallback((e: React.DragEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsDragOver(true);
+    }, []);
+
+    const handleDragLeave = useCallback((e: React.DragEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsDragOver(false);
+    }, []);
+
+    const handleDrop = useCallback((e: React.DragEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsDragOver(false);
+
+        const files = e.dataTransfer.files;
+        if (files && files.length > 0 && fileInputRef.current) {
+            // Create a synthetic event-like approach by setting files on input
+            const dataTransfer = new DataTransfer();
+            for (let i = 0; i < files.length; i++) {
+                dataTransfer.items.add(files[i]);
+            }
+            fileInputRef.current.files = dataTransfer.files;
+            fileInputRef.current.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+    }, []);
+
+    // --- Bulk Actions ---
+    const toggleTxSelection = (txId: string) => {
+        setSelectedTxIds(prev => {
+            const next = new Set(prev);
+            if (next.has(txId)) next.delete(txId);
+            else next.add(txId);
+            return next;
+        });
+    };
+
+    const toggleSelectAll = () => {
+        if (selectedTxIds.size === searchFilteredTransactions.length) {
+            setSelectedTxIds(new Set());
+        } else {
+            setSelectedTxIds(new Set(searchFilteredTransactions.map(tx => tx.id)));
+        }
+    };
+
+    const applyBulkCategory = async () => {
+        if (selectedTxIds.size === 0) return;
+        try {
+            const batch = writeBatch(db);
+            selectedTxIds.forEach(txId => {
+                batch.update(doc(db, 'bank_transactions', txId), {
+                    category: bulkCategory,
+                    isDeductible: !TRANSFER_CATEGORIES.includes(bulkCategory) && bulkCategory !== 'private',
+                    deductibilityPercent: DEFAULT_DEDUCTIBILITY[bulkCategory] ?? 100,
+                });
+            });
+            await batch.commit();
+            setSelectedTxIds(new Set());
+            setNotification({ open: true, message: `✅ ${selectedTxIds.size} транзакций обновлено → ${CATEGORY_LABELS[bulkCategory]}`, severity: 'success' });
+            loadTransactions();
+        } catch (error) {
+            console.error('Bulk update error:', error);
+        }
+    };
+
+    const bulkMarkPrivate = async () => {
+        if (selectedTxIds.size === 0) return;
+        try {
+            const batch = writeBatch(db);
+            selectedTxIds.forEach(txId => {
+                batch.update(doc(db, 'bank_transactions', txId), { category: 'private', isDeductible: false, deductibilityPercent: 0 });
+            });
+            await batch.commit();
+            setSelectedTxIds(new Set());
+            setNotification({ open: true, message: `✅ ${selectedTxIds.size} транзакций → Private`, severity: 'success' });
+            loadTransactions();
+        } catch (error) {
+            console.error('Bulk mark private error:', error);
+        }
+    };
+
+    // --- Split Transaction ---
+    const executeSplit = async () => {
+        if (!splitTx) return;
+        const totalSplit = splitParts.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
+        if (Math.abs(totalSplit - Math.abs(splitTx.amount)) > 0.01) {
+            setNotification({ open: true, message: `⚠️ Сумма частей ($${totalSplit.toFixed(2)}) не совпадает с оригиналом ($${Math.abs(splitTx.amount).toFixed(2)})`, severity: 'error' });
+            return;
+        }
+        try {
+            const batch = writeBatch(db);
+            // Mark parent as split
+            batch.update(doc(db, 'bank_transactions', splitTx.id), { isSplit: true });
+            // Create children
+            for (const part of splitParts) {
+                const childRef = doc(collection(db, 'bank_transactions'));
+                batch.set(childRef, {
+                    parentId: splitTx.id,
+                    statementId: splitTx.statementId,
+                    date: splitTx.date,
+                    rawDescription: splitTx.rawDescription,
+                    vendor: splitTx.vendor,
+                    city: splitTx.city || '',
+                    state: splitTx.state || '',
+                    amount: splitTx.amount < 0 ? -parseFloat(part.amount) : parseFloat(part.amount),
+                    category: part.category,
+                    isDeductible: !TRANSFER_CATEGORIES.includes(part.category) && part.category !== 'private',
+                    deductibilityPercent: DEFAULT_DEDUCTIBILITY[part.category] ?? 100,
+                    year: splitTx.year,
+                    notes: `Split from ${splitTx.vendor}`,
+                });
+            }
+            await batch.commit();
+            setSplitTx(null);
+            setSplitParts([{ amount: '', category: 'business_expense' }, { amount: '', category: 'private' }]);
+            setNotification({ open: true, message: `✅ Транзакция ${splitTx.vendor} разделена на ${splitParts.length} частей`, severity: 'success' });
+            loadTransactions();
+        } catch (error) {
+            console.error('Split error:', error);
+        }
+    };
+
+    // --- Update deductibility percentage ---
+    const updateDeductibility = async (txId: string, percent: number) => {
+        try {
+            await updateDoc(doc(db, 'bank_transactions', txId), { deductibilityPercent: percent });
+            loadTransactions();
+        } catch (error) {
+            console.error('Error updating deductibility:', error);
+        }
+    };
+
+    // --- Receipt Upload ---
+    const handleReceiptUpload = async (txId: string, file: File) => {
+        setUploadingReceipt(txId);
+        try {
+            const storageRef = ref(storage, `receipts/${txId}/${file.name}`);
+            await uploadBytes(storageRef, file);
+            const downloadUrl = await getDownloadURL(storageRef);
+            await updateDoc(doc(db, 'bank_transactions', txId), { receiptUrl: downloadUrl });
+            setNotification({ open: true, message: '📎 Receipt attached!', severity: 'success' });
+            loadTransactions();
+        } catch (error) {
+            console.error('Receipt upload error:', error);
+            setNotification({ open: true, message: 'Failed to upload receipt', severity: 'error' });
+        } finally {
+            setUploadingReceipt(null);
+        }
+    };
+
+    // --- Schedule C Export PDF ---
+    const downloadScheduleC = () => {
+        const doc_pdf = new jsPDF();
+        const pageWidth = doc_pdf.internal.pageSize.getWidth();
+
+        // Header
+        doc_pdf.setFillColor(25, 118, 210);
+        doc_pdf.rect(0, 0, pageWidth, 35, 'F');
+        doc_pdf.setTextColor(255, 255, 255);
+        doc_pdf.setFontSize(18);
+        doc_pdf.setFont('helvetica', 'bold');
+        doc_pdf.text('Schedule C — Profit or Loss from Business', 14, 18);
+        doc_pdf.setFontSize(10);
+        doc_pdf.setFont('helvetica', 'normal');
+        const periodLabel = selectedMonth === 'all'
+            ? `Year ${selectedYear}`
+            : `${MONTH_NAMES[(selectedMonth as number) - 1]} ${selectedYear}`;
+        doc_pdf.text(`Garkor Corp — ${periodLabel}`, 14, 28);
+
+        doc_pdf.setTextColor(0, 0, 0);
+        let yPos = 45;
+
+        // Build Schedule C data from all business transactions for the period
+        const scheduleCData: Record<string, { line: string; amount: number; deductible: number }> = {};
+
+        monthFilteredTransactions.forEach(tx => {
+            if (tx.category === 'private' || tx.category === 'uncategorized') return;
+            if (INCOME_CATEGORIES.includes(tx.category)) return;
+            if (TRANSFER_CATEGORIES.includes(tx.category)) return;
+
+            const lineItem = SCHEDULE_C_MAP[tx.category] || 'Other Expenses';
+            const amount = Math.abs(tx.amount);
+            const pct = tx.deductibilityPercent ?? (DEFAULT_DEDUCTIBILITY[tx.category] ?? 100);
+            const deductible = amount * (pct / 100);
+
+            if (!scheduleCData[lineItem]) {
+                scheduleCData[lineItem] = { line: lineItem, amount: 0, deductible: 0 };
+            }
+            scheduleCData[lineItem].amount += amount;
+            scheduleCData[lineItem].deductible += deductible;
+        });
+
+        const tableData = Object.values(scheduleCData)
+            .sort((a, b) => b.deductible - a.deductible)
+            .map(row => [
+                row.line,
+                `$${row.amount.toFixed(2)}`,
+                `$${row.deductible.toFixed(2)}`,
+            ]);
+
+        const totalAmount = Object.values(scheduleCData).reduce((s, r) => s + r.amount, 0);
+        const totalDeductible = Object.values(scheduleCData).reduce((s, r) => s + r.deductible, 0);
+
+        if (tableData.length > 0) {
+            (doc_pdf as any).autoTable({
+                startY: yPos,
+                head: [['IRS Line Item', 'Gross Amount', 'Tax Deductible']],
+                body: tableData,
+                foot: [['TOTAL', `$${totalAmount.toFixed(2)}`, `$${totalDeductible.toFixed(2)}`]],
+                theme: 'grid',
+                headStyles: { fillColor: [25, 118, 210] },
+                footStyles: { fillColor: [240, 240, 240], textColor: [0, 0, 0], fontStyle: 'bold' },
+                styles: { fontSize: 9 },
+                columnStyles: {
+                    0: { cellWidth: 90 },
+                    1: { cellWidth: 40, halign: 'right' },
+                    2: { cellWidth: 40, halign: 'right' },
+                },
+            });
+            yPos = (doc_pdf as any).lastAutoTable.finalY + 15;
+        }
+
+        // Income summary
+        const totalIncome = monthFilteredTransactions
+            .filter(tx => INCOME_CATEGORIES.includes(tx.category))
+            .reduce((s, tx) => s + Math.abs(tx.amount), 0);
+
+        doc_pdf.setFontSize(12);
+        doc_pdf.setFont('helvetica', 'bold');
+        doc_pdf.text(`Gross Income (Line 1): $${totalIncome.toFixed(2)}`, 14, yPos);
+        yPos += 8;
+        doc_pdf.text(`Total Deductions: $${totalDeductible.toFixed(2)}`, 14, yPos);
+        yPos += 8;
+        doc_pdf.setFontSize(14);
+        const netProfit = totalIncome - totalDeductible;
+        doc_pdf.text(`Net Profit (Line 31): $${netProfit.toFixed(2)}`, 14, yPos);
+
+        // Footer
+        doc_pdf.setFontSize(7);
+        doc_pdf.setFont('helvetica', 'normal');
+        doc_pdf.setTextColor(150, 150, 150);
+        doc_pdf.text(`Generated: ${new Date().toLocaleString()} | This is a draft — consult your CPA`, 14, 285);
+
+        doc_pdf.save(`ScheduleC_Draft_${periodLabel.replace(/\s+/g, '_')}.pdf`);
+        setNotification({ open: true, message: '📋 Schedule C Draft PDF downloaded!', severity: 'success' });
+    };
+
+    // --- Recurring Transaction Detection ---
+    const recurringVendors = useMemo(() => {
+        // Group transactions by vendor across the full year
+        const vendorMonths: Record<string, Set<number>> = {};
+        yearFilteredTransactions.forEach(tx => {
+            const month = new Date(tx.date.seconds * 1000).getMonth();
+            const key = tx.vendor.toUpperCase().trim();
+            if (!vendorMonths[key]) vendorMonths[key] = new Set();
+            vendorMonths[key].add(month);
+        });
+        // Vendors appearing in 3+ months are recurring
+        const result = new Set<string>();
+        Object.entries(vendorMonths).forEach(([vendor, months]) => {
+            if (months.size >= 3) result.add(vendor);
+        });
+        return result;
+    }, [yearFilteredTransactions]);
+
+    // --- Auto-Rule Suggestion ---
+    // Detect when user manually categorized same vendor 3+ times
+    useMemo(() => {
+        const vendorCatCount: Record<string, Record<string, number>> = {};
+        transactions.forEach(tx => {
+            if (tx.category === 'uncategorized') return;
+            const key = tx.vendor.toUpperCase().trim();
+            if (!vendorCatCount[key]) vendorCatCount[key] = {};
+            vendorCatCount[key][tx.category] = (vendorCatCount[key][tx.category] || 0) + 1;
+        });
+
+        // Find vendor with highest repeated manual category that doesn't have a rule
+        let bestSuggestion: { vendor: string; category: TaxCategory; count: number } | null = null;
+        Object.entries(vendorCatCount).forEach(([vendor, cats]) => {
+            const hasRule = vendorRules.some(r => vendor.includes(r.pattern.toUpperCase()));
+            if (hasRule) return;
+            Object.entries(cats).forEach(([cat, count]) => {
+                if (count >= 3 && (!bestSuggestion || count > bestSuggestion.count)) {
+                    bestSuggestion = { vendor, category: cat as TaxCategory, count };
+                }
+            });
+        });
+        setRuleSuggestion(bestSuggestion);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [transactions, vendorRules]);
+
+    // --- Apply vendor search filter to filteredTransactions ---
+    const searchFilteredTransactions = vendorSearch
+        ? filteredTransactions.filter(tx =>
+            tx.vendor.toLowerCase().includes(vendorSearch.toLowerCase()) ||
+            tx.rawDescription.toLowerCase().includes(vendorSearch.toLowerCase()))
+        : filteredTransactions;
 
     return (
         <Box sx={{ p: 3, maxWidth: 1400, mx: 'auto' }}>
@@ -1289,6 +1712,15 @@ export const BankStatementsPage: React.FC = () => {
                         disabled={transactions.length === 0}
                     >
                         Export PDF
+                    </Button>
+                    <Button
+                        variant="outlined"
+                        color="info"
+                        startIcon={<PdfIcon />}
+                        onClick={downloadScheduleC}
+                        disabled={transactions.length === 0}
+                    >
+                        📋 Schedule C
                     </Button>
                     <Button
                         variant="outlined"
@@ -1340,20 +1772,24 @@ export const BankStatementsPage: React.FC = () => {
                 </Stack>
             </Paper>
 
-            {/* Upload Area */}
+            {/* Upload Area with Drag & Drop */}
             <Paper
                 sx={{
                     p: 4,
                     mb: 3,
                     textAlign: 'center',
                     border: '2px dashed',
-                    borderColor: 'divider',
-                    bgcolor: 'background.paper',
+                    borderColor: isDragOver ? 'primary.main' : 'divider',
+                    bgcolor: isDragOver ? 'action.selected' : 'background.paper',
                     cursor: 'pointer',
-                    transition: 'all 0.2s',
+                    transition: 'all 0.3s ease',
+                    transform: isDragOver ? 'scale(1.01)' : 'none',
                     '&:hover': { borderColor: 'primary.main', bgcolor: 'action.hover' },
                 }}
                 onClick={() => fileInputRef.current?.click()}
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
             >
                 <input
                     type="file"
@@ -1365,6 +1801,13 @@ export const BankStatementsPage: React.FC = () => {
                 />
                 {uploading ? (
                     <CircularProgress />
+                ) : isDragOver ? (
+                    <>
+                        <UploadIcon sx={{ fontSize: 56, color: 'primary.main', mb: 1 }} />
+                        <Typography variant="h6" color="primary">
+                            Drop files here!
+                        </Typography>
+                    </>
                 ) : (
                     <>
                         <UploadIcon sx={{ fontSize: 48, color: 'text.secondary', mb: 1 }} />
@@ -1372,7 +1815,7 @@ export const BankStatementsPage: React.FC = () => {
                             Upload Bank Statement
                         </Typography>
                         <Typography variant="body2" color="text.secondary">
-                            CSV, PNG, JPG, or PDF from Chase
+                            Drag & drop or click — CSV, PNG, JPG, PDF from Chase
                         </Typography>
                     </>
                 )}
@@ -1394,6 +1837,35 @@ export const BankStatementsPage: React.FC = () => {
                             />
                         ))}
                     </Stack>
+
+                    {/* Expense Bar Chart */}
+                    {chartData.length > 0 && showChart && (
+                        <Paper sx={{ p: 2, mb: 3 }}>
+                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                                <Typography variant="subtitle2">📊 Top Expense Categories</Typography>
+                                <IconButton size="small" onClick={() => setShowChart(false)}>
+                                    <ChartIcon fontSize="small" />
+                                </IconButton>
+                            </Box>
+                            <ResponsiveContainer width="100%" height={Math.max(200, chartData.length * 36)}>
+                                <BarChart data={chartData} layout="vertical" margin={{ left: 140, right: 20, top: 5, bottom: 5 }}>
+                                    <XAxis type="number" tickFormatter={(v: number) => `$${v.toLocaleString()}`} />
+                                    <YAxis type="category" dataKey="name" width={130} tick={{ fontSize: 12 }} />
+                                    <RechartsTooltip formatter={(value: number) => `$${value.toLocaleString()}`} />
+                                    <Bar dataKey="amount" radius={[0, 4, 4, 0]}>
+                                        {chartData.map((entry, index) => (
+                                            <Cell key={index} fill={entry.color} />
+                                        ))}
+                                    </Bar>
+                                </BarChart>
+                            </ResponsiveContainer>
+                        </Paper>
+                    )}
+                    {!showChart && chartData.length > 0 && (
+                        <Box sx={{ mb: 2 }}>
+                            <Button size="small" startIcon={<ChartIcon />} onClick={() => setShowChart(true)} variant="text">Show Chart</Button>
+                        </Box>
+                    )}
                 </Paper>
             )}
 
@@ -1703,34 +2175,132 @@ export const BankStatementsPage: React.FC = () => {
                 ))}
             </Box>
 
-            {/* Tabs for Business / Private transactions */}
+            {/* Vendor Search + Auto-Rule Suggestion */}
+            <Box sx={{ display: 'flex', gap: 2, mb: 2, alignItems: 'center' }}>
+                <TextField
+                    size="small"
+                    placeholder="🔍 Search vendor or description..."
+                    value={vendorSearch}
+                    onChange={(e) => setVendorSearch(e.target.value)}
+                    sx={{ flex: 1, maxWidth: 400 }}
+                    InputProps={{
+                        startAdornment: <SearchIcon sx={{ color: 'text.secondary', mr: 1 }} fontSize="small" />,
+                    }}
+                />
+                {vendorSearch && (
+                    <Chip
+                        label={`${searchFilteredTransactions.length} results`}
+                        size="small"
+                        onDelete={() => setVendorSearch('')}
+                    />
+                )}
+            </Box>
+
+            {/* Auto-Rule Suggestion Banner */}
+            {ruleSuggestion && (
+                <Paper sx={{ p: 1.5, mb: 2, bgcolor: '#FFF3E0', border: '1px solid #FFB74D', display: 'flex', alignItems: 'center', gap: 2 }}>
+                    <SuggestIcon color="warning" />
+                    <Typography variant="body2" sx={{ flex: 1 }}>
+                        💡 <strong>{ruleSuggestion.vendor}</strong> was categorized as <strong>{CATEGORY_LABELS[ruleSuggestion.category]}</strong> {ruleSuggestion.count}× — create an auto-rule?
+                    </Typography>
+                    <Button
+                        size="small"
+                        variant="contained"
+                        color="warning"
+                        onClick={async () => {
+                            await addDoc(collection(db, 'vendor_rules'), {
+                                pattern: ruleSuggestion.vendor.toLowerCase(),
+                                category: ruleSuggestion.category,
+                                createdAt: serverTimestamp(),
+                            });
+                            setNotification({ open: true, message: `✅ Rule created for ${ruleSuggestion.vendor}`, severity: 'success' });
+                            setRuleSuggestion(null);
+                            loadTransactions();
+                        }}
+                    >
+                        Create Rule
+                    </Button>
+                    <Button size="small" onClick={() => setRuleSuggestion(null)}>Dismiss</Button>
+                </Paper>
+            )}
+
+            {/* Hidden receipt file input */}
+            <input
+                type="file"
+                ref={receiptInputRef}
+                style={{ display: 'none' }}
+                accept="image/*,.pdf"
+                onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    const txId = receiptInputRef.current?.dataset.txid;
+                    if (file && txId) handleReceiptUpload(txId, file);
+                    e.target.value = '';
+                }}
+            />
+
+            {/* Tabs for Business / Private / Review transactions */}
             <Paper sx={{ mb: 2 }}>
                 <Tabs
                     value={activeTab}
-                    onChange={(_, newValue) => setActiveTab(newValue)}
+                    onChange={(_, newValue) => { setActiveTab(newValue); setSelectedTxIds(new Set()); }}
                     indicatorColor="primary"
                     textColor="primary"
                 >
                     <Tab
                         value="business"
-                        label={`💼 Business Transactions (${monthFilteredTransactions.filter(tx => tx.category !== 'private').length})`}
+                        label={`💼 Business (${withRefundFlags.filter(tx => tx.category !== 'private').length})`}
                     />
                     <Tab
                         value="private"
-                        label={`🔒 Private Transactions (${monthFilteredTransactions.filter(tx => tx.category === 'private').length})`}
+                        label={`🔒 Private (${withRefundFlags.filter(tx => tx.category === 'private').length})`}
                         sx={{ color: '#9E9E9E' }}
+                    />
+                    <Tab
+                        value="review"
+                        label={
+                            <Badge badgeContent={reviewNeededTransactions.length} color="warning" max={999}>
+                                <span>⚠️ Review Needed</span>
+                            </Badge>
+                        }
                     />
                 </Tabs>
             </Paper>
+
+            {/* Bulk Actions Bar */}
+            {selectedTxIds.size > 0 && (
+                <Paper sx={{ p: 1.5, mb: 2, display: 'flex', gap: 2, alignItems: 'center', bgcolor: '#e3f2fd', borderLeft: '4px solid #1976d2' }}>
+                    <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                        ✅ {selectedTxIds.size} selected
+                    </Typography>
+                    <FormControl size="small" sx={{ minWidth: 180 }}>
+                        <Select value={bulkCategory} onChange={(e) => setBulkCategory(e.target.value as TaxCategory)}>
+                            {DROPDOWN_CATEGORIES.map(cat => (
+                                <MenuItem key={cat} value={cat}>{CATEGORY_LABELS[cat]}</MenuItem>
+                            ))}
+                        </Select>
+                    </FormControl>
+                    <Button variant="contained" size="small" onClick={applyBulkCategory}>Apply Category</Button>
+                    <Button variant="outlined" size="small" color="secondary" onClick={bulkMarkPrivate}>🔒 Mark Private</Button>
+                    <Button variant="text" size="small" onClick={() => setSelectedTxIds(new Set())}>✕ Clear</Button>
+                </Paper>
+            )}
 
             {/* Transactions Table */}
             <TableContainer component={Paper}>
                 <Table size="small">
                     <TableHead>
                         <TableRow>
+                            <TableCell padding="checkbox">
+                                <Checkbox
+                                    checked={selectedTxIds.size === searchFilteredTransactions.length && searchFilteredTransactions.length > 0}
+                                    indeterminate={selectedTxIds.size > 0 && selectedTxIds.size < searchFilteredTransactions.length}
+                                    onChange={toggleSelectAll}
+                                />
+                            </TableCell>
                             <TableCell>Date</TableCell>
                             <TableCell>Vendor</TableCell>
                             <TableCell>Category</TableCell>
+                            <TableCell align="center">Tax %</TableCell>
                             <TableCell align="right">Amount</TableCell>
                             <TableCell>Actions</TableCell>
                         </TableRow>
@@ -1738,63 +2308,140 @@ export const BankStatementsPage: React.FC = () => {
                     <TableBody>
                         {loading ? (
                             <TableRow>
-                                <TableCell colSpan={5} align="center">
+                                <TableCell colSpan={8} align="center">
                                     <CircularProgress size={24} />
                                 </TableCell>
                             </TableRow>
-                        ) : filteredTransactions.length === 0 ? (
+                        ) : searchFilteredTransactions.length === 0 ? (
                             <TableRow>
-                                <TableCell colSpan={5} align="center">
-                                    No transactions. Upload a bank statement to get started.
+                                <TableCell colSpan={8} align="center">
+                                    {activeTab === 'review'
+                                        ? 'No transactions need review! 🎉'
+                                        : 'No transactions. Upload a bank statement to get started.'}
                                 </TableCell>
                             </TableRow>
                         ) : (
-                            filteredTransactions.map((tx) => (
-                                <TableRow key={tx.id} hover>
+                            searchFilteredTransactions.map((tx) => (
+                                <TableRow
+                                    key={tx.id}
+                                    hover
+                                    selected={selectedTxIds.has(tx.id)}
+                                    sx={{
+                                        ...(tx.isRefund ? { bgcolor: '#FFF9C4' } : {}),
+                                        ...(tx.parentId ? { borderLeft: '3px solid #90CAF9' } : {}),
+                                    }}
+                                >
+                                    <TableCell padding="checkbox">
+                                        <Checkbox
+                                            checked={selectedTxIds.has(tx.id)}
+                                            onChange={() => toggleTxSelection(tx.id)}
+                                        />
+                                    </TableCell>
                                     <TableCell>
                                         {new Date(tx.date.seconds * 1000).toLocaleDateString()}
                                     </TableCell>
                                     <TableCell>
                                         <Typography variant="body2" fontWeight={500}>
-                                            {tx.vendor}
+                                            {tx.isRefund && '🔄 '}{recurringVendors.has(tx.vendor.toUpperCase().trim()) && <Chip icon={<RepeatIcon />} label="recurring" size="small" variant="outlined" color="primary" sx={{ ml: 0.5, height: 18, fontSize: '0.6rem' }} />}{' '}{tx.vendor}
+                                            {tx.parentId && <Chip label="split" size="small" sx={{ ml: 0.5, height: 18, fontSize: '0.65rem' }} />}
                                         </Typography>
                                         <Typography variant="caption" color="text.secondary">
                                             {tx.rawDescription}
                                         </Typography>
+                                        {AMBIGUOUS_VENDORS.some(v => tx.vendor.toUpperCase().includes(v)) && (
+                                            <Chip label="⚠️ Review" size="small" color="warning" variant="outlined" sx={{ ml: 0.5, height: 18, fontSize: '0.6rem' }} />
+                                        )}
                                     </TableCell>
                                     <TableCell>
+                                        <Tooltip title={SCHEDULE_C_MAP[tx.category] || ''} placement="right">
+                                            <Select
+                                                size="small"
+                                                value={tx.category}
+                                                onChange={(e) => updateCategory(tx.id, e.target.value as TaxCategory)}
+                                                sx={{
+                                                    minWidth: 120,
+                                                    '& .MuiSelect-select': {
+                                                        bgcolor: CATEGORY_COLORS[tx.category],
+                                                        color: 'white',
+                                                        borderRadius: 1,
+                                                    }
+                                                }}
+                                            >
+                                                {DROPDOWN_CATEGORIES.map(cat => (
+                                                    <MenuItem key={cat} value={cat}>
+                                                        {CATEGORY_LABELS[cat]}
+                                                        {SCHEDULE_C_MAP[cat] && (
+                                                            <Typography variant="caption" sx={{ ml: 1, color: 'text.secondary', fontSize: '0.6rem' }}>
+                                                                {SCHEDULE_C_MAP[cat]}
+                                                            </Typography>
+                                                        )}
+                                                    </MenuItem>
+                                                ))}
+                                            </Select>
+                                        </Tooltip>
+                                    </TableCell>
+                                    <TableCell align="center">
                                         <Select
                                             size="small"
-                                            value={tx.category}
-                                            onChange={(e) => updateCategory(tx.id, e.target.value as TaxCategory)}
-                                            sx={{
-                                                minWidth: 120,
-                                                '& .MuiSelect-select': {
-                                                    bgcolor: CATEGORY_COLORS[tx.category],
-                                                    color: 'white',
-                                                    borderRadius: 1,
-                                                }
-                                            }}
+                                            value={tx.deductibilityPercent ?? (DEFAULT_DEDUCTIBILITY[tx.category] ?? 100)}
+                                            onChange={(e) => updateDeductibility(tx.id, Number(e.target.value))}
+                                            sx={{ minWidth: 70, fontSize: '0.8rem' }}
                                         >
-                                            {DROPDOWN_CATEGORIES.map(cat => (
-                                                <MenuItem key={cat} value={cat}>{CATEGORY_LABELS[cat]}</MenuItem>
-                                            ))}
+                                            <MenuItem value={0}>0%</MenuItem>
+                                            <MenuItem value={25}>25%</MenuItem>
+                                            <MenuItem value={50}>50%</MenuItem>
+                                            <MenuItem value={75}>75%</MenuItem>
+                                            <MenuItem value={100}>100%</MenuItem>
                                         </Select>
                                     </TableCell>
                                     <TableCell align="right">
                                         <Typography
                                             variant="body2"
-                                            sx={{ color: tx.amount < 0 ? 'error.main' : 'success.main' }}
+                                            sx={{
+                                                color: tx.isRefund ? '#E65100' : tx.amount < 0 ? 'error.main' : 'success.main',
+                                                fontWeight: tx.isRefund ? 700 : 400,
+                                            }}
                                         >
-                                            ${Math.abs(tx.amount).toFixed(2)}
+                                            {tx.isRefund && '↩ '}${Math.abs(tx.amount).toFixed(2)}
                                         </Typography>
                                     </TableCell>
                                     <TableCell>
-                                        <Tooltip title="Edit notes">
-                                            <IconButton size="small" onClick={() => setEditingTx(tx)}>
-                                                <EditIcon fontSize="small" />
-                                            </IconButton>
-                                        </Tooltip>
+                                        <Box sx={{ display: 'flex', gap: 0.5 }}>
+                                            <Tooltip title="Edit notes">
+                                                <IconButton size="small" onClick={() => setEditingTx(tx)}>
+                                                    <EditIcon fontSize="small" />
+                                                </IconButton>
+                                            </Tooltip>
+                                            <Tooltip title="Split transaction">
+                                                <IconButton size="small" onClick={() => {
+                                                    setSplitTx(tx);
+                                                    setSplitParts([
+                                                        { amount: (Math.abs(tx.amount) / 2).toFixed(2), category: tx.category },
+                                                        { amount: (Math.abs(tx.amount) / 2).toFixed(2), category: 'private' },
+                                                    ]);
+                                                }}>
+                                                    <SplitIcon fontSize="small" />
+                                                </IconButton>
+                                            </Tooltip>
+                                            <Tooltip title={tx.receiptUrl ? 'View receipt' : 'Attach receipt'}>
+                                                <IconButton
+                                                    size="small"
+                                                    color={tx.receiptUrl ? 'success' : 'default'}
+                                                    onClick={() => {
+                                                        if (tx.receiptUrl) {
+                                                            setReceiptViewer({ open: true, url: tx.receiptUrl, vendor: tx.vendor });
+                                                        } else {
+                                                            if (receiptInputRef.current) {
+                                                                receiptInputRef.current.dataset.txid = tx.id;
+                                                                receiptInputRef.current.click();
+                                                            }
+                                                        }
+                                                    }}
+                                                >
+                                                    {uploadingReceipt === tx.id ? <CircularProgress size={16} /> : tx.receiptUrl ? <ReceiptIcon fontSize="small" /> : <AttachIcon fontSize="small" />}
+                                                </IconButton>
+                                            </Tooltip>
+                                        </Box>
                                     </TableCell>
                                 </TableRow>
                             ))
@@ -2341,7 +2988,97 @@ export const BankStatementsPage: React.FC = () => {
                 </DialogActions>
             </Dialog>
 
-            {/* Upload Notification */}
+            {/* Split Transaction Dialog */}
+            <Dialog open={!!splitTx} onClose={() => setSplitTx(null)} maxWidth="sm" fullWidth>
+                <DialogTitle>✂️ Split Transaction</DialogTitle>
+                <DialogContent>
+                    {splitTx && (
+                        <Box>
+                            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                                {splitTx.vendor} — ${Math.abs(splitTx.amount).toFixed(2)}
+                            </Typography>
+                            {splitParts.map((part, i) => (
+                                <Box key={i} sx={{ display: 'flex', gap: 1, mb: 1.5, alignItems: 'center' }}>
+                                    <TextField
+                                        label={`Part ${i + 1}`}
+                                        type="number"
+                                        size="small"
+                                        value={part.amount}
+                                        onChange={(e) => {
+                                            const updated = [...splitParts];
+                                            updated[i] = { ...updated[i], amount: e.target.value };
+                                            setSplitParts(updated);
+                                        }}
+                                        sx={{ width: 120 }}
+                                        InputProps={{ startAdornment: <Typography sx={{ mr: 0.5 }}>$</Typography> }}
+                                    />
+                                    <Select
+                                        size="small"
+                                        value={part.category}
+                                        onChange={(e) => {
+                                            const updated = [...splitParts];
+                                            updated[i] = { ...updated[i], category: e.target.value as TaxCategory };
+                                            setSplitParts(updated);
+                                        }}
+                                        sx={{ flex: 1 }}
+                                    >
+                                        {DROPDOWN_CATEGORIES.map(cat => (
+                                            <MenuItem key={cat} value={cat}>{CATEGORY_LABELS[cat]}</MenuItem>
+                                        ))}
+                                    </Select>
+                                    {splitParts.length > 2 && (
+                                        <IconButton size="small" onClick={() => setSplitParts(splitParts.filter((_, j) => j !== i))}>
+                                            <DeleteIcon fontSize="small" />
+                                        </IconButton>
+                                    )}
+                                </Box>
+                            ))}
+                            <Button
+                                size="small"
+                                variant="text"
+                                onClick={() => setSplitParts([...splitParts, { amount: '', category: 'business_expense' }])}
+                            >
+                                + Add Part
+                            </Button>
+                            {splitTx && (
+                                <Typography variant="caption" display="block" sx={{ mt: 1 }}>
+                                    Sum: ${splitParts.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0).toFixed(2)} / ${Math.abs(splitTx.amount).toFixed(2)}
+                                    {Math.abs(splitParts.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0) - Math.abs(splitTx.amount)) > 0.01 && (
+                                        <span style={{ color: 'red', marginLeft: 8 }}>⚠ Mismatch</span>
+                                    )}
+                                </Typography>
+                            )}
+                        </Box>
+                    )}
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setSplitTx(null)}>Cancel</Button>
+                    <Button variant="contained" onClick={executeSplit}>Split</Button>
+                </DialogActions>
+            </Dialog>
+
+            {/* Receipt Viewer Dialog */}
+            <Dialog open={receiptViewer.open} onClose={() => setReceiptViewer({ open: false, url: '', vendor: '' })} maxWidth="md" fullWidth>
+                <DialogTitle>🧾 Receipt — {receiptViewer.vendor}</DialogTitle>
+                <DialogContent>
+                    {receiptViewer.url && (
+                        receiptViewer.url.toLowerCase().includes('.pdf') ? (
+                            <Box sx={{ textAlign: 'center', py: 3 }}>
+                                <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>PDF receipt attached</Typography>
+                                <Button variant="contained" href={receiptViewer.url} target="_blank" rel="noopener">Open PDF</Button>
+                            </Box>
+                        ) : (
+                            <Box sx={{ textAlign: 'center' }}>
+                                <img src={receiptViewer.url} alt="Receipt" style={{ maxWidth: '100%', maxHeight: '70vh', borderRadius: 8 }} />
+                            </Box>
+                        )
+                    )}
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setReceiptViewer({ open: false, url: '', vendor: '' })}>Close</Button>
+                    <Button href={receiptViewer.url} target="_blank" rel="noopener">Open in New Tab</Button>
+                </DialogActions>
+            </Dialog>
             <Snackbar
                 open={notification.open}
                 autoHideDuration={6000}

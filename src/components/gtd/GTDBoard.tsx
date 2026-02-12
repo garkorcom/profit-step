@@ -472,8 +472,7 @@ const GTDBoard: React.FC = () => {
                     gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
                     gap: 1.5,
                     px: 0.5,
-                    overflowY: isMobile ? 'hidden' : 'hidden',
-                    overflowX: isMobile ? 'hidden' : 'hidden',
+                    overflow: 'visible',
                     touchAction: isMobile ? 'pan-y' : 'none', // Prevent Android gesture conflicts with DnD
                 }}
             >

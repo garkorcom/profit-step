@@ -21,7 +21,7 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Box, Snackbar, Alert, Fab, Tab, Tabs, Badge, Button, useMediaQuery } from '@mui/material';
+import { Box, Snackbar, Alert, Fab, Tab, Tabs, Badge, Button, useMediaQuery, Chip, Popover } from '@mui/material';
 import { startOfDay, addDays, endOfWeek, isBefore, isWithinInterval } from 'date-fns';
 import { DragDropContext, DropResult } from '@hello-pangea/dnd';
 import { collection, query, orderBy, getDocs } from 'firebase/firestore';
@@ -31,12 +31,12 @@ import { GTDTask, GTD_COLUMNS, GTDStatus } from '../../types/gtd.types';
 import { Client } from '../../types/crm.types';
 import { UserProfile } from '../../types/user.types';
 import { FormControl, Select, MenuItem, InputLabel, Typography, IconButton, ToggleButtonGroup, ToggleButton } from '@mui/material';
-import EventIcon from '@mui/icons-material/Event';
 import AddIcon from '@mui/icons-material/Add';
 import PersonIcon from '@mui/icons-material/Person';
 import FilterListIcon from '@mui/icons-material/FilterList';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
+import KeyboardIcon from '@mui/icons-material/Keyboard';
 import GTDColumn from './GTDColumn';
 import GTDEditDialog from './GTDEditDialog';
 import GTDQuickAddDialog, { AIEstimateData } from './GTDQuickAddDialog';
@@ -96,6 +96,7 @@ const GTDBoard: React.FC = () => {
     // ==================== МОБИЛЬНОЕ СОСТОЯНИЕ ====================
     const [selectedTab, setSelectedTab] = useState(0);    // Активная вкладка (мобильный)
     const [showFilters, setShowFilters] = useState(false); // Показать фильтры (мобильный)
+    const [shortcutAnchor, setShortcutAnchor] = useState<HTMLElement | null>(null); // Keyboard help popover
 
     // ==================== SWIPE NAVIGATION ====================
     const handleSwipeLeft = useCallback(() => {
@@ -249,6 +250,11 @@ const GTDBoard: React.FC = () => {
         return result;
     }, [columns, selectedClientId, selectedAssigneeId, selectedDateFilter]);
 
+    // Total task count across all filtered columns
+    const totalTaskCount = useMemo(() => {
+        return Object.values(filteredColumns).reduce((sum, tasks) => sum + tasks.length, 0);
+    }, [filteredColumns]);
+
     // Active column (for mobile tabs and Quick Add target)
     const activeColumn = GTD_COLUMNS[selectedTab];
 
@@ -284,86 +290,239 @@ const GTDBoard: React.FC = () => {
                     </IconButton>
                 </Box>
             ) : (
-                <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap' }}>
+                <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
                     {/* Toggle: My Tasks / All Tasks */}
                     <ToggleButtonGroup
                         value={showAllTasks}
                         exclusive
                         onChange={(_, val) => val !== null && setShowAllTasks(val)}
                         size="small"
+                        sx={{
+                            '& .MuiToggleButton-root': {
+                                px: 1.5,
+                                py: 0.5,
+                                fontSize: '13px',
+                                fontWeight: 600,
+                                fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif',
+                                textTransform: 'none',
+                                borderRadius: '8px !important',
+                                border: '1px solid rgba(0,0,0,0.08)',
+                                '&.Mui-selected': {
+                                    bgcolor: '#007aff',
+                                    color: 'white',
+                                    '&:hover': { bgcolor: '#0066cc' },
+                                },
+                            }
+                        }}
                     >
-                        <ToggleButton value={false}>Мои</ToggleButton>
-                        <ToggleButton value={true}>Все</ToggleButton>
+                        <ToggleButton value={false}>МОИ</ToggleButton>
+                        <ToggleButton value={true}>ВСЕ</ToggleButton>
                     </ToggleButtonGroup>
 
-                    <FormControl size="small" sx={{ minWidth: 200, bgcolor: 'background.paper' }}>
-                        <InputLabel>Filter by Client</InputLabel>
-                        <Select
-                            value={selectedClientId}
-                            label="Filter by Client"
-                            onChange={(e) => setSelectedClientId(e.target.value)}
-                            startAdornment={selectedClientId !== 'all' ? <PersonIcon sx={{ mr: 1, color: 'primary.main' }} /> : null}
-                        >
-                            <MenuItem value="all"><em>All Clients</em></MenuItem>
-                            {clients.map(c => (
-                                <MenuItem key={c.id} value={c.id}>
-                                    {c.name} {c.type === 'company' ? '🏢' : '👤'}
-                                </MenuItem>
-                            ))}
-                        </Select>
-                    </FormControl>
+                    {/* Filter Chips */}
+                    <Box sx={{ display: 'flex', gap: 0.75, alignItems: 'center', overflowX: 'auto', flex: 1, '&::-webkit-scrollbar': { display: 'none' } }}>
+                        {/* Client filter chips */}
+                        {clients.slice(0, 6).map(c => (
+                            <Chip
+                                key={c.id}
+                                label={c.name}
+                                size="small"
+                                variant={selectedClientId === c.id ? 'filled' : 'outlined'}
+                                onClick={() => setSelectedClientId(selectedClientId === c.id ? 'all' : c.id)}
+                                sx={{
+                                    borderRadius: '8px',
+                                    fontSize: '12px',
+                                    fontWeight: 500,
+                                    fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif',
+                                    height: 30,
+                                    ...(selectedClientId === c.id ? {
+                                        bgcolor: '#007aff',
+                                        color: 'white',
+                                        border: 'none',
+                                        '&:hover': { bgcolor: '#0066cc' },
+                                    } : {
+                                        borderColor: 'rgba(0,0,0,0.12)',
+                                        '&:hover': { bgcolor: 'rgba(0,122,255,0.06)' },
+                                    }),
+                                }}
+                            />
+                        ))}
 
-                    <FormControl size="small" sx={{ minWidth: 200, bgcolor: 'background.paper' }}>
-                        <InputLabel>Filter by Assignee</InputLabel>
-                        <Select
-                            value={selectedAssigneeId}
-                            label="Filter by Assignee"
-                            onChange={(e) => setSelectedAssigneeId(e.target.value)}
-                        >
-                            <MenuItem value="all"><em>All Assignees</em></MenuItem>
-                            {users.map(u => (
-                                <MenuItem key={u.id} value={u.id}>{u.displayName}</MenuItem>
-                            ))}
-                        </Select>
-                    </FormControl>
+                        {/* Separator */}
+                        {clients.length > 0 && (
+                            <Box sx={{ width: 1, height: 20, bgcolor: 'rgba(0,0,0,0.1)', flexShrink: 0 }} />
+                        )}
 
-                    <FormControl size="small" sx={{ minWidth: 160, bgcolor: 'background.paper' }}>
-                        <InputLabel>Due Date</InputLabel>
-                        <Select
-                            value={selectedDateFilter}
-                            label="Due Date"
-                            onChange={(e) => setSelectedDateFilter(e.target.value)}
-                            startAdornment={selectedDateFilter !== 'all' ? <EventIcon sx={{ mr: 1, color: 'primary.main' }} /> : null}
-                        >
-                            <MenuItem value="all"><em>All Dates</em></MenuItem>
-                            <MenuItem value="today">📅 Today</MenuItem>
-                            <MenuItem value="tomorrow">📆 Tomorrow</MenuItem>
-                            <MenuItem value="this_week">🗓️ This Week</MenuItem>
-                            <MenuItem value="overdue">⚠️ Overdue</MenuItem>
-                            <MenuItem value="no_date">❓ No Due Date</MenuItem>
-                        </Select>
-                    </FormControl>
+                        {/* Assignee filter chips */}
+                        {users.slice(0, 4).map(u => (
+                            <Chip
+                                key={u.id}
+                                label={u.displayName}
+                                size="small"
+                                icon={<PersonIcon sx={{ fontSize: '14px !important' }} />}
+                                variant={selectedAssigneeId === u.id ? 'filled' : 'outlined'}
+                                onClick={() => setSelectedAssigneeId(selectedAssigneeId === u.id ? 'all' : u.id)}
+                                sx={{
+                                    borderRadius: '8px',
+                                    fontSize: '12px',
+                                    fontWeight: 500,
+                                    height: 30,
+                                    ...(selectedAssigneeId === u.id ? {
+                                        bgcolor: '#34c759',
+                                        color: 'white',
+                                        border: 'none',
+                                        '& .MuiChip-icon': { color: 'white' },
+                                        '&:hover': { bgcolor: '#2da44e' },
+                                    } : {
+                                        borderColor: 'rgba(0,0,0,0.12)',
+                                        '&:hover': { bgcolor: 'rgba(52,199,89,0.06)' },
+                                    }),
+                                }}
+                            />
+                        ))}
 
-                    {/* Clear Filters Button */}
-                    {(selectedClientId !== 'all' || selectedAssigneeId !== 'all' || selectedDateFilter !== 'all') && (
-                        <Button
-                            size="small"
-                            variant="outlined"
-                            onClick={() => { setSelectedClientId('all'); setSelectedAssigneeId('all'); setSelectedDateFilter('all'); }}
-                            sx={{ height: 40 }}
-                        >
-                            Clear Filters
-                        </Button>
-                    )}
+                        {/* Separator */}
+                        <Box sx={{ width: 1, height: 20, bgcolor: 'rgba(0,0,0,0.1)', flexShrink: 0 }} />
 
-                    {/* Desktop FAB for adding tasks */}
+                        {/* Due date chips */}
+                        {[
+                            { id: 'today', label: 'Today', icon: '📅' },
+                            { id: 'overdue', label: 'Overdue', icon: '⚠️' },
+                            { id: 'this_week', label: 'This Week', icon: '🗓️' },
+                            { id: 'no_date', label: 'No Date', icon: '❓' },
+                        ].map(f => (
+                            <Chip
+                                key={f.id}
+                                label={`${f.icon} ${f.label}`}
+                                size="small"
+                                variant={selectedDateFilter === f.id ? 'filled' : 'outlined'}
+                                onClick={() => setSelectedDateFilter(selectedDateFilter === f.id ? 'all' : f.id)}
+                                sx={{
+                                    borderRadius: '8px',
+                                    fontSize: '12px',
+                                    fontWeight: 500,
+                                    height: 30,
+                                    ...(selectedDateFilter === f.id ? {
+                                        bgcolor: '#ff9500',
+                                        color: 'white',
+                                        border: 'none',
+                                        '&:hover': { bgcolor: '#e08600' },
+                                    } : {
+                                        borderColor: 'rgba(0,0,0,0.12)',
+                                        '&:hover': { bgcolor: 'rgba(255,149,0,0.06)' },
+                                    }),
+                                }}
+                            />
+                        ))}
+
+                        {/* Clear all */}
+                        {(selectedClientId !== 'all' || selectedAssigneeId !== 'all' || selectedDateFilter !== 'all') && (
+                            <Chip
+                                label="✕ Clear"
+                                size="small"
+                                onClick={() => { setSelectedClientId('all'); setSelectedAssigneeId('all'); setSelectedDateFilter('all'); }}
+                                sx={{
+                                    borderRadius: '8px',
+                                    fontSize: '12px',
+                                    fontWeight: 600,
+                                    height: 30,
+                                    bgcolor: 'rgba(255,59,48,0.1)',
+                                    color: '#ff3b30',
+                                    '&:hover': { bgcolor: 'rgba(255,59,48,0.2)' },
+                                }}
+                            />
+                        )}
+                    </Box>
+
+                    {/* Total task count badge */}
+                    <Typography
+                        sx={{
+                            fontSize: '13px',
+                            fontWeight: 600,
+                            color: '#86868b',
+                            fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif',
+                            whiteSpace: 'nowrap',
+                        }}
+                    >
+                        {totalTaskCount} tasks
+                    </Typography>
+
+                    {/* Keyboard shortcuts help */}
+                    <IconButton
+                        size="small"
+                        onClick={(e) => setShortcutAnchor(e.currentTarget)}
+                        sx={{
+                            width: 32,
+                            height: 32,
+                            color: '#86868b',
+                            '&:hover': { bgcolor: 'rgba(0,0,0,0.05)', color: '#1d1d1f' },
+                        }}
+                    >
+                        <KeyboardIcon sx={{ fontSize: 18 }} />
+                    </IconButton>
+                    <Popover
+                        open={Boolean(shortcutAnchor)}
+                        anchorEl={shortcutAnchor}
+                        onClose={() => setShortcutAnchor(null)}
+                        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+                        transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+                        PaperProps={{
+                            sx: {
+                                borderRadius: '12px',
+                                p: 2,
+                                bgcolor: 'rgba(255,255,255,0.95)',
+                                backdropFilter: 'blur(20px)',
+                                boxShadow: '0 8px 32px rgba(0,0,0,0.12)',
+                                minWidth: 220,
+                            }
+                        }}
+                    >
+                        <Typography sx={{ fontSize: '13px', fontWeight: 700, mb: 1.5, color: '#1d1d1f' }}>
+                            Keyboard Shortcuts
+                        </Typography>
+                        {[
+                            { keys: '⌘ N', desc: 'Add to Inbox' },
+                            { keys: 'Click chip', desc: 'Toggle filter' },
+                            { keys: 'Drag card', desc: 'Move between columns' },
+                        ].map(s => (
+                            <Box key={s.keys} sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.75 }}>
+                                <Typography sx={{ fontSize: '12px', color: '#86868b' }}>{s.desc}</Typography>
+                                <Box
+                                    sx={{
+                                        bgcolor: '#f5f5f7',
+                                        px: 1,
+                                        py: 0.25,
+                                        borderRadius: '6px',
+                                        fontSize: '11px',
+                                        fontWeight: 600,
+                                        fontFamily: 'monospace',
+                                        color: '#1d1d1f',
+                                    }}
+                                >
+                                    {s.keys}
+                                </Box>
+                            </Box>
+                        ))}
+                    </Popover>
+
+                    {/* Desktop button for adding tasks */}
                     <Button
                         variant="contained"
                         startIcon={<AddIcon />}
                         onClick={() => navigate(`/crm/gtd/new?column=${activeColumn?.id || 'inbox'}`)}
-                        sx={{ ml: 'auto', height: 40 }}
+                        sx={{
+                            height: 36,
+                            borderRadius: '10px',
+                            textTransform: 'none',
+                            fontWeight: 600,
+                            fontSize: '13px',
+                            bgcolor: '#007aff',
+                            boxShadow: 'none',
+                            fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif',
+                            '&:hover': { bgcolor: '#0066cc', boxShadow: 'none' },
+                        }}
                     >
-                        Add Task
+                        + Add Task
                     </Button>
                 </Box>
             )}

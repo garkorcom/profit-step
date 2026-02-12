@@ -6,6 +6,7 @@ import EditIcon from '@mui/icons-material/Edit';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import PersonIcon from '@mui/icons-material/Person';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import DragIndicatorIcon from '@mui/icons-material/DragIndicator';
 import { GTDTask, PRIORITY_COLORS } from '../../types/gtd.types';
 import { WorkSessionData } from '../../hooks/useActiveSession';
 
@@ -110,6 +111,21 @@ const GTDTaskCard: React.FC<GTDTaskCardProps> = ({
                     <CardContent sx={{ p: 1, '&:last-child': { pb: 1 } }}>
                         {/* Title + Priority */}
                         <Box display="flex" alignItems="flex-start" gap={0.5}>
+                            {/* Mini drag handle */}
+                            {!isDone && (
+                                <DragIndicatorIcon
+                                    sx={{
+                                        fontSize: 14,
+                                        color: 'rgba(0,0,0,0.15)',
+                                        flexShrink: 0,
+                                        mt: 0.3,
+                                        transition: 'color 0.2s ease',
+                                        '.MuiCard-root:hover &': {
+                                            color: 'rgba(0,0,0,0.35)',
+                                        }
+                                    }}
+                                />
+                            )}
                             {/* Title */}
                             <Typography
                                 component="span"

@@ -1,10 +1,12 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { Box, Typography, Paper, TextField, Button, IconButton } from '@mui/material';
 import { Droppable } from '@hello-pangea/dnd';
 import AddIcon from '@mui/icons-material/Add';
 import CloseIcon from '@mui/icons-material/Close';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import FolderIcon from '@mui/icons-material/Folder';
 import { GTDTask, GTDStatus } from '../../types/gtd.types';
 import { Client } from '../../types/crm.types';
 import GTDTaskCard from './GTDTaskCard';
@@ -75,6 +77,23 @@ const COLUMN_STYLES: Record<GTDStatus, {
     }
 };
 
+// WIP limits per column — null means no limit
+const WIP_LIMITS: Partial<Record<GTDStatus, number>> = {
+    next_action: 7,
+    estimate: 5,
+    projects: 10,
+};
+
+// Format minutes to compact hours string
+const formatHours = (minutes: number): string => {
+    if (minutes === 0) return '';
+    const h = Math.floor(minutes / 60);
+    const m = minutes % 60;
+    if (h === 0) return `${m}m`;
+    if (m === 0) return `${h}h`;
+    return `${h}.${Math.round(m / 6)}h`; // e.g. 1.5h for 90min
+};
+
 const GTDColumn: React.FC<GTDColumnProps> = ({
     columnId,
     title,
@@ -90,9 +109,79 @@ const GTDColumn: React.FC<GTDColumnProps> = ({
     const [isAdding, setIsAdding] = useState(false);
     const [isCollapsed, setIsCollapsed] = useState(false);
     const [canScrollDown, setCanScrollDown] = useState(false);
+    const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
     const scrollRef = useRef<HTMLDivElement>(null);
     const isDone = columnId === 'done';
     const styles = COLUMN_STYLES[columnId];
+
+    const toggleGroupCollapse = useCallback((groupKey: string) => {
+        setCollapsedGroups(prev => ({ ...prev, [groupKey]: !prev[groupKey] }));
+    }, []);
+
+    // Group tasks by client/project, maintaining DnD-compatible sequential indices
+    const groupedTasks = useMemo(() => {
+        if (tasks.length === 0) return [];
+
+        const groups: Record<string, { clientName: string; tasks: { task: GTDTask; originalIndex: number }[] }> = {};
+
+        tasks.forEach((task, index) => {
+            const clientName = task.clientId && clientsMap[task.clientId]
+                ? clientsMap[task.clientId].name
+                : '';
+            const key = clientName || '__no_project__';
+
+            if (!groups[key]) {
+                groups[key] = { clientName: clientName || '', tasks: [] };
+            }
+            groups[key].tasks.push({ task, originalIndex: index });
+        });
+
+        // Sort: most tasks first, 'No project' last
+        const entries = Object.entries(groups);
+        entries.sort(([keyA, a], [keyB, b]) => {
+            if (keyA === '__no_project__') return 1;
+            if (keyB === '__no_project__') return -1;
+            return b.tasks.length - a.tasks.length;
+        });
+
+        return entries.map(([key, group]) => ({
+            key,
+            clientName: group.clientName,
+            tasks: group.tasks,
+        }));
+    }, [tasks, clientsMap]);
+
+    // Check if there are multiple groups (needed to decide whether to show grouping)
+    const hasMultipleGroups = groupedTasks.length > 1;
+
+    // Auto-collapse groups when column is overflowing (>7 tasks)
+    const AUTO_COLLAPSE_THRESHOLD = 7;
+    const [hasAutoCollapsed, setHasAutoCollapsed] = useState(false);
+
+    useEffect(() => {
+        if (tasks.length > AUTO_COLLAPSE_THRESHOLD && hasMultipleGroups && !hasAutoCollapsed) {
+            const autoCollapsed: Record<string, boolean> = {};
+            groupedTasks.forEach((group, idx) => {
+                if (idx > 0) autoCollapsed[group.key] = true; // collapse all except first
+            });
+            setCollapsedGroups(autoCollapsed);
+            setHasAutoCollapsed(true);
+        }
+        // Reset auto-collapse flag when tasks drop below threshold
+        if (tasks.length <= AUTO_COLLAPSE_THRESHOLD && hasAutoCollapsed) {
+            setHasAutoCollapsed(false);
+            setCollapsedGroups({});
+        }
+    }, [tasks.length, hasMultipleGroups, groupedTasks, hasAutoCollapsed]);
+
+    // WIP limit check
+    const wipLimit = WIP_LIMITS[columnId];
+    const isOverWip = wipLimit ? tasks.length > wipLimit : false;
+
+    // Total estimated time for the column
+    const totalMinutes = useMemo(() => {
+        return tasks.reduce((sum, t) => sum + (t.estimatedDurationMinutes || 0), 0);
+    }, [tasks]);
 
     // Auto-expand when tasks appear in a collapsed column
     useEffect(() => {
@@ -279,7 +368,7 @@ const GTDColumn: React.FC<GTDColumnProps> = ({
                 <Typography
                     component="span"
                     sx={{
-                        bgcolor: styles.accent,
+                        bgcolor: isOverWip ? '#ff3b30' : styles.accent,
                         color: 'white',
                         px: 1,
                         py: 0.25,
@@ -288,11 +377,34 @@ const GTDColumn: React.FC<GTDColumnProps> = ({
                         fontWeight: 600,
                         fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif',
                         minWidth: 24,
-                        textAlign: 'center'
+                        textAlign: 'center',
+                        transition: 'background-color 0.3s',
+                        ...(isOverWip ? {
+                            animation: 'wipPulse 2s ease-in-out infinite',
+                            '@keyframes wipPulse': {
+                                '0%, 100%': { bgcolor: '#ff3b30' },
+                                '50%': { bgcolor: '#ff6961' },
+                            },
+                        } : {}),
                     }}
                 >
-                    {tasks.length}
+                    {tasks.length}{wipLimit ? `/${wipLimit}` : ''}
                 </Typography>
+
+                {/* Total estimated time */}
+                {totalMinutes > 0 && (
+                    <Typography
+                        sx={{
+                            fontSize: '10px',
+                            fontWeight: 600,
+                            color: '#0e7490',
+                            ml: 0.5,
+                            fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif',
+                        }}
+                    >
+                        ⏱ {formatHours(totalMinutes)}
+                    </Typography>
+                )}
             </Box>
 
             {/* Tasks List (Droppable) with scroll gradient */}
@@ -329,21 +441,140 @@ const GTDColumn: React.FC<GTDColumnProps> = ({
                                 }
                             }}
                         >
-                            {tasks.map((task, index) => {
-                                const showTimer = columnId !== 'done' && columnId !== 'someday';
-                                return (
-                                    <GTDTaskCard
-                                        key={task.id}
-                                        task={task}
-                                        index={index}
-                                        clientName={task.clientId ? clientsMap[task.clientId]?.name : undefined}
-                                        onClick={onTaskClick}
-                                        onStartSession={showTimer ? onStartSession : undefined}
-                                        activeSession={showTimer ? activeSession : undefined}
-                                        onStopSession={showTimer ? onStopSession : undefined}
-                                    />
-                                );
-                            })}
+                            {hasMultipleGroups ? (
+                                // Grouped rendering with project headers
+                                groupedTasks.map((group) => {
+                                    const isGroupCollapsed = !!collapsedGroups[group.key];
+                                    const showTimer = columnId !== 'done' && columnId !== 'someday';
+                                    const groupMinutes = group.tasks.reduce(
+                                        (sum, { task: t }) => sum + (t.estimatedDurationMinutes || 0), 0
+                                    );
+                                    const groupLabel = group.clientName || 'No project';
+
+                                    return (
+                                        <Box key={group.key}>
+                                            {/* Group header */}
+                                            <Box
+                                                onClick={() => toggleGroupCollapse(group.key)}
+                                                sx={{
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: 0.5,
+                                                    px: 0.75,
+                                                    py: 0.4,
+                                                    mt: 0.5,
+                                                    mb: 0.25,
+                                                    borderRadius: '6px',
+                                                    cursor: 'pointer',
+                                                    userSelect: 'none',
+                                                    transition: 'background 0.15s',
+                                                    '&:hover': { bgcolor: 'rgba(0,0,0,0.04)' },
+                                                    '&:first-of-type': { mt: 0 },
+                                                }}
+                                            >
+                                                <ExpandMoreIcon
+                                                    sx={{
+                                                        fontSize: 16,
+                                                        color: styles.headerText,
+                                                        transition: 'transform 0.2s',
+                                                        transform: isGroupCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)',
+                                                    }}
+                                                />
+                                                {group.clientName ? (
+                                                    <FolderIcon sx={{ fontSize: 14, color: '#f59e0b', opacity: 0.8 }} />
+                                                ) : null}
+                                                <Typography
+                                                    sx={{
+                                                        fontSize: '11px',
+                                                        fontWeight: 600,
+                                                        color: group.clientName ? '#856404' : '#86868b',
+                                                        fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif',
+                                                        flex: 1,
+                                                        overflow: 'hidden',
+                                                        textOverflow: 'ellipsis',
+                                                        whiteSpace: 'nowrap',
+                                                    }}
+                                                >
+                                                    {groupLabel}
+                                                </Typography>
+                                                <Typography
+                                                    sx={{
+                                                        fontSize: '10px',
+                                                        fontWeight: 600,
+                                                        color: styles.headerText,
+                                                        bgcolor: `${styles.accent}15`,
+                                                        px: 0.6,
+                                                        py: 0.1,
+                                                        borderRadius: '4px',
+                                                        minWidth: 16,
+                                                        textAlign: 'center',
+                                                    }}
+                                                >
+                                                    {group.tasks.length}
+                                                </Typography>
+                                                {groupMinutes > 0 && (
+                                                    <Typography
+                                                        sx={{
+                                                            fontSize: '10px',
+                                                            fontWeight: 600,
+                                                            color: '#0e7490',
+                                                            fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif',
+                                                        }}
+                                                    >
+                                                        · {formatHours(groupMinutes)}
+                                                    </Typography>
+                                                )}
+                                            </Box>
+                                            {/* Group tasks */}
+                                            {!isGroupCollapsed && group.tasks.map(({ task, originalIndex }) => (
+                                                <GTDTaskCard
+                                                    key={task.id}
+                                                    task={task}
+                                                    index={originalIndex}
+                                                    clientName={group.clientName || undefined}
+                                                    onClick={onTaskClick}
+                                                    onStartSession={showTimer ? onStartSession : undefined}
+                                                    activeSession={showTimer ? activeSession : undefined}
+                                                    onStopSession={showTimer ? onStopSession : undefined}
+                                                />
+                                            ))}
+
+                                            {/* Collapsed summary */}
+                                            {isGroupCollapsed && (
+                                                <Box
+                                                    sx={{
+                                                        px: 1,
+                                                        py: 0.3,
+                                                        mb: 0.25,
+                                                        fontSize: '10px',
+                                                        color: '#86868b',
+                                                        fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif',
+                                                    }}
+                                                >
+                                                    {group.tasks.length} tasks hidden
+                                                </Box>
+                                            )}
+                                        </Box>
+                                    );
+                                })
+                            ) : (
+                                // Single group or no groups — flat rendering
+                                tasks.map((task, index) => {
+                                    const showTimer = columnId !== 'done' && columnId !== 'someday';
+                                    return (
+                                        <GTDTaskCard
+                                            key={task.id}
+                                            task={task}
+                                            index={index}
+                                            clientName={task.clientId ? clientsMap[task.clientId]?.name : undefined}
+                                            onClick={onTaskClick}
+                                            onStartSession={showTimer ? onStartSession : undefined}
+                                            activeSession={showTimer ? activeSession : undefined}
+                                            onStopSession={showTimer ? onStopSession : undefined}
+                                        />
+                                    );
+                                })
+                            )}
                             {provided.placeholder}
 
                             {/* Styled drop placeholder */}

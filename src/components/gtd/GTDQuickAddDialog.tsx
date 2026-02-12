@@ -14,7 +14,7 @@
  * - Full-screen on mobile, dialog on desktop
  */
 
-import React, { useState, useRef, useEffect, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import {
     Dialog,
     Box,
@@ -51,6 +51,7 @@ import {
     CalendarToday as CalendarIcon,
     AccessTime as TimeIcon,
     Mic as MicIcon,
+    MicOff as MicOffIcon,
     Clear as ClearIcon,
     AutoAwesome as AutoAwesomeIcon,
     Warning as WarningIcon,
@@ -215,6 +216,13 @@ const GTDQuickAddDialog: React.FC<GTDQuickAddDialogProps> = ({
     const [smartDuplicates, setSmartDuplicates] = useState<Array<{ taskTitle: string; similarity: number }>>([]);
     const [isAnalyzing, setIsAnalyzing] = useState(false);
 
+    // Voice Input states
+    const [isListening, setIsListening] = useState(false);
+    const [voiceSupported] = useState(() => {
+        return typeof window !== 'undefined' && ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window);
+    });
+    const recognitionRef = useRef<any>(null);
+
     // Quick dates memoized
     const quickDates = useMemo(() => getQuickDates(), []);
 
@@ -317,6 +325,68 @@ const GTDQuickAddDialog: React.FC<GTDQuickAddDialogProps> = ({
     const handleTimeSelect = (time: string) => {
         setStartTime(startTime === time ? '' : time);
     };
+
+    // ═══════════════════════════════════════
+    // VOICE INPUT HANDLER
+    // ═══════════════════════════════════════
+
+    const toggleVoiceInput = useCallback(() => {
+        if (!voiceSupported) return;
+
+        if (isListening) {
+            // Stop listening
+            recognitionRef.current?.stop();
+            setIsListening(false);
+            if ('vibrate' in navigator) navigator.vibrate(30);
+            return;
+        }
+
+        // Start listening
+        const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+        const recognition = new SpeechRecognition();
+        recognition.lang = 'ru-RU';
+        recognition.continuous = true;
+        recognition.interimResults = true;
+        recognition.maxAlternatives = 1;
+
+        let finalTranscript = description;
+
+        recognition.onresult = (event: any) => {
+            let interim = '';
+            for (let i = event.resultIndex; i < event.results.length; i++) {
+                const transcript = event.results[i][0].transcript;
+                if (event.results[i].isFinal) {
+                    finalTranscript += (finalTranscript ? ' ' : '') + transcript;
+                    setDescription(finalTranscript);
+                } else {
+                    interim = transcript;
+                }
+            }
+            // Show interim results as preview
+            if (interim) {
+                setDescription(finalTranscript + (finalTranscript ? ' ' : '') + interim);
+            }
+        };
+
+        recognition.onerror = (event: any) => {
+            console.warn('Speech recognition error:', event.error);
+            setIsListening(false);
+            if (event.error === 'not-allowed') {
+                alert('Разрешите доступ к микрофону в настройках браузера');
+            }
+        };
+
+        recognition.onend = () => {
+            setIsListening(false);
+        };
+
+        recognitionRef.current = recognition;
+        recognition.start();
+        setIsListening(true);
+
+        // Haptic feedback
+        if ('vibrate' in navigator) navigator.vibrate([50, 30, 50]);
+    }, [voiceSupported, isListening, description]);
 
     // AI Estimation Handler
     const handleAIEstimate = async () => {
@@ -628,6 +698,11 @@ const GTDQuickAddDialog: React.FC<GTDQuickAddDialogProps> = ({
     };
 
     const handleClose = () => {
+        // Stop voice input if active
+        if (recognitionRef.current) {
+            recognitionRef.current.stop();
+            setIsListening(false);
+        }
         // Reset all state
         setDescription('');
         setSelectedClient(null);
@@ -766,22 +841,59 @@ const GTDQuickAddDialog: React.FC<GTDQuickAddDialogProps> = ({
 
                         {/* 1. DESCRIPTION - Most Important */}
                         <Box sx={{ mb: 3 }}>
-                            <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block', textTransform: 'uppercase', letterSpacing: 1, fontWeight: 600 }}>
-                                📝 Что нужно сделать? <Box component="span" sx={{ color: 'error.main' }}>*</Box>
-                            </Typography>
+                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                                <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase', letterSpacing: 1, fontWeight: 600 }}>
+                                    📝 Что нужно сделать? <Box component="span" sx={{ color: 'error.main' }}>*</Box>
+                                </Typography>
+                                {isListening && (
+                                    <Typography variant="caption" sx={{ color: 'error.main', fontWeight: 600, animation: 'pulse 1.5s infinite' }}>
+                                        🔴 Слушаю...
+                                    </Typography>
+                                )}
+                            </Box>
                             <TextField
                                 fullWidth
                                 multiline
                                 rows={3}
                                 value={description}
                                 onChange={(e) => setDescription(e.target.value)}
-                                placeholder="Описание задачи..."
+                                placeholder={isListening ? 'Говорите...' : 'Описание задачи...'}
                                 autoFocus
+                                InputProps={{
+                                    endAdornment: voiceSupported ? (
+                                        <InputAdornment position="end" sx={{ alignSelf: 'flex-end', mb: 1 }}>
+                                            <IconButton
+                                                onClick={toggleVoiceInput}
+                                                sx={{
+                                                    color: isListening ? '#fff' : 'text.secondary',
+                                                    bgcolor: isListening ? 'error.main' : 'transparent',
+                                                    animation: isListening ? 'pulse 1.5s infinite' : 'none',
+                                                    '&:hover': {
+                                                        bgcolor: isListening ? 'error.dark' : 'action.hover',
+                                                    },
+                                                    '@keyframes pulse': {
+                                                        '0%': { boxShadow: '0 0 0 0 rgba(244, 67, 54, 0.4)' },
+                                                        '70%': { boxShadow: '0 0 0 10px rgba(244, 67, 54, 0)' },
+                                                        '100%': { boxShadow: '0 0 0 0 rgba(244, 67, 54, 0)' },
+                                                    },
+                                                    transition: 'all 0.2s',
+                                                }}
+                                            >
+                                                {isListening ? <MicOffIcon /> : <MicIcon />}
+                                            </IconButton>
+                                        </InputAdornment>
+                                    ) : undefined,
+                                }}
                                 sx={{
                                     '& .MuiOutlinedInput-root': {
-                                        bgcolor: 'background.paper',
+                                        bgcolor: isListening ? 'rgba(244, 67, 54, 0.04)' : 'background.paper',
                                         fontSize: '1rem',
-                                    }
+                                        borderColor: isListening ? 'error.main' : undefined,
+                                    },
+                                    '& .MuiOutlinedInput-root.Mui-focused .MuiOutlinedInput-notchedOutline': isListening ? {
+                                        borderColor: 'error.main',
+                                        borderWidth: 2,
+                                    } : {},
                                 }}
                             />
                         </Box>

@@ -10,7 +10,7 @@
  * Features: Progress bar, animations, AI suggestions, sticky header/footer
  */
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
     Box,
@@ -47,6 +47,8 @@ import {
     AccessTime as TimeIcon,
     Search as SearchIcon,
     OpenInNew as OpenInNewIcon,
+    Mic as MicIcon,
+    MicOff as MicOffIcon,
 } from '@mui/icons-material';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
@@ -164,6 +166,13 @@ const GTDCreatePage: React.FC = () => {
     const [users, setUsers] = useState<UserProfile[]>([]);
     const [newSubtask, setNewSubtask] = useState('');
     const [clientSearch, setClientSearch] = useState('');
+
+    // Voice Input states
+    const [isListening, setIsListening] = useState(false);
+    const [voiceSupported] = useState(() => {
+        return typeof window !== 'undefined' && ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window);
+    });
+    const recognitionRef = useRef<any>(null);
 
     // Target column from URL
     const targetColumn = (searchParams.get('column') as GTDStatus) || 'inbox';
@@ -419,6 +428,11 @@ const GTDCreatePage: React.FC = () => {
     };
 
     const handleClose = () => {
+        // Stop voice input if active
+        if (recognitionRef.current) {
+            recognitionRef.current.stop();
+            setIsListening(false);
+        }
         navigate('/crm/gtd');
     };
 
@@ -436,6 +450,63 @@ const GTDCreatePage: React.FC = () => {
     );
 
     const progressPercent = (step / TOTAL_STEPS) * 100;
+
+    // ═══════════════════════════════════════
+    // VOICE INPUT HANDLER
+    // ═══════════════════════════════════════
+
+    const toggleVoiceInput = useCallback(() => {
+        if (!voiceSupported) return;
+
+        if (isListening) {
+            recognitionRef.current?.stop();
+            setIsListening(false);
+            if ('vibrate' in navigator) navigator.vibrate(30);
+            return;
+        }
+
+        const SpeechRecognitionAPI = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+        const recognition = new SpeechRecognitionAPI();
+        recognition.lang = 'ru-RU';
+        recognition.continuous = true;
+        recognition.interimResults = true;
+        recognition.maxAlternatives = 1;
+
+        let finalTranscript = formData.title;
+
+        recognition.onresult = (event: any) => {
+            let interim = '';
+            for (let i = event.resultIndex; i < event.results.length; i++) {
+                const transcript = event.results[i][0].transcript;
+                if (event.results[i].isFinal) {
+                    finalTranscript += (finalTranscript ? ' ' : '') + transcript;
+                    setFormData(prev => ({ ...prev, title: finalTranscript }));
+                } else {
+                    interim = transcript;
+                }
+            }
+            if (interim) {
+                setFormData(prev => ({ ...prev, title: finalTranscript + (finalTranscript ? ' ' : '') + interim }));
+            }
+        };
+
+        recognition.onerror = (event: any) => {
+            console.warn('Speech recognition error:', event.error);
+            setIsListening(false);
+            if (event.error === 'not-allowed') {
+                alert('Разрешите доступ к микрофону в настройках браузера');
+            }
+        };
+
+        recognition.onend = () => {
+            setIsListening(false);
+        };
+
+        recognitionRef.current = recognition;
+        recognition.start();
+        setIsListening(true);
+        if ('vibrate' in navigator) navigator.vibrate([50, 30, 50]);
+    }, [voiceSupported, isListening, formData.title]);
 
     // ═══════════════════════════════════════
     // RENDER
@@ -500,18 +571,53 @@ const GTDCreatePage: React.FC = () => {
                         <Box sx={{ mb: 3 }}>
                             <Typography variant="body2" color="text.secondary" gutterBottom>
                                 Что нужно сделать? *
+                                {isListening && (
+                                    <Box component="span" sx={{ color: 'error.main', fontWeight: 600, ml: 1, animation: 'pulse 1.5s infinite', '@keyframes pulse': { '0%': { opacity: 1 }, '50%': { opacity: 0.5 }, '100%': { opacity: 1 } } }}>
+                                        🔴 Слушаю...
+                                    </Box>
+                                )}
                             </Typography>
                             <TextField
                                 fullWidth
                                 value={formData.title}
                                 onChange={e => setFormData(prev => ({ ...prev, title: e.target.value }))}
-                                placeholder="Например: Установить 6 розеток в гостиной"
+                                placeholder={isListening ? 'Говорите...' : 'Например: Установить 6 розеток в гостиной'}
                                 autoFocus
+                                InputProps={{
+                                    endAdornment: voiceSupported ? (
+                                        <InputAdornment position="end">
+                                            <IconButton
+                                                onClick={toggleVoiceInput}
+                                                sx={{
+                                                    color: isListening ? '#fff' : 'text.secondary',
+                                                    bgcolor: isListening ? 'error.main' : 'transparent',
+                                                    animation: isListening ? 'voicePulse 1.5s infinite' : 'none',
+                                                    '&:hover': {
+                                                        bgcolor: isListening ? 'error.dark' : 'action.hover',
+                                                    },
+                                                    '@keyframes voicePulse': {
+                                                        '0%': { boxShadow: '0 0 0 0 rgba(244, 67, 54, 0.4)' },
+                                                        '70%': { boxShadow: '0 0 0 10px rgba(244, 67, 54, 0)' },
+                                                        '100%': { boxShadow: '0 0 0 0 rgba(244, 67, 54, 0)' },
+                                                    },
+                                                    transition: 'all 0.2s',
+                                                }}
+                                            >
+                                                {isListening ? <MicOffIcon /> : <MicIcon />}
+                                            </IconButton>
+                                        </InputAdornment>
+                                    ) : undefined,
+                                }}
                                 sx={{
                                     '& .MuiOutlinedInput-root': {
                                         borderRadius: 3,
                                         fontSize: '1.1rem',
-                                    }
+                                        bgcolor: isListening ? 'rgba(244, 67, 54, 0.04)' : undefined,
+                                    },
+                                    '& .MuiOutlinedInput-root.Mui-focused .MuiOutlinedInput-notchedOutline': isListening ? {
+                                        borderColor: 'error.main',
+                                        borderWidth: 2,
+                                    } : {},
                                 }}
                             />
                         </Box>

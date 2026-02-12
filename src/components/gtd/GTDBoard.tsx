@@ -80,7 +80,8 @@ const GTDBoard: React.FC = () => {
         setSessionSnackbarOpen
     } = useSessionManager(currentUser?.uid, currentUser?.displayName || undefined, userProfile?.telegramId);
 
-    const isMobile = useMediaQuery('(max-width:599px)'); // Pixel Fold unfolded (884px) → board mode
+    const isMobile = useMediaQuery('(max-width:599px)'); // Phone — 1 column + tabs + swipe
+    const isFoldable = useMediaQuery('(min-width:600px) and (max-width:959px)'); // Pixel Fold / small tablet — horizontal scroll
     const isCompact = useMediaQuery('(max-width:959px)'); // Tablet/foldable — show FAB
 
     // ==================== СОСТОЯНИЕ ====================
@@ -622,17 +623,33 @@ const GTDBoard: React.FC = () => {
                 </Box>
             )}
 
-            {/* Content: Desktop=all columns, Mobile=single column */}
+            {/* Content: Desktop=grid, Foldable=scroll-snap, Mobile=single column */}
             <Box
                 sx={{
                     flex: 1,
                     minHeight: 0,
-                    display: isMobile ? 'flex' : 'grid',
-                    gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
-                    gap: 1.5,
-                    px: 0.5,
-                    overflow: 'visible',
-                    touchAction: isMobile ? 'pan-y' : 'none', // Prevent Android gesture conflicts with DnD
+                    ...(isMobile ? {
+                        display: 'flex',
+                    } : isFoldable ? {
+                        display: 'flex',
+                        overflowX: 'auto',
+                        overflowY: 'hidden',
+                        gap: 1.5,
+                        px: 1,
+                        scrollSnapType: 'x mandatory',
+                        WebkitOverflowScrolling: 'touch',
+                        // Hide scrollbar but keep scrollable
+                        '&::-webkit-scrollbar': { display: 'none' },
+                        msOverflowStyle: 'none',
+                        scrollbarWidth: 'none',
+                    } : {
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
+                        gap: 1.5,
+                        px: 0.5,
+                    }),
+                    overflow: isMobile ? 'visible' : undefined,
+                    touchAction: isMobile ? 'pan-y' : 'none',
                 }}
             >
                 <DragDropContext onDragEnd={onDragEnd}>
@@ -659,8 +676,34 @@ const GTDBoard: React.FC = () => {
                                 onStopSession={stopSession}
                             />
                         </Box>
+                    ) : isFoldable ? (
+                        // Foldable (600-959px): Horizontal scroll-snap columns
+                        GTD_COLUMNS.map(column => (
+                            <Box
+                                key={column.id}
+                                sx={{
+                                    minWidth: 280,
+                                    maxWidth: 320,
+                                    flexShrink: 0,
+                                    height: '100%',
+                                    scrollSnapAlign: 'start',
+                                }}
+                            >
+                                <GTDColumn
+                                    columnId={column.id}
+                                    title={column.title}
+                                    tasks={filteredColumns[column.id]}
+                                    clientsMap={clientsMap}
+                                    onTaskClick={setEditingTask}
+                                    onAddTask={handleAddTaskWrapper}
+                                    onStartSession={startSession}
+                                    activeSession={activeSession}
+                                    onStopSession={stopSession}
+                                />
+                            </Box>
+                        ))
                     ) : (
-                        // Desktop: Show all columns
+                        // Desktop (960px+): Show all columns in grid
                         GTD_COLUMNS.map(column => (
                             <GTDColumn
                                 key={column.id}

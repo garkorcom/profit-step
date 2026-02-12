@@ -19,10 +19,10 @@
  * @module components/gtd/GTDBoard
  */
 
-import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Box, Snackbar, Alert, Fab, Tab, Tabs, Badge, Dialog, DialogTitle, DialogContent, TextField, DialogActions, Button, useMediaQuery, useTheme, Chip, Slide } from '@mui/material';
-import { startOfDay, endOfDay, addDays, startOfWeek, endOfWeek, isBefore, isAfter, isWithinInterval } from 'date-fns';
+import { Box, Snackbar, Alert, Fab, Tab, Tabs, Badge, Button, useMediaQuery } from '@mui/material';
+import { startOfDay, addDays, endOfWeek, isBefore, isWithinInterval } from 'date-fns';
 import { DragDropContext, DropResult } from '@hello-pangea/dnd';
 import { collection, query, orderBy, getDocs } from 'firebase/firestore';
 import { db } from '../../firebase/firebase';
@@ -80,8 +80,8 @@ const GTDBoard: React.FC = () => {
         setSessionSnackbarOpen
     } = useSessionManager(currentUser?.uid, currentUser?.displayName || undefined, userProfile?.telegramId);
 
-    const theme = useTheme();
-    const isMobile = useMediaQuery(theme.breakpoints.down('md')); // Адаптивность
+    const isMobile = useMediaQuery('(max-width:599px)'); // Pixel Fold unfolded (884px) → board mode
+    const isCompact = useMediaQuery('(max-width:959px)'); // Tablet/foldable — show FAB
 
     // ==================== СОСТОЯНИЕ ====================
     const [editingTask, setEditingTask] = useState<GTDTask | null>(null); // Редактируемая задача
@@ -91,13 +91,11 @@ const GTDBoard: React.FC = () => {
     const [selectedAssigneeId, setSelectedAssigneeId] = useState<string>('all'); // Фильтр по assignee
     const [selectedDateFilter, setSelectedDateFilter] = useState<string>('all'); // Фильтр по due date
 
-    const [showShortcutHint, setShowShortcutHint] = useState(false);
     const [taskSaveSnackbar, setTaskSaveSnackbar] = useState(false); // Toast for task save confirmation
 
     // ==================== МОБИЛЬНОЕ СОСТОЯНИЕ ====================
     const [selectedTab, setSelectedTab] = useState(0);    // Активная вкладка (мобильный)
     const [showFilters, setShowFilters] = useState(false); // Показать фильтры (мобильный)
-    const [isHeaderCompact, setIsHeaderCompact] = useState(false); // Compact header state
 
     // ==================== SWIPE NAVIGATION ====================
     const handleSwipeLeft = useCallback(() => {
@@ -119,21 +117,6 @@ const GTDBoard: React.FC = () => {
         onSwipeRight: handleSwipeRight,
         threshold: 75,
     });
-
-    // ==================== SCROLL LISTENER FOR COMPACT HEADER ====================
-    const containerRef = useRef<HTMLDivElement>(null);
-
-    useEffect(() => {
-        const container = containerRef.current;
-        if (!container) return;
-
-        const handleScroll = () => {
-            setIsHeaderCompact(container.scrollTop > 50);
-        };
-
-        container.addEventListener('scroll', handleScroll);
-        return () => container.removeEventListener('scroll', handleScroll);
-    }, []);
 
     // ==================== QUICK ADD DIALOG ====================
     const [quickAddOpen, setQuickAddOpen] = useState(false);
@@ -206,10 +189,7 @@ const GTDBoard: React.FC = () => {
                 const inboxAddBtn = document.querySelector('[data-column-id="inbox"] button[aria-label="add-task"]') as HTMLButtonElement;
                 if (inboxAddBtn) inboxAddBtn.click();
             }
-            // Show shortcut hint on ?
-            if (e.key === '?') {
-                setShowShortcutHint(true);
-            }
+
         };
 
         window.addEventListener('keydown', handleKeyDown);
@@ -273,7 +253,7 @@ const GTDBoard: React.FC = () => {
     const activeColumn = GTD_COLUMNS[selectedTab];
 
     return (
-        <Box sx={{ height: 'calc(100vh - 100px)', display: 'flex', flexDirection: 'column', p: { xs: 1, md: 2 }, gap: 1, position: 'relative' }}>
+        <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', p: { xs: 0.5, md: 1.5 }, gap: 0.5, position: 'relative' }}>
             {/* Filter Bar - Desktop: visible, Mobile: toggle button */}
             {isMobile ? (
                 <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
@@ -487,48 +467,25 @@ const GTDBoard: React.FC = () => {
             <Box
                 sx={{
                     flex: 1,
-                    display: 'flex',
-                    overflowX: 'auto',
-                    overflowY: 'hidden',
-                    gap: 2,
-                    px: 1,
-                    // Apple-style scroll behavior
-                    WebkitOverflowScrolling: 'touch',
-                    scrollBehavior: 'smooth',
-                    // CSS Scroll Snap for iPad
-                    '@media (max-width: 1194px)': {
-                        scrollSnapType: 'x mandatory',
-                        '& > *': {
-                            scrollSnapAlign: 'start',
-                            flexShrink: 0,
-                        }
-                    },
-                    // Hide scrollbar but keep functionality
-                    '&::-webkit-scrollbar': {
-                        height: 8,
-                    },
-                    '&::-webkit-scrollbar-track': {
-                        background: '#f5f5f7',
-                        borderRadius: 4,
-                    },
-                    '&::-webkit-scrollbar-thumb': {
-                        background: '#c7c7cc',
-                        borderRadius: 4,
-                        '&:hover': {
-                            background: '#a1a1a6'
-                        }
-                    }
+                    minHeight: 0,
+                    display: isMobile ? 'flex' : 'grid',
+                    gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
+                    gap: 1.5,
+                    px: 0.5,
+                    overflowY: isMobile ? 'hidden' : 'hidden',
+                    overflowX: isMobile ? 'hidden' : 'hidden',
+                    touchAction: isMobile ? 'pan-y' : 'none', // Prevent Android gesture conflicts with DnD
                 }}
             >
                 <DragDropContext onDragEnd={onDragEnd}>
                     {isMobile ? (
-                        // Mobile: Show only active column with swipe support
+                        // Mobile (<600px): Show only active column with swipe support
                         <Box
                             ref={swipeContainerRef}
                             sx={{
                                 flex: 1,
                                 display: 'flex',
-                                touchAction: 'pan-y', // Allow vertical scroll, detect horizontal swipe
+                                touchAction: 'pan-y',
                             }}
                         >
                             <GTDColumn
@@ -564,8 +521,8 @@ const GTDBoard: React.FC = () => {
                 </DragDropContext>
             </Box>
 
-            {/* FAB - Quick Add (mobile only, desktop has button in header) */}
-            {isMobile && (
+            {/* FAB - Quick Add (mobile + tablet/foldable) */}
+            {isCompact && (
                 <Fab
                     color="primary"
                     aria-label="add task"
@@ -574,7 +531,9 @@ const GTDBoard: React.FC = () => {
                         position: 'fixed',
                         bottom: 24,
                         right: 24,
-                        zIndex: 1000
+                        zIndex: 1000,
+                        width: 48,
+                        height: 48,
                     }}
                 >
                     <AddIcon />

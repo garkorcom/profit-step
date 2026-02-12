@@ -4,11 +4,9 @@ import { Card, CardContent, Typography, Box, Chip, IconButton, Tooltip, Avatar, 
 import { Draggable } from '@hello-pangea/dnd';
 import EditIcon from '@mui/icons-material/Edit';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
-import FlagIcon from '@mui/icons-material/Flag';
 import PersonIcon from '@mui/icons-material/Person';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
-import DragIndicatorIcon from '@mui/icons-material/DragIndicator';
-import { GTDTask, PRIORITY_COLORS, GTDPriority } from '../../types/gtd.types';
+import { GTDTask, PRIORITY_COLORS } from '../../types/gtd.types';
 import { WorkSessionData } from '../../hooks/useActiveSession';
 
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
@@ -24,12 +22,6 @@ interface GTDTaskCardProps {
     onStopSession?: (task: GTDTask) => void;
 }
 
-const PRIORITY_LABELS: Record<GTDPriority, string> = {
-    high: 'High',
-    medium: 'Medium',
-    low: 'Low',
-    none: ''
-};
 
 // Apple-style colors
 const APPLE_COLORS = {
@@ -85,12 +77,12 @@ const GTDTaskCard: React.FC<GTDTaskCardProps> = ({
                     {...provided.draggableProps}
                     {...provided.dragHandleProps}
                     sx={{
-                        // Apple-style card design
-                        mb: 1.5,
+                        // Compact card design
+                        mb: 1,
                         backgroundColor: isActive
                             ? APPLE_COLORS.backgroundActive
                             : (snapshot.isDragging ? '#f0f9ff' : isDone ? '#fafafa' : APPLE_COLORS.background),
-                        borderRadius: '16px',
+                        borderRadius: '10px',
                         boxShadow: snapshot.isDragging
                             ? '0 20px 40px rgba(0,0,0,0.15)'
                             : (isActive
@@ -115,37 +107,18 @@ const GTDTaskCard: React.FC<GTDTaskCardProps> = ({
                     }}
                     onClick={() => onClick(task)}
                 >
-                    <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
-                        {/* Header: Drag Handle + Title */}
-                        <Box display="flex" alignItems="flex-start" gap={1}>
-                            {/* Drag Handle - Apple style */}
-                            <Box
-                                sx={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    width: 28,
-                                    height: 28,
-                                    borderRadius: '8px',
-                                    backgroundColor: 'transparent',
-                                    transition: 'all 0.2s',
-                                    '&:hover': {
-                                        backgroundColor: APPLE_COLORS.gray
-                                    }
-                                }}
-                            >
-                                <DragIndicatorIcon sx={{ fontSize: 18, color: APPLE_COLORS.textSecondary }} />
-                            </Box>
-
+                    <CardContent sx={{ p: 1, '&:last-child': { pb: 1 } }}>
+                        {/* Title + Priority */}
+                        <Box display="flex" alignItems="flex-start" gap={0.5}>
                             {/* Title */}
                             <Typography
                                 component="span"
                                 onClick={handleTitleClick}
                                 sx={{
                                     flex: 1,
-                                    fontSize: '15px',
+                                    fontSize: '13px',
                                     fontWeight: 600,
-                                    lineHeight: 1.4,
+                                    lineHeight: 1.3,
                                     letterSpacing: '-0.01em',
                                     color: isDone ? APPLE_COLORS.textSecondary : APPLE_COLORS.textPrimary,
                                     textDecoration: isDone ? 'line-through' : 'none',
@@ -174,17 +147,17 @@ const GTDTaskCard: React.FC<GTDTaskCardProps> = ({
                             )}
                         </Box>
 
-                        {/* Tags Row - Apple style chips */}
-                        <Box display="flex" gap={0.75} flexWrap="wrap" mt={1.5} alignItems="center">
+                        {/* Tags Row - compact */}
+                        <Box display="flex" gap={0.5} flexWrap="wrap" mt={0.75} alignItems="center">
                             {clientName && (
                                 <Chip
                                     label={clientName}
                                     size="small"
                                     sx={{
-                                        height: 26,
-                                        fontSize: '12px',
+                                        height: 22,
+                                        fontSize: '11px',
                                         fontWeight: 500,
-                                        borderRadius: '8px',
+                                        borderRadius: '6px',
                                         bgcolor: '#fff3cd',
                                         color: '#856404',
                                         border: 'none',
@@ -202,10 +175,10 @@ const GTDTaskCard: React.FC<GTDTaskCardProps> = ({
                                     label={task.assigneeName}
                                     size="small"
                                     sx={{
-                                        height: 26,
-                                        fontSize: '12px',
+                                        height: 22,
+                                        fontSize: '11px',
                                         fontWeight: 500,
-                                        borderRadius: '8px',
+                                        borderRadius: '6px',
                                         bgcolor: task.acceptedAt ? '#dcfce7' : APPLE_COLORS.gray,
                                         color: task.acceptedAt ? '#166534' : APPLE_COLORS.textPrimary,
                                         border: 'none',
@@ -243,10 +216,10 @@ const GTDTaskCard: React.FC<GTDTaskCardProps> = ({
                                     label={task.context}
                                     size="small"
                                     sx={{
-                                        height: 26,
-                                        fontSize: '12px',
+                                        height: 22,
+                                        fontSize: '11px',
                                         fontWeight: 500,
-                                        borderRadius: '8px',
+                                        borderRadius: '6px',
                                         bgcolor: '#e0e7ff',
                                         color: '#4338ca',
                                         border: 'none',
@@ -260,7 +233,7 @@ const GTDTaskCard: React.FC<GTDTaskCardProps> = ({
                                     <Typography
                                         variant="caption"
                                         sx={{
-                                            fontSize: '12px',
+                                            fontSize: '11px',
                                             fontWeight: 500,
                                             fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif'
                                         }}
@@ -285,8 +258,8 @@ const GTDTaskCard: React.FC<GTDTaskCardProps> = ({
                                 display="flex"
                                 justifyContent="space-between"
                                 alignItems="center"
-                                mt={2}
-                                pt={1.5}
+                                mt={1}
+                                pt={0.75}
                                 sx={{
                                     borderTop: `1px solid ${APPLE_COLORS.border}`
                                 }}
@@ -297,9 +270,9 @@ const GTDTaskCard: React.FC<GTDTaskCardProps> = ({
                                         <IconButton
                                             onClick={handleStopClick}
                                             sx={{
-                                                width: 44,
-                                                height: 44,
-                                                borderRadius: '12px',
+                                                width: 36,
+                                                height: 36,
+                                                borderRadius: '8px',
                                                 backgroundColor: 'rgba(255, 59, 48, 0.12)',
                                                 color: APPLE_COLORS.danger,
                                                 transition: 'all 0.2s cubic-bezier(0.25, 0.1, 0.25, 1)',
@@ -313,7 +286,7 @@ const GTDTaskCard: React.FC<GTDTaskCardProps> = ({
                                                 }
                                             }}
                                         >
-                                            <StopIcon sx={{ fontSize: 24 }} />
+                                            <StopIcon sx={{ fontSize: 20 }} />
                                         </IconButton>
                                     </Tooltip>
                                 ) : (
@@ -322,9 +295,9 @@ const GTDTaskCard: React.FC<GTDTaskCardProps> = ({
                                             <IconButton
                                                 onClick={handlePlayClick}
                                                 sx={{
-                                                    width: 44,
-                                                    height: 44,
-                                                    borderRadius: '12px',
+                                                    width: 36,
+                                                    height: 36,
+                                                    borderRadius: '8px',
                                                     backgroundColor: 'rgba(52, 199, 89, 0.12)',
                                                     color: APPLE_COLORS.success,
                                                     transition: 'all 0.2s cubic-bezier(0.25, 0.1, 0.25, 1)',
@@ -338,7 +311,7 @@ const GTDTaskCard: React.FC<GTDTaskCardProps> = ({
                                                     }
                                                 }}
                                             >
-                                                <PlayArrowIcon sx={{ fontSize: 24 }} />
+                                                <PlayArrowIcon sx={{ fontSize: 20 }} />
                                             </IconButton>
                                         </Tooltip>
                                     )
@@ -351,9 +324,9 @@ const GTDTaskCard: React.FC<GTDTaskCardProps> = ({
                                 <Tooltip title="Edit Task" arrow>
                                     <IconButton
                                         sx={{
-                                            width: 44,
-                                            height: 44,
-                                            borderRadius: '12px',
+                                            width: 36,
+                                            height: 36,
+                                            borderRadius: '8px',
                                             backgroundColor: APPLE_COLORS.gray,
                                             color: APPLE_COLORS.textSecondary,
                                             transition: 'all 0.2s cubic-bezier(0.25, 0.1, 0.25, 1)',

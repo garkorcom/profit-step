@@ -111,9 +111,6 @@ const GTDColumn: React.FC<GTDColumnProps> = ({
             elevation={0}
             sx={{
                 width: '100%',
-                minWidth: 300,
-                maxWidth: 380,
-                flex: '1 0 300px',
                 height: '100%',
                 display: 'flex',
                 flexDirection: 'column',
@@ -121,21 +118,21 @@ const GTDColumn: React.FC<GTDColumnProps> = ({
                 bgcolor: styles.bg,
                 backdropFilter: 'blur(20px)',
                 WebkitBackdropFilter: 'blur(20px)',
-                borderRadius: '20px',
+                borderRadius: '12px',
                 border: '1px solid rgba(255, 255, 255, 0.3)',
                 boxShadow: '0 4px 30px rgba(0, 0, 0, 0.05)',
-                maxHeight: 'calc(100vh - 180px)',
                 transition: 'all 0.3s cubic-bezier(0.25, 0.1, 0.25, 1)',
                 overflow: 'hidden',
+                minHeight: 0,
                 '&:hover': {
                     boxShadow: '0 8px 40px rgba(0, 0, 0, 0.08)',
                 }
             }}
         >
-            {/* Apple-style Header with frosted glass */}
+            {/* Compact Header */}
             <Box
-                px={2.5}
-                py={2}
+                px={2}
+                py={1}
                 sx={{
                     bgcolor: styles.headerBg,
                     backdropFilter: 'blur(10px)',
@@ -143,18 +140,16 @@ const GTDColumn: React.FC<GTDColumnProps> = ({
                     borderBottom: '1px solid rgba(0, 0, 0, 0.04)',
                     display: 'flex',
                     alignItems: 'center',
-                    position: 'sticky',
-                    top: 0,
-                    zIndex: 10
+                    flexShrink: 0,
                 }}
             >
                 {styles.icon}
                 <Typography
-                    variant="subtitle1"
+                    variant="subtitle2"
                     sx={{
                         flex: 1,
                         fontWeight: 600,
-                        fontSize: '15px',
+                        fontSize: '13px',
                         letterSpacing: '-0.01em',
                         color: styles.headerText,
                         fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, sans-serif',
@@ -167,13 +162,13 @@ const GTDColumn: React.FC<GTDColumnProps> = ({
                     sx={{
                         bgcolor: styles.accent,
                         color: 'white',
-                        px: 1.25,
-                        py: 0.5,
-                        borderRadius: '12px',
-                        fontSize: '13px',
+                        px: 1,
+                        py: 0.25,
+                        borderRadius: '10px',
+                        fontSize: '12px',
                         fontWeight: 600,
                         fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif',
-                        minWidth: 28,
+                        minWidth: 24,
                         textAlign: 'center'
                     }}
                 >
@@ -188,13 +183,13 @@ const GTDColumn: React.FC<GTDColumnProps> = ({
                         ref={provided.innerRef}
                         {...provided.droppableProps}
                         sx={{
-                            p: 1.5,
+                            p: 1,
                             flexGrow: 1,
                             overflowY: 'auto',
                             overflowX: 'hidden',
+                            minHeight: 0,
                             transition: 'background-color 0.3s ease',
                             bgcolor: snapshot.isDraggingOver ? 'rgba(0, 122, 255, 0.06)' : 'transparent',
-                            minHeight: 100,
                             // Apple-style scrollbar
                             '&::-webkit-scrollbar': {
                                 width: 6,

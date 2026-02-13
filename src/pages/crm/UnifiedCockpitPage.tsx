@@ -12,8 +12,8 @@
  * @module pages/crm/UnifiedCockpitPage
  */
 
-import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import {
     Box, Typography, TextField, Button, IconButton, Paper,
     Breadcrumbs, Link, Chip, Select, MenuItem, FormControl,
@@ -25,7 +25,6 @@ import {
     ArrowBack as BackIcon,
     PlayArrow as PlayIcon,
     Stop as StopIcon,
-    Save as SaveIcon,
     Delete as DeleteIcon,
     AutoAwesome as AIIcon,
     Add as AddIcon,
@@ -232,7 +231,11 @@ const WorkSessionsList: React.FC<{ taskId: string }> = ({ taskId }) => {
 const UnifiedCockpitPage: React.FC = () => {
     const { taskId } = useParams<{ taskId: string }>();
     const navigate = useNavigate();
+    const location = useLocation();
     const { currentUser } = useAuth();
+
+    // Context-aware back navigation
+    const backPath = (location.state as any)?.from || '/crm/gtd';
 
     // Session manager for timer
     const { activeSession, startSession, stopSession, loading: sessionLoading } = useSessionManager(
@@ -248,6 +251,12 @@ const UnifiedCockpitPage: React.FC = () => {
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [hasChanges, setHasChanges] = useState(false);
+    const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
+
+    // Refs for autosave
+    const savingRef = useRef(false);
+    const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
+    const hasChangesRef = useRef(false);
 
     // Form state
     const [title, setTitle] = useState('');
@@ -295,6 +304,9 @@ const UnifiedCockpitPage: React.FC = () => {
             if (snap.exists()) {
                 const data = { id: snap.id, ...snap.data() } as GTDTask;
                 setTask(data);
+
+                // Skip form re-init when WE just saved (to avoid overwriting user edits)
+                if (savingRef.current) return;
 
                 // Initialize form state
                 setTitle(data.title || '');
@@ -395,8 +407,9 @@ const UnifiedCockpitPage: React.FC = () => {
     // HANDLERS
     // ─────────────────────────────────────────────────────────
 
-    const handleSave = async () => {
-        if (!taskId) return;
+    const handleSave = useCallback(async () => {
+        if (!taskId || savingRef.current) return;
+        savingRef.current = true;
         setSaving(true);
 
         try {
@@ -454,12 +467,45 @@ const UnifiedCockpitPage: React.FC = () => {
                 updatedAt: Timestamp.now()
             });
             setHasChanges(false);
+            hasChangesRef.current = false;
+            setLastSavedAt(new Date());
         } catch (error) {
             console.error('Save failed:', error);
         } finally {
             setSaving(false);
+            // Allow onSnapshot re-init after a short delay
+            setTimeout(() => { savingRef.current = false; }, 1000);
         }
-    };
+    }, [taskId, title, description, status, checklist, clientId, clientName, assigneeId, assigneeName, estimatedCost, needsEstimate, priority, estimatedDurationMinutes, startDate, dueDate, coAssignees, materials, task, currentUser]);
+
+    // ── Debounced autosave ──
+    useEffect(() => {
+        hasChangesRef.current = hasChanges;
+        if (!hasChanges) return;
+
+        // Clear previous timer
+        if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+
+        // Schedule save after 1.5s of inactivity
+        autoSaveTimerRef.current = setTimeout(() => {
+            handleSave();
+        }, 1500);
+
+        return () => {
+            if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+        };
+    }, [hasChanges, handleSave]);
+
+    // Save on unmount (navigating away)
+    useEffect(() => {
+        return () => {
+            if (hasChangesRef.current) {
+                // Fire-and-forget save
+                handleSave();
+            }
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     const handleStatusChange = (newStatus: GTDStatus) => {
         setStatus(newStatus);
@@ -568,7 +614,7 @@ const UnifiedCockpitPage: React.FC = () => {
         return (
             <Box p={3}>
                 <Alert severity="error">Task not found</Alert>
-                <Button onClick={() => navigate('/crm/gtd')} sx={{ mt: 2 }}>
+                <Button onClick={() => navigate(backPath)} sx={{ mt: 2 }}>
                     Back to Cockpit
                 </Button>
             </Box>
@@ -595,17 +641,17 @@ const UnifiedCockpitPage: React.FC = () => {
                 <Box display="flex" alignItems="center" justifyContent="space-between">
                     {/* Left: Navigation */}
                     <Box display="flex" alignItems="center" gap={2}>
-                        <IconButton onClick={() => navigate('/crm/gtd')}>
+                        <IconButton onClick={() => navigate(backPath)}>
                             <BackIcon />
                         </IconButton>
                         <Breadcrumbs>
                             <Link
                                 component="button"
                                 variant="body2"
-                                onClick={() => navigate('/crm/gtd')}
+                                onClick={() => navigate(backPath)}
                                 underline="hover"
                             >
-                                Cockpit
+                                {backPath === '/crm/tasks-masonry' ? 'Touch Board' : 'Cockpit'}
                             </Link>
                             {clientName && (
                                 <Typography variant="body2" color="text.primary">
@@ -671,16 +717,18 @@ const UnifiedCockpitPage: React.FC = () => {
                             {isTimerRunningForThisTask ? formatTime(timerSeconds) : 'Start Work'}
                         </Button>
 
-                        {/* Save Button */}
-                        <Button
-                            variant="contained"
-                            color="primary"
-                            startIcon={saving ? <CircularProgress size={16} /> : <SaveIcon />}
-                            onClick={handleSave}
-                            disabled={!hasChanges || saving}
-                        >
-                            Save
-                        </Button>
+                        {/* Autosave indicator */}
+                        {saving && (
+                            <Box display="flex" alignItems="center" gap={0.5} sx={{ color: '#8E8E93' }}>
+                                <CircularProgress size={14} sx={{ color: '#8E8E93' }} />
+                                <Typography variant="caption">Saving…</Typography>
+                            </Box>
+                        )}
+                        {!saving && lastSavedAt && !hasChanges && (
+                            <Typography variant="caption" sx={{ color: '#34C759', fontWeight: 500 }}>
+                                ✓ Saved
+                            </Typography>
+                        )}
 
                         {/* Delete Button */}
                         <IconButton color="error" onClick={handleDelete}>

@@ -45,6 +45,8 @@ const CostsReportPage = React.lazy(() => import('../pages/crm/CostsReportPage'))
 const RolesPage = React.lazy(() => import('../pages/admin/RolesPage'));
 const AIReportsPage = React.lazy(() => import('../pages/AIReportsPage'));
 const BankStatementsPage = React.lazy(() => import('../pages/crm/BankStatementsPage'));
+const ExpensesBoardPage = React.lazy(() => import('../pages/crm/ExpensesBoardPage'));
+const TasksMasonryPage = React.lazy(() => import('../pages/crm/TasksMasonryPage'));
 const InventoryPage = React.lazy(() => import('../pages/crm/InventoryPage'));
 
 // Loading fallback component
@@ -182,6 +184,8 @@ const AppRouter: React.FC = () => {
           <Route path="/crm/time-tracking" element={<TimeTrackingPage />} />
           <Route path="/crm/finance" element={<FinancePage />} />
           <Route path="/crm/bank-statements" element={<BankStatementsPage />} />
+          <Route path="/crm/expenses-board" element={<ExpensesBoardPage />} />
+          <Route path="/crm/tasks-masonry" element={<TasksMasonryPage />} />
           <Route path="/crm/costs" element={<CostsReportPage />} />
           <Route path="/crm/inventory" element={<InventoryPage />} />
           <Route path="/crm/payroll-periods" element={<PayrollPeriodsPage />} />

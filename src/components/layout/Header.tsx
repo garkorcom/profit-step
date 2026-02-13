@@ -47,6 +47,8 @@ import {
   SmartToy as AIIcon,
   AccountBalance as BankIcon,
   Inventory as InventoryIcon,
+  GridView as GridViewIcon,
+  TouchApp as TouchBoardIcon,
 } from '@mui/icons-material';
 import { useActiveSession } from '../../hooks/useActiveSession';
 import ActiveSessionIndicator from './ActiveSessionIndicator';
@@ -134,9 +136,11 @@ const Header: React.FC = () => {
       { path: '/crm/time-tracking', label: 'Time Tracking', icon: <DescriptionIcon sx={{ mr: 0.5 }} /> },
       { path: '/crm/finance', label: 'Финансы', icon: <AttachMoneyIcon sx={{ mr: 0.5 }} /> },
       { path: '/crm/gtd', label: 'Cockpit', icon: <TaskIcon sx={{ mr: 0.5 }} /> },
+      { path: '/crm/tasks-masonry', label: 'Touch Board (Beta)', icon: <TouchBoardIcon sx={{ mr: 0.5 }} /> },
       { path: '/crm/shopping', label: 'Закупки', icon: <ShoppingCartIcon sx={{ mr: 0.5 }} /> },
       { path: '/crm/inventory', label: 'Склад', icon: <InventoryIcon sx={{ mr: 0.5 }} /> },
       { path: '/crm/bank-statements', label: 'Bank Statements', icon: <BankIcon sx={{ mr: 0.5 }} /> },
+      { path: '/crm/expenses-board', label: 'Smart Expenses (Beta)', icon: <GridViewIcon sx={{ mr: 0.5 }} /> },
       { path: '/ai-reports', label: 'AI Отчёты', icon: <AIIcon sx={{ mr: 0.5 }} /> },
     ];
 

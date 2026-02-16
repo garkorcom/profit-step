@@ -32,6 +32,7 @@ import { Timestamp, collection, getDocs, query, orderBy } from 'firebase/firesto
 import { db } from '../../firebase/firebase';
 import { useAuth } from '../../auth/AuthContext';
 import { estimateTask } from '../../api/aiApi';
+import { useClientUsageHistory } from '../../hooks/useClientUsageHistory';
 
 
 interface GTDEditDialogProps {
@@ -91,7 +92,8 @@ const GTDEditDialog: React.FC<GTDEditDialogProps> = ({ open, onClose, task, onSa
     const [clients, setClients] = useState<Client[]>(propClients || []);
     const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
     const [expanded, setExpanded] = useState<boolean>(false);
-    const [resourcesExpanded, setResourcesExpanded] = useState<boolean>(false); // Collapsed by default
+    const [resourcesExpanded, setResourcesExpanded] = useState<boolean>(false);
+    const { trackUsage, sortClients } = useClientUsageHistory(userProfile?.id);
 
     // AI & Resources State
     const [aiLoading, setAiLoading] = useState(false);
@@ -334,6 +336,10 @@ const GTDEditDialog: React.FC<GTDEditDialogProps> = ({ open, onClose, task, onSa
 
         try {
             await onSave(task.id, updates);
+            // Track client usage for smart sorting
+            if (data.clientId) {
+                trackUsage(data.clientId);
+            }
             onClose();
         } catch (error) {
             console.error('Error saving task:', error);
@@ -953,8 +959,8 @@ const GTDEditDialog: React.FC<GTDEditDialogProps> = ({ open, onClose, task, onSa
                                                     <InputLabel>Client</InputLabel>
                                                     <Select {...field} label="Client" displayEmpty>
                                                         <MenuItem value=""><em>None</em></MenuItem>
-                                                        {clients.map(c => (
-                                                            <MenuItem key={c.id} value={c.id}>{c.name}</MenuItem>
+                                                        {sortClients(clients).map(c => (
+                                                            <MenuItem key={c.id} value={c.id}>{c.type === 'company' ? '🏢' : '👤'} {c.name}</MenuItem>
                                                         ))}
                                                     </Select>
                                                 </FormControl>

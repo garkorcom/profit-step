@@ -64,6 +64,7 @@ import { ru } from 'date-fns/locale';
 
 import { GTDStatus, GTDPriority, TaskType, TASK_TYPE_CONFIG, ACTION_GROUPS } from '../../types/gtd.types';
 import { Client } from '../../types/crm.types';
+import { useClientUsageHistory } from '../../hooks/useClientUsageHistory';
 import { UserProfile } from '../../types/user.types';
 import DynamicFormField from './DynamicFormField';
 import ShoppingListInput, { ShoppingItem } from './ShoppingListInput';
@@ -164,6 +165,8 @@ const GTDQuickAddDialog: React.FC<GTDQuickAddDialogProps> = ({
     // Client
     const [clientInput, setClientInput] = useState('');
     const [selectedClient, setSelectedClient] = useState<Client | null>(null);
+    const [showAllClients, setShowAllClients] = useState(false);
+    const { trackUsage, getTopClients } = useClientUsageHistory(currentUser?.uid);
 
     // Task details
     const [description, setDescription] = useState('');
@@ -654,12 +657,17 @@ const GTDQuickAddDialog: React.FC<GTDQuickAddDialogProps> = ({
 
             await onAdd(
                 description.trim(),
-                needsEstimate ? 'estimate' : selectedColumn,  // Use user-selected column
+                needsEstimate ? 'estimate' : selectedColumn,
                 selectedClient?.id,
                 assigneeType === 'employee' ? assigneeId : (assigneeType === 'self' ? currentUser?.uid : undefined),
                 priority !== 'none' ? priority : undefined,
                 aiData
             );
+
+            // Track client usage for smart sorting
+            if (selectedClient?.id) {
+                trackUsage(selectedClient.id);
+            }
 
             if (addMore) {
                 // Save & Add More
@@ -707,6 +715,7 @@ const GTDQuickAddDialog: React.FC<GTDQuickAddDialogProps> = ({
         setDescription('');
         setSelectedClient(null);
         setClientInput('');
+        setShowAllClients(false);
         setCrewSize(2);
         setHours('1');
         setCost('');
@@ -1014,36 +1023,92 @@ const GTDQuickAddDialog: React.FC<GTDQuickAddDialogProps> = ({
                             </Box>
                         )}
 
-                        {/* 2. CLIENT */}
+                        {/* 2. CLIENT — Smart sorted chips + expand */}
                         <Box sx={{ mb: 3 }}>
                             <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block', textTransform: 'uppercase', letterSpacing: 1 }}>
                                 👤 Клиент
                             </Typography>
-                            <Autocomplete
-                                options={clients}
-                                getOptionLabel={(c) => c.name}
-                                value={selectedClient}
-                                onChange={(_, val) => setSelectedClient(val)}
-                                inputValue={clientInput}
-                                onInputChange={(_, val) => setClientInput(val)}
-                                renderInput={(params) => (
-                                    <TextField
-                                        {...params}
-                                        placeholder="Выберите клиента..."
-                                        size="small"
-                                        sx={{
-                                            '& .MuiOutlinedInput-root': {
-                                                bgcolor: selectedClient ? '#e8f5e9' : 'background.paper',
-                                            }
-                                        }}
-                                    />
-                                )}
-                                renderOption={(props, option) => (
-                                    <li {...props}>
-                                        {option.type === 'company' ? '🏢' : '👤'} {option.name}
-                                    </li>
-                                )}
-                            />
+
+                            {/* Selected client display */}
+                            {selectedClient && (
+                                <Chip
+                                    label={`${selectedClient.type === 'company' ? '🏢' : '👤'} ${selectedClient.name}`}
+                                    onDelete={() => { setSelectedClient(null); setShowAllClients(false); }}
+                                    sx={{
+                                        mb: 1.5,
+                                        bgcolor: '#e8f5e9',
+                                        fontWeight: 600,
+                                        fontSize: '0.85rem',
+                                        height: 36,
+                                    }}
+                                />
+                            )}
+
+                            {/* Top clients chips */}
+                            {!selectedClient && (() => {
+                                const { top, rest } = getTopClients(clients, 5);
+                                const hasTop = top.length > 0;
+                                return (
+                                    <>
+                                        {hasTop && (
+                                            <Box sx={{ display: 'flex', gap: 0.75, flexWrap: 'wrap', mb: 1.5 }}>
+                                                {top.map(c => (
+                                                    <Chip
+                                                        key={c.id}
+                                                        label={`${c.type === 'company' ? '🏢' : '👤'} ${c.name}`}
+                                                        variant="outlined"
+                                                        onClick={() => { setSelectedClient(c); setShowAllClients(false); }}
+                                                        sx={{
+                                                            cursor: 'pointer',
+                                                            borderColor: 'grey.300',
+                                                            '&:hover': { bgcolor: 'grey.100', borderColor: 'primary.main' },
+                                                            transition: 'all 0.15s',
+                                                        }}
+                                                    />
+                                                ))}
+                                                {rest.length > 0 && !showAllClients && (
+                                                    <Chip
+                                                        label={`Ещё ${rest.length}`}
+                                                        variant="outlined"
+                                                        onClick={() => setShowAllClients(true)}
+                                                        sx={{
+                                                            cursor: 'pointer',
+                                                            borderStyle: 'dashed',
+                                                            color: 'text.secondary',
+                                                            '&:hover': { bgcolor: 'grey.50' },
+                                                        }}
+                                                    />
+                                                )}
+                                            </Box>
+                                        )}
+
+                                        {/* Full autocomplete: shown when expanded or no history */}
+                                        {(showAllClients || !hasTop) && (
+                                            <Autocomplete
+                                                options={hasTop ? rest : clients}
+                                                getOptionLabel={(c) => c.name}
+                                                value={null}
+                                                onChange={(_, val) => { if (val) { setSelectedClient(val); setShowAllClients(false); } }}
+                                                inputValue={clientInput}
+                                                onInputChange={(_, val) => setClientInput(val)}
+                                                renderInput={(params) => (
+                                                    <TextField
+                                                        {...params}
+                                                        placeholder="Поиск клиента..."
+                                                        size="small"
+                                                        autoFocus={showAllClients}
+                                                    />
+                                                )}
+                                                renderOption={(props, option) => (
+                                                    <li {...props}>
+                                                        {option.type === 'company' ? '🏢' : '👤'} {option.name}
+                                                    </li>
+                                                )}
+                                            />
+                                        )}
+                                    </>
+                                );
+                            })()}
                         </Box>
 
                         {/* 3. COLUMN PICKER - New Feature */}

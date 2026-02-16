@@ -54,11 +54,13 @@ import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { ru } from 'date-fns/locale';
-import { format, addDays, isToday, isTomorrow, startOfWeek } from 'date-fns';
+import { format, addDays, isToday, isTomorrow, startOfWeek, nextMonday, endOfDay, isMonday } from 'date-fns';
 import { collection, addDoc, getDocs, query, where, orderBy, Timestamp } from 'firebase/firestore';
 import { db } from '../../firebase/firebase';
 import { useAuth } from '../../auth/AuthContext';
 import { parseSmartInput, estimateTask } from '../../api/aiApi';
+import { useClientUsageHistory } from '../../hooks/useClientUsageHistory';
+import { useTeamProjectHistory } from '../../hooks/useTeamProjectHistory';
 import {
     GTDStatus,
     GTDPriority,
@@ -166,6 +168,11 @@ const GTDCreatePage: React.FC = () => {
     const [users, setUsers] = useState<UserProfile[]>([]);
     const [newSubtask, setNewSubtask] = useState('');
     const [clientSearch, setClientSearch] = useState('');
+    const [showAllClients, setShowAllClients] = useState(false);
+    const [showAllTeam, setShowAllTeam] = useState(false);
+    const [showDatePicker, setShowDatePicker] = useState(false);
+    const { trackUsage, sortClients } = useClientUsageHistory(currentUser?.uid);
+    const { trackAssignment, getTopTeamForProject } = useTeamProjectHistory(currentUser?.uid);
 
     // Voice Input states
     const [isListening, setIsListening] = useState(false);
@@ -416,6 +423,15 @@ const GTDCreatePage: React.FC = () => {
             };
 
             const docRef = await addDoc(collection(db, 'gtd_tasks'), taskData);
+
+            // Track client usage for smart sorting
+            if (formData.clientId) {
+                trackUsage(formData.clientId);
+                // Track team-project assignments
+                formData.assignees.forEach(assigneeId => {
+                    trackAssignment(formData.clientId!, assigneeId);
+                });
+            }
 
             // Navigate to created task
             navigate(`/crm/gtd/${docRef.id}`);
@@ -758,39 +774,56 @@ const GTDCreatePage: React.FC = () => {
                         )}
 
                         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                            {clients
-                                .filter(c => !clientSearch || c.name.toLowerCase().includes(clientSearch.toLowerCase()))
-                                .map(client => (
-                                    <Paper
-                                        key={client.id}
-                                        onClick={() => setFormData(prev => ({
-                                            ...prev,
-                                            clientId: prev.clientId === client.id ? null : client.id,
-                                            clientName: prev.clientId === client.id ? null : client.name,
-                                        }))}
-                                        sx={{
-                                            p: 2,
-                                            borderRadius: 2,
-                                            cursor: 'pointer',
-                                            border: 2,
-                                            borderColor: formData.clientId === client.id
-                                                ? 'primary.main'
-                                                : 'divider',
-                                            bgcolor: formData.clientId === client.id
-                                                ? alpha(theme.palette.primary.main, 0.08)
-                                                : 'background.paper',
-                                            transition: 'all 0.2s',
-                                            '&:active': { transform: 'scale(0.98)' }
-                                        }}
-                                    >
-                                        <Typography fontWeight="medium">{client.name}</Typography>
-                                        {client.address && (
-                                            <Typography variant="caption" color="text.secondary">
-                                                {client.address}
-                                            </Typography>
+                            {(() => {
+                                const sorted = sortClients(clients);
+                                const filtered = sorted.filter(c => !clientSearch || c.name.toLowerCase().includes(clientSearch.toLowerCase()));
+                                const visible = showAllClients ? filtered : filtered.slice(0, 5);
+                                const hidden = filtered.length - visible.length;
+                                return (
+                                    <>
+                                        {visible.map(client => (
+                                            <Paper
+                                                key={client.id}
+                                                onClick={() => setFormData(prev => ({
+                                                    ...prev,
+                                                    clientId: prev.clientId === client.id ? null : client.id,
+                                                    clientName: prev.clientId === client.id ? null : client.name,
+                                                }))}
+                                                sx={{
+                                                    p: 2,
+                                                    borderRadius: 2,
+                                                    cursor: 'pointer',
+                                                    border: 2,
+                                                    borderColor: formData.clientId === client.id
+                                                        ? 'primary.main'
+                                                        : 'divider',
+                                                    bgcolor: formData.clientId === client.id
+                                                        ? alpha(theme.palette.primary.main, 0.08)
+                                                        : 'background.paper',
+                                                    transition: 'all 0.2s',
+                                                    '&:active': { transform: 'scale(0.98)' }
+                                                }}
+                                            >
+                                                <Typography fontWeight="medium">{client.name}</Typography>
+                                                {client.address && (
+                                                    <Typography variant="caption" color="text.secondary">
+                                                        {client.address}
+                                                    </Typography>
+                                                )}
+                                            </Paper>
+                                        ))}
+                                        {hidden > 0 && (
+                                            <Button
+                                                variant="text"
+                                                onClick={() => setShowAllClients(true)}
+                                                sx={{ alignSelf: 'flex-start', textTransform: 'none', borderRadius: 2 }}
+                                            >
+                                                Ещё {hidden} проектов
+                                            </Button>
                                         )}
-                                    </Paper>
-                                ))}
+                                    </>
+                                );
+                            })()}
 
                             {/* Add New Project Link */}
                             <Paper
@@ -895,18 +928,127 @@ const GTDCreatePage: React.FC = () => {
                         <Typography variant="body2" color="text.secondary" gutterBottom>
                             Дедлайн (опционально)
                         </Typography>
-                        <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={ru}>
-                            <DatePicker
-                                value={formData.deadline}
-                                onChange={(date) => setFormData(prev => ({ ...prev, deadline: date as Date | null }))}
-                                slotProps={{
-                                    textField: {
-                                        fullWidth: true,
-                                        sx: { mb: 3, '& .MuiOutlinedInput-root': { borderRadius: 3 } }
-                                    }
-                                }}
-                            />
-                        </LocalizationProvider>
+                        {/* Quick Date Chips */}
+                        {(() => {
+                            const now = new Date();
+                            const isEvening = now.getHours() >= 17;
+                            const todayDate = endOfDay(now);
+                            const tomorrowDate = endOfDay(addDays(now, 1));
+                            const nextMon = endOfDay(nextMonday(now));
+
+                            const chips: { key: string; label: string; hint?: string; date: Date; color: string; activeColor: string }[] = [
+                                { key: 'today', label: '☀️ Сегодня', date: todayDate, color: '#fef2f2', activeColor: '#ef4444' },
+                                { key: 'tomorrow', label: '🌅 Завтра', hint: isEvening ? 'рекомендуем' : undefined, date: tomorrowDate, color: '#fff7ed', activeColor: '#f59e0b' },
+                                { key: 'next_week', label: '📅 Нед', date: nextMon, color: '#eff6ff', activeColor: '#3b82f6' },
+                            ];
+
+                            const isActive = (d: Date) =>
+                                formData.deadline &&
+                                format(formData.deadline, 'yyyy-MM-dd') === format(d, 'yyyy-MM-dd');
+
+                            const isCustom = formData.deadline &&
+                                !chips.some(c => format(formData.deadline!, 'yyyy-MM-dd') === format(c.date, 'yyyy-MM-dd'));
+
+                            return (
+                                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mb: 3 }}>
+                                    {chips.map(c => (
+                                        <Chip
+                                            key={c.key}
+                                            label={
+                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                                    {c.label}
+                                                    {c.hint && (
+                                                        <Typography
+                                                            component="span"
+                                                            variant="caption"
+                                                            sx={{
+                                                                fontSize: '0.6rem',
+                                                                bgcolor: alpha(c.activeColor, 0.15),
+                                                                color: c.activeColor,
+                                                                px: 0.5,
+                                                                borderRadius: 1,
+                                                                fontWeight: 600,
+                                                            }}
+                                                        >
+                                                            {c.hint}
+                                                        </Typography>
+                                                    )}
+                                                </Box>
+                                            }
+                                            onClick={() => {
+                                                if (isActive(c.date)) {
+                                                    setFormData(prev => ({ ...prev, deadline: null }));
+                                                } else {
+                                                    setFormData(prev => ({ ...prev, deadline: c.date }));
+                                                }
+                                            }}
+                                            sx={{
+                                                px: 1.5,
+                                                py: 2.5,
+                                                fontSize: '0.95rem',
+                                                fontWeight: 600,
+                                                borderRadius: '20px',
+                                                border: 2,
+                                                borderColor: isActive(c.date) ? c.activeColor : 'divider',
+                                                bgcolor: isActive(c.date) ? alpha(c.activeColor, 0.12) : c.color,
+                                                color: isActive(c.date) ? c.activeColor : 'text.primary',
+                                                transition: 'all 0.2s',
+                                                cursor: 'pointer',
+                                                '&:hover': {
+                                                    bgcolor: alpha(c.activeColor, 0.08),
+                                                },
+                                                '&:active': { transform: 'scale(0.95)' },
+                                            }}
+                                        />
+                                    ))}
+
+                                    {/* Custom date chip */}
+                                    <Chip
+                                        label={isCustom
+                                            ? `🗓️ ${format(formData.deadline!, 'dd MMM', { locale: ru })}`
+                                            : '🗓️ Другое...'
+                                        }
+                                        onClick={() => setShowDatePicker(true)}
+                                        sx={{
+                                            px: 1.5,
+                                            py: 2.5,
+                                            fontSize: '0.95rem',
+                                            fontWeight: 600,
+                                            borderRadius: '20px',
+                                            border: 2,
+                                            borderColor: isCustom ? 'primary.main' : 'divider',
+                                            bgcolor: isCustom ? alpha(theme.palette.primary.main, 0.12) : '#f3f4f6',
+                                            color: isCustom ? 'primary.main' : 'text.secondary',
+                                            transition: 'all 0.2s',
+                                            cursor: 'pointer',
+                                            '&:hover': {
+                                                bgcolor: alpha(theme.palette.primary.main, 0.08),
+                                            },
+                                            '&:active': { transform: 'scale(0.95)' },
+                                        }}
+                                    />
+                                </Box>
+                            );
+                        })()}
+
+                        {/* DatePicker fallback for custom date */}
+                        <Collapse in={showDatePicker}>
+                            <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={ru}>
+                                <DatePicker
+                                    value={formData.deadline}
+                                    onChange={(date) => {
+                                        setFormData(prev => ({ ...prev, deadline: date as Date | null }));
+                                        setShowDatePicker(false);
+                                    }}
+                                    slotProps={{
+                                        textField: {
+                                            fullWidth: true,
+                                            sx: { mb: 3, '& .MuiOutlinedInput-root': { borderRadius: 3 } }
+                                        }
+                                    }}
+                                />
+                            </LocalizationProvider>
+                        </Collapse>
 
                         <Paper sx={{
                             p: 2,
@@ -933,56 +1075,147 @@ const GTDCreatePage: React.FC = () => {
                     </Box>
                 </Fade>
 
-                {/* Step 3: Assignees */}
+                {/* Step 3: Assignees — Smart Team + Full List */}
                 <Fade in={step === 3} unmountOnExit>
                     <Box sx={{ display: step === 3 ? 'block' : 'none' }}>
                         <Typography variant="body2" color="text.secondary" gutterBottom>
                             Назначить исполнителя *
                         </Typography>
-                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, mb: 3 }}>
-                            {users.map(user => (
-                                <Paper
-                                    key={user.id}
-                                    onClick={() => user.available !== false && toggleAssignee(user.id)}
-                                    sx={{
-                                        p: 2,
-                                        borderRadius: 3,
-                                        cursor: user.available !== false ? 'pointer' : 'not-allowed',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        gap: 2,
-                                        opacity: user.available === false ? 0.5 : 1,
-                                        border: 2,
-                                        borderColor: formData.assignees.includes(user.id)
-                                            ? 'primary.main'
-                                            : 'divider',
-                                        bgcolor: formData.assignees.includes(user.id)
-                                            ? alpha(theme.palette.primary.main, 0.08)
-                                            : 'background.paper',
-                                        transition: 'all 0.2s',
-                                        '&:active': user.available !== false ? { transform: 'scale(0.98)' } : {}
-                                    }}
-                                >
-                                    <Avatar sx={{ bgcolor: 'primary.main' }}>
-                                        {user.displayName?.[0] || '👷'}
-                                    </Avatar>
-                                    <Box sx={{ flex: 1 }}>
-                                        <Typography fontWeight="medium">
-                                            {user.displayName || user.email}
-                                        </Typography>
-                                        <Typography variant="caption" color="text.secondary">
-                                            {user.role || 'Сотрудник'}
-                                        </Typography>
-                                    </Box>
-                                    {user.available === false && (
-                                        <Chip label="Занят" size="small" color="error" variant="outlined" />
+
+                        {/* Smart Team Row — top 4 for selected project */}
+                        {(() => {
+                            const { top, rest } = getTopTeamForProject(formData.clientId, users, 4);
+                            const hasSmartTeam = top.length > 0;
+
+                            return (
+                                <>
+                                    {hasSmartTeam && (
+                                        <Box sx={{ mb: 3 }}>
+                                            <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block' }}>
+                                                ⭐ Частые исполнители по проекту
+                                            </Typography>
+                                            <Box sx={{ display: 'flex', gap: 2, justifyContent: 'flex-start' }}>
+                                                {top.map(user => {
+                                                    const isSelected = formData.assignees.includes(user.id);
+                                                    return (
+                                                        <Box
+                                                            key={user.id}
+                                                            onClick={() => user.available !== false && toggleAssignee(user.id)}
+                                                            sx={{
+                                                                display: 'flex',
+                                                                flexDirection: 'column',
+                                                                alignItems: 'center',
+                                                                gap: 0.5,
+                                                                cursor: user.available !== false ? 'pointer' : 'not-allowed',
+                                                                opacity: user.available === false ? 0.5 : 1,
+                                                                transition: 'all 0.2s',
+                                                                '&:active': { transform: 'scale(0.92)' },
+                                                            }}
+                                                        >
+                                                            <Avatar
+                                                                src={user.avatarUrl}
+                                                                sx={{
+                                                                    width: 56,
+                                                                    height: 56,
+                                                                    bgcolor: isSelected ? 'primary.main' : 'grey.300',
+                                                                    border: 3,
+                                                                    borderColor: isSelected ? 'primary.main' : 'transparent',
+                                                                    boxShadow: isSelected ? `0 0 0 3px ${alpha(theme.palette.primary.main, 0.3)}` : 'none',
+                                                                    transition: 'all 0.2s',
+                                                                    fontSize: '1.25rem',
+                                                                }}
+                                                            >
+                                                                {user.displayName?.[0] || '👷'}
+                                                            </Avatar>
+                                                            <Typography
+                                                                variant="caption"
+                                                                sx={{
+                                                                    fontWeight: isSelected ? 700 : 500,
+                                                                    color: isSelected ? 'primary.main' : 'text.secondary',
+                                                                    maxWidth: 72,
+                                                                    textAlign: 'center',
+                                                                    overflow: 'hidden',
+                                                                    textOverflow: 'ellipsis',
+                                                                    whiteSpace: 'nowrap',
+                                                                }}
+                                                            >
+                                                                {user.displayName?.split(' ')[0] || user.email?.split('@')[0]}
+                                                            </Typography>
+                                                            {isSelected && (
+                                                                <CheckIcon sx={{ fontSize: 16, color: 'primary.main' }} />
+                                                            )}
+                                                        </Box>
+                                                    );
+                                                })}
+                                            </Box>
+                                        </Box>
                                     )}
-                                    {formData.assignees.includes(user.id) && (
-                                        <CheckIcon color="primary" />
+
+                                    {/* Divider + Expand */}
+                                    {hasSmartTeam && (
+                                        <Box sx={{ mb: 2 }}>
+                                            <Button
+                                                variant="text"
+                                                onClick={() => setShowAllTeam(prev => !prev)}
+                                                sx={{ textTransform: 'none', borderRadius: 2, color: 'text.secondary' }}
+                                            >
+                                                {showAllTeam
+                                                    ? 'Скрыть остальных'
+                                                    : `Ещё ${rest.length} сотрудников`}
+                                            </Button>
+                                        </Box>
                                     )}
-                                </Paper>
-                            ))}
-                        </Box>
+
+                                    {/* Full team list — shown when expanded or no smart team */}
+                                    <Collapse in={showAllTeam || !hasSmartTeam}>
+                                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, mb: 3 }}>
+                                            {(hasSmartTeam ? rest : users).map(user => (
+                                                <Paper
+                                                    key={user.id}
+                                                    onClick={() => user.available !== false && toggleAssignee(user.id)}
+                                                    sx={{
+                                                        p: 2,
+                                                        borderRadius: 3,
+                                                        cursor: user.available !== false ? 'pointer' : 'not-allowed',
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        gap: 2,
+                                                        opacity: user.available === false ? 0.5 : 1,
+                                                        border: 2,
+                                                        borderColor: formData.assignees.includes(user.id)
+                                                            ? 'primary.main'
+                                                            : 'divider',
+                                                        bgcolor: formData.assignees.includes(user.id)
+                                                            ? alpha(theme.palette.primary.main, 0.08)
+                                                            : 'background.paper',
+                                                        transition: 'all 0.2s',
+                                                        '&:active': user.available !== false ? { transform: 'scale(0.98)' } : {}
+                                                    }}
+                                                >
+                                                    <Avatar sx={{ bgcolor: 'primary.main' }}>
+                                                        {user.displayName?.[0] || '👷'}
+                                                    </Avatar>
+                                                    <Box sx={{ flex: 1 }}>
+                                                        <Typography fontWeight="medium">
+                                                            {user.displayName || user.email}
+                                                        </Typography>
+                                                        <Typography variant="caption" color="text.secondary">
+                                                            {user.role || 'Сотрудник'}
+                                                        </Typography>
+                                                    </Box>
+                                                    {user.available === false && (
+                                                        <Chip label="Занят" size="small" color="error" variant="outlined" />
+                                                    )}
+                                                    {formData.assignees.includes(user.id) && (
+                                                        <CheckIcon color="primary" />
+                                                    )}
+                                                </Paper>
+                                            ))}
+                                        </Box>
+                                    </Collapse>
+                                </>
+                            );
+                        })()}
 
                         {formData.assignees.length > 0 && (
                             <Paper sx={{ p: 2, borderRadius: 3 }}>

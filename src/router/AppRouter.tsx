@@ -48,6 +48,7 @@ const BankStatementsPage = React.lazy(() => import('../pages/crm/BankStatementsP
 const ExpensesBoardPage = React.lazy(() => import('../pages/crm/ExpensesBoardPage'));
 const TasksMasonryPage = React.lazy(() => import('../pages/crm/TasksMasonryPage'));
 const InventoryPage = React.lazy(() => import('../pages/crm/InventoryPage'));
+const AboutProjectPage = React.lazy(() => import('../pages/AboutProjectPage'));
 
 // Loading fallback component
 const PageLoader = () => (
@@ -151,6 +152,9 @@ const AppRouter: React.FC = () => {
 
           {/* Главный дашборд (старая страница) */}
           <Route path="/dashboard" element={<DashboardPage />} />
+
+          {/* О проекте */}
+          <Route path="/about" element={<AboutProjectPage />} />
 
           {/* Super Admin */}
           <Route path="/superadmin" element={<SuperAdminDashboard />} />

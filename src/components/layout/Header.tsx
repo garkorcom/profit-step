@@ -49,6 +49,7 @@ import {
   Inventory as InventoryIcon,
   GridView as GridViewIcon,
   TouchApp as TouchBoardIcon,
+  Info as InfoIcon,
 } from '@mui/icons-material';
 import { useActiveSession } from '../../hooks/useActiveSession';
 import ActiveSessionIndicator from './ActiveSessionIndicator';
@@ -154,6 +155,7 @@ const Header: React.FC = () => {
       { path: '/crm/tasks', label: 'Задачи', icon: <TaskIcon sx={{ mr: 0.5 }} /> },
       // { path: '/crm/gtd', label: 'Cockpit', icon: <TaskIcon sx={{ mr: 0.5 }} /> }, // Moved
       { path: '/estimates/electrical', label: 'Калькулятор', icon: <CalculateIcon sx={{ mr: 0.5 }} /> },
+      { path: '/about', label: 'О проекте', icon: <InfoIcon sx={{ mr: 0.5 }} /> },
     ];
 
     if (isAdmin) {

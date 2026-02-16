@@ -614,3 +614,9 @@ export { sendWeeklyDigest } from './scheduled/weeklyDigest';
 
 export { uploadBankStatement } from './callable/finance/uploadBankStatement';
 export { categorizeBankTransactions } from './callable/finance/categorizeBankTransactions';
+
+// ========================================
+// AI TASK GENERATION (Claude + Scope Analysis)
+// ========================================
+
+export { generateAiTask, confirmAiTask } from './callable/ai/generateAiTask';

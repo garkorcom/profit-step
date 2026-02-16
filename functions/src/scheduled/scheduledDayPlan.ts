@@ -10,16 +10,17 @@ import * as functions from 'firebase-functions';
 import { logger } from 'firebase-functions';
 import * as admin from 'firebase-admin';
 import axios from 'axios';
+import { safeConfig } from '../utils/safeConfig';
+import { generateDayPlan as generatePlanFunction } from '../callable/gtd/generateDayPlan';
 
 if (admin.apps.length === 0) {
     admin.initializeApp();
 }
 
 const db = admin.firestore();
-const WORKER_BOT_TOKEN = process.env.WORKER_BOT_TOKEN || functions.config().worker_bot?.token;
+const WORKER_BOT_TOKEN = process.env.WORKER_BOT_TOKEN || safeConfig().worker_bot?.token;
 
-// Import the generateDayPlan logic (we'll call it directly)
-import { generateDayPlan as generatePlanFunction } from '../callable/gtd/generateDayPlan';
+
 
 // ═══════════════════════════════════════════════════════════
 // SCHEDULED FUNCTION - 7:00 AM EST every day

@@ -16,10 +16,11 @@
 import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
 import axios from 'axios';
+import { safeConfig } from './utils/safeConfig';
 
 const db = admin.firestore();
 
-const WORKER_BOT_TOKEN = process.env.WORKER_BOT_TOKEN || functions.config().worker_bot?.token;
+const WORKER_BOT_TOKEN = process.env.WORKER_BOT_TOKEN || safeConfig().worker_bot?.token;
 
 type Action = 'resetPassword' | 'forceLogout' | 'changeEmail' | 'sendPasswordViaTelegram';
 

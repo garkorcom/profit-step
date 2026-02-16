@@ -1,12 +1,12 @@
 import * as admin from 'firebase-admin';
-import * as functions from 'firebase-functions';
 import axios from 'axios';
 import { logger } from 'firebase-functions';
 import * as ShoppingAI from '../../../services/shoppingAIService';
 import * as ShoppingService from '../../../services/shoppingBotService';
 import { sendMessage, showDraftConfirmation, sendMainMenu } from '../telegramUtils';
+import { safeConfig } from '../../../utils/safeConfig';
 
-const WORKER_BOT_TOKEN = process.env.WORKER_BOT_TOKEN || functions.config().worker_bot?.token;
+const WORKER_BOT_TOKEN = process.env.WORKER_BOT_TOKEN || safeConfig().worker_bot?.token;
 
 /**
  * Handle shopping quick add text (AI-powered)

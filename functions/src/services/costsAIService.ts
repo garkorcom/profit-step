@@ -5,12 +5,12 @@
  * Extracts amount, store name, and suggests category from receipt photos.
  */
 
-import * as functions from 'firebase-functions';
 import { logger } from 'firebase-functions';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { safeConfig } from '../utils/safeConfig';
 
 // Get API key
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || functions.config().gemini?.api_key;
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || safeConfig().gemini?.api_key;
 
 const MODELS = ['gemini-2.0-flash', 'gemini-1.5-flash-latest', 'gemini-1.5-pro-latest'];
 

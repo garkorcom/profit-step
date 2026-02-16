@@ -10,7 +10,7 @@
  */
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.generateDayPlan = exports.generatePriceEstimate = exports.syncActiveTimer = exports.onSessionChangeUpdateCost = exports.verifyTask = exports.submitForReview = exports.checkLongBreaks = exports.updateWorkSession = exports.mergeNotes = exports.splitChecklistItem = exports.onNoteCreated = exports.onReceiptUpdate = exports.onWorkSessionUpdate = exports.onWorkSessionCreate = exports.generateDailyPayroll = exports.closePayrollPeriod = exports.forceFinishAllSessions = exports.sendDeadlineReminders = exports.finalizeExpiredSessions = exports.onCostsBotMessage = exports.onWorkerBotMessage = exports.parseSmartInput = exports.estimateTask = exports.generateLeadSummary = exports.sendMessage = exports.onTelegramMessage = exports.onWhatsAppMessage = exports.onLeadCreate = exports.updateCompanyMemberCount_v2 = exports.trackUserActivation_v2 = exports.logUserUpdates_v2 = exports.incrementLoginCount_v2 = exports.inviteUser = exports.adminDeleteUser = exports.onUserDelete = exports.onUserCreate = exports.admin_manageUser = exports.admin_createUserWithPassword = exports.logPaginationMetrics = exports.diagnoseBot = exports.logInvitationAccepted = exports.logInvitationSent = exports.logUserDeleted = exports.logUserCreated = exports.brevoWebhookHandler = exports.trackFirstInvite = exports.initializeUserActivation = exports.aggregateEngagementMetrics = exports.aggregateGrowthMetrics = exports.processAvatar = void 0;
-exports.categorizeBankTransactions = exports.uploadBankStatement = exports.sendWeeklyDigest = exports.onCostUpdate = exports.onCostCreated = exports.onTaskUpdate = exports.scheduledDayPlan = void 0;
+exports.confirmAiTask = exports.generateAiTask = exports.categorizeBankTransactions = exports.uploadBankStatement = exports.sendWeeklyDigest = exports.onCostUpdate = exports.onCostCreated = exports.onTaskUpdate = exports.scheduledDayPlan = void 0;
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 const crypto = require("crypto");
@@ -511,4 +511,10 @@ var uploadBankStatement_1 = require("./callable/finance/uploadBankStatement");
 Object.defineProperty(exports, "uploadBankStatement", { enumerable: true, get: function () { return uploadBankStatement_1.uploadBankStatement; } });
 var categorizeBankTransactions_1 = require("./callable/finance/categorizeBankTransactions");
 Object.defineProperty(exports, "categorizeBankTransactions", { enumerable: true, get: function () { return categorizeBankTransactions_1.categorizeBankTransactions; } });
+// ========================================
+// AI TASK GENERATION (Claude + Scope Analysis)
+// ========================================
+var generateAiTask_1 = require("./callable/ai/generateAiTask");
+Object.defineProperty(exports, "generateAiTask", { enumerable: true, get: function () { return generateAiTask_1.generateAiTask; } });
+Object.defineProperty(exports, "confirmAiTask", { enumerable: true, get: function () { return generateAiTask_1.confirmAiTask; } });
 //# sourceMappingURL=index.js.map

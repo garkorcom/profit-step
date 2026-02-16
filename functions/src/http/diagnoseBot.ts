@@ -1,6 +1,7 @@
 import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { safeConfig } from '../utils/safeConfig';
 
 // Initialize if needed (though usually initialized in index.ts)
 if (admin.apps.length === 0) {
@@ -10,7 +11,7 @@ if (admin.apps.length === 0) {
 const db = admin.firestore();
 
 export const diagnoseBot = functions.https.onRequest(async (req: functions.https.Request, res: functions.Response) => {
-    const config = functions.config();
+    const config = safeConfig();
     const envToken = process.env.WORKER_BOT_TOKEN;
     const configToken = config.worker_bot?.token;
 
@@ -50,7 +51,7 @@ export const diagnoseBot = functions.https.onRequest(async (req: functions.https
 });
 
 async function checkGemini() {
-    const apiKey = process.env.GEMINI_API_KEY || functions.config().gemini?.api_key;
+    const apiKey = process.env.GEMINI_API_KEY || safeConfig().gemini?.api_key;
     if (!apiKey) return { status: 'missing_key' };
 
     const models = ['gemini-2.0-flash', 'gemini-1.5-flash-latest', 'gemini-1.5-flash', 'gemini-1.5-flash-001', 'gemini-pro'];

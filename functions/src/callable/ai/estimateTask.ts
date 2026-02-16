@@ -23,6 +23,7 @@ import {
     findTemplateMatch,
     templateToResponse,
 } from '../../utils/templateMatcher';
+import { safeConfig } from '../../utils/safeConfig';
 
 const db = admin.firestore();
 
@@ -78,7 +79,7 @@ Analyze the incoming task description and the worker's role to provide accurate 
  * Call Gemini AI with retry logic across multiple models
  */
 async function callGeminiWithRetry(prompt: string): Promise<string> {
-    const apiKey = process.env.GEMINI_API_KEY || functions.config().gemini?.api_key;
+    const apiKey = process.env.GEMINI_API_KEY || safeConfig().gemini?.api_key;
 
     if (!apiKey) {
         throw new functions.https.HttpsError('failed-precondition',

@@ -3,6 +3,7 @@ import { logger } from 'firebase-functions';
 import * as admin from 'firebase-admin';
 import axios from 'axios';
 import * as CostsAI from '../../services/costsAIService';
+import { safeConfig } from '../../utils/safeConfig';
 
 // Initialize if not already
 if (admin.apps.length === 0) {
@@ -12,7 +13,7 @@ if (admin.apps.length === 0) {
 const db = admin.firestore();
 
 // Configuration for Costs Bot
-const COSTS_BOT_TOKEN = process.env.COSTS_BOT_TOKEN || functions.config().costs_bot?.token;
+const COSTS_BOT_TOKEN = process.env.COSTS_BOT_TOKEN || safeConfig().costs_bot?.token;
 
 // Cost Categories
 const COST_CATEGORIES = [

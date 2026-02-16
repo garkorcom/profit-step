@@ -6,8 +6,9 @@
  */
 
 import * as nodemailer from 'nodemailer';
-import * as functions from 'firebase-functions';
+
 import { getInviteEmailTemplate } from './templates/inviteTemplate';
+import { safeConfig } from '../utils/safeConfig';
 
 // Интерфейс для данных приглашения
 interface InviteEmailData {
@@ -52,7 +53,7 @@ function createTransporter() {
 
   // Если не найдено в .env, пробуем Firebase Functions Config (legacy)
   if (!emailUser || !emailPassword) {
-    const config = functions.config();
+    const config = safeConfig();
     emailUser = config.email?.user;
     emailPassword = config.email?.password;
     emailHost = config.email?.host;

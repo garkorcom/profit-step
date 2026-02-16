@@ -1,5 +1,6 @@
 import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
+import { safeConfig } from '../utils/safeConfig';
 
 const db = admin.firestore();
 
@@ -63,7 +64,7 @@ export const checkLongBreaks = functions.pubsub.schedule('every 15 minutes').onR
             }
 
             if (chatId) {
-                const token = process.env.TELEGRAM_TOKEN || functions.config().telegram?.token;
+                const token = process.env.TELEGRAM_TOKEN || safeConfig().telegram?.token;
                 if (token) {
                     const message = `⏳ *Напоминание о перерыве*\n\n${employeeName}, ваш перерыв длится более 60 минут.\nВы еще отдыхаете? Не забудьте нажать *Resume* когда вернетесь к работе, или завершите смену.`;
 

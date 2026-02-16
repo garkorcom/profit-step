@@ -62,6 +62,40 @@ const AiTaskResponseSchema = z.object({
 
 type AiTaskResponse = z.infer<typeof AiTaskResponseSchema>;
 
+// Schema for confirmAiTask input validation
+const ConfirmInputSchema = z.object({
+    taskData: z.object({
+        title: z.string().min(1).max(500),
+        description: z.string().max(5000).optional().default(""),
+        assigneeIds: z.array(z.string()).optional().default([]),
+        projectId: z.string().optional(),
+        clientId: z.string().optional(),
+        clientName: z.string().optional().default(""),
+        ownerName: z.string().optional().default(""),
+        dueDate: z.string().nullable().optional(),
+        priority: z.enum(["low", "medium", "high", "urgent", "none"]).optional().default("medium"),
+        taskType: z.string().optional().default("maintenance"),
+        status: z.string().optional().default("next"),
+        needsEstimate: z.boolean().optional().default(false),
+        assigneeName: z.string().optional().default(""),
+        estimatedMinutes: z.number().optional(),
+        checklist: z.array(z.object({
+            title: z.string().optional(),
+            text: z.string().optional(),
+            isDone: z.boolean().optional(),
+        })).optional().default([]),
+        zone: z.string().nullable().optional(),
+        scopeStatus: z.string().nullable().optional(),
+    }),
+    auditLogId: z.string().optional(),
+    userEdits: z.array(z.object({
+        field: z.string(),
+        aiValue: z.any(),
+        userValue: z.any(),
+    })).optional().default([]),
+    scopeDecision: z.string().nullable().optional(),
+});
+
 
 
 // ============================================================
@@ -92,10 +126,10 @@ async function loadContextSnapshot(
     // Parallel fetch for speed
     const [projectDoc, tasksSnap, estimatesSnap, cosSnap, employeesSnap, projectsSnap] =
         await Promise.all([
-            db.doc(`projects/${projectId}`).get(),
+            db.doc(`clients/${projectId}`).get(),
             db
-                .collection("tasks")
-                .where("projectId", "==", projectId)
+                .collection("gtd_tasks")
+                .where("clientId", "==", projectId)
                 .orderBy("createdAt", "desc")
                 .limit(30)
                 .get(),
@@ -111,10 +145,10 @@ async function loadContextSnapshot(
                 .where("projectId", "==", projectId)
                 .where("status", "==", "active")
                 .get(),
-            db.collection("employees").where("isActive", "==", true).get(),
+            db.collection("users").where("isActive", "!=", false).get(),
             db
-                .collection("projects")
-                .where("status", "==", "active")
+                .collection("clients")
+                .where("isActive", "!=", false)
                 .get(),
         ]);
 
@@ -163,7 +197,7 @@ async function loadContextSnapshot(
         })),
         employees: employeesSnap.docs.map((d) => ({
             id: d.id,
-            name: d.data().name || d.data().displayName || "",
+            name: d.data().displayName || d.data().name || d.data().email || "",
         })),
         projects: projectsSnap.docs.map((d) => ({
             id: d.id,
@@ -176,9 +210,16 @@ async function loadContextSnapshot(
 // 5. CLAUDE API CALL (Tool Use — guaranteed structured output)
 // ============================================================
 
-const anthropic = new Anthropic({
-    apiKey: process.env.ANTHROPIC_API_KEY,
-});
+// Lazy-init Anthropic client — secrets are only available at invocation time in GCF v2
+let _anthropic: Anthropic | null = null;
+function getAnthropic(): Anthropic {
+    if (!_anthropic) {
+        _anthropic = new Anthropic({
+            apiKey: process.env.ANTHROPIC_API_KEY,
+        });
+    }
+    return _anthropic;
+}
 
 // Convert Zod schema to JSON Schema for Claude Tool definition
 const TOOL_DEFINITION: Anthropic.Tool = {
@@ -269,6 +310,14 @@ function buildSystemPrompt(
     scopeCandidates: ScopeCandidate[],
     clientDatetime: string
 ): string {
+    // Sanitize context data to prevent prompt injection
+    const sanitize = (obj: any, maxLen = 8000): string => {
+        const raw = JSON.stringify(obj);
+        // Strip control characters and excessive whitespace
+        const clean = raw.replace(/[\x00-\x1F\x7F]/g, "").replace(/\s{3,}/g, " ");
+        return clean.length > maxLen ? clean.slice(0, maxLen) + "...truncated" : clean;
+    };
+
     return `You are a construction project management assistant for Garkor, an electrical contracting company in South Florida. The team speaks English and Russian.
 
 CURRENT SYSTEM TIME: ${clientDatetime}
@@ -285,26 +334,26 @@ RULES:
 - Confidence: 0.0-1.0 for each field. Be honest about uncertainty.
 
 CONTEXT:
-Project: ${context.project.name} (${context.project.clientName})
-Brief: ${context.project.brief}
+Project: ${(context.project.name || "").slice(0, 200)} (${(context.project.clientName || "").slice(0, 200)})
+Brief: ${(context.project.brief || "").slice(0, 500)}
 
 EMPLOYEES:
-${JSON.stringify(context.employees)}
+${sanitize(context.employees, 2000)}
 
 ACTIVE PROJECTS:
-${JSON.stringify(context.projects)}
+${sanitize(context.projects, 2000)}
 
 RECENT TASKS (last 30):
-${JSON.stringify(context.recentTasks)}
+${sanitize(context.recentTasks, 6000)}
 
 ESTIMATE LINE ITEMS:
-${JSON.stringify(context.estimateItems)}
+${sanitize(context.estimateItems, 6000)}
 
 ACTIVE CHANGE ORDERS:
-${JSON.stringify(context.activeChangeOrders)}
+${sanitize(context.activeChangeOrders, 2000)}
 
 SCOPE CANDIDATES (pre-filtered, ranked by relevance):
-${JSON.stringify(scopeCandidates.map((c) => ({ ...c.item, matchScore: c.score })))}`;
+${sanitize(scopeCandidates.map((c) => ({ ...c.item, matchScore: c.score })), 3000)}`;
 }
 
 async function callClaude(
@@ -317,32 +366,55 @@ async function callClaude(
     const systemPrompt = buildSystemPrompt(context, scopeCandidates, clientDatetime);
     const startTime = Date.now();
 
-    const response = await anthropic.messages.create({
-        model: "claude-sonnet-4-20250514",
-        max_tokens: 1500,
-        system: systemPrompt,
-        tools: [TOOL_DEFINITION],
-        tool_choice: { type: "tool", name: "create_task" },
-        messages: [
-            {
-                role: "user",
-                content: `[Input method: ${inputMethod}]\n\n${userInput}`,
-            },
-        ],
-    });
+    const MAX_RETRIES = 1;
+    let lastError: Error | null = null;
 
-    const latencyMs = Date.now() - startTime;
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+        try {
+            if (attempt > 0) {
+                // Exponential backoff: 2s on retry
+                await new Promise((r) => setTimeout(r, 2000 * attempt));
+                console.log(`Claude retry attempt ${attempt}...`);
+            }
 
-    // Extract tool use block
-    const toolBlock = response.content.find((b) => b.type === "tool_use");
-    if (!toolBlock || toolBlock.type !== "tool_use") {
-        throw new Error("Claude did not return a tool_use block");
+            const response = await getAnthropic().messages.create({
+                model: "claude-sonnet-4-20250514",
+                max_tokens: 1500,
+                system: systemPrompt,
+                tools: [TOOL_DEFINITION],
+                tool_choice: { type: "tool", name: "create_task" },
+                messages: [
+                    {
+                        role: "user",
+                        content: `[Input method: ${inputMethod}]\n\n${userInput}`,
+                    },
+                ],
+            });
+
+            const latencyMs = Date.now() - startTime;
+
+            // Extract tool use block
+            const toolBlock = response.content.find((b) => b.type === "tool_use");
+            if (!toolBlock || toolBlock.type !== "tool_use") {
+                throw new Error("Claude did not return a tool_use block");
+            }
+
+            // Validate with Zod
+            const parsed = AiTaskResponseSchema.parse(toolBlock.input);
+
+            return { parsed, latencyMs };
+        } catch (err: any) {
+            lastError = err;
+            // Only retry on network/overloaded errors, not validation errors
+            const isRetryable = err?.status === 529 || err?.status === 500 ||
+                err?.code === "ECONNRESET" || err?.code === "ETIMEDOUT";
+            if (!isRetryable || attempt >= MAX_RETRIES) {
+                throw err;
+            }
+        }
     }
 
-    // Validate with Zod
-    const parsed = AiTaskResponseSchema.parse(toolBlock.input);
-
-    return { parsed, latencyMs };
+    throw lastError || new Error("Claude call failed");
 }
 
 // ============================================================
@@ -376,7 +448,7 @@ async function writeAuditLog(params: {
 export const generateAiTask = onCall(
     {
         region: "us-east1", // closest to South Florida
-        minInstances: 1, // GOTCHA #4: prevent cold starts ($3-5/mo)
+        minInstances: 0, // No warm instance — saves ~$3-5/mo; cold start adds ~2-3s
         timeoutSeconds: 30,
         memory: "512MiB",
         secrets: ["ANTHROPIC_API_KEY"],
@@ -484,29 +556,73 @@ export const confirmAiTask = onCall(
             throw new HttpsError("unauthenticated", "Must be logged in");
         }
 
-        const { taskData, auditLogId, userEdits, scopeDecision } = request.data;
+        // Validate input with Zod
+        let validData;
+        try {
+            validData = ConfirmInputSchema.parse(request.data);
+        } catch (err: any) {
+            if (err instanceof z.ZodError) {
+                throw new HttpsError("invalid-argument", `Invalid input: ${err.issues.map(i => i.message).join(", ")}`);
+            }
+            throw new HttpsError("invalid-argument", "Invalid task data");
+        }
+
+        const { taskData, auditLogId, userEdits, scopeDecision } = validData;
 
         const db = getFirestore();
 
-        // Save the actual task
-        const taskRef = await db.collection("tasks").add({
-            ...taskData,
-            createdBy: "ai",
-            aiAuditLogId: auditLogId,
-            scopeStatus: scopeDecision || taskData.scopeStatus,
+        // Build GTD-compatible task document
+        // (must match the schema used by manual creation in GTDCreatePage)
+        const gtdTask: Record<string, any> = {
+            ownerId: request.auth.uid,
+            ownerName: taskData.ownerName || "",
+            title: taskData.title || "",
+            description: taskData.description || "",
+            status: taskData.status || "next",
+            priority: taskData.priority || "medium",
+            taskType: taskData.taskType || "maintenance",
+            clientId: taskData.projectId || taskData.clientId || null,
+            clientName: taskData.clientName || "",
+            dueDate: taskData.dueDate || null,
+            needsEstimate: taskData.needsEstimate || false,
+            assigneeId: taskData.assigneeIds?.[0] || null,
+            assigneeName: taskData.assigneeName || "",
+            coAssignees: [],
+            coAssigneeIds: taskData.assigneeIds?.slice(1) || [],
+            estimatedMinutes: taskData.estimatedMinutes || null,
+            estimatedHours: taskData.estimatedMinutes ? Math.round(taskData.estimatedMinutes / 60 * 10) / 10 : null,
+            checklistItems: (taskData.checklist || []).map(
+                (item: any, i: number) => ({
+                    id: `ai_sub_${Date.now()}_${i}`,
+                    text: item.title || item.text || "",
+                    completed: false,
+                    createdAt: FieldValue.serverTimestamp(),
+                })
+            ),
+            context: "@office",
+            source: "ai",
+            aiAuditLogId: auditLogId || null,
+            scopeStatus: scopeDecision || taskData.scopeStatus || null,
+            zone: taskData.zone || null,
             createdAt: FieldValue.serverTimestamp(),
             updatedAt: FieldValue.serverTimestamp(),
-            createdByUid: request.auth.uid,
-        });
+        };
+
+        // Save to the global GTD tasks collection
+        const taskRef = await db.collection("gtd_tasks").add(gtdTask);
 
         // Update audit log with user's edits and confirmation
         if (auditLogId) {
-            await db.doc(`aiAuditLogs/${auditLogId}`).update({
-                wasAccepted: true,
-                userEdits: userEdits || [],
-                scopeDecision: scopeDecision || null,
-                confirmedTaskId: taskRef.id,
-            });
+            // Verify ownership before updating
+            const auditDoc = await db.doc(`aiAuditLogs/${auditLogId}`).get();
+            if (auditDoc.exists && auditDoc.data()?.userId === request.auth.uid) {
+                await db.doc(`aiAuditLogs/${auditLogId}`).update({
+                    wasAccepted: true,
+                    userEdits: userEdits || [],
+                    scopeDecision: scopeDecision || null,
+                    confirmedTaskId: taskRef.id,
+                });
+            }
         }
 
         return { success: true, taskId: taskRef.id };

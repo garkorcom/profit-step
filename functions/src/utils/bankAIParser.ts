@@ -7,9 +7,9 @@
  */
 
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import * as functions from 'firebase-functions';
+import { safeConfig } from './safeConfig';
 
-const genAI = new GoogleGenerativeAI(functions.config().gemini?.api_key || process.env.GEMINI_API_KEY || '');
+const genAI = new GoogleGenerativeAI(safeConfig().gemini?.api_key || process.env.GEMINI_API_KEY || '');
 
 export interface ParsedTransaction {
     date: string;           // MM/DD format

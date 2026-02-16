@@ -11,6 +11,7 @@
 import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { safeConfig } from '../../utils/safeConfig';
 
 // Types matching frontend TaxCategory
 type TaxCategory =
@@ -182,7 +183,7 @@ export const categorizeBankTransactions = functions
             throw new functions.https.HttpsError('invalid-argument', 'Year is required');
         }
 
-        const apiKey = process.env.GEMINI_API_KEY || functions.config().gemini?.api_key;
+        const apiKey = process.env.GEMINI_API_KEY || safeConfig().gemini?.api_key;
         if (!apiKey) {
             throw new functions.https.HttpsError('failed-precondition',
                 'GEMINI_API_KEY not configured');

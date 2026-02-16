@@ -16,6 +16,7 @@ import { logger } from 'firebase-functions';
 import * as admin from 'firebase-admin';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { sendMessage, editMessage } from '../telegram/telegramUtils';
+import { safeConfig } from '../../utils/safeConfig';
 
 if (admin.apps.length === 0) {
     admin.initializeApp();
@@ -24,8 +25,8 @@ if (admin.apps.length === 0) {
 const db = admin.firestore();
 const storage = admin.storage();
 
-// API Key with fallback to functions.config()
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || functions.config().gemini?.api_key;
+// API Key with fallback to safeConfig()
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || safeConfig().gemini?.api_key;
 
 // Prompts are defined in RAG CONTEXT FUNCTIONS section below
 

@@ -13,17 +13,17 @@
  */
 
 import * as admin from 'firebase-admin';
-import * as functions from 'firebase-functions';
 import { logger } from 'firebase-functions';
 import axios from 'axios';
 import { sendMessage, editMessage } from '../telegramUtils';
 import { transcribeVoice } from '../../../services/costsAIService';
 import { parseVoiceTask } from '../../../services/smartDispatcherService';
+import { safeConfig } from '../../../utils/safeConfig';
 
 const db = admin.firestore();
 const storage = admin.storage();
 
-const WORKER_BOT_TOKEN = process.env.WORKER_BOT_TOKEN || functions.config().worker_bot?.token;
+const WORKER_BOT_TOKEN = process.env.WORKER_BOT_TOKEN || safeConfig().worker_bot?.token;
 
 // ═══════════════════════════════════════════════════════════
 // TYPES

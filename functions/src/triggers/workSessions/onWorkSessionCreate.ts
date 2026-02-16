@@ -1,6 +1,7 @@
 import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
 import axios from 'axios';
+import { safeConfig } from '../../utils/safeConfig';
 
 const db = admin.firestore();
 
@@ -34,7 +35,7 @@ export const onWorkSessionCreate = functions.firestore
             }
 
             // 2. Get Bot Token
-            const token = process.env.TELEGRAM_TOKEN || functions.config().telegram?.token;
+            const token = process.env.TELEGRAM_TOKEN || safeConfig().telegram?.token;
             if (!token) {
                 console.error("Missing TELEGRAM_TOKEN, cannot send notification.");
                 return;

@@ -8,17 +8,17 @@
  * @module services/smartDispatcherService
  */
 
-import * as functions from 'firebase-functions';
 import { logger } from 'firebase-functions';
 import * as admin from 'firebase-admin';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { safeConfig } from '../utils/safeConfig';
 
 if (admin.apps.length === 0) {
     admin.initializeApp();
 }
 
 const db = admin.firestore();
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || functions.config().gemini?.api_key;
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || safeConfig().gemini?.api_key;
 
 // ═══════════════════════════════════════════════════════════
 // INTERFACES

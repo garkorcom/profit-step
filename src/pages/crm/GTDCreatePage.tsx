@@ -14,7 +14,6 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
     Box,
-    Container,
     Typography,
     TextField,
     Button,
@@ -22,12 +21,7 @@ import {
     Paper,
     Chip,
     Avatar,
-    LinearProgress,
     Switch,
-    FormControlLabel,
-    Divider,
-    Card,
-    CardContent,
     CircularProgress,
     Fade,
     Collapse,
@@ -43,8 +37,6 @@ import {
     AutoAwesome as AIIcon,
     Add as AddIcon,
     Delete as DeleteIcon,
-    CalendarMonth as CalendarIcon,
-    AccessTime as TimeIcon,
     Search as SearchIcon,
     OpenInNew as OpenInNewIcon,
     Mic as MicIcon,
@@ -54,19 +46,20 @@ import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { ru } from 'date-fns/locale';
-import { format, addDays, isToday, isTomorrow, startOfWeek, nextMonday, endOfDay, isMonday } from 'date-fns';
-import { collection, addDoc, getDocs, query, where, orderBy, Timestamp } from 'firebase/firestore';
+import { format, addDays, nextMonday, endOfDay } from 'date-fns';
+import { collection, addDoc, getDocs, Timestamp } from 'firebase/firestore';
 import { db } from '../../firebase/firebase';
 import { useAuth } from '../../auth/AuthContext';
-import { parseSmartInput, estimateTask } from '../../api/aiApi';
+import { parseSmartInput } from '../../api/aiApi';
+import { useAiTask } from '../../hooks/useAiTask';
+import AiDraftPreview from '../../components/tasks/AiDraftPreview';
+import { AiGenerateButton } from '../../components/tasks/AiGenerateButton';
 import { useClientUsageHistory } from '../../hooks/useClientUsageHistory';
 import { useTeamProjectHistory } from '../../hooks/useTeamProjectHistory';
 import {
     GTDStatus,
     GTDPriority,
     TaskType,
-    TASK_TYPE_CONFIG,
-    ACTION_GROUPS,
     ChecklistItem
 } from '../../types/gtd.types';
 
@@ -121,6 +114,15 @@ const TASK_TYPES_UI = [
     { id: 'service', icon: '⚠️', name: 'Проблема', desc: 'Блокер/issue' },
 ] as const;
 
+/** Map Gemini Smart Input types → TASK_TYPES_UI ids */
+const SMART_INPUT_TYPE_MAP: Record<string, string> = {
+    buy: 'buy', fix: 'fix', meet: 'meet', check: 'check',
+    install: 'fix', setup: 'fix', bring: 'deliver', pickup: 'deliver',
+    move: 'deliver', handover: 'meet', discuss: 'meet',
+    measure: 'measure', sign: 'sign', service: 'service',
+    other: 'fix',
+};
+
 const PRIORITIES = [
     { id: 'high' as GTDPriority, icon: '🔴', name: 'Срочно', color: '#ef4444' },
     { id: 'medium' as GTDPriority, icon: '🟠', name: 'Высокий', color: '#f59e0b' },
@@ -162,6 +164,9 @@ const GTDCreatePage: React.FC = () => {
         type: TaskType | null;
         priority: GTDPriority | null;
     }>({ type: null, priority: null });
+
+    // AI Task Generation (Claude) — full state machine via hook
+    const ai = useAiTask();
 
     // Data
     const [clients, setClients] = useState<Client[]>([]);
@@ -208,7 +213,7 @@ const GTDCreatePage: React.FC = () => {
             setUsers(snapshot.docs.map(doc => ({
                 id: doc.id,
                 ...doc.data(),
-                available: Math.random() > 0.3 // Demo: random availability
+                available: true // TODO: check active sessions for real availability
             } as UserProfile)));
         } catch (err) {
             console.error('Error loading users:', err);
@@ -233,7 +238,8 @@ const GTDCreatePage: React.FC = () => {
 
             let suggestedType: TaskType | null = null;
             if (result.suggestedType) {
-                suggestedType = result.suggestedType as TaskType;
+                const mapped = SMART_INPUT_TYPE_MAP[result.suggestedType];
+                suggestedType = (mapped || null) as TaskType | null;
             }
 
             setAiSuggestions({
@@ -336,6 +342,64 @@ const GTDCreatePage: React.FC = () => {
     };
 
     // ═══════════════════════════════════════
+    // AI TASK GENERATION (Claude) — via useAiTask hook
+    // ═══════════════════════════════════════
+
+    const handleAiGenerate = async () => {
+        if (!formData.title || !formData.clientId) return;
+
+        await ai.generate({
+            userInput: formData.title + (formData.description ? '\n' + formData.description : ''),
+            projectId: formData.clientId,
+            inputMethod: isListening ? 'voice' : 'text',
+        });
+    };
+
+    // When AI draft confirms, auto-fill form for fallback usage
+    useEffect(() => {
+        if (ai.status !== 'preview' || !ai.draft) return;
+
+        const draft = ai.draft;
+        setFormData(prev => ({
+            ...prev,
+            priority: (draft.priority === 'urgent' ? 'high' : draft.priority) as GTDPriority,
+            assignees: draft.assigneeIds.filter(id => users.some(u => u.id === id)),
+            deadline: draft.dueDate ? new Date(draft.dueDate) : prev.deadline,
+            description: prev.description || (draft.zone ? `Зона: ${draft.zone}\n${draft.description || ''}` : draft.description || ''),
+            subtasks: (draft.checklist || []).map((item, i) => ({
+                id: `ai_sub_${Date.now()}_${i}`,
+                text: item.title,
+                done: false,
+            })),
+        }));
+
+        if (aiSuggestions.type) {
+            setFormData(prev => ({ ...prev, type: aiSuggestions.type }));
+        }
+        // Don't jump to step 4 — AiDraftPreview replaces the wizard entirely
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [ai.status]);
+
+    // Confirm handler for AiDraftPreview
+    const handleAiConfirm = async (scopeDecision?: string) => {
+        const result: any = await ai.confirm(scopeDecision);
+
+        if (formData.clientId) {
+            trackUsage(formData.clientId);
+            formData.assignees.forEach(assigneeId => {
+                trackAssignment(formData.clientId!, assigneeId);
+            });
+        }
+
+        if (result?.taskId) {
+            navigate(`/crm/gtd/${result.taskId}`);
+        } else {
+            // Confirmed but no taskId — just go back to board
+            navigate('/crm/gtd');
+        }
+    };
+
+    // ═══════════════════════════════════════
     // HANDLERS
     // ═══════════════════════════════════════
 
@@ -382,7 +446,27 @@ const GTDCreatePage: React.FC = () => {
 
         setLoading(true);
         try {
-            // Build checklist items
+            // If AI draft exists, use confirmAiTask for audit trail
+            if (ai.isPreview && ai.draft && ai.auditLogId) {
+                const result: any = await ai.confirm(
+                    ai.analysis?.scopeStatus
+                );
+
+                // Track client usage
+                if (formData.clientId) {
+                    trackUsage(formData.clientId);
+                    formData.assignees.forEach(assigneeId => {
+                        trackAssignment(formData.clientId!, assigneeId);
+                    });
+                }
+
+                if (result?.taskId) {
+                    navigate(`/crm/gtd/${result.taskId}`);
+                }
+                return;
+            }
+
+            // Standard (non-AI) task creation
             const checklistItems: ChecklistItem[] = formData.subtasks.map(s => ({
                 id: s.id,
                 text: s.text,
@@ -390,13 +474,11 @@ const GTDCreatePage: React.FC = () => {
                 createdAt: Timestamp.now(),
             }));
 
-            // Build co-assignees from assignees[1..] (first is main assignee)
             const coAssigneeUsers = formData.assignees.slice(1).map(id => {
                 const u = users.find(user => user.id === id);
                 return { id, name: u?.displayName || '', role: 'executor' as const };
             });
 
-            // Create task
             const taskData = {
                 ownerId: currentUser.uid,
                 ownerName: currentUser.displayName || currentUser.email || 'User',
@@ -424,16 +506,13 @@ const GTDCreatePage: React.FC = () => {
 
             const docRef = await addDoc(collection(db, 'gtd_tasks'), taskData);
 
-            // Track client usage for smart sorting
             if (formData.clientId) {
                 trackUsage(formData.clientId);
-                // Track team-project assignments
                 formData.assignees.forEach(assigneeId => {
                     trackAssignment(formData.clientId!, assigneeId);
                 });
             }
 
-            // Navigate to created task
             navigate(`/crm/gtd/${docRef.id}`);
         } catch (err) {
             console.error('Error creating task:', err);
@@ -465,7 +544,7 @@ const GTDCreatePage: React.FC = () => {
         [formData.materials]
     );
 
-    const progressPercent = (step / TOTAL_STEPS) * 100;
+    // Progress is tracked by step indicator in the header
 
     // ═══════════════════════════════════════
     // VOICE INPUT HANDLER
@@ -581,8 +660,142 @@ const GTDCreatePage: React.FC = () => {
             {/* Content */}
             <Box sx={{ flex: 1, overflow: 'auto', p: 2 }}>
 
+                {/* ════════════════════════════════════════════
+                    AI Status Views — replace wizard when active
+                ════════════════════════════════════════════ */}
+
+                {/* Loading: Skeleton shimmer */}
+                {ai.status === 'loading' && (
+                    <Fade in>
+                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 2 }}>
+                            {[1, 2, 3, 4].map(i => (
+                                <Box
+                                    key={i}
+                                    sx={{
+                                        height: i === 4 ? 120 : 48,
+                                        borderRadius: 3,
+                                        bgcolor: 'action.disabledBackground',
+                                        animation: 'pulse 1.5s infinite ease-in-out',
+                                        '@keyframes pulse': {
+                                            '0%, 100%': { opacity: 0.4 },
+                                            '50%': { opacity: 0.8 },
+                                        },
+                                    }}
+                                />
+                            ))}
+                            <Typography
+                                variant="body2"
+                                color="text.secondary"
+                                sx={{ textAlign: 'center', mt: 2 }}
+                            >
+                                🤖 Анализирую смету и историю...
+                            </Typography>
+                            <AiGenerateButton onClick={() => { }} loading={true} />
+                        </Box>
+                    </Fade>
+                )}
+
+                {/* Preview: AiDraftPreview replaces the wizard */}
+                {(ai.status === 'preview' || ai.status === 'confirming') && ai.draft && ai.analysis && (
+                    <Fade in>
+                        <Box>
+                            <AiDraftPreview
+                                draft={ai.draft}
+                                analysis={ai.analysis}
+                                latencyMs={ai.latencyMs}
+                                employees={users.map(u => ({ id: u.id, name: u.displayName || u.email || u.id }))}
+                                projects={clients.map(c => ({ id: c.id, name: c.name }))}
+                                onEditField={ai.editDraft}
+                                onConfirm={handleAiConfirm}
+                                onCancel={ai.cancel}
+                                isConfirming={ai.isConfirming}
+                            />
+                        </Box>
+                    </Fade>
+                )}
+
+                {/* Error: retry / manual fallback */}
+                {ai.status === 'error' && (
+                    <Fade in>
+                        <Paper
+                            sx={{
+                                p: 3,
+                                mt: 2,
+                                borderRadius: 3,
+                                bgcolor: alpha(theme.palette.error.main, 0.06),
+                                border: 1,
+                                borderColor: alpha(theme.palette.error.main, 0.3),
+                            }}
+                        >
+                            <Typography variant="body2" color="error" sx={{ mb: 2, fontWeight: 500 }}>
+                                ⚠️ {ai.error || 'AI генерация не удалась'}
+                            </Typography>
+                            <Box sx={{ display: 'flex', gap: 1.5 }}>
+                                <Button
+                                    fullWidth
+                                    variant="outlined"
+                                    onClick={ai.reset}
+                                    sx={{ borderRadius: 3, textTransform: 'none', fontWeight: 600 }}
+                                >
+                                    Попробовать снова
+                                </Button>
+                                <Button
+                                    fullWidth
+                                    variant="contained"
+                                    color="error"
+                                    onClick={() => { ai.reset(); }}
+                                    sx={{ borderRadius: 3, textTransform: 'none', fontWeight: 600 }}
+                                >
+                                    Заполнить вручную
+                                </Button>
+                            </Box>
+                        </Paper>
+                    </Fade>
+                )}
+
+                {/* Confirmed: success toast */}
+                {ai.status === 'confirmed' && (
+                    <Fade in>
+                        <Paper
+                            sx={{
+                                p: 3,
+                                mt: 2,
+                                borderRadius: 3,
+                                bgcolor: alpha(theme.palette.success.main, 0.08),
+                                border: 1,
+                                borderColor: alpha(theme.palette.success.main, 0.3),
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 2,
+                            }}
+                        >
+                            <Box
+                                sx={{
+                                    width: 40, height: 40, borderRadius: '50%',
+                                    bgcolor: 'success.main',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                }}
+                            >
+                                <CheckIcon sx={{ color: '#fff', fontSize: 24 }} />
+                            </Box>
+                            <Box>
+                                <Typography fontWeight="bold" color="success.dark">
+                                    Задача создана!
+                                </Typography>
+                                <Typography variant="caption" color="text.secondary">
+                                    AI • {(ai.latencyMs / 1000).toFixed(1)}s
+                                </Typography>
+                            </Box>
+                        </Paper>
+                    </Fade>
+                )}
+
+                {/* ════════════════════════════════════════════
+                    Wizard Steps — only show when AI is idle
+                ════════════════════════════════════════════ */}
+
                 {/* Step 1: What needs to be done */}
-                <Fade in={step === 1} unmountOnExit>
+                <Fade in={step === 1 && ai.status === 'idle'} unmountOnExit>
                     <Box sx={{ display: step === 1 ? 'block' : 'none' }}>
                         <Box sx={{ mb: 3 }}>
                             <Typography variant="body2" color="text.secondary" gutterBottom>
@@ -655,6 +868,16 @@ const GTDCreatePage: React.FC = () => {
                             />
                         </Box>
 
+                        {/* AI Generate Button */}
+                        {formData.title.length > 5 && formData.clientId && ai.status === 'idle' && (
+                            <Box sx={{ mb: 3 }}>
+                                <AiGenerateButton
+                                    onClick={handleAiGenerate}
+                                    loading={false}
+                                />
+                            </Box>
+                        )}
+
                         {/* AI Suggestions */}
                         {formData.title.length > 5 && (
                             <Collapse in>
@@ -674,28 +897,34 @@ const GTDCreatePage: React.FC = () => {
                                             AI анализ
                                         </Typography>
                                     </Box>
-                                    {!aiLoading && aiSuggestions.type && (
-                                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                                            <Chip
-                                                label={`${TASK_TYPES_UI.find(t => t.id === aiSuggestions.type)?.icon} ${TASK_TYPES_UI.find(t => t.id === aiSuggestions.type)?.name} + Применить`}
-                                                onClick={() => setFormData(prev => ({ ...prev, type: aiSuggestions.type }))}
-                                                sx={{
-                                                    bgcolor: alpha(theme.palette.secondary.main, 0.15),
-                                                    '&:hover': { bgcolor: alpha(theme.palette.secondary.main, 0.25) }
-                                                }}
-                                            />
-                                            {aiSuggestions.priority && (
-                                                <Chip
-                                                    label={`${PRIORITIES.find(p => p.id === aiSuggestions.priority)?.icon} ${PRIORITIES.find(p => p.id === aiSuggestions.priority)?.name} + Применить`}
-                                                    onClick={() => setFormData(prev => ({ ...prev, priority: aiSuggestions.priority! }))}
-                                                    sx={{
-                                                        bgcolor: alpha(theme.palette.secondary.main, 0.15),
-                                                        '&:hover': { bgcolor: alpha(theme.palette.secondary.main, 0.25) }
-                                                    }}
-                                                />
-                                            )}
-                                        </Box>
-                                    )}
+                                    {!aiLoading && aiSuggestions.type && (() => {
+                                        const matchedType = TASK_TYPES_UI.find(t => t.id === aiSuggestions.type);
+                                        const matchedPriority = aiSuggestions.priority ? PRIORITIES.find(p => p.id === aiSuggestions.priority) : null;
+                                        return (
+                                            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                                                {matchedType && (
+                                                    <Chip
+                                                        label={`${matchedType.icon} ${matchedType.name} + Применить`}
+                                                        onClick={() => setFormData(prev => ({ ...prev, type: aiSuggestions.type }))}
+                                                        sx={{
+                                                            bgcolor: alpha(theme.palette.secondary.main, 0.15),
+                                                            '&:hover': { bgcolor: alpha(theme.palette.secondary.main, 0.25) }
+                                                        }}
+                                                    />
+                                                )}
+                                                {matchedPriority && (
+                                                    <Chip
+                                                        label={`${matchedPriority.icon} ${matchedPriority.name} + Применить`}
+                                                        onClick={() => setFormData(prev => ({ ...prev, priority: aiSuggestions.priority! }))}
+                                                        sx={{
+                                                            bgcolor: alpha(theme.palette.secondary.main, 0.15),
+                                                            '&:hover': { bgcolor: alpha(theme.palette.secondary.main, 0.25) }
+                                                        }}
+                                                    />
+                                                )}
+                                            </Box>
+                                        );
+                                    })()}
                                 </Paper>
                             </Collapse>
                         )}
@@ -853,7 +1082,7 @@ const GTDCreatePage: React.FC = () => {
                 </Fade>
 
                 {/* Step 2: Type and Priority */}
-                <Fade in={step === 2} unmountOnExit>
+                <Fade in={step === 2 && ai.status === 'idle'} unmountOnExit>
                     <Box sx={{ display: step === 2 ? 'block' : 'none' }}>
                         <Typography variant="body2" color="text.secondary" gutterBottom>
                             Тип задачи *
@@ -1076,7 +1305,7 @@ const GTDCreatePage: React.FC = () => {
                 </Fade>
 
                 {/* Step 3: Assignees — Smart Team + Full List */}
-                <Fade in={step === 3} unmountOnExit>
+                <Fade in={step === 3 && ai.status === 'idle'} unmountOnExit>
                     <Box sx={{ display: step === 3 ? 'block' : 'none' }}>
                         <Typography variant="body2" color="text.secondary" gutterBottom>
                             Назначить исполнителя *
@@ -1241,8 +1470,9 @@ const GTDCreatePage: React.FC = () => {
                 </Fade>
 
                 {/* Step 4: Details & Summary */}
-                <Fade in={step === 4} unmountOnExit>
+                <Fade in={step === 4 && ai.status === 'idle'} unmountOnExit>
                     <Box sx={{ display: step === 4 ? 'block' : 'none' }}>
+
                         {/* Subtasks */}
                         <Box sx={{ mb: 3 }}>
                             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
@@ -1433,81 +1663,83 @@ const GTDCreatePage: React.FC = () => {
                 </Fade>
             </Box>
 
-            {/* Sticky Footer */}
-            <Paper
-                elevation={0}
-                sx={{
-                    position: 'sticky',
-                    bottom: 0,
-                    p: 2,
-                    borderTop: 1,
-                    borderColor: 'divider',
-                    bgcolor: alpha(theme.palette.background.paper, 0.95),
-                    backdropFilter: 'blur(8px)',
-                }}
-            >
-                <Box sx={{ display: 'flex', gap: 1.5 }}>
-                    {step > 1 && (
-                        <Button
-                            variant="outlined"
-                            fullWidth
-                            onClick={() => setStep(step - 1)}
-                            startIcon={<ArrowBackIcon />}
-                            sx={{
-                                py: 1.5,
-                                borderRadius: 3,
-                                fontWeight: 'bold'
-                            }}
-                        >
-                            Назад
-                        </Button>
-                    )}
+            {/* Sticky Footer — only show when AI is idle (wizard mode) */}
+            {ai.status === 'idle' && (
+                <Paper
+                    elevation={0}
+                    sx={{
+                        position: 'sticky',
+                        bottom: 0,
+                        p: 2,
+                        borderTop: 1,
+                        borderColor: 'divider',
+                        bgcolor: alpha(theme.palette.background.paper, 0.95),
+                        backdropFilter: 'blur(8px)',
+                    }}
+                >
+                    <Box sx={{ display: 'flex', gap: 1.5 }}>
+                        {step > 1 && (
+                            <Button
+                                variant="outlined"
+                                fullWidth
+                                onClick={() => setStep(step - 1)}
+                                startIcon={<ArrowBackIcon />}
+                                sx={{
+                                    py: 1.5,
+                                    borderRadius: 3,
+                                    fontWeight: 'bold'
+                                }}
+                            >
+                                Назад
+                            </Button>
+                        )}
 
-                    {step < TOTAL_STEPS ? (
+                        {step < TOTAL_STEPS ? (
+                            <Button
+                                variant="contained"
+                                fullWidth
+                                onClick={() => canProceed && setStep(step + 1)}
+                                disabled={!canProceed}
+                                endIcon={<ArrowForwardIcon />}
+                                sx={{
+                                    py: 1.5,
+                                    borderRadius: 3,
+                                    fontWeight: 'bold'
+                                }}
+                            >
+                                Далее
+                            </Button>
+                        ) : (
+                            <Button
+                                variant="contained"
+                                color="success"
+                                fullWidth
+                                onClick={handleCreate}
+                                disabled={loading}
+                                startIcon={loading ? <CircularProgress size={20} color="inherit" /> : <CheckIcon />}
+                                sx={{
+                                    py: 1.5,
+                                    borderRadius: 3,
+                                    fontWeight: 'bold'
+                                }}
+                            >
+                                {loading ? 'Создание...' : 'Создать задачу'}
+                            </Button>
+                        )}
+                    </Box>
+
+                    {step === 1 && (
                         <Button
-                            variant="contained"
                             fullWidth
-                            onClick={() => canProceed && setStep(step + 1)}
+                            onClick={handleSkipToSummary}
                             disabled={!canProceed}
-                            endIcon={<ArrowForwardIcon />}
-                            sx={{
-                                py: 1.5,
-                                borderRadius: 3,
-                                fontWeight: 'bold'
-                            }}
+                            sx={{ mt: 1, color: 'text.secondary' }}
                         >
-                            Далее
-                        </Button>
-                    ) : (
-                        <Button
-                            variant="contained"
-                            color="success"
-                            fullWidth
-                            onClick={handleCreate}
-                            disabled={loading}
-                            startIcon={loading ? <CircularProgress size={20} color="inherit" /> : <CheckIcon />}
-                            sx={{
-                                py: 1.5,
-                                borderRadius: 3,
-                                fontWeight: 'bold'
-                            }}
-                        >
-                            {loading ? 'Создание...' : 'Создать задачу'}
+                            Пропустить детали →
                         </Button>
                     )}
-                </Box>
-
-                {step === 1 && (
-                    <Button
-                        fullWidth
-                        onClick={handleSkipToSummary}
-                        disabled={!canProceed}
-                        sx={{ mt: 1, color: 'text.secondary' }}
-                    >
-                        Пропустить детали →
-                    </Button>
-                )}
-            </Paper>
+                </Paper>
+            )}
         </Box>
     );
 };

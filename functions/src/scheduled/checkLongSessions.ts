@@ -1,11 +1,12 @@
 import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
 import axios from 'axios';
+import { safeConfig } from '../utils/safeConfig';
 
 const db = admin.firestore();
 
 // CONFIG
-const WORKER_BOT_TOKEN = process.env.WORKER_BOT_TOKEN || functions.config().worker_bot?.token;
+const WORKER_BOT_TOKEN = process.env.WORKER_BOT_TOKEN || safeConfig().worker_bot?.token;
 const REMINDER_HOURS = 4;
 const AUTO_CLOSE_HOURS = 16;
 const PAID_HOURS_ON_AUTO_CLOSE = 1; // 1 hour

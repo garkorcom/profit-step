@@ -1,11 +1,12 @@
 import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
 import OpenAI from 'openai';
+import { safeConfig } from '../../utils/safeConfig';
 
 // Initialize OpenAI (API Key should be in environment variables)
 // Run: firebase functions:config:set openai.key="YOUR_API_KEY"
 const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY || functions.config().openai?.key || 'mock-key',
+    apiKey: process.env.OPENAI_API_KEY || safeConfig().openai?.key || 'mock-key',
 });
 
 const db = admin.firestore();
@@ -47,7 +48,7 @@ export const onWhatsAppMessage = functions.https.onRequest(async (req, res) => {
         const challenge = req.query['hub.challenge'];
 
         // Run: firebase functions:config:set whatsapp.verify_token="YOUR_TOKEN"
-        const verifyToken = process.env.WHATSAPP_VERIFY_TOKEN || functions.config().whatsapp?.verify_token || 'profit-step-token';
+        const verifyToken = process.env.WHATSAPP_VERIFY_TOKEN || safeConfig().whatsapp?.verify_token || 'profit-step-token';
 
         if (mode === 'subscribe' && token === verifyToken) {
             res.status(200).send(challenge);

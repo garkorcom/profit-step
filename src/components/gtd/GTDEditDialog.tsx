@@ -4,13 +4,13 @@ import {
     Dialog, DialogTitle, DialogContent, DialogActions,
     TextField, Button, FormControl, InputLabel, Select, MenuItem,
     Box, Chip, Typography, Grid, Accordion, AccordionSummary, AccordionDetails,
-    useTheme, alpha, Paper, IconButton, InputAdornment, CircularProgress, Alert,
+    useTheme, alpha, Paper, IconButton, InputAdornment, CircularProgress,
     Avatar, Autocomplete
 } from '@mui/material';
 import FlagIcon from '@mui/icons-material/Flag';
 import PersonIcon from '@mui/icons-material/Person';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import CalendarTodayIcon from '@mui/icons-material/CalendarToday';
+
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
@@ -25,14 +25,14 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 import CloseIcon from '@mui/icons-material/Close';
 
 import { useForm, Controller } from 'react-hook-form';
-import { GTDTask, GTDStatus, GTD_COLUMNS, GTDPriority, PRIORITY_COLORS, ChecklistItem } from '../../types/gtd.types';
+import { GTDTask, GTDStatus, GTDPriority, PRIORITY_COLORS, ChecklistItem } from '../../types/gtd.types';
 import { Client } from '../../types/crm.types';
 import { UserProfile } from '../../types/user.types';
-import { Timestamp, collection, getDocs, query, orderBy, where } from 'firebase/firestore';
+import { Timestamp, collection, getDocs, query, orderBy } from 'firebase/firestore';
 import { db } from '../../firebase/firebase';
 import { useAuth } from '../../auth/AuthContext';
 import { estimateTask } from '../../api/aiApi';
-import { AIEstimateResponse } from '../../types/aiEstimate.types';
+
 
 interface GTDEditDialogProps {
     open: boolean;
@@ -40,6 +40,10 @@ interface GTDEditDialogProps {
     task: GTDTask | null;
     onSave: (taskId: string, data: Partial<GTDTask>) => Promise<void>;
     onDelete: (taskId: string) => Promise<void>;
+    /** Pass from parent to avoid duplicate Firestore reads */
+    propUsers?: UserProfile[];
+    /** Pass from parent to avoid duplicate Firestore reads */
+    propClients?: Client[];
 }
 
 interface FormData {
@@ -55,7 +59,7 @@ interface FormData {
     estimatedDurationMinutes: number;
 }
 
-const CONTEXT_SUGGESTIONS = ['@home', '@work', '@computer', '@phone', '@errands', '@office'];
+
 
 const PRIORITY_OPTIONS: { value: GTDPriority; label: string; color: string }[] = [
     { value: 'none', label: 'No priority', color: '#9ca3af' },
@@ -72,7 +76,7 @@ const STATUS_PIPELINE: { id: GTDStatus; label: string; icon: React.ReactNode }[]
     { id: 'done', label: 'Done', icon: <CheckCircleIcon fontSize="small" /> }
 ];
 
-const GTDEditDialog: React.FC<GTDEditDialogProps> = ({ open, onClose, task, onSave, onDelete }) => {
+const GTDEditDialog: React.FC<GTDEditDialogProps> = ({ open, onClose, task, onSave, onDelete, propUsers, propClients }) => {
     const theme = useTheme();
     const { userProfile } = useAuth(); // Corrected usage check
     const { control, handleSubmit, reset, setValue, watch } = useForm<FormData>();
@@ -83,8 +87,9 @@ const GTDEditDialog: React.FC<GTDEditDialogProps> = ({ open, onClose, task, onSa
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const currentContext = watch('context'); // Kept for logic if needed
 
-    const [users, setUsers] = useState<UserProfile[]>([]);
-    const [clients, setClients] = useState<Client[]>([]);
+    const [users, setUsers] = useState<UserProfile[]>(propUsers || []);
+    const [clients, setClients] = useState<Client[]>(propClients || []);
+    const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
     const [expanded, setExpanded] = useState<boolean>(false);
     const [resourcesExpanded, setResourcesExpanded] = useState<boolean>(false); // Collapsed by default
 
@@ -109,24 +114,32 @@ const GTDEditDialog: React.FC<GTDEditDialogProps> = ({ open, onClose, task, onSa
 
     const HOURLY_RATE = 95; // Default hourly rate
 
+    // Sync from props when provided
+    useEffect(() => {
+        if (propUsers && propUsers.length > 0) setUsers(propUsers);
+        if (propClients && propClients.length > 0) setClients(propClients);
+    }, [propUsers, propClients]);
+
     useEffect(() => {
         const fetchData = async () => {
-            // Assignees (Users)
-            try {
-                const usersQ = query(collection(db, 'users'), orderBy('displayName'));
-                const usersSnap = await getDocs(usersQ);
-                setUsers(usersSnap.docs.map(d => ({ id: d.id, ...d.data() } as UserProfile)));
-            } catch (e) { console.error("Error fetching users", e); }
-
-            // Clients (Optimized: fetch all for now, logic could be refined for big DBs)
-            try {
-                const clientQ = query(collection(db, 'clients'), orderBy('name'));
-                const clientSnap = await getDocs(clientQ);
-                setClients(clientSnap.docs.map(d => ({ id: d.id, ...d.data() } as Client)));
-            } catch (e) { console.error("Error fetching clients", e); }
+            // Only fetch if not provided via props
+            if (!propUsers || propUsers.length === 0) {
+                try {
+                    const usersQ = query(collection(db, 'users'), orderBy('displayName'));
+                    const usersSnap = await getDocs(usersQ);
+                    setUsers(usersSnap.docs.map(d => ({ id: d.id, ...d.data() } as UserProfile)));
+                } catch (e) { console.error("Error fetching users", e); }
+            }
+            if (!propClients || propClients.length === 0) {
+                try {
+                    const clientQ = query(collection(db, 'clients'), orderBy('name'));
+                    const clientSnap = await getDocs(clientQ);
+                    setClients(clientSnap.docs.map(d => ({ id: d.id, ...d.data() } as Client)));
+                } catch (e) { console.error("Error fetching clients", e); }
+            }
         };
         if (open) fetchData();
-    }, [open]);
+    }, [open, propUsers, propClients]);
 
     useEffect(() => {
         if (task) {
@@ -254,39 +267,35 @@ const GTDEditDialog: React.FC<GTDEditDialogProps> = ({ open, onClose, task, onSa
         const selectedClient = clients.find(c => c.id === data.clientId);
         const selectedAssignee = users.find(u => u.id === data.assigneeId);
 
-        // Build updates object - avoid undefined values (Firestore doesn't accept them)
+        // Build updates — ALWAYS set optional fields (null to clear)
         const updates: Partial<GTDTask> = {
             title: data.title,
             description: data.description || '',
             context: data.context || '',
             status: data.status,
             priority: data.priority || 'none',
-            updatedAt: Timestamp.now()
-        };
+            updatedAt: Timestamp.now(),
+            // Always set client (null clears it)
+            clientId: data.clientId || null,
+            clientName: data.clientId ? (selectedClient?.name || '') : null,
+            // Always set assignee (null clears it)
+            assigneeId: data.assigneeId || null,
+            assigneeName: data.assigneeId ? (selectedAssignee?.displayName || '') : null,
+            // Always set dates (null clears them)
+            dueDate: data.dueDate ? Timestamp.fromDate(new Date(data.dueDate + 'T00:00:00')) : null,
+            estimatedDurationMinutes: data.estimatedDurationMinutes ? Number(data.estimatedDurationMinutes) : null,
+        } as any;
 
-        // Only set optional fields if they have values
-        if (data.clientId) {
-            updates.clientId = data.clientId;
-            updates.clientName = selectedClient?.name || '';
-        }
-        if (data.assigneeId) {
-            updates.assigneeId = data.assigneeId;
-            updates.assigneeName = selectedAssignee?.displayName || '';
-        }
-        if (data.estimatedDurationMinutes) {
-            updates.estimatedDurationMinutes = Number(data.estimatedDurationMinutes);
-        }
-        if (data.dueDate) {
-            updates.dueDate = Timestamp.fromDate(new Date(data.dueDate));
-        }
+        // Start date with optional time
         if (data.startDate) {
-            const dateStr = data.startDate;
-            let dateObj = new Date(dateStr);
+            const dateObj = new Date(data.startDate + 'T00:00:00');
             if (startTime) {
                 const [hh, mm] = startTime.split(':').map(Number);
                 dateObj.setHours(hh, mm);
             }
-            updates.startDate = Timestamp.fromDate(dateObj);
+            (updates as any).startDate = Timestamp.fromDate(dateObj);
+        } else {
+            (updates as any).startDate = null;
         }
 
         // Handle "Needs Estimate" logic if status is 'estimate'
@@ -298,26 +307,20 @@ const GTDEditDialog: React.FC<GTDEditDialogProps> = ({ open, onClose, task, onSa
         if (data.status === 'done' && task.status !== 'done') {
             updates.completedAt = Timestamp.now();
         }
+        // Clear completedAt if un-done
+        if (data.status !== 'done' && task.status === 'done') {
+            (updates as any).completedAt = null;
+        }
 
-        // AI & Resources fields (only if they have values)
+        // AI & Resources fields
         if (hours) {
             updates.estimatedDurationMinutes = Math.round(Number(hours) * 60);
         }
-        if (cost) {
-            updates.estimatedCost = Number(cost);
-        }
-        if (crewSize > 0) {
-            updates.crewSize = crewSize;
-        }
-        if (localMaterials.length > 0) {
-            updates.selectedMaterials = localMaterials;
-        }
-        if (localTools.length > 0) {
-            updates.selectedTools = localTools;
-        }
-        if (aiReasoning) {
-            updates.aiReasoning = aiReasoning;
-        }
+        (updates as any).estimatedCost = cost ? Number(cost) : null;
+        (updates as any).crewSize = crewSize > 0 ? crewSize : null;
+        (updates as any).selectedMaterials = localMaterials.length > 0 ? localMaterials : [];
+        (updates as any).selectedTools = localTools.length > 0 ? localTools : [];
+        (updates as any).aiReasoning = aiReasoning || null;
         if (hasAiData) {
             updates.aiEstimateUsed = true;
         }
@@ -340,14 +343,21 @@ const GTDEditDialog: React.FC<GTDEditDialogProps> = ({ open, onClose, task, onSa
 
     const handleDelete = async () => {
         if (!task) return;
-        if (window.confirm("Are you sure you want to delete this task?")) {
+        try {
             await onDelete(task.id);
+            setDeleteConfirmOpen(false);
             onClose();
+        } catch (error) {
+            console.error('Error deleting task:', error);
         }
     };
 
     const handleStatusClick = (status: GTDStatus) => {
         setValue('status', status);
+        // Auto-set completedAt when toggling to Done
+        if (status === 'done' && task?.status !== 'done') {
+            // completedAt will be set in onSubmit
+        }
     };
 
     // Handle task acceptance by assignee
@@ -988,12 +998,42 @@ const GTDEditDialog: React.FC<GTDEditDialogProps> = ({ open, onClose, task, onSa
                     </Box>
                 </DialogContent>
                 <DialogActions sx={{ px: 3, pb: 2 }}>
-                    <Button onClick={handleDelete} color="error" size="small">Delete Task</Button>
+                    <Button onClick={() => setDeleteConfirmOpen(true)} color="error" size="small">Delete Task</Button>
                     <Box flexGrow={1} />
                     <Button onClick={onClose} color="inherit">Cancel</Button>
                     <Button type="submit" variant="contained" disableElevation>Save Changes</Button>
                 </DialogActions>
             </form>
+
+            {/* Delete Confirmation Dialog */}
+            <Dialog
+                open={deleteConfirmOpen}
+                onClose={() => setDeleteConfirmOpen(false)}
+                PaperProps={{
+                    sx: {
+                        borderRadius: 3,
+                        maxWidth: 360,
+                        mx: 'auto',
+                    }
+                }}
+            >
+                <DialogTitle sx={{ fontWeight: 700, fontSize: '17px', pb: 0.5 }}>
+                    Удалить задачу?
+                </DialogTitle>
+                <DialogContent>
+                    <Typography variant="body2" color="text.secondary">
+                        Задача «{task?.title}» будет удалена безвозвратно.
+                    </Typography>
+                </DialogContent>
+                <DialogActions sx={{ px: 3, pb: 2 }}>
+                    <Button onClick={() => setDeleteConfirmOpen(false)} color="inherit">Отмена</Button>
+                    <Button onClick={handleDelete} color="error" variant="contained" disableElevation
+                        sx={{ borderRadius: 2 }}
+                    >
+                        Удалить
+                    </Button>
+                </DialogActions>
+            </Dialog>
         </Dialog>
     );
 };

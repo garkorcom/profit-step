@@ -107,6 +107,7 @@ const GTDColumn: React.FC<GTDColumnProps> = ({
 }) => {
     const [newTitle, setNewTitle] = useState('');
     const [isAdding, setIsAdding] = useState(false);
+    const [isAddingLoading, setIsAddingLoading] = useState(false);
     const [isCollapsed, setIsCollapsed] = useState(false);
     const [canScrollDown, setCanScrollDown] = useState(false);
     const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
@@ -183,10 +184,12 @@ const GTDColumn: React.FC<GTDColumnProps> = ({
         return tasks.reduce((sum, t) => sum + (t.estimatedDurationMinutes || 0), 0);
     }, [tasks]);
 
-    // Auto-expand when tasks appear in a collapsed column
+    // Auto-expand when tasks appear in a collapsed column (without flicker)
     useEffect(() => {
         if (tasks.length > 0 && isCollapsed) {
-            setIsCollapsed(false);
+            // Delay to avoid flicker from rapid task count changes
+            const t = setTimeout(() => setIsCollapsed(false), 300);
+            return () => clearTimeout(t);
         }
     }, [tasks.length, isCollapsed]);
 
@@ -213,11 +216,18 @@ const GTDColumn: React.FC<GTDColumnProps> = ({
         };
     }, [checkScroll, tasks.length]);
 
-    const handleAdd = () => {
-        if (!newTitle.trim() || !onAddTask) return;
-        onAddTask(newTitle, columnId);
-        setNewTitle('');
-        setIsAdding(false);
+    const handleAdd = async () => {
+        if (!newTitle.trim() || !onAddTask || isAddingLoading) return;
+        setIsAddingLoading(true);
+        try {
+            await onAddTask(newTitle, columnId);
+            setNewTitle('');
+            setIsAdding(false);
+        } catch {
+            // Keep the form open on error
+        } finally {
+            setIsAddingLoading(false);
+        }
     };
 
     const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -661,6 +671,7 @@ const GTDColumn: React.FC<GTDColumnProps> = ({
                                 variant="contained"
                                 size="small"
                                 onClick={handleAdd}
+                                disabled={isAddingLoading || !newTitle.trim()}
                                 sx={{
                                     textTransform: 'none',
                                     borderRadius: '10px',

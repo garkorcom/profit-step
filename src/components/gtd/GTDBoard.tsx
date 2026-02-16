@@ -65,6 +65,7 @@ const GTDBoard: React.FC = () => {
 
     const {
         columns,
+        loading,
         moveTask,
         addTask,
         updateTask,
@@ -93,6 +94,8 @@ const GTDBoard: React.FC = () => {
     const [selectedDateFilter, setSelectedDateFilter] = useState<string>('all'); // Фильтр по due date
 
     const [taskSaveSnackbar, setTaskSaveSnackbar] = useState(false); // Toast for task save confirmation
+    const [contextHintSnackbar, setContextHintSnackbar] = useState<GTDTask | null>(null); // Snackbar for context hint
+    const [dndErrorSnackbar, setDndErrorSnackbar] = useState(false); // DnD error toast
 
     // ==================== МОБИЛЬНОЕ СОСТОЯНИЕ ====================
     const [selectedTab, setSelectedTab] = useState(0);    // Активная вкладка (мобильный)
@@ -160,13 +163,18 @@ const GTDBoard: React.FC = () => {
 
     // 2. Drag & Drop Handler
     const onDragEnd = async (result: DropResult) => {
-        const moveResult = await moveTask(result);
-        if (moveResult) {
-            const { movedTask, destColId } = moveResult;
-            // Feature: Prompt for context if moving to Next Action and no context set
-            if (destColId === 'next_action' && !movedTask.context) {
-                setEditingTask(movedTask);
+        try {
+            const moveResult = await moveTask(result);
+            if (moveResult) {
+                const { movedTask, destColId } = moveResult;
+                // Show snackbar hint if moving to Next Action without context
+                if (destColId === 'next_action' && !movedTask.context) {
+                    setContextHintSnackbar(movedTask);
+                }
             }
+        } catch (error) {
+            console.error('DnD move failed:', error);
+            setDndErrorSnackbar(true);
         }
     };
 
@@ -176,9 +184,17 @@ const GTDBoard: React.FC = () => {
         columnId: GTDStatus,
         clientId?: string,
         assigneeId?: string,
-        aiData?: AIEstimateData
+        aiData?: AIEstimateData,
+        extra?: {
+            dueDate?: string;
+            startDate?: string;
+            startTime?: string;
+            estimatedDurationMinutes?: number;
+            priority?: any;
+            description?: string;
+        }
     ) => {
-        await addTask(title, columnId, clients, users, clientId, assigneeId, aiData);
+        await addTask(title, columnId, clients, users, clientId, assigneeId, aiData, extra);
     };
 
     // Keyboard shortcuts
@@ -746,7 +762,9 @@ const GTDBoard: React.FC = () => {
                 open={quickAddOpen}
                 onClose={() => setQuickAddOpen(false)}
                 onAdd={(title, columnId, clientId, assigneeId, priority, aiData) => {
-                    handleAddTaskWrapper(title, columnId, clientId, assigneeId, aiData);
+                    handleAddTaskWrapper(title, columnId, clientId, assigneeId, aiData, {
+                        priority
+                    });
                 }}
                 targetColumn={activeColumn?.id || 'inbox'}
                 clients={clients}
@@ -765,6 +783,8 @@ const GTDBoard: React.FC = () => {
                         setTaskSaveSnackbar(true);
                     }}
                     onDelete={deleteTask}
+                    propUsers={users}
+                    propClients={clients}
                 />
             )}
 
@@ -788,6 +808,48 @@ const GTDBoard: React.FC = () => {
             >
                 <Alert onClose={() => setTaskSaveSnackbar(false)} severity="success" variant="filled">
                     ✓ Задача сохранена
+                </Alert>
+            </Snackbar>
+
+            {/* Context hint snackbar */}
+            <Snackbar
+                open={!!contextHintSnackbar}
+                autoHideDuration={5000}
+                onClose={() => setContextHintSnackbar(null)}
+                anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+            >
+                <Alert
+                    onClose={() => setContextHintSnackbar(null)}
+                    severity="info"
+                    variant="filled"
+                    action={
+                        <Button
+                            color="inherit"
+                            size="small"
+                            onClick={() => {
+                                if (contextHintSnackbar) {
+                                    setEditingTask(contextHintSnackbar);
+                                }
+                                setContextHintSnackbar(null);
+                            }}
+                        >
+                            Добавить
+                        </Button>
+                    }
+                >
+                    Добавьте контекст к задаче
+                </Alert>
+            </Snackbar>
+
+            {/* DnD error snackbar */}
+            <Snackbar
+                open={dndErrorSnackbar}
+                autoHideDuration={4000}
+                onClose={() => setDndErrorSnackbar(false)}
+                anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+            >
+                <Alert onClose={() => setDndErrorSnackbar(false)} severity="error" variant="filled">
+                    Ошибка при перемещении задачи. Попробуйте ещё раз.
                 </Alert>
             </Snackbar>
         </Box>

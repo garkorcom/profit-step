@@ -1,4 +1,4 @@
-import React, { useState, useRef, useMemo } from 'react';
+import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, Typography, Box, IconButton, Tooltip } from '@mui/material';
 import { Draggable } from '@hello-pangea/dnd';
@@ -81,6 +81,12 @@ const GTDTaskCard: React.FC<GTDTaskCardProps> = ({
     const touchStartX = useRef(0);
     const touchStartY = useRef(0);
     const isHorizontalSwipe = useRef<boolean | null>(null);
+
+    // Reset swipe state when task data changes (e.g. via onSnapshot)
+    useEffect(() => {
+        setSwipeOffset(0);
+        setIsSwiped(false);
+    }, [task.id, task.status]);
 
     const handleTouchStart = (e: React.TouchEvent) => {
         touchStartX.current = e.touches[0].clientX;

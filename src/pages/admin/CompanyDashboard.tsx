@@ -23,7 +23,9 @@ import {
   MonetizationOn as MonetizationOnIcon,
   ArrowForward as ArrowForwardIcon,
   Launch as LaunchIcon,
-  AccessTime as AccessTimeIcon
+  AccessTime as AccessTimeIcon,
+  MenuBook as MenuBookIcon,
+  Edit as EditIcon
 } from '@mui/icons-material';
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { useAuth } from '../../auth/AuthContext';
@@ -260,13 +262,28 @@ const CompanyDashboard: React.FC = () => {
             Обзор и управление вашей командой
           </Typography>
         </Box>
-        <Box>
+        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+          <Button
+            variant="outlined"
+            startIcon={<MenuBookIcon />}
+            component={Link}
+            to="/docs"
+          >
+            Документация
+          </Button>
+          <Button
+            variant="outlined"
+            startIcon={<EditIcon />}
+            component={Link}
+            to="/blog"
+          >
+            DevLog
+          </Button>
           <Button
             variant="outlined"
             startIcon={<AccessTimeIcon />}
             component={Link}
             to="/crm/time-tracking"
-            sx={{ mr: 2 }}
           >
             Time Reports
           </Button>

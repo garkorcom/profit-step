@@ -491,6 +491,25 @@ service cloud.firestore {
       allow delete: if isSignedIn();
     }
 
+    // ==================== DEVLOG & LIVE DOCS ====================
+
+    // Features (Platform Modules Documentation)
+    match /features/{featureId} {
+      allow read: if isSignedIn();
+      allow create, update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // Dev Logs (Build in Public Blog Posts)
+    match /dev_logs/{logId} {
+      // Published posts readable by all authenticated users
+      // Admin can read all (including drafts)
+      allow read: if isSignedIn() && 
+                  (resource.data.isPublished == true || isAdmin());
+      allow create, update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
     // ==================== DEFAULT DENY ====================
 
     // Запретить доступ ко всем остальным документам

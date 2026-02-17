@@ -201,7 +201,21 @@ const GTDCreatePage: React.FC = () => {
     const loadClients = async () => {
         try {
             const snapshot = await getDocs(collection(db, 'clients'));
-            setClients(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Client)));
+            const loaded = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Client));
+            setClients(loaded);
+
+            // Pre-select client from URL params (e.g. navigating from Clients page)
+            const urlClientId = searchParams.get('clientId');
+            if (urlClientId) {
+                const matched = loaded.find(c => c.id === urlClientId);
+                if (matched) {
+                    setFormData(prev => ({
+                        ...prev,
+                        clientId: matched.id,
+                        clientName: matched.name,
+                    }));
+                }
+            }
         } catch (err) {
             console.error('Error loading clients:', err);
         }
@@ -434,7 +448,7 @@ const GTDCreatePage: React.FC = () => {
 
     const canProceed = useMemo(() => {
         switch (step) {
-            case 1: return formData.title.length >= 3;
+            case 1: return formData.title.length >= 3 && !!formData.clientId;
             case 2: return formData.type && formData.priority;
             case 3: return formData.assignees.length > 0;
             default: return true;
@@ -794,9 +808,128 @@ const GTDCreatePage: React.FC = () => {
                     Wizard Steps — only show when AI is idle
                 ════════════════════════════════════════════ */}
 
-                {/* Step 1: What needs to be done */}
+                {/* Step 1: Client + Task Title */}
                 <Fade in={step === 1 && ai.status === 'idle'} unmountOnExit>
                     <Box sx={{ display: step === 1 ? 'block' : 'none' }}>
+
+                        {/* ── Client Selection (required, first) ── */}
+                        <Typography variant="body2" color="text.secondary" gutterBottom>
+                            Клиент / Проект *
+                        </Typography>
+
+                        {/* Client Search */}
+                        {clients.length > 5 && (
+                            <TextField
+                                fullWidth
+                                size="small"
+                                value={clientSearch}
+                                onChange={e => setClientSearch(e.target.value)}
+                                placeholder="Поиск клиента..."
+                                autoFocus
+                                sx={{ mb: 1, '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+                                InputProps={{
+                                    startAdornment: (
+                                        <InputAdornment position="start">
+                                            <SearchIcon fontSize="small" color="action" />
+                                        </InputAdornment>
+                                    ),
+                                    endAdornment: clientSearch ? (
+                                        <InputAdornment position="end">
+                                            <IconButton size="small" onClick={() => setClientSearch('')}>
+                                                <CloseIcon fontSize="small" />
+                                            </IconButton>
+                                        </InputAdornment>
+                                    ) : null
+                                }}
+                            />
+                        )}
+
+                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, mb: 3 }}>
+                            {(() => {
+                                const sorted = sortClients(clients);
+                                const filtered = sorted.filter(c => !clientSearch || c.name.toLowerCase().includes(clientSearch.toLowerCase()));
+                                // Ensure selected client is always visible at the top
+                                const selectedId = formData.clientId;
+                                const reordered = selectedId
+                                    ? [
+                                        ...filtered.filter(c => c.id === selectedId),
+                                        ...filtered.filter(c => c.id !== selectedId),
+                                    ]
+                                    : filtered;
+                                const visible = showAllClients ? reordered : reordered.slice(0, 5);
+                                const hidden = reordered.length - visible.length;
+                                return (
+                                    <>
+                                        {visible.map(client => (
+                                            <Paper
+                                                key={client.id}
+                                                onClick={() => setFormData(prev => ({
+                                                    ...prev,
+                                                    clientId: prev.clientId === client.id ? null : client.id,
+                                                    clientName: prev.clientId === client.id ? null : client.name,
+                                                }))}
+                                                sx={{
+                                                    p: 2,
+                                                    borderRadius: 2,
+                                                    cursor: 'pointer',
+                                                    border: 2,
+                                                    borderColor: formData.clientId === client.id
+                                                        ? 'primary.main'
+                                                        : 'divider',
+                                                    bgcolor: formData.clientId === client.id
+                                                        ? alpha(theme.palette.primary.main, 0.08)
+                                                        : 'background.paper',
+                                                    transition: 'all 0.2s',
+                                                    '&:active': { transform: 'scale(0.98)' }
+                                                }}
+                                            >
+                                                <Typography fontWeight="medium">{client.name}</Typography>
+                                                {client.address && (
+                                                    <Typography variant="caption" color="text.secondary">
+                                                        {client.address}
+                                                    </Typography>
+                                                )}
+                                            </Paper>
+                                        ))}
+                                        {hidden > 0 && (
+                                            <Button
+                                                variant="text"
+                                                onClick={() => setShowAllClients(true)}
+                                                sx={{ alignSelf: 'flex-start', textTransform: 'none', borderRadius: 2 }}
+                                            >
+                                                Ещё {hidden} клиентов
+                                            </Button>
+                                        )}
+                                    </>
+                                );
+                            })()}
+
+                            {/* Add New Client Link */}
+                            <Paper
+                                onClick={() => navigate('/crm/clients/new')}
+                                sx={{
+                                    p: 2,
+                                    borderRadius: 2,
+                                    cursor: 'pointer',
+                                    border: 2,
+                                    borderColor: 'divider',
+                                    borderStyle: 'dashed',
+                                    bgcolor: 'background.paper',
+                                    transition: 'all 0.2s',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 1,
+                                    '&:hover': { borderColor: 'primary.main', bgcolor: alpha(theme.palette.primary.main, 0.04) },
+                                    '&:active': { transform: 'scale(0.98)' }
+                                }}
+                            >
+                                <AddIcon color="primary" fontSize="small" />
+                                <Typography fontWeight="medium" color="primary.main">Добавить клиента</Typography>
+                                <OpenInNewIcon fontSize="small" color="action" sx={{ ml: 'auto' }} />
+                            </Paper>
+                        </Box>
+
+                        {/* ── Task Title ── */}
                         <Box sx={{ mb: 3 }}>
                             <Typography variant="body2" color="text.secondary" gutterBottom>
                                 Что нужно сделать? *
@@ -971,113 +1104,7 @@ const GTDCreatePage: React.FC = () => {
                             />
                         </Box>
 
-                        {/* Project/Client Selection */}
-                        <Typography variant="body2" color="text.secondary" gutterBottom>
-                            Проект (опционально)
-                        </Typography>
 
-                        {/* Client Search */}
-                        {clients.length > 5 && (
-                            <TextField
-                                fullWidth
-                                size="small"
-                                value={clientSearch}
-                                onChange={e => setClientSearch(e.target.value)}
-                                placeholder="Поиск проекта..."
-                                sx={{ mb: 1, '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
-                                InputProps={{
-                                    startAdornment: (
-                                        <InputAdornment position="start">
-                                            <SearchIcon fontSize="small" color="action" />
-                                        </InputAdornment>
-                                    ),
-                                    endAdornment: clientSearch ? (
-                                        <InputAdornment position="end">
-                                            <IconButton size="small" onClick={() => setClientSearch('')}>
-                                                <CloseIcon fontSize="small" />
-                                            </IconButton>
-                                        </InputAdornment>
-                                    ) : null
-                                }}
-                            />
-                        )}
-
-                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                            {(() => {
-                                const sorted = sortClients(clients);
-                                const filtered = sorted.filter(c => !clientSearch || c.name.toLowerCase().includes(clientSearch.toLowerCase()));
-                                const visible = showAllClients ? filtered : filtered.slice(0, 5);
-                                const hidden = filtered.length - visible.length;
-                                return (
-                                    <>
-                                        {visible.map(client => (
-                                            <Paper
-                                                key={client.id}
-                                                onClick={() => setFormData(prev => ({
-                                                    ...prev,
-                                                    clientId: prev.clientId === client.id ? null : client.id,
-                                                    clientName: prev.clientId === client.id ? null : client.name,
-                                                }))}
-                                                sx={{
-                                                    p: 2,
-                                                    borderRadius: 2,
-                                                    cursor: 'pointer',
-                                                    border: 2,
-                                                    borderColor: formData.clientId === client.id
-                                                        ? 'primary.main'
-                                                        : 'divider',
-                                                    bgcolor: formData.clientId === client.id
-                                                        ? alpha(theme.palette.primary.main, 0.08)
-                                                        : 'background.paper',
-                                                    transition: 'all 0.2s',
-                                                    '&:active': { transform: 'scale(0.98)' }
-                                                }}
-                                            >
-                                                <Typography fontWeight="medium">{client.name}</Typography>
-                                                {client.address && (
-                                                    <Typography variant="caption" color="text.secondary">
-                                                        {client.address}
-                                                    </Typography>
-                                                )}
-                                            </Paper>
-                                        ))}
-                                        {hidden > 0 && (
-                                            <Button
-                                                variant="text"
-                                                onClick={() => setShowAllClients(true)}
-                                                sx={{ alignSelf: 'flex-start', textTransform: 'none', borderRadius: 2 }}
-                                            >
-                                                Ещё {hidden} проектов
-                                            </Button>
-                                        )}
-                                    </>
-                                );
-                            })()}
-
-                            {/* Add New Project Link */}
-                            <Paper
-                                onClick={() => navigate('/crm/clients/new')}
-                                sx={{
-                                    p: 2,
-                                    borderRadius: 2,
-                                    cursor: 'pointer',
-                                    border: 2,
-                                    borderColor: 'divider',
-                                    borderStyle: 'dashed',
-                                    bgcolor: 'background.paper',
-                                    transition: 'all 0.2s',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: 1,
-                                    '&:hover': { borderColor: 'primary.main', bgcolor: alpha(theme.palette.primary.main, 0.04) },
-                                    '&:active': { transform: 'scale(0.98)' }
-                                }}
-                            >
-                                <AddIcon color="primary" fontSize="small" />
-                                <Typography fontWeight="medium" color="primary.main">Добавить проект</Typography>
-                                <OpenInNewIcon fontSize="small" color="action" sx={{ ml: 'auto' }} />
-                            </Paper>
-                        </Box>
                     </Box>
                 </Fade>
 

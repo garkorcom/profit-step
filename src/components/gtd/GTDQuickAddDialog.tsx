@@ -14,7 +14,8 @@
  * - Full-screen on mobile, dialog on desktop
  */
 
-import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
+import { useVoiceInput } from '../../hooks/useVoiceInput';
 import {
     Dialog,
     Box,
@@ -219,12 +220,11 @@ const GTDQuickAddDialog: React.FC<GTDQuickAddDialogProps> = ({
     const [smartDuplicates, setSmartDuplicates] = useState<Array<{ taskTitle: string; similarity: number }>>([]);
     const [isAnalyzing, setIsAnalyzing] = useState(false);
 
-    // Voice Input states
-    const [isListening, setIsListening] = useState(false);
-    const [voiceSupported] = useState(() => {
-        return typeof window !== 'undefined' && ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window);
+    // Voice Input (shared hook with auto-restart)
+    const { isListening, voiceSupported, toggleVoiceInput, stopVoiceInput } = useVoiceInput({
+        currentText: description,
+        onTextChange: setDescription,
     });
-    const recognitionRef = useRef<any>(null);
 
     // Quick dates memoized
     const quickDates = useMemo(() => getQuickDates(), []);
@@ -333,63 +333,7 @@ const GTDQuickAddDialog: React.FC<GTDQuickAddDialogProps> = ({
     // VOICE INPUT HANDLER
     // ═══════════════════════════════════════
 
-    const toggleVoiceInput = useCallback(() => {
-        if (!voiceSupported) return;
-
-        if (isListening) {
-            // Stop listening
-            recognitionRef.current?.stop();
-            setIsListening(false);
-            if ('vibrate' in navigator) navigator.vibrate(30);
-            return;
-        }
-
-        // Start listening
-        const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-        const recognition = new SpeechRecognition();
-        recognition.lang = 'ru-RU';
-        recognition.continuous = true;
-        recognition.interimResults = true;
-        recognition.maxAlternatives = 1;
-
-        let finalTranscript = description;
-
-        recognition.onresult = (event: any) => {
-            let interim = '';
-            for (let i = event.resultIndex; i < event.results.length; i++) {
-                const transcript = event.results[i][0].transcript;
-                if (event.results[i].isFinal) {
-                    finalTranscript += (finalTranscript ? ' ' : '') + transcript;
-                    setDescription(finalTranscript);
-                } else {
-                    interim = transcript;
-                }
-            }
-            // Show interim results as preview
-            if (interim) {
-                setDescription(finalTranscript + (finalTranscript ? ' ' : '') + interim);
-            }
-        };
-
-        recognition.onerror = (event: any) => {
-            console.warn('Speech recognition error:', event.error);
-            setIsListening(false);
-            if (event.error === 'not-allowed') {
-                alert('Разрешите доступ к микрофону в настройках браузера');
-            }
-        };
-
-        recognition.onend = () => {
-            setIsListening(false);
-        };
-
-        recognitionRef.current = recognition;
-        recognition.start();
-        setIsListening(true);
-
-        // Haptic feedback
-        if ('vibrate' in navigator) navigator.vibrate([50, 30, 50]);
-    }, [voiceSupported, isListening, description]);
+    // toggleVoiceInput is provided by useVoiceInput hook
 
     // AI Estimation Handler
     const handleAIEstimate = async () => {
@@ -707,10 +651,7 @@ const GTDQuickAddDialog: React.FC<GTDQuickAddDialogProps> = ({
 
     const handleClose = () => {
         // Stop voice input if active
-        if (recognitionRef.current) {
-            recognitionRef.current.stop();
-            setIsListening(false);
-        }
+        stopVoiceInput();
         // Reset all state
         setDescription('');
         setSelectedClient(null);

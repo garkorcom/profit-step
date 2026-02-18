@@ -10,7 +10,8 @@
  * Features: Progress bar, animations, AI suggestions, sticky header/footer
  */
 
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { useVoiceInput } from '../../hooks/useVoiceInput';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
     Box,
@@ -179,12 +180,11 @@ const GTDCreatePage: React.FC = () => {
     const { trackUsage, sortClients } = useClientUsageHistory(currentUser?.uid);
     const { trackAssignment, getTopTeamForProject } = useTeamProjectHistory(currentUser?.uid);
 
-    // Voice Input states
-    const [isListening, setIsListening] = useState(false);
-    const [voiceSupported] = useState(() => {
-        return typeof window !== 'undefined' && ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window);
+    // Voice Input (shared hook with auto-restart)
+    const { isListening, voiceSupported, toggleVoiceInput, stopVoiceInput } = useVoiceInput({
+        currentText: formData.title,
+        onTextChange: (text) => setFormData(prev => ({ ...prev, title: text })),
     });
-    const recognitionRef = useRef<any>(null);
 
     // Target column from URL
     const targetColumn = (searchParams.get('column') as GTDStatus) || 'inbox';
@@ -538,10 +538,7 @@ const GTDCreatePage: React.FC = () => {
 
     const handleClose = () => {
         // Stop voice input if active
-        if (recognitionRef.current) {
-            recognitionRef.current.stop();
-            setIsListening(false);
-        }
+        stopVoiceInput();
         navigate('/crm/gtd');
     };
 
@@ -564,58 +561,7 @@ const GTDCreatePage: React.FC = () => {
     // VOICE INPUT HANDLER
     // ═══════════════════════════════════════
 
-    const toggleVoiceInput = useCallback(() => {
-        if (!voiceSupported) return;
-
-        if (isListening) {
-            recognitionRef.current?.stop();
-            setIsListening(false);
-            if ('vibrate' in navigator) navigator.vibrate(30);
-            return;
-        }
-
-        const SpeechRecognitionAPI = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-        const recognition = new SpeechRecognitionAPI();
-        recognition.lang = 'ru-RU';
-        recognition.continuous = true;
-        recognition.interimResults = true;
-        recognition.maxAlternatives = 1;
-
-        let finalTranscript = formData.title;
-
-        recognition.onresult = (event: any) => {
-            let interim = '';
-            for (let i = event.resultIndex; i < event.results.length; i++) {
-                const transcript = event.results[i][0].transcript;
-                if (event.results[i].isFinal) {
-                    finalTranscript += (finalTranscript ? ' ' : '') + transcript;
-                    setFormData(prev => ({ ...prev, title: finalTranscript }));
-                } else {
-                    interim = transcript;
-                }
-            }
-            if (interim) {
-                setFormData(prev => ({ ...prev, title: finalTranscript + (finalTranscript ? ' ' : '') + interim }));
-            }
-        };
-
-        recognition.onerror = (event: any) => {
-            console.warn('Speech recognition error:', event.error);
-            setIsListening(false);
-            if (event.error === 'not-allowed') {
-                alert('Разрешите доступ к микрофону в настройках браузера');
-            }
-        };
-
-        recognition.onend = () => {
-            setIsListening(false);
-        };
-
-        recognitionRef.current = recognition;
-        recognition.start();
-        setIsListening(true);
-        if ('vibrate' in navigator) navigator.vibrate([50, 30, 50]);
-    }, [voiceSupported, isListening, formData.title]);
+    // toggleVoiceInput is provided by useVoiceInput hook
 
     // ═══════════════════════════════════════
     // RENDER

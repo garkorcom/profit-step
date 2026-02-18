@@ -6,7 +6,7 @@
  * entire codebase.
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
     Box,
     Container,
@@ -27,6 +27,8 @@ import {
     ListItemIcon,
     ListItemText,
     Button,
+    TextField,
+    InputAdornment,
 } from '@mui/material';
 import {
     ExpandMore as ExpandMoreIcon,
@@ -42,6 +44,10 @@ import {
     Storage as DWHIcon,
     Build as InfraIcon,
     Code as CodeIcon,
+    Search as SearchIcon,
+    Article as BlogIcon,
+    AdminPanelSettings as SuperAdminIcon,
+    HealthAndSafety as HealthIcon,
     UnfoldMore as ExpandAllIcon,
     UnfoldLess as CollapseAllIcon,
     Description as FileIcon,
@@ -107,7 +113,7 @@ real-time подписок через Firestore onSnapshot. Оптимизиро
             { name: 'useKeyboardShortcuts.ts', description: 'Горячие клавиши для GTD-доски', type: 'hook' },
             { name: 'useSwipeGesture.ts', description: 'Свайп-жесты для переключения колонок на мобильных', type: 'hook' },
             { name: 'gtd.types.ts', description: 'Типы GTDTask, GTDStatus, ChecklistItem, SubTask, Material. 23KB полная модель', type: 'type' },
-            { name: 'components/gtd/', description: '16 компонентов: GTDBoard, GTDColumn, GTDCard, GTDFilters, GTDEditDialog и др.', type: 'component' },
+            { name: 'components/gtd/', description: '16 компонентов: GTDBoard, GTDColumn, GTDTaskCard, GTDFilterBuilder, GTDQuickAddDialog, AuditTaskInput, RepairTicketInput и др.', type: 'component' },
         ],
     },
     {
@@ -371,6 +377,62 @@ React.lazy() и Suspense. Firebase Authentication для авторизации.
             { name: 'Header.tsx', description: 'Навигационный header с меню модулей', type: 'component' },
             { name: 'Footer.tsx', description: 'Footer приложения (скрыт на GTD-страницах)', type: 'component' },
             { name: 'firebase.ts', description: 'Инициализация Firebase App, Auth, Firestore, Storage', type: 'service' },
+            { name: 'ActiveSessionIndicator.tsx', description: 'Индикатор активной сессии в хедере', type: 'component' },
+            { name: 'LocationPicker.tsx', description: 'Компонент выбора локации с автокомплитом', type: 'component' },
+            { name: 'StatCard.tsx', description: 'Универсальная карточка статистики для дашбордов', type: 'component' },
+            { name: 'StatusIndicator.tsx', description: 'Индикатор статуса (online/offline/busy)', type: 'component' },
+        ],
+    },
+    {
+        id: 'devlog',
+        name: 'DevLog / Блог',
+        icon: <BlogIcon />,
+        description: 'Публичный блогу разработки, таймлайн изменений, админ-редактор',
+        detailedDescription: `Модуль DevLog для ведения публичного блога разработки платформы. 
+Таймлайн с фильтрацией по типу (фича, фикс, улучшение), админ-редактор с превью, управление тоном и SEO-настройками. 
+API-сервис для CRUD операций с постами, типизация DevLogPost v2.`,
+        color: '#a855f7',
+        status: 'production',
+        techStack: ['React', 'MUI', 'Firestore', 'date-fns'],
+        files: [
+            { name: 'DevLogBlogPage.tsx', description: 'Публичная страница блога с таймлайном', type: 'page' },
+            { name: 'DevLogCreatePage.tsx', description: 'Админ-редактор постов: создание, редактирование, SEO-превью', type: 'page' },
+            { name: 'devlogService.ts', description: 'API-сервис для CRUD операций с DevLog постами', type: 'api' },
+            { name: 'devlog.types.ts', description: 'Типы DevLogPost, DevLogCategory, PostStatus', type: 'type' },
+        ],
+    },
+    {
+        id: 'superadmin',
+        name: 'SuperAdmin',
+        icon: <SuperAdminIcon />,
+        description: 'Глобальный дашборд платформы: метрики, затраты, здоровье',
+        detailedDescription: `Панель управления для суперадминистратора платформы. Включает 4 панели: 
+CostControlPanel (контроль затрат), EngagementPanel (вовлечённость пользователей), 
+GrowthPanel (метрики роста), SystemHealthPanel (здоровье системы).`,
+        color: '#ef4444',
+        status: 'production',
+        techStack: ['React', 'MUI', 'Firestore', 'Recharts'],
+        files: [
+            { name: 'SuperAdminDashboard.tsx', description: 'Основной дашборд суперадмина с 4 панелями', type: 'page' },
+            { name: 'CostControlPanel.tsx', description: 'Панель контроля затрат платформы', type: 'component' },
+            { name: 'EngagementPanel.tsx', description: 'Метрики вовлечённости пользователей', type: 'component' },
+            { name: 'GrowthPanel.tsx', description: 'Метрики роста и активности', type: 'component' },
+            { name: 'SystemHealthPanel.tsx', description: 'Здоровье системы: Firestore, Functions, ошибки', type: 'component' },
+        ],
+    },
+    {
+        id: 'debug',
+        name: 'Debug / Health Check',
+        icon: <HealthIcon />,
+        description: 'Диагностика системы, проверка сервисов, логи',
+        detailedDescription: `Страница диагностики системы. Проверка доступности Firebase сервисов, 
+Cloud Functions, Firestore rules. Помогает быстро выявить проблемы в продакшне и на стейджинге.`,
+        color: '#16a34a',
+        status: 'active',
+        techStack: ['React', 'MUI', 'Firebase Admin'],
+        files: [
+            { name: 'SystemHealthCheck.tsx', description: 'Страница диагностики: проверка сервисов, логи, метрики', type: 'page' },
+            { name: 'diagnoseBot.ts', description: 'HTTP endpoint для диагностики Telegram бота', type: 'function' },
         ],
     },
 ];
@@ -427,14 +489,15 @@ const ARCHITECTURE_SECTIONS = [
         title: 'src/pages/',
         icon: <FileIcon />,
         color: '#3b82f6',
-        description: '30+ страниц приложения',
+        description: '46 страниц приложения',
         items: [
             'crm/ — 20 страниц CRM модулей (GTD, Calendar, Finance, Clients...)',
-            'admin/ — 5 страниц администрирования (Team, Companies, Roles)',
+            'admin/ — 5 страниц администрирования (Team, Companies, Roles, DevLog)',
             'estimates/ — 3 страницы калькулятора смет',
-            'superadmin/ — 1 суперадмин дашборд',
+            'superadmin/ — 1 суперадмин дашборд + 4 панели',
+            'debug/ — 1 страница диагностики системы',
             'auth/ — 3 страницы авторизации (Login, Signup, ForgotPassword)',
-            'DashboardPage, ProfilePage, SettingsPage, AboutProjectPage, DevIndexPage',
+            'DashboardPage, ProfilePage, SettingsPage, AboutProjectPage, DevIndexPage, DevLogBlogPage, CodeDocumentationPage',
         ],
     },
     {
@@ -453,13 +516,18 @@ const ARCHITECTURE_SECTIONS = [
             'useKeyboardShortcuts — горячие клавиши',
             'useFieldAccess — RBAC проверка доступа к полям',
             'useSubordinates — иерархия подчинённых',
+            'useTeamProjectHistory — история проектов команды',
+            'useClientUsageHistory — история использования клиента',
+            'useActiveSession — текущая активная сессия',
+            'useOfflineStatus — офлайн статус',
+            'useGeoLocation — геолокация',
         ],
     },
     {
         title: 'src/api/',
         icon: <ApiIcon />,
         color: '#f59e0b',
-        description: '12 API модулей',
+        description: '13 API модулей',
         items: [
             'userManagementApi — административное управление (19KB)',
             'projectsApi — управление проектами (11KB)',
@@ -471,6 +539,8 @@ const ARCHITECTURE_SECTIONS = [
             'rateApi — ставки сотрудников',
             'taskApi — CRUD задач',
             'crmApi — общие CRM операции',
+            'devlogService — CRUD DevLog постов',
+            'aiApi — общие AI-функции',
         ],
     },
     {
@@ -496,7 +566,7 @@ const ARCHITECTURE_SECTIONS = [
         title: 'src/types/',
         icon: <TypesIcon />,
         color: '#10b981',
-        description: '16 файлов с TypeScript типами',
+        description: '17 файлов с TypeScript типами',
         items: [
             'gtd.types.ts — 23KB, полная модель GTD-задач',
             'expensesBoard.types.ts — 13KB, модель расходов',
@@ -507,13 +577,17 @@ const ARCHITECTURE_SECTIONS = [
             'dashboard.types.ts — типы дашборда',
             'user.types.ts — пользователи платформы',
             'timeTracking.types.ts — рабочие сессии',
+            'devlog.types.ts — DevLog посты',
+            'fsm.types.ts — Finite State Machine',
+            'report.types.ts — отчёты',
+            'task.types.ts — задачи (legacy)',
         ],
     },
     {
         title: 'functions/src/',
         icon: <FunctionsIcon />,
         color: '#0ea5e9',
-        description: 'Firebase Cloud Functions backend',
+        description: '79+ файлов Cloud Functions backend',
         items: [
             'triggers/ — 21 Firestore trigger (onCreate, onUpdate, onDelete)',
             'callable/ — 15 callable functions (AI, user management)',
@@ -535,20 +609,62 @@ const CodeDocumentationPage: React.FC = () => {
     const theme = useTheme();
     const navigate = useNavigate();
     const [expandedAll, setExpandedAll] = useState(false);
-    const [expanded, setExpanded] = useState<string | false>(false);
+    const [expandedSet, setExpandedSet] = useState<Set<string>>(new Set());
+    const [searchQuery, setSearchQuery] = useState('');
+    const [activeTypeFilter, setActiveTypeFilter] = useState<string | null>(null);
+
+    // URL hash navigation
+    useEffect(() => {
+        const hash = window.location.hash.replace('#', '');
+        if (hash) {
+            setExpandedSet(new Set([hash]));
+            setTimeout(() => {
+                document.getElementById(`module-${hash}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }, 300);
+        }
+    }, []);
 
     const totalFiles = MODULES.reduce((acc, m) => acc + m.files.length, 0);
     const totalPages = MODULES.reduce((acc, m) => acc + m.files.filter(f => f.type === 'page').length, 0);
     const totalHooks = MODULES.reduce((acc, m) => acc + m.files.filter(f => f.type === 'hook').length, 0);
 
+    // Search + filter
+    const filteredModules = useMemo(() => {
+        const q = searchQuery.toLowerCase().trim();
+        return MODULES.filter(m => {
+            if (!q) return true;
+            if (m.name.toLowerCase().includes(q)) return true;
+            if (m.description.toLowerCase().includes(q)) return true;
+            return m.files.some(f => f.name.toLowerCase().includes(q) || f.description.toLowerCase().includes(q));
+        });
+    }, [searchQuery]);
+
     const toggleAll = () => {
-        setExpandedAll(!expandedAll);
-        setExpanded(false);
+        if (expandedAll) {
+            setExpandedAll(false);
+            setExpandedSet(new Set());
+        } else {
+            setExpandedAll(true);
+            setExpandedSet(new Set(MODULES.map(m => m.id)));
+        }
     };
 
     const handleAccordionChange = (panel: string) => (_: React.SyntheticEvent, isExpanded: boolean) => {
-        setExpanded(isExpanded ? panel : false);
-        if (isExpanded) setExpandedAll(false);
+        setExpandedSet(prev => {
+            const next = new Set(prev);
+            if (isExpanded) {
+                next.add(panel);
+                window.history.replaceState(null, '', `#${panel}`);
+            } else {
+                next.delete(panel);
+            }
+            return next;
+        });
+        setExpandedAll(false);
+    };
+
+    const handleTypeFilterClick = (type: string) => {
+        setActiveTypeFilter(prev => prev === type ? null : type);
     };
 
     return (
@@ -612,7 +728,7 @@ const CodeDocumentationPage: React.FC = () => {
                             { label: 'Страниц', value: totalPages, icon: <FileIcon fontSize="small" />, color: '#22c55e' },
                             { label: 'Хуков', value: totalHooks, icon: <HookIcon fontSize="small" />, color: '#ec4899' },
                             { label: 'Файлов', value: totalFiles, icon: <LayersIcon fontSize="small" />, color: '#f59e0b' },
-                            { label: 'Cloud Functions', value: '45+', icon: <FunctionsIcon fontSize="small" />, color: '#0ea5e9' },
+                            { label: 'Cloud Functions', value: '79+', icon: <FunctionsIcon fontSize="small" />, color: '#0ea5e9' },
                         ].map((stat) => (
                             <Paper
                                 key={stat.label}
@@ -646,25 +762,84 @@ const CodeDocumentationPage: React.FC = () => {
 
             {/* Main Content */}
             <Container maxWidth="lg" sx={{ mt: 4 }}>
-                {/* Toolbar */}
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-                    <Typography variant="h5" fontWeight={700} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <DashIcon color="primary" /> Модули платформы
-                    </Typography>
-                    <Tooltip title={expandedAll ? 'Свернуть все' : 'Развернуть все'}>
-                        <IconButton onClick={toggleAll} sx={{ bgcolor: alpha(theme.palette.primary.main, 0.08) }}>
-                            {expandedAll ? <CollapseAllIcon /> : <ExpandAllIcon />}
-                        </IconButton>
-                    </Tooltip>
+                {/* Search & Filter Toolbar */}
+                <Box sx={{ mb: 3 }}>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                        <Typography variant="h5" fontWeight={700} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <DashIcon color="primary" /> Модули платформы
+                        </Typography>
+                        <Tooltip title={expandedAll ? 'Свернуть все' : 'Развернуть все'}>
+                            <IconButton onClick={toggleAll} sx={{ bgcolor: alpha(theme.palette.primary.main, 0.08) }}>
+                                {expandedAll ? <CollapseAllIcon /> : <ExpandAllIcon />}
+                            </IconButton>
+                        </Tooltip>
+                    </Box>
+
+                    <TextField
+                        fullWidth
+                        size="small"
+                        placeholder="Искать модули, файлы, хуки..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        InputProps={{
+                            startAdornment: (
+                                <InputAdornment position="start">
+                                    <SearchIcon sx={{ color: 'text.disabled' }} />
+                                </InputAdornment>
+                            ),
+                        }}
+                        sx={{
+                            mb: 2,
+                            '& .MuiOutlinedInput-root': {
+                                borderRadius: 3,
+                                bgcolor: 'white',
+                            },
+                        }}
+                    />
+
+                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
+                        {Object.entries(FILE_TYPE_LABELS).map(([type, label]) => (
+                            <Chip
+                                key={type}
+                                icon={FILE_TYPE_ICONS[type] as React.ReactElement}
+                                label={label}
+                                size="small"
+                                onClick={() => handleTypeFilterClick(type)}
+                                sx={{
+                                    fontWeight: 600,
+                                    fontSize: '0.7rem',
+                                    cursor: 'pointer',
+                                    bgcolor: activeTypeFilter === type ? alpha(FILE_TYPE_COLORS[type], 0.15) : 'transparent',
+                                    borderColor: activeTypeFilter === type ? FILE_TYPE_COLORS[type] : 'divider',
+                                    color: activeTypeFilter === type ? FILE_TYPE_COLORS[type] : 'text.secondary',
+                                    border: '1px solid',
+                                    '&:hover': { bgcolor: alpha(FILE_TYPE_COLORS[type], 0.08) },
+                                }}
+                            />
+                        ))}
+                        {activeTypeFilter && (
+                            <Chip
+                                label="✕ Сброс"
+                                size="small"
+                                onClick={() => setActiveTypeFilter(null)}
+                                sx={{ fontWeight: 600, fontSize: '0.7rem', color: 'text.secondary' }}
+                            />
+                        )}
+                    </Box>
                 </Box>
 
                 {/* Module Accordions */}
-                {MODULES.map((module) => {
-                    const isOpen = expandedAll || expanded === module.id;
+                {filteredModules.map((module) => {
+                    const isOpen = expandedSet.has(module.id);
                     const statusCfg = STATUS_CONFIG[module.status];
+                    const visibleFiles = activeTypeFilter
+                        ? module.files.filter(f => f.type === activeTypeFilter)
+                        : module.files;
+                    if (activeTypeFilter && visibleFiles.length === 0) return null;
 
                     return (
                         <Accordion
+                            id={`module-${module.id}`}
                             key={module.id}
                             expanded={isOpen}
                             onChange={handleAccordionChange(module.id)}
@@ -764,14 +939,14 @@ const CodeDocumentationPage: React.FC = () => {
 
                                 {/* Files List */}
                                 <List dense sx={{ py: 0 }}>
-                                    {module.files.map((file, idx) => (
+                                    {visibleFiles.map((file, idx) => (
                                         <ListItem
                                             key={`${file.name}-${idx}`}
                                             sx={{
                                                 px: 3,
                                                 py: 0.75,
                                                 '&:hover': { bgcolor: alpha(module.color, 0.03) },
-                                                borderBottom: idx < module.files.length - 1 ? '1px solid' : 'none',
+                                                borderBottom: idx < visibleFiles.length - 1 ? '1px solid' : 'none',
                                                 borderColor: alpha('#000', 0.04),
                                             }}
                                         >

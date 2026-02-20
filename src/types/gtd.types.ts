@@ -187,6 +187,11 @@ export interface GTDTask {
     /** Название клиента (денормализовано для быстрого отображения) */
     clientName?: string;
 
+    /** 
+     * ID контактов из Справочника, привязанных к задаче 
+     */
+    linkedContactIds?: string[];
+
     /** Дополнительные заметки к задаче */
     description?: string;
 

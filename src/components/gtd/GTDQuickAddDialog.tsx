@@ -42,6 +42,7 @@ import {
     Autocomplete,
     Paper,
     Slide,
+    Avatar,
 } from '@mui/material';
 import {
     Close as CloseIcon,
@@ -67,11 +68,14 @@ import { GTDStatus, GTDPriority, TaskType, TASK_TYPE_CONFIG, ACTION_GROUPS } fro
 import { Client } from '../../types/crm.types';
 import { useClientUsageHistory } from '../../hooks/useClientUsageHistory';
 import { UserProfile } from '../../types/user.types';
+import { collection, getDocs, query, orderBy } from 'firebase/firestore';
+import { db } from '../../firebase/firebase';
 import DynamicFormField from './DynamicFormField';
 import ShoppingListInput, { ShoppingItem } from './ShoppingListInput';
 import { saveShoppingList } from '../../features/shopping';
 import AuditTaskInput, { AuditTaskPayload } from './AuditTaskInput';
 import RepairTicketInput, { RepairTicketPayload } from './RepairTicketInput';
+import GlobalContactQuickAdd from '../contacts/GlobalContactQuickAdd';
 
 /** Data from AI estimation to save with task */
 export interface AIEstimateData {
@@ -83,6 +87,7 @@ export interface AIEstimateData {
     aiTools?: string[];
     selectedTools?: string[];
     aiReasoning?: string;
+    linkedContactIds?: string[];
 }
 
 interface GTDQuickAddDialogProps {
@@ -168,6 +173,24 @@ const GTDQuickAddDialog: React.FC<GTDQuickAddDialogProps> = ({
     const [selectedClient, setSelectedClient] = useState<Client | null>(null);
     const [showAllClients, setShowAllClients] = useState(false);
     const { trackUsage, getTopClients } = useClientUsageHistory(currentUser?.uid);
+
+    // Contacts
+    const [contacts, setContacts] = useState<any[]>([]);
+    const [linkedContactIds, setLinkedContactIds] = useState<string[]>([]);
+    const [globalContactOpen, setGlobalContactOpen] = useState(false);
+
+    useEffect(() => {
+        const fetchContacts = async () => {
+            try {
+                const contactsQ = query(collection(db, 'contacts'), orderBy('name'));
+                const contactsSnap = await getDocs(contactsQ);
+                setContacts(contactsSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+            } catch (e) {
+                console.error("Error fetching contacts", e);
+            }
+        };
+        fetchContacts();
+    }, []);
 
     // Task details
     const [description, setDescription] = useState('');
@@ -597,7 +620,10 @@ const GTDQuickAddDialog: React.FC<GTDQuickAddDialogProps> = ({
                 aiTools: aiEstimate.suggested_tools,
                 selectedTools: selectedTools.length > 0 ? selectedTools : undefined,
                 aiReasoning: aiEstimate.reasoning,
-            } : undefined;
+                linkedContactIds
+            } : {
+                linkedContactIds
+            };
 
             await onAdd(
                 description.trim(),
@@ -655,6 +681,7 @@ const GTDQuickAddDialog: React.FC<GTDQuickAddDialogProps> = ({
         // Reset all state
         setDescription('');
         setSelectedClient(null);
+        setLinkedContactIds([]);
         setClientInput('');
         setShowAllClients(false);
         setCrewSize(2);
@@ -1050,6 +1077,65 @@ const GTDQuickAddDialog: React.FC<GTDQuickAddDialogProps> = ({
                                     </>
                                 );
                             })()}
+                        </Box>
+
+                        {/* 2.5. CONTACTS — Smart sorted chips + expand */}
+                        <Box sx={{ mb: 3 }}>
+                            <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block', textTransform: 'uppercase', letterSpacing: 1 }}>
+                                👥 Привязанные Контакты (Справочник)
+                            </Typography>
+
+                            <Autocomplete
+                                multiple
+                                size="small"
+                                options={contacts}
+                                getOptionLabel={(option) => option.name || 'Без имени'}
+                                value={contacts.filter(c => linkedContactIds.includes(c.id))}
+                                onChange={(_, newValue) => {
+                                    setLinkedContactIds(newValue.map(v => v.id));
+                                }}
+                                renderInput={(params) => (
+                                    <TextField
+                                        {...params}
+                                        placeholder="Начните вводить имя контакта..."
+                                    />
+                                )}
+                                renderTags={(value, getTagProps) =>
+                                    value.map((option, index) => {
+                                        const props = getTagProps({ index });
+                                        // Extract key from props since it cannot be spread directly
+                                        const { key, ...otherProps } = props;
+                                        return (
+                                            <Chip
+                                                key={key}
+                                                label={option.name}
+                                                size="small"
+                                                avatar={<Avatar sx={{ width: 18, height: 18 }}>{option.name?.charAt(0)}</Avatar>}
+                                                {...otherProps}
+                                            />
+                                        );
+                                    })
+                                }
+                            />
+
+                            <Button
+                                size="small"
+                                onClick={() => setGlobalContactOpen(true)}
+                                startIcon={<AddIcon />}
+                                sx={{ mt: 1, textTransform: 'none' }}
+                            >
+                                Создать новый контакт
+                            </Button>
+
+                            <GlobalContactQuickAdd
+                                open={globalContactOpen}
+                                onClose={() => setGlobalContactOpen(false)}
+                                onContactAdded={(newContact: any) => {
+                                    setContacts(prev => [...prev, newContact].sort((a, b) => a.name.localeCompare(b.name)));
+                                    if (newContact.id) setLinkedContactIds(prev => [...prev, newContact.id!]);
+                                    setGlobalContactOpen(false);
+                                }}
+                            />
                         </Box>
 
                         {/* 3. COLUMN PICKER - New Feature */}
@@ -1743,9 +1829,10 @@ const GTDQuickAddDialog: React.FC<GTDQuickAddDialogProps> = ({
                             </Button>
                         </Box>
                     </>
-                )}
-            </Box>
-        </Dialog>
+                )
+                }
+            </Box >
+        </Dialog >
     );
 };
 

@@ -18,8 +18,8 @@ import {
     Box, Typography, TextField, Button, IconButton, Paper,
     Breadcrumbs, Link, Chip, Select, MenuItem, FormControl,
     Autocomplete, Avatar, Divider, Checkbox,
-    FormControlLabel, InputAdornment, Tooltip, CircularProgress,
-    Alert, List, ListItem, ListItemIcon, Tab, Tabs, Stack
+    Alert, List, ListItem, ListItemIcon, Tab, Tabs, Stack, Snackbar,
+    CircularProgress, Tooltip, InputAdornment, FormControlLabel
 } from '@mui/material';
 import {
     ArrowBack as BackIcon,
@@ -91,21 +91,24 @@ const WorkSessionsList: React.FC<{ taskId: string }> = ({ taskId }) => {
         if (!taskId) return;
         setLoadingSessions(true);
 
-        getDocs(
-            query(
-                collection(db, 'work_sessions'),
-                where('relatedTaskId', '==', taskId),
-                orderBy('startTime', 'desc')
-            )
-        ).then(snap => {
+        const q = query(
+            collection(db, 'work_sessions'),
+            where('relatedTaskId', '==', taskId),
+            orderBy('startTime', 'desc')
+        );
+
+        const unsubscribe = onSnapshot(q, (snap) => {
             setSessions(snap.docs.map(d => ({ id: d.id, ...d.data() })));
             setLoadingSessions(false);
-        }).catch(() => {
+        }, (error) => {
+            console.error('Error fetching work sessions:', error);
             setLoadingSessions(false);
         });
+
+        return () => unsubscribe();
     }, [taskId]);
 
-    if (loadingSessions) return <CircularProgress size={20} />;
+    if (loadingSessions && sessions.length === 0) return <CircularProgress size={20} />;
     if (sessions.length === 0) return null;
 
     // Group by worker for summary
@@ -252,6 +255,7 @@ const UnifiedCockpitPage: React.FC = () => {
     const [saving, setSaving] = useState(false);
     const [hasChanges, setHasChanges] = useState(false);
     const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
+    const [saveError, setSaveError] = useState<string | null>(null);
 
     // Refs for autosave
     const savingRef = useRef(false);
@@ -280,6 +284,10 @@ const UnifiedCockpitPage: React.FC = () => {
 
     // Materials state
     const [materials, setMaterials] = useState<TaskMaterial[]>([]);
+
+    // Contacts state
+    const [contacts, setContacts] = useState<any[]>([]);
+    const [linkedContactIds, setLinkedContactIds] = useState<string[]>([]);
 
     // Reference data
     const [clients, setClients] = useState<Client[]>([]);
@@ -340,6 +348,7 @@ const UnifiedCockpitPage: React.FC = () => {
                 setDueDateManual(false);
                 setCoAssignees(data.coAssignees || []);
                 setMaterials(data.materials || []);
+                setLinkedContactIds(data.linkedContactIds || []);
 
                 setLoading(false);
             }
@@ -366,6 +375,15 @@ const UnifiedCockpitPage: React.FC = () => {
                     .filter(u => u.displayName)
                     .sort((a, b) => a.displayName.localeCompare(b.displayName))
                 );
+            });
+
+        // Load Contacts
+        getDocs(query(collection(db, 'contacts'), orderBy('name')))
+            .then(snap => {
+                setContacts(snap.docs.map(d => ({
+                    id: d.id,
+                    ...d.data()
+                })));
             });
 
         return () => unsubscribe();
@@ -464,19 +482,22 @@ const UnifiedCockpitPage: React.FC = () => {
                 materials: materials.length > 0 ? materials : [],
                 materialsCostPlanned: calculateMaterialsCost(materials).planned || null,
                 materialsCostActual: calculateMaterialsCost(materials).actual || null,
+                linkedContactIds: linkedContactIds.length > 0 ? linkedContactIds : [],
                 updatedAt: Timestamp.now()
             });
             setHasChanges(false);
             hasChangesRef.current = false;
             setLastSavedAt(new Date());
-        } catch (error) {
+            setSaveError(null);
+        } catch (error: any) {
             console.error('Save failed:', error);
+            setSaveError(error.message || 'Ошибка автосохранения. Проверьте подключение к интернету.');
         } finally {
             setSaving(false);
             // Allow onSnapshot re-init after a short delay
             setTimeout(() => { savingRef.current = false; }, 1000);
         }
-    }, [taskId, title, description, status, checklist, clientId, clientName, assigneeId, assigneeName, estimatedCost, needsEstimate, priority, estimatedDurationMinutes, startDate, dueDate, coAssignees, materials, task, currentUser]);
+    }, [taskId, title, description, status, checklist, clientId, clientName, assigneeId, assigneeName, estimatedCost, needsEstimate, priority, estimatedDurationMinutes, startDate, dueDate, coAssignees, materials, linkedContactIds, task, currentUser]);
 
     // ── Debounced autosave ──
     useEffect(() => {
@@ -831,7 +852,7 @@ const UnifiedCockpitPage: React.FC = () => {
                             </Tabs>
 
                             {activeTab === 0 && (
-                                <Box sx={{ py: 2 }}>
+                                <Box sx={{ py: 2, maxHeight: '60vh', overflowY: 'auto', pr: 1 }}>
                                     {isTimerRunningForThisTask && (
                                         <Alert severity="success" sx={{ mb: 2 }}>
                                             🟢 Сейчас идёт работа...
@@ -854,7 +875,7 @@ const UnifiedCockpitPage: React.FC = () => {
                             )}
 
                             {activeTab === 1 && (
-                                <Box sx={{ py: 2 }}>
+                                <Box sx={{ py: 2, maxHeight: '60vh', overflowY: 'auto', pr: 1 }}>
                                     <Stack spacing={1.5}>
                                         {task.createdAt && (
                                             <Box display="flex" alignItems="flex-start" gap={1.5}>
@@ -1038,8 +1059,23 @@ const UnifiedCockpitPage: React.FC = () => {
                                         size="small"
                                     />
                                 )}
-                                sx={{ mb: 3 }}
+                                sx={{ mb: 2 }}
                             />
+
+                            {/* Linked Contacts (Read-only on this page for now, editable in Dialog) */}
+                            {linkedContactIds.length > 0 && (
+                                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mb: 1 }}>
+                                    {contacts.filter(c => linkedContactIds.includes(c.id)).map(contact => (
+                                        <Chip
+                                            key={contact.id}
+                                            label={contact.name}
+                                            size="small"
+                                            variant="outlined"
+                                            avatar={<Avatar sx={{ width: 18, height: 18 }}>{contact.name?.charAt(0)}</Avatar>}
+                                        />
+                                    ))}
+                                </Box>
+                            )}
 
                             <Divider sx={{ my: 2 }} />
 
@@ -1206,8 +1242,13 @@ const UnifiedCockpitPage: React.FC = () => {
                                 label="Планируемое время (мин)"
                                 type="number"
                                 value={estimatedDurationMinutes}
-                                onChange={(e) => { setEstimatedDurationMinutes(e.target.value ? Number(e.target.value) : ''); setHasChanges(true); }}
+                                onChange={(e) => {
+                                    const val = e.target.value ? Math.max(0, Number(e.target.value)) : '';
+                                    setEstimatedDurationMinutes(val);
+                                    setHasChanges(true);
+                                }}
                                 InputProps={{
+                                    inputProps: { min: 0 },
                                     startAdornment: <InputAdornment position="start"><ScheduleIcon fontSize="small" /></InputAdornment>,
                                     endAdornment: estimatedDurationMinutes ? (
                                         <InputAdornment position="end">
@@ -1334,8 +1375,13 @@ const UnifiedCockpitPage: React.FC = () => {
                                 label="Estimated Cost"
                                 type="number"
                                 value={estimatedCost}
-                                onChange={(e) => { setEstimatedCost(e.target.value ? Number(e.target.value) : ''); setHasChanges(true); }}
+                                onChange={(e) => {
+                                    const val = e.target.value ? Math.max(0, Number(e.target.value)) : '';
+                                    setEstimatedCost(val);
+                                    setHasChanges(true);
+                                }}
                                 InputProps={{
+                                    inputProps: { min: 0 },
                                     startAdornment: <InputAdornment position="start">$</InputAdornment>
                                 }}
                                 sx={{ mb: 2 }}
@@ -1374,6 +1420,18 @@ const UnifiedCockpitPage: React.FC = () => {
                     </Box>
                 </Box>
             </Box>
+
+            {/* ERROR SNACKBAR */}
+            <Snackbar
+                open={!!saveError}
+                autoHideDuration={6000}
+                onClose={() => setSaveError(null)}
+                anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+            >
+                <Alert onClose={() => setSaveError(null)} severity="error" sx={{ width: '100%' }}>
+                    {saveError}
+                </Alert>
+            </Snackbar>
         </Box>
     );
 };

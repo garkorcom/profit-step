@@ -27,12 +27,21 @@ import {
   MenuBook as MenuBookIcon,
   Edit as EditIcon
 } from '@mui/icons-material';
-import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { useAuth } from '../../auth/AuthContext';
 import { Link, useNavigate } from 'react-router-dom';
 import { KPICard } from '../../components/dashboard/KPICard';
-import { collection, query, where, getDocs, orderBy, limit, Timestamp } from 'firebase/firestore';
+import { collection, query, where, getDocs, Timestamp } from 'firebase/firestore';
 import { db } from '../../firebase/firebase';
+
+import { useDashboardFinance } from '../../hooks/dashboard/useDashboardFinance';
+import { useDashboardTime } from '../../hooks/dashboard/useDashboardTime';
+import { useDashboardTasks } from '../../hooks/dashboard/useDashboardTasks';
+import { useDashboardActivity } from '../../hooks/dashboard/useDashboardActivity';
+
+import { FinanceWidget } from '../../components/dashboard/widgets/FinanceWidget';
+import { TimeTrackingWidget } from '../../components/dashboard/widgets/TimeTrackingWidget';
+import { TasksWidget } from '../../components/dashboard/widgets/TasksWidget';
+import { ActivityFeedWidget } from '../../components/dashboard/widgets/ActivityFeedWidget';
 
 interface TabPanelProps {
   children?: React.ReactNode;
@@ -101,10 +110,14 @@ const CompanyDashboard: React.FC = () => {
     conversionRate: '0'
   });
   const [recentDeals, setRecentDeals] = useState<Lead[]>([]);
-  const [sourceData, setSourceData] = useState<{ name: string; value: number }[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8'];
+  // --- V2 Dashboard Hooks ---
+  const financeData = useDashboardFinance(userProfile?.companyId);
+  const timeData = useDashboardTime(userProfile?.companyId);
+  const tasksData = useDashboardTasks(userProfile?.companyId);
+  const [activityFilter, setActivityFilter] = useState('all');
+  const activityData = useDashboardActivity(activityFilter);
 
   // Проверка прав доступа
   const isAdmin = userProfile?.role === 'admin';
@@ -219,12 +232,7 @@ const CompanyDashboard: React.FC = () => {
           sourceCounts[label] = (sourceCounts[label] || 0) + 1;
         });
 
-        const chartData = Object.keys(sourceCounts).map(key => ({
-          name: key,
-          value: sourceCounts[key]
-        }));
-        setSourceData(chartData);
-
+        // (We no longer display pie charts for sources in v2)
       } catch (error) {
         console.error('Error loading team stats:', error);
       } finally {
@@ -298,6 +306,23 @@ const CompanyDashboard: React.FC = () => {
             Landing Page
           </Button>
         </Box>
+      </Box>
+
+      {/* --- DASHBOARD V2 WIDGETS --- */}
+      <Grid container spacing={{ xs: 2, sm: 3 }} sx={{ mb: 4, alignItems: 'stretch' }}>
+        <Grid size={{ xs: 12, md: 4 }}>
+          <FinanceWidget data={financeData} />
+        </Grid>
+        <Grid size={{ xs: 12, md: 4 }}>
+          <TimeTrackingWidget data={timeData} />
+        </Grid>
+        <Grid size={{ xs: 12, md: 4 }}>
+          <TasksWidget data={tasksData} onAddTask={() => navigate('/crm/tasks?action=new')} />
+        </Grid>
+      </Grid>
+
+      <Box sx={{ mb: 4 }}>
+        <ActivityFeedWidget data={activityData} filterType={activityFilter} onFilterChange={setActivityFilter} />
       </Box>
 
       {/* Team Overview KPIs */}
@@ -578,10 +603,8 @@ const CompanyDashboard: React.FC = () => {
               <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
                 Последние действия в команде
               </Typography>
-              <Box sx={{ mt: 2, textAlign: 'center', py: 4 }}>
-                <Typography color="text.secondary">
-                  📋 Activity timeline в разработке
-                </Typography>
+              <Box sx={{ mt: 2, height: 400 }}>
+                <ActivityFeedWidget data={activityData} filterType={activityFilter} onFilterChange={setActivityFilter} />
               </Box>
             </Paper>
           </Grid>

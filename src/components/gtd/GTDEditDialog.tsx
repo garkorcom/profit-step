@@ -4,7 +4,7 @@ import {
     Dialog, DialogTitle, DialogContent, DialogActions,
     TextField, Button, FormControl, InputLabel, Select, MenuItem,
     Box, Chip, Typography, Grid, Accordion, AccordionSummary, AccordionDetails,
-    useTheme, alpha, Paper, IconButton, InputAdornment, CircularProgress,
+    useTheme, alpha, IconButton,
     Avatar, Autocomplete
 } from '@mui/material';
 import FlagIcon from '@mui/icons-material/Flag';
@@ -19,11 +19,6 @@ import CheckBoxIcon from '@mui/icons-material/CheckBox';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import InboxIcon from '@mui/icons-material/Inbox';
 import AddIcon from '@mui/icons-material/Add';
-import RemoveIcon from '@mui/icons-material/Remove';
-import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
-import RefreshIcon from '@mui/icons-material/Refresh';
-import CloseIcon from '@mui/icons-material/Close';
-
 import { useForm, Controller } from 'react-hook-form';
 import { GTDTask, GTDStatus, GTDPriority, PRIORITY_COLORS, ChecklistItem } from '../../types/gtd.types';
 import { Client } from '../../types/crm.types';
@@ -31,7 +26,6 @@ import { UserProfile } from '../../types/user.types';
 import { Timestamp, collection, getDocs, query, orderBy } from 'firebase/firestore';
 import { db } from '../../firebase/firebase';
 import { useAuth } from '../../auth/AuthContext';
-import { estimateTask } from '../../api/aiApi';
 import { useClientUsageHistory } from '../../hooks/useClientUsageHistory';
 import GlobalContactQuickAdd from '../contacts/GlobalContactQuickAdd';
 
@@ -95,17 +89,7 @@ const GTDEditDialog: React.FC<GTDEditDialogProps> = ({ open, onClose, task, onSa
     const [resourcesExpanded, setResourcesExpanded] = useState<boolean>(false);
     const { trackUsage, sortClients } = useClientUsageHistory(userProfile?.id);
 
-    // AI & Resources State
-    const [aiLoading, setAiLoading] = useState(false);
-    const [crewSize, setCrewSize] = useState(1);
     const [hours, setHours] = useState('');
-    const [cost, setCost] = useState('');
-    const [aiReasoning, setAiReasoning] = useState('');
-    const [localMaterials, setLocalMaterials] = useState<string[]>([]);
-    const [localTools, setLocalTools] = useState<string[]>([]);
-    const [newMaterial, setNewMaterial] = useState('');
-    const [newTool, setNewTool] = useState('');
-    const [hasAiData, setHasAiData] = useState(false);
 
     // Contacts Integration
     const [contacts, setContacts] = useState<any[]>([]);
@@ -119,9 +103,7 @@ const GTDEditDialog: React.FC<GTDEditDialogProps> = ({ open, onClose, task, onSa
     // Co-assignees state
     const [coAssignees, setCoAssignees] = useState<Array<{ id: string; name: string; role: 'executor' | 'reviewer' | 'observer' }>>([]);
 
-    const HOURLY_RATE = 95; // Default hourly rate
 
-    // Sync from props when provided
     useEffect(() => {
         if (propUsers && propUsers.length > 0) setUsers(propUsers);
         if (propClients && propClients.length > 0) setClients(propClients);
@@ -191,15 +173,8 @@ const GTDEditDialog: React.FC<GTDEditDialogProps> = ({ open, onClose, task, onSa
                 setStartTime('');
             }
 
-            // Initialize AI-related state from task
-            setCrewSize(task.crewSize || 1);
             // Default to '1' hour if missing
             setHours(task.estimatedDurationMinutes ? String(task.estimatedDurationMinutes / 60) : '1');
-            setCost(task.estimatedCost ? String(task.estimatedCost) : '');
-            setAiReasoning(task.aiReasoning || '');
-            setLocalMaterials(task.selectedMaterials || task.aiMaterials || []);
-            setLocalTools(task.selectedTools || task.aiTools || []);
-            setHasAiData(!!task.aiEstimateUsed);
             setLinkedContactIds(task.linkedContactIds || []);
 
             // Initialize checklist
@@ -215,64 +190,7 @@ const GTDEditDialog: React.FC<GTDEditDialogProps> = ({ open, onClose, task, onSa
         }
     }, [task, reset, userProfile]);
 
-    // AI Estimation Handler
-    const handleAIEstimate = async () => {
-        if (!task) return;
 
-        const selectedAssignee = users.find(u => u.id === task.assigneeId);
-        const employeeRole = selectedAssignee?.title || selectedAssignee?.role || 'Worker';
-        const employeeRate = selectedAssignee?.hourlyRate || HOURLY_RATE;
-
-        setAiLoading(true);
-
-        try {
-            const estimate = await estimateTask({
-                task_description: task.title + (task.description ? '. ' + task.description : ''),
-                employee_role: employeeRole,
-                employee_hourly_rate: employeeRate,
-                currency: 'USD',
-            });
-
-            setHours(String(estimate.estimated_hours));
-            setCost(String(estimate.calculated_cost));
-            setAiReasoning(estimate.reasoning || '');
-            setLocalMaterials(estimate.suggested_materials || []);
-            setLocalTools(estimate.suggested_tools || []);
-            setHasAiData(true);
-
-            // Haptic feedback
-            if ('vibrate' in navigator) {
-                navigator.vibrate([50, 30, 50]);
-            }
-        } catch (error) {
-            console.error('AI Estimation failed:', error);
-        } finally {
-            setAiLoading(false);
-        }
-    };
-
-    // Material/Tool handlers
-    const addMaterial = () => {
-        if (newMaterial.trim() && !localMaterials.includes(newMaterial.trim())) {
-            setLocalMaterials([...localMaterials, newMaterial.trim()]);
-            setNewMaterial('');
-        }
-    };
-
-    const removeMaterial = (material: string) => {
-        setLocalMaterials(localMaterials.filter(m => m !== material));
-    };
-
-    const addTool = () => {
-        if (newTool.trim() && !localTools.includes(newTool.trim())) {
-            setLocalTools([...localTools, newTool.trim()]);
-            setNewTool('');
-        }
-    };
-
-    const removeTool = (tool: string) => {
-        setLocalTools(localTools.filter(t => t !== tool));
-    };
 
     const onSubmit = async (data: FormData) => {
         if (!task) return;
@@ -328,14 +246,6 @@ const GTDEditDialog: React.FC<GTDEditDialogProps> = ({ open, onClose, task, onSa
         // AI & Resources fields
         if (hours) {
             updates.estimatedDurationMinutes = Math.round(Number(hours) * 60);
-        }
-        (updates as any).estimatedCost = cost ? Number(cost) : null;
-        (updates as any).crewSize = crewSize > 0 ? crewSize : null;
-        (updates as any).selectedMaterials = localMaterials.length > 0 ? localMaterials : [];
-        (updates as any).selectedTools = localTools.length > 0 ? localTools : [];
-        (updates as any).aiReasoning = aiReasoning || null;
-        if (hasAiData) {
-            updates.aiEstimateUsed = true;
         }
 
         // Checklist items
@@ -714,166 +624,9 @@ const GTDEditDialog: React.FC<GTDEditDialogProps> = ({ open, onClose, task, onSa
                                         clearOnBlur
                                         sx={{ mb: 1 }}
                                     />
-
-                                    <Box sx={{ display: 'flex', gap: 1.5, alignItems: 'center', flexWrap: 'wrap' }}>
-                                        {/* Crew Size Stepper */}
-                                        <Paper variant="outlined" sx={{ display: 'flex', alignItems: 'center', borderRadius: 2, minWidth: 100 }}>
-                                            <IconButton size="small" onClick={() => setCrewSize(Math.max(1, crewSize - 1))} disabled={crewSize <= 1}>
-                                                <RemoveIcon fontSize="small" />
-                                            </IconButton>
-                                            <Box sx={{ flex: 1, textAlign: 'center', px: 1 }}>
-                                                <Typography variant="body1" fontWeight={600}>{crewSize}</Typography>
-                                                <Typography variant="caption" color="text.secondary">чел</Typography>
-                                            </Box>
-                                            <IconButton size="small" onClick={() => setCrewSize(Math.min(20, crewSize + 1))}>
-                                                <AddIcon fontSize="small" />
-                                            </IconButton>
-                                        </Paper>
-
-                                        {/* Hours */}
-                                        <TextField
-                                            type="number"
-                                            inputMode="numeric"
-                                            value={hours}
-                                            onChange={(e) => setHours(e.target.value)}
-                                            placeholder="Часы"
-                                            size="small"
-                                            sx={{ width: 100 }}
-                                            InputProps={{
-                                                endAdornment: <InputAdornment position="end">ч</InputAdornment>
-                                            }}
-                                        />
-
-                                        {/* Cost */}
-                                        <TextField
-                                            type="number"
-                                            inputMode="decimal"
-                                            value={cost}
-                                            onChange={(e) => setCost(e.target.value)}
-                                            placeholder="Стоимость"
-                                            size="small"
-                                            sx={{ width: 120 }}
-                                            InputProps={{
-                                                startAdornment: <InputAdornment position="start">$</InputAdornment>
-                                            }}
-                                        />
-
-                                        {/* Auto-calc hint */}
-                                        {!cost && hours && (
-                                            <Button
-                                                size="small"
-                                                onClick={() => setCost(String(Math.round(Number(hours) * crewSize * HOURLY_RATE)))}
-                                                sx={{ textTransform: 'none', fontSize: '0.75rem' }}
-                                            >
-                                                💡 ${Math.round(Number(hours) * crewSize * HOURLY_RATE)}
-                                            </Button>
-                                        )}
-                                    </Box>
                                 </Box>
                             </AccordionDetails>
-                        </Accordion>
-
-                        {/* 6. AI Estimation */}
-                        <Box sx={{ bgcolor: alpha(theme.palette.primary.main, 0.05), p: 2, borderRadius: 2 }}>
-                            {/* AI Button */}
-                            <Button
-                                fullWidth
-                                variant="outlined"
-                                onClick={handleAIEstimate}
-                                disabled={aiLoading}
-                                startIcon={aiLoading ? <CircularProgress size={18} /> : hasAiData ? <RefreshIcon /> : <AutoAwesomeIcon />}
-                                sx={{
-                                    py: 1,
-                                    borderRadius: 2,
-                                    borderStyle: 'dashed',
-                                    borderColor: hasAiData ? 'success.main' : 'primary.main',
-                                    color: hasAiData ? 'success.dark' : 'primary.main',
-                                }}
-                            >
-                                {aiLoading ? 'AI анализирует...' : hasAiData ? '🔄 Перегенерировать AI' : '✨ AI-расчёт'}
-                            </Button>
-
-                            {/* AI Reasoning */}
-                            {aiReasoning && (
-                                <Paper variant="outlined" sx={{ mt: 1.5, p: 1.5, borderRadius: 2, bgcolor: 'info.50', borderColor: 'info.200' }}>
-                                    <Typography variant="caption" color="info.dark">
-                                        💡 {aiReasoning}
-                                    </Typography>
-                                </Paper>
-                            )}
-
-                            {/* Materials */}
-                            {(localMaterials.length > 0 || hasAiData) && (
-                                <Box sx={{ mt: 2 }}>
-                                    <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block' }}>
-                                        📦 Материалы
-                                    </Typography>
-                                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mb: 1 }}>
-                                        {localMaterials.map((m, i) => (
-                                            <Chip
-                                                key={i}
-                                                label={m}
-                                                size="small"
-                                                onDelete={() => removeMaterial(m)}
-                                                deleteIcon={<CloseIcon fontSize="small" />}
-                                                color="primary"
-                                                variant="outlined"
-                                            />
-                                        ))}
-                                    </Box>
-                                    <Box sx={{ display: 'flex', gap: 1 }}>
-                                        <TextField
-                                            size="small"
-                                            placeholder="Добавить материал..."
-                                            value={newMaterial}
-                                            onChange={(e) => setNewMaterial(e.target.value)}
-                                            onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), addMaterial())}
-                                            sx={{ flex: 1 }}
-                                        />
-                                        <IconButton onClick={addMaterial} color="primary" size="small">
-                                            <AddIcon />
-                                        </IconButton>
-                                    </Box>
-                                </Box>
-                            )}
-
-                            {/* Tools */}
-                            {(localTools.length > 0 || hasAiData) && (
-                                <Box sx={{ mt: 2 }}>
-                                    <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block' }}>
-                                        🔧 Инструменты
-                                    </Typography>
-                                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mb: 1 }}>
-                                        {localTools.map((t, i) => (
-                                            <Chip
-                                                key={i}
-                                                label={t}
-                                                size="small"
-                                                onDelete={() => removeTool(t)}
-                                                deleteIcon={<CloseIcon fontSize="small" />}
-                                                color="secondary"
-                                                variant="outlined"
-                                            />
-                                        ))}
-                                    </Box>
-                                    <Box sx={{ display: 'flex', gap: 1 }}>
-                                        <TextField
-                                            size="small"
-                                            placeholder="Добавить инструмент..."
-                                            value={newTool}
-                                            onChange={(e) => setNewTool(e.target.value)}
-                                            onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), addTool())}
-                                            sx={{ flex: 1 }}
-                                        />
-                                        <IconButton onClick={addTool} color="secondary" size="small">
-                                            <AddIcon />
-                                        </IconButton>
-                                    </Box>
-                                </Box>
-                            )}
-                        </Box>
-
-                        {/* 6. Estimate Button */}
+                        </Accordion>                                    {/* 6. Estimate Button */}
                         <Button
                             variant={currentStatus === 'estimate' ? "contained" : "outlined"}
                             color="secondary"

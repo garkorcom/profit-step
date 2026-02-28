@@ -108,7 +108,7 @@ export const CO_ASSIGNEE_ROLE_LABELS: Record<CoAssigneeRole, string> = {
 /** Событие истории изменений задачи */
 export interface TaskHistoryEvent {
     /** Тип события */
-    type: 'created' | 'assigned' | 'co_assignee_added' | 'co_assignee_removed' | 'status_changed' | 'updated' | 'completed';
+    type: 'created' | 'assigned' | 'co_assignee_added' | 'co_assignee_removed' | 'status_changed' | 'updated' | 'completed' | 'ai_mutation_snapshot' | 'materials_added' | 'contacts_linked';
     /** Описание события */
     description: string;
     /** ID пользователя, совершившего действие */
@@ -230,41 +230,16 @@ export interface GTDTask {
     checklistItems?: ChecklistItem[];
 
     // ═══════════════════════════════════════
-    // AI ESTIMATION FIELDS
+    // WIZARD FIELDS
     // ═══════════════════════════════════════
 
-    /** Предполагаемая стоимость работы (рассчитано AI) */
-    estimatedCost?: number;
-
-    /** Количество работников */
-    crewSize?: number;
-
-    /** Предложенные материалы (от AI) */
-    aiMaterials?: string[];
-
-    /** Выбранные пользователем материалы */
-    selectedMaterials?: string[];
-
-    /** Предложенные инструменты (от AI) */
-    aiTools?: string[];
-
-    /** Выбранные пользователем инструменты */
-    selectedTools?: string[];
-
-    /** Объяснение AI-оценки */
-    aiReasoning?: string;
-
-    /** Флаг: была ли использована AI-оценка */
-    aiEstimateUsed?: boolean;
-
-    /** Флаг: задача требует просчёта (отправить в колонку Estimate) */
+    /** Флаг: задача требует просчёта */
     needsEstimate?: boolean;
 
-    /** Тип задачи (для wizard) */
-    taskType?: 'check' | 'do' | 'buy' | 'deliver' | 'call' | 'document' | 'measure' | 'fix' | 'coordinate';
+    /** Тип задачи (для wizard и фильтров) */
+    taskType?: string; // Using string to accommodate TaskType without hoisting
 
-    /** Флаг: требуется транспорт */
-    needsVehicle?: boolean;
+    // ═══════════════════════════════════════
 
     // ═══════════════════════════════════════
     // RATE & TIME TRACKING FIELDS
@@ -399,9 +374,7 @@ export interface TaskTypeConfig {
     fields: FieldConfig[];
     defaults: {
         estimatedDurationMinutes?: number;
-        crewSize?: number;
         needsEstimate?: boolean;
-        needsVehicle?: boolean;
         priority?: GTDPriority;
         status?: GTDStatus;
         deadlineToday?: boolean;
@@ -439,7 +412,7 @@ export const TASK_TYPE_CONFIG: Record<TaskType, TaskTypeConfig> = {
             { type: 'text', label: 'Что везём' },
             { type: 'text', label: 'Контакт на месте' },
         ],
-        defaults: { needsVehicle: true, estimatedDurationMinutes: 60 }
+        defaults: { estimatedDurationMinutes: 60 }
     },
     pickup: {
         emoji: '📦',
@@ -452,7 +425,7 @@ export const TASK_TYPE_CONFIG: Record<TaskType, TaskTypeConfig> = {
             { type: 'location', label: 'Откуда' },
             { type: 'text', label: 'Контакт' },
         ],
-        defaults: { needsVehicle: true, estimatedDurationMinutes: 45 }
+        defaults: { estimatedDurationMinutes: 45 }
     },
     move: {
         emoji: '🏗️',
@@ -465,7 +438,7 @@ export const TASK_TYPE_CONFIG: Record<TaskType, TaskTypeConfig> = {
             { type: 'text', label: 'Откуда' },
             { type: 'text', label: 'Куда' },
         ],
-        defaults: { crewSize: 2, estimatedDurationMinutes: 60 }
+        defaults: { estimatedDurationMinutes: 60 }
     },
 
     // ═══════════════════════════════════════
@@ -536,7 +509,7 @@ export const TASK_TYPE_CONFIG: Record<TaskType, TaskTypeConfig> = {
             { type: 'text', label: 'Что установить', required: true },
             { type: 'text', label: 'Требования' },
         ],
-        defaults: { crewSize: 2, needsEstimate: true, estimatedDurationMinutes: 120 }
+        defaults: { needsEstimate: true, estimatedDurationMinutes: 120 }
     },
     service: {
         emoji: '🧹',
@@ -548,7 +521,7 @@ export const TASK_TYPE_CONFIG: Record<TaskType, TaskTypeConfig> = {
             { type: 'text', label: 'Тип работ', required: true },
             { type: 'select', label: 'Периодичность' },
         ],
-        defaults: { crewSize: 2, estimatedDurationMinutes: 120 }
+        defaults: { estimatedDurationMinutes: 120 }
     },
 
     // ═══════════════════════════════════════

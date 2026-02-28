@@ -268,6 +268,12 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // Contacts collection (Global CRM contacts)
+    match /contacts/{contactId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isSignedIn();
+    }
+
     // Leads collection (Sales Funnel)
     match /leads/{leadId} {
       allow create: if true;
@@ -485,6 +491,32 @@ service cloud.firestore {
 
     // Vendor Rules (User-defined category mappings)
     match /vendor_rules/{ruleId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update: if isSignedIn();
+      allow delete: if isSignedIn();
+    }
+
+    // ==================== BLUEPRINT JOBS ====================
+
+    // AI Analysis Jobs (Electrical Estimator, etc.)
+    match /blueprint_jobs/{jobId} {
+      allow read: if isSignedIn() && resource.data.companyId == getUserCompany();
+      allow create: if isSignedIn();
+      allow update: if isSignedIn();
+      allow delete: if isAdmin();
+    }
+
+    // Batch AI Analysis Jobs (Multi-File Pipeline)
+    match /blueprint_batches/{batchId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update: if isSignedIn();
+      allow delete: if isAdmin();
+    }
+
+    // Saved AI Estimates (Projects)
+    match /saved_estimates/{estimateId} {
       allow read: if isSignedIn();
       allow create: if isSignedIn();
       allow update: if isSignedIn();

@@ -1,7 +1,7 @@
 // Service Worker for Profit Step PWA
 // Caches static assets and provides offline support
 
-const CACHE_NAME = 'profit-step-v1';
+const CACHE_NAME = 'profit-step-__BUILD_HASH__';
 const STATIC_ASSETS = [
     '/',
     '/crm/gtd',

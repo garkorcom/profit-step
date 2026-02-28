@@ -44,6 +44,7 @@ import {
     DEPARTMENT_LABELS,
 } from '../../types/user.types';
 import { uploadUserAvatar, updateUserExtendedProfile } from '../../api/userManagementApi';
+import { adminChangeEmail, adminResetPassword } from '../../api/userDetailApi';
 
 /**
  * Объединённая форма создания/редактирования пользователя
@@ -97,6 +98,7 @@ const UserFormDialog: React.FC<UserFormDialogProps> = ({
 }) => {
     const { userProfile, currentUser } = useAuth();
     const isEditMode = !!user;
+    const isAdmin = userProfile?.role === 'admin' || userProfile?.role === 'company_admin' || userProfile?.role === 'superadmin';
 
     // UI State
     const [activeTab, setActiveTab] = useState(0);
@@ -269,6 +271,16 @@ const UserFormDialog: React.FC<UserFormDialogProps> = ({
 
         try {
             if (isEditMode && user) {
+                // Update email if changed
+                if (data.email && data.email !== user.email && isAdmin) {
+                    await adminChangeEmail(user.id, data.email);
+                }
+
+                // Reset password if provided
+                if (data.password && data.password.length >= 6 && isAdmin) {
+                    await adminResetPassword(user.id, data.password);
+                }
+
                 // UPDATE existing user
                 await updateUserExtendedProfile(user.id, {
                     displayName: data.displayName.trim(),
@@ -425,7 +437,7 @@ const UserFormDialog: React.FC<UserFormDialogProps> = ({
                                 name="email"
                                 control={control}
                                 rules={{
-                                    required: !isEditMode ? 'Email обязателен' : false,
+                                    required: (!isEditMode || isAdmin) ? 'Email обязателен' : false,
                                     pattern: {
                                         value: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
                                         message: 'Некорректный формат email',
@@ -440,28 +452,32 @@ const UserFormDialog: React.FC<UserFormDialogProps> = ({
                                         margin="normal"
                                         error={!!errors.email}
                                         helperText={
-                                            isEditMode
+                                            (isEditMode && !isAdmin)
                                                 ? 'Email нельзя изменить'
                                                 : errors.email?.message
                                         }
-                                        disabled={loading || isEditMode}
+                                        disabled={loading || (isEditMode && !isAdmin)}
                                     />
                                 )}
                             />
 
-                            {/* Password (create mode only) */}
-                            {!isEditMode && (
+                            {/* Password */}
+                            {(!isEditMode || isAdmin) && (
                                 <Controller
                                     name="password"
                                     control={control}
                                     rules={{
-                                        required: 'Пароль обязателен',
-                                        minLength: { value: 6, message: 'Минимум 6 символов' },
+                                        validate: (value) => {
+                                            if (isEditMode && !value) return true;
+                                            if (!value) return 'Пароль обязателен';
+                                            if (value.length < 6) return 'Минимум 6 символов';
+                                            return true;
+                                        }
                                     }}
                                     render={({ field }) => (
                                         <TextField
                                             {...field}
-                                            label="Пароль *"
+                                            label={isEditMode ? "Новый пароль (оставьте пустым без изменений)" : "Пароль *"}
                                             type={showPassword ? 'text' : 'password'}
                                             fullWidth
                                             margin="normal"

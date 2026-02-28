@@ -22,6 +22,9 @@ const UserDetailPage = React.lazy(() => import('../pages/admin/UserDetailPage'))
 const EstimatesPage = React.lazy(() => import('../pages/estimates/EstimatesPage'));
 const EstimateBuilderPage = React.lazy(() => import('../pages/estimates/EstimateBuilderPage'));
 const ElectricalEstimatorPage = React.lazy(() => import('../pages/estimates/ElectricalEstimatorPage'));
+const SavedEstimatesPage = React.lazy(() => import('../pages/estimates/SavedEstimatesPage'));
+const EstimateDetailPage = React.lazy(() => import('../pages/estimates/EstimateDetailPage'));
+const SettingsCalculatorPage = React.lazy(() => import('../pages/estimates/SettingsCalculatorPage'));
 const SuperAdminDashboard = React.lazy(() => import('../pages/superadmin/SuperAdminDashboard'));
 const CompanyDashboard = React.lazy(() => import('../pages/admin/CompanyDashboard'));
 const CompaniesPage = React.lazy(() => import('../pages/admin/CompaniesPage'));
@@ -38,6 +41,7 @@ const TimeTrackingPage = React.lazy(() => import('../pages/crm/TimeTrackingPage'
 const FinancePage = React.lazy(() => import('../pages/crm/FinancePage'));
 const GTDPage = React.lazy(() => import('../pages/crm/GTDPage'));
 const GTDCreatePage = React.lazy(() => import('../pages/crm/GTDCreatePage'));
+const UnifiedTasksPage = React.lazy(() => import('../pages/crm/UnifiedTasksPage'));
 const UnifiedCockpitPage = React.lazy(() => import('../pages/crm/UnifiedCockpitPage'));
 const ShoppingPage = React.lazy(() => import('../pages/crm/ShoppingPage'));
 const PayrollPeriodsPage = React.lazy(() => import('../pages/crm/PayrollPeriodsPage'));
@@ -153,6 +157,7 @@ const AppRouter: React.FC = () => {
 
           {/* Настройки */}
           <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/settings/calculator" element={<SettingsCalculatorPage />} />
 
           {/* Главный дашборд (старая страница) */}
           <Route path="/dashboard" element={<DashboardPage />} />
@@ -174,6 +179,8 @@ const AppRouter: React.FC = () => {
           <Route path="/estimates/new" element={<EstimateBuilderPage />} />
           <Route path="/estimates/:id" element={<EstimateBuilderPage />} />
           <Route path="/estimates/electrical" element={<ElectricalEstimatorPage />} />
+          <Route path="/estimates/projects" element={<SavedEstimatesPage />} />
+          <Route path="/estimates/projects/:id" element={<EstimateDetailPage />} />
 
           {/* CRM Routes */}
           <Route path="/crm/clients" element={<ClientsPage />} />
@@ -181,13 +188,19 @@ const AppRouter: React.FC = () => {
           <Route path="/crm/clients/:id" element={<ClientDetailsPage />} />
           <Route path="/crm/clients/:id/edit" element={<ClientBuilderPage />} />
 
-          {/* Placeholders for V2.1 & V3.1 & V4 */}
+          {/* V3/V4 Unified CRM Tasks Routes */}
+          <Route path="/crm/tasks" element={<UnifiedTasksPage />} />
           <Route path="/crm/deals" element={<DealsPage />} />
-          <Route path="/crm/calendar" element={<CalendarPage />} />
           <Route path="/crm/leads/:id" element={<LeadDetailsPage />} />
-          <Route path="/crm/tasks" element={<TasksPage />} />
-          <Route path="/crm/gtd" element={<GTDPage />} />
           <Route path="/crm/gtd/new" element={<GTDCreatePage />} />
+          <Route path="/crm/gtd/:taskId" element={<UnifiedCockpitPage />} />
+          <Route path="/crm/cockpit/:taskId" element={<UnifiedCockpitPage />} />
+
+          {/* Legacy Redirects to Unified View */}
+          <Route path="/crm/gtd" element={<Navigate to="/crm/tasks?view=board" replace />} />
+          <Route path="/crm/tasks-masonry" element={<Navigate to="/crm/tasks?view=timeline" replace />} />
+          <Route path="/crm/calendar" element={<Navigate to="/crm/tasks?view=calendar" replace />} />
+          <Route path="/crm/inbox" element={<Navigate to="/crm/tasks?view=board" replace />} />
           <Route path="/crm/gtd/:taskId" element={<UnifiedCockpitPage />} />
           <Route path="/crm/cockpit/:taskId" element={<UnifiedCockpitPage />} />
           {/* Legacy Inbox route - redirect to GTD */}

@@ -56,6 +56,16 @@ service firebase.storage {
       allow write: if isSignedIn();
     }
 
+    // ==================== BLUEPRINTS ====================
+
+    // Чертежи для AI Analysis:
+    //   Single: blueprints/{companyId}/{fileName}
+    //   Batch:  blueprints/{companyId}/{batchId}/{fileName}
+    match /blueprints/{companyId}/{allPaths=**} {
+      // Любой авторизованный сотрудник может загружать и читать чертежи
+      allow read, write: if isSignedIn();
+    }
+
     // ==================== DEFAULT DENY ====================
 
     // Запретить доступ ко всем остальным файлам

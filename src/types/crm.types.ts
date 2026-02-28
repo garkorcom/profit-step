@@ -306,6 +306,10 @@ export interface LedgerEntry {
   sourceType: LedgerSourceType;
   sourceId?: string; // ID of work_session or receipt
 
+  // Contact Integration
+  linkedContactId?: string;
+  linkedContactName?: string;
+
   // Transaction date (may differ from createdAt)
   date: Timestamp;
 

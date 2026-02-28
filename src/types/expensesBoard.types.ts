@@ -120,6 +120,12 @@ export interface BankTransaction {
     originalCurrency?: string;
     /** Bank's foreign transaction fee */
     foreignTransactionFee?: number;
+
+    // ── Contact Integration ──
+    /** Links this transaction directly to a contractor or client from the Contacts table */
+    linkedContactId?: string;
+    /** Cached snapshot of the contact name */
+    linkedContactName?: string;
 }
 
 // ============================================

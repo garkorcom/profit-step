@@ -24,6 +24,11 @@ import {
     CircularProgress,
     alpha,
     useTheme,
+    Select,
+    MenuItem,
+    FormControl,
+    Checkbox,
+    ListItemText,
 } from '@mui/material';
 import {
     Check as CheckIcon,
@@ -275,6 +280,136 @@ function EditableField({
     );
 }
 
+// --- Editable Select Field ---
+
+function EditableSelectField({
+    label,
+    value,
+    options,
+    confidence,
+    onSave,
+    error,
+}: {
+    label: string;
+    value: string;
+    options: { id: string; name: string }[];
+    confidence?: number;
+    onSave: (id: string) => void;
+    error?: boolean;
+}) {
+    const borderColor = error ? '#ef4444' :
+        confidence === undefined ? 'divider' :
+            confidence < 0.5 ? '#ef4444' :
+                confidence < 0.8 ? '#f59e0b' : 'divider';
+
+    const bgColor = error ? alpha('#ef4444', 0.05) :
+        confidence === undefined ? undefined :
+            confidence < 0.5 ? alpha('#ef4444', 0.04) :
+                confidence < 0.8 ? alpha('#f59e0b', 0.04) : undefined;
+
+    return (
+        <Paper
+            variant="outlined"
+            sx={{
+                px: 2,
+                py: 1,
+                borderRadius: 3,
+                borderColor,
+                bgcolor: bgColor,
+            }}
+        >
+            <Typography variant="caption" color={error ? "error" : "text.secondary"}>{label}</Typography>
+            <FormControl fullWidth size="small" variant="standard" error={error}>
+                <Select
+                    value={value || ''}
+                    onChange={(e) => onSave(e.target.value as string)}
+                    displayEmpty
+                    disableUnderline
+                    sx={{ fontSize: '0.9rem', fontWeight: 500 }}
+                >
+                    <MenuItem value="" disabled>
+                        <em>Не выбран</em>
+                    </MenuItem>
+                    {options.map((opt) => (
+                        <MenuItem key={opt.id} value={opt.id}>
+                            {opt.name}
+                        </MenuItem>
+                    ))}
+                </Select>
+            </FormControl>
+        </Paper>
+    );
+}
+
+// --- Editable Multi-Select Field ---
+
+function EditableMultiSelectField({
+    label,
+    values,
+    options,
+    confidence,
+    onSave,
+}: {
+    label: string;
+    values: string[];
+    options: { id: string; name: string }[];
+    confidence?: number;
+    onSave: (ids: string[]) => void;
+}) {
+    const borderColor =
+        confidence === undefined ? 'divider' :
+            confidence < 0.5 ? '#ef4444' :
+                confidence < 0.8 ? '#f59e0b' : 'divider';
+
+    const bgColor =
+        confidence === undefined ? undefined :
+            confidence < 0.5 ? alpha('#ef4444', 0.04) :
+                confidence < 0.8 ? alpha('#f59e0b', 0.04) : undefined;
+
+    return (
+        <Paper
+            variant="outlined"
+            sx={{
+                px: 2,
+                py: 1,
+                borderRadius: 3,
+                borderColor,
+                bgcolor: bgColor,
+            }}
+        >
+            <Typography variant="caption" color="text.secondary">{label}</Typography>
+            <FormControl fullWidth size="small" variant="standard">
+                <Select
+                    multiple
+                    value={values}
+                    onChange={(e) => onSave(typeof e.target.value === 'string' ? e.target.value.split(',') : e.target.value as string[])}
+                    displayEmpty
+                    disableUnderline
+                    renderValue={(selected) => {
+                        if (selected.length === 0) {
+                            return <em>Не назначен</em>;
+                        }
+                        return selected
+                            .map(id => options.find(o => o.id === id)?.name || id)
+                            .join(', ');
+                    }}
+                    sx={{ fontSize: '0.9rem', fontWeight: 500 }}
+                >
+                    <MenuItem value="" disabled>
+                        <em>Не назначен</em>
+                    </MenuItem>
+                    {options.map((opt) => (
+                        <MenuItem key={opt.id} value={opt.id}>
+                            <Checkbox checked={values.indexOf(opt.id) > -1} size="small" />
+                            <ListItemText primary={opt.name} />
+                        </MenuItem>
+                    ))}
+                </Select>
+            </FormControl>
+        </Paper>
+    );
+}
+
 // ============================================================
 // MAIN COMPONENT
 // ============================================================
@@ -305,14 +440,6 @@ export default function AiDraftPreview({
     const theme = useTheme();
     const [scopeDecision, setScopeDecision] = useState<string | undefined>();
     const [showReasoning, setShowReasoning] = useState(false);
-
-    // Resolve names from IDs
-    const assigneeNames = draft.assigneeIds
-        .map((id) => employees.find((e) => e.id === id)?.name || id)
-        .join(', ');
-
-    const projectName =
-        projects.find((p) => p.id === draft.projectId)?.name || draft.projectId;
 
     const formatDate = (iso: string) => {
         try {
@@ -378,17 +505,20 @@ export default function AiDraftPreview({
                     value={draft.title}
                     onSave={(v) => onEditField('title', v)}
                 />
-                <EditableField
-                    label="Исполнитель"
-                    value={assigneeNames || 'Не назначен'}
+                <EditableMultiSelectField
+                    label="Исполнители"
+                    values={draft.assigneeIds || []}
+                    options={employees}
                     confidence={analysis.confidence.assignee}
-                    editable={false} // TODO: open SmartTeamSelector modal
+                    onSave={(ids) => onEditField('assigneeIds', ids)}
                 />
-                <EditableField
+                <EditableSelectField
                     label="Проект"
-                    value={projectName}
+                    value={draft.projectId || ''}
+                    options={projects}
                     confidence={analysis.confidence.project}
-                    editable={false} // pre-selected
+                    onSave={(id) => onEditField('projectId', id)}
+                    error={!draft.projectId}
                 />
                 <EditableField
                     label="Дедлайн"
@@ -561,7 +691,7 @@ export default function AiDraftPreview({
                     variant="contained"
                     color="success"
                     onClick={() => onConfirm(scopeDecision)}
-                    disabled={isConfirming}
+                    disabled={isConfirming || !draft.title || !draft.projectId}
                     startIcon={isConfirming ? <CircularProgress size={20} color="inherit" /> : <CheckIcon />}
                     sx={{ py: 1.5, borderRadius: 3, fontWeight: 'bold', textTransform: 'none' }}
                 >

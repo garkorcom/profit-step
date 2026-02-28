@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import {
     Box, Typography, Container, Paper, TextField, InputAdornment,
     Button, Chip, Stack, List, ListItem, Avatar, ListItemAvatar, ListItemText,
-    CircularProgress, IconButton, Alert, Divider
+    CircularProgress, IconButton, Alert, Divider, Snackbar,
+    Menu, MenuItem, ListItemIcon, Dialog, DialogTitle, DialogContent, DialogActions, DialogContentText
 } from '@mui/material';
 import {
     Search as SearchIcon,
@@ -10,7 +11,13 @@ import {
     MoreVert as MoreVertIcon,
     Phone as PhoneIcon,
     Email as EmailIcon,
-    Business as BusinessIcon
+    Business as BusinessIcon,
+    WhatsApp as WhatsAppIcon,
+    Telegram as TelegramIcon,
+    Download as DownloadIcon,
+    Upload as UploadIcon,
+    Edit as EditIcon,
+    Delete as DeleteIcon
 } from '@mui/icons-material';
 
 import { Contact } from '../../types/contact.types';
@@ -22,12 +29,21 @@ const ContactsPage: React.FC = () => {
     const [loading, setLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
     const [error, setError] = useState<string | null>(null);
+    const [importSuccessMsg, setImportSuccessMsg] = useState<string | null>(null);
 
     // Filters
     const [selectedRole, setSelectedRole] = useState<string>('');
     const [allRoles, setAllRoles] = useState<string[]>([]);
 
     const [modalOpen, setModalOpen] = useState(false);
+
+    // Context Menu & Edit/Delete State
+    const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
+    const [actionContact, setActionContact] = useState<Contact | null>(null);
+    const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+    const [editModalOpen, setEditModalOpen] = useState(false);
+    const [actionLoading, setActionLoading] = useState(false);
+    const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
     useEffect(() => {
         const fetchContacts = async () => {
@@ -62,13 +78,113 @@ const ContactsPage: React.FC = () => {
         return matchesSearch && matchesRole;
     });
 
-    const handleContactAdded = (newContact: Contact) => {
-        setContacts(prev => [newContact, ...prev]);
-        setAllRoles(prev => {
-            const added = new Set(prev);
-            newContact.roles.forEach(r => added.add(r));
-            return Array.from(added).sort();
-        });
+    const handleExportCSV = () => {
+        if (!contacts || contacts.length === 0) return;
+
+        // Define columns
+        const headers = ['Имя', 'Роли', 'Телефоны', 'Почта', 'Город', 'Заметки'];
+
+        // Build rows
+        const rows = contacts.map(c => [
+            `"${c.name.replace(/"/g, '""')}"`,
+            `"${c.roles.join(', ').replace(/"/g, '""')}"`,
+            `"${(c.phones || []).map(p => `${p.number} ${p.label ? '(' + p.label + ')' : ''}`).join(', ')}"`,
+            `"${(c.emails || []).join(', ')}"`,
+            `"${(c.defaultCity || '').replace(/"/g, '""')}"`,
+            `"${(c.notes || '').replace(/"/g, '""')}"`
+        ]);
+
+        // Add BOM for Excel UTF-8 display
+        const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\\n');
+        const blob = new Blob([`\\ufeff${csvContent}`], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+
+        const link = document.createElement('a');
+        link.setAttribute('href', url);
+        link.setAttribute('download', `profit_step_contacts_${new Date().toISOString().split('T')[0]}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
+
+    const handleImportCSV = (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+            try {
+                const text = e.target?.result as string;
+                // Basic CSV parser resilient to quotes (handles our own export format)
+                const rows = text.split('\\n').filter(row => row.trim() !== '');
+                if (rows.length < 2) throw new Error('Файл пуст или содержит только заголовки.');
+
+                // We assume format: ['Имя', 'Роли', 'Телефоны', 'Почта', 'Город', 'Заметки']
+                const contactsToImport = rows.slice(1).map(row => {
+                    const columns = row.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(col => col.replace(/^"|"$/g, '').trim());
+                    // 0: Name, 1: Roles, 2: Phones, 3: Emails, 4: City, 5: Notes
+                    const rawName = columns[0] || '';
+                    if (!rawName) return null;
+
+                    const roles = columns[1] ? columns[1].split(',').map(r => r.trim()).filter(Boolean) : [];
+
+                    const phones = columns[2] ? columns[2].split(',').map(p => {
+                        const parts = p.match(/(.*?)\\s*\\((.*?)\\)$/);
+                        if (parts) {
+                            return { number: parts[1].trim(), label: parts[2].trim() };
+                        }
+                        return { number: p.trim(), label: '' };
+                    }).filter(p => !!p.number) : [];
+
+                    const emails = columns[3] ? columns[3].split(',').map(e => e.trim()).filter(Boolean) : [];
+                    const city = columns[4] || '';
+                    const notes = columns[5] || '';
+
+                    return {
+                        name: rawName,
+                        roles,
+                        phones,
+                        emails,
+                        messengers: {},
+                        defaultCity: city,
+                        notes,
+                        linkedProjects: [],
+                        createdBy: 'csv_import'
+                    };
+                }).filter(Boolean) as Omit<Contact, 'id' | 'createdAt'>[];
+
+                if (contactsToImport.length === 0) throw new Error('Не найдено валидных контактов для импорта.');
+
+                // Insert into DB
+                setLoading(true);
+                // Hardcoding current user for simplicity in this utility (since we don't have direct useAuth here yet, we pass 'system' or we can add useAuth)
+                let importedCount = 0;
+                for (const newContactData of contactsToImport) {
+                    await contactsService.createContact(newContactData, 'csv_import', 'CSV Import');
+                    importedCount++;
+                }
+
+                setImportSuccessMsg(`Успешно импортировано ${importedCount} контактов!`);
+
+                // Refresh list
+                const refreshed = await contactsService.getContacts();
+                setContacts(refreshed);
+
+                // Update roles
+                const newRoles = new Set<string>();
+                refreshed.forEach(c => c.roles?.forEach(r => newRoles.add(r)));
+                setAllRoles(Array.from(newRoles).sort());
+
+            } catch (err: any) {
+                console.error("CSV Import Error", err);
+                setError(err.message || 'Ошибка импорта CSV.');
+            } finally {
+                setLoading(false);
+                // Reset file input
+                event.target.value = '';
+            }
+        };
+        reader.readAsText(file);
     };
 
     return (
@@ -77,13 +193,38 @@ const ContactsPage: React.FC = () => {
                 <Typography variant="h4" fontWeight={700} color="primary.main">
                     Справочник
                 </Typography>
-                <Button
-                    variant="contained"
-                    startIcon={<AddIcon />}
-                    onClick={() => setModalOpen(true)}
-                >
-                    Добавить контакт
-                </Button>
+                <Box display="flex" gap={1.5}>
+                    <Button
+                        variant="outlined"
+                        startIcon={<DownloadIcon />}
+                        onClick={handleExportCSV}
+                        disabled={contacts.length === 0}
+                        sx={{ display: { xs: 'none', sm: 'flex' } }}
+                    >
+                        Экспорт
+                    </Button>
+                    <Button
+                        variant="outlined"
+                        startIcon={<UploadIcon />}
+                        component="label"
+                        sx={{ display: { xs: 'none', sm: 'flex' } }}
+                    >
+                        Импорт
+                        <input
+                            type="file"
+                            accept=".csv"
+                            hidden
+                            onChange={handleImportCSV}
+                        />
+                    </Button>
+                    <Button
+                        variant="contained"
+                        startIcon={<AddIcon />}
+                        onClick={() => setModalOpen(true)}
+                    >
+                        Новый
+                    </Button>
+                </Box>
             </Box>
 
             {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
@@ -141,7 +282,10 @@ const ContactsPage: React.FC = () => {
                                     alignItems="flex-start"
                                     sx={{ py: 2 }}
                                     secondaryAction={
-                                        <IconButton edge="end">
+                                        <IconButton edge="end" onClick={(e) => {
+                                            setAnchorEl(e.currentTarget);
+                                            setActionContact(contact);
+                                        }}>
                                             <MoreVertIcon />
                                         </IconButton>
                                     }
@@ -165,11 +309,25 @@ const ContactsPage: React.FC = () => {
                                         }
                                         secondary={
                                             <Stack spacing={0.5} mt={1}>
-                                                {/* Phones */}
                                                 {contact.phones && contact.phones.length > 0 && (
-                                                    <Typography variant="body2" color="text.secondary" sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                                        <PhoneIcon fontSize="small" /> {contact.phones.map(p => p.number).join(', ')}
-                                                    </Typography>
+                                                    <Box>
+                                                        {contact.phones.map((p, i) => {
+                                                            const cleanNumber = p.number.replace(/\\D/g, '');
+                                                            return (
+                                                                <Box key={i} display="flex" alignItems="center" gap={1} mb={0.5}>
+                                                                    <Typography variant="body2" color="text.secondary" sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                                                        <PhoneIcon fontSize="small" /> {p.number} {p.label ? `(${p.label})` : ''}
+                                                                    </Typography>
+                                                                    <IconButton component="a" size="small" href={`https://wa.me/${cleanNumber}`} target="_blank" rel="noopener noreferrer" color="success" sx={{ padding: '2px' }} title="WhatsApp">
+                                                                        <WhatsAppIcon fontSize="small" sx={{ fontSize: 16 }} />
+                                                                    </IconButton>
+                                                                    <IconButton component="a" size="small" href={`https://t.me/+${cleanNumber}`} target="_blank" rel="noopener noreferrer" color="info" sx={{ padding: '2px' }} title="Telegram">
+                                                                        <TelegramIcon fontSize="small" sx={{ fontSize: 16 }} />
+                                                                    </IconButton>
+                                                                </Box>
+                                                            );
+                                                        })}
+                                                    </Box>
                                                 )}
 
                                                 {/* Emails */}
@@ -196,12 +354,105 @@ const ContactsPage: React.FC = () => {
                 </Paper>
             )}
 
-            {/* Quick Add Modal */}
+            {/* Action Menu */}
+            <Menu
+                anchorEl={anchorEl}
+                open={Boolean(anchorEl)}
+                onClose={() => setAnchorEl(null)}
+                transformOrigin={{ horizontal: 'right', vertical: 'top' }}
+                anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
+            >
+                <MenuItem onClick={() => {
+                    setEditModalOpen(true);
+                    setAnchorEl(null);
+                }}>
+                    <ListItemIcon><EditIcon fontSize="small" /></ListItemIcon>
+                    <ListItemText>Редактировать</ListItemText>
+                </MenuItem>
+                <MenuItem onClick={() => {
+                    setDeleteDialogOpen(true);
+                    setAnchorEl(null);
+                }}>
+                    <ListItemIcon><DeleteIcon fontSize="small" color="error" /></ListItemIcon>
+                    <ListItemText sx={{ color: 'error.main' }}>Удалить</ListItemText>
+                </MenuItem>
+            </Menu>
+
+            {/* Delete Confirmation Dialog */}
+            <Dialog open={deleteDialogOpen} onClose={() => setDeleteDialogOpen(false)}>
+                <DialogTitle>Удалить контакт?</DialogTitle>
+                <DialogContent>
+                    <DialogContentText>
+                        Вы уверены, что хотите удалить <b>{actionContact?.name}</b>? Это действие нельзя отменить.
+                    </DialogContentText>
+                </DialogContent>
+                <DialogActions sx={{ px: 3, pb: 2 }}>
+                    <Button onClick={() => setDeleteDialogOpen(false)} disabled={actionLoading} color="inherit">Отмена</Button>
+                    <Button
+                        onClick={async () => {
+                            if (actionContact?.id) {
+                                setActionLoading(true);
+                                try {
+                                    await contactsService.deleteContact(actionContact.id);
+                                    setContacts(prev => prev.filter(c => c.id !== actionContact.id));
+                                    setSuccessMsg('Контакт успешно удален!');
+                                    setDeleteDialogOpen(false);
+                                    setActionContact(null);
+                                } catch (err) {
+                                    // Error is already logged in service, can just notify
+                                    setSuccessMsg('Ошибка при удалении контакта.');
+                                } finally {
+                                    setActionLoading(false);
+                                }
+                            }
+                        }}
+                        color="error"
+                        variant="contained"
+                        disabled={actionLoading}
+                    >
+                        {actionLoading ? <CircularProgress size={20} color="inherit" /> : 'Удалить'}
+                    </Button>
+                </DialogActions>
+            </Dialog>
+
+            {/* Modals */}
             <GlobalContactQuickAdd
-                open={modalOpen}
-                onClose={() => setModalOpen(false)}
-                onContactAdded={handleContactAdded}
+                open={modalOpen || editModalOpen}
+                onClose={() => {
+                    setModalOpen(false);
+                    setEditModalOpen(false);
+                    setActionContact(null);
+                }}
+                initialContact={editModalOpen ? actionContact : null}
+                onContactAdded={(newContact) => {
+                    setContacts(prev => [newContact, ...prev]);
+                    // Update roles
+                    setAllRoles(prev => {
+                        const added = new Set(prev);
+                        newContact.roles.forEach(r => added.add(r));
+                        return Array.from(added).sort();
+                    });
+                    setSuccessMsg('Контакт успешно добавлен!');
+                }}
+                onContactUpdated={(updatedContact) => {
+                    setContacts(prev => prev.map(c => c.id === updatedContact.id ? updatedContact : c));
+                    setSuccessMsg('Контакт обновлен!');
+                }}
             />
+
+            <Snackbar
+                open={!!importSuccessMsg || !!successMsg}
+                autoHideDuration={6000}
+                onClose={() => {
+                    setImportSuccessMsg(null);
+                    setSuccessMsg(null);
+                }}
+                anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+            >
+                <Alert severity={successMsg?.includes('Ошибка') ? "error" : "success"} sx={{ width: '100%' }}>
+                    {importSuccessMsg || successMsg}
+                </Alert>
+            </Snackbar>
         </Container>
     );
 };

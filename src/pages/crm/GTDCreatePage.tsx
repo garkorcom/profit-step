@@ -281,79 +281,7 @@ const GTDCreatePage: React.FC = () => {
         }
     };
 
-    const generateSubtasks = async () => {
-        setAiLoading(true);
-        try {
-            // Simple AI simulation for subtasks
-            const text = formData.title.toLowerCase();
-            let subtasks: string[] = [];
 
-            if (text.includes('розетк')) {
-                subtasks = [
-                    'Разметка точек установки',
-                    'Штробление стен под кабель',
-                    'Прокладка кабеля',
-                    'Установка подрозетников',
-                    'Монтаж розеток',
-                    'Подключение и тест'
-                ];
-            } else if (text.includes('светильник') || text.includes('свет')) {
-                subtasks = [
-                    'Разметка точек крепления',
-                    'Прокладка кабеля',
-                    'Установка крепежа',
-                    'Монтаж светильников',
-                    'Подключение',
-                    'Тест'
-                ];
-            } else {
-                subtasks = [
-                    'Подготовка рабочего места',
-                    'Основные работы',
-                    'Проверка качества',
-                    'Уборка'
-                ];
-            }
-
-            setFormData(prev => ({
-                ...prev,
-                subtasks: subtasks.map((text, i) => ({
-                    id: `sub_${Date.now()}_${i}`,
-                    text,
-                    done: false
-                }))
-            }));
-        } finally {
-            setAiLoading(false);
-        }
-    };
-
-    const generateMaterials = async () => {
-        setAiLoading(true);
-        try {
-            const text = formData.title.toLowerCase();
-            let materials: CreateState['materials'] = [];
-
-            if (text.includes('розетк')) {
-                const qty = parseInt(text.match(/\d+/)?.[0] || '4');
-                materials = [
-                    { id: 'm1', name: 'Розетка Legrand Valena', qty, unit: 'шт', price: 12.50 },
-                    { id: 'm2', name: 'Подрозетник 68мм', qty, unit: 'шт', price: 2.80 },
-                    { id: 'm3', name: 'Кабель ВВГнг 3×2.5', qty: qty * 5, unit: 'м', price: 2.20 },
-                    { id: 'm4', name: 'Гофра ПВХ 20мм', qty: qty * 5, unit: 'м', price: 0.80 },
-                ];
-            } else {
-                materials = [
-                    { id: 'm1', name: 'Материал 1', qty: 1, unit: 'шт', price: 10 },
-                    { id: 'm2', name: 'Материал 2', qty: 1, unit: 'шт', price: 20 },
-                ];
-            }
-
-            setFormData(prev => ({ ...prev, materials }));
-        } finally {
-            setAiLoading(false);
-        }
-    };
 
     // ═══════════════════════════════════════
     // AI TASK GENERATION (Claude) — via useAiTask hook
@@ -424,6 +352,26 @@ const GTDCreatePage: React.FC = () => {
                 ? prev.assignees.filter(id => id !== userId)
                 : [...prev.assignees, userId]
         }));
+    };
+
+    const handleClientSelect = (client: Client) => {
+        setFormData(prev => {
+            const isSame = prev.clientId === client.id;
+            if (!isSame) {
+                console.info('GTD Create: Client Selected', { clientId: client.id, name: client.name });
+            }
+
+            // Auto advance
+            if (!isSame && prev.title.trim().length >= 3) {
+                setTimeout(() => setStep(2), 300);
+            }
+
+            return {
+                ...prev,
+                clientId: isSame ? null : client.id,
+                clientName: isSame ? null : client.name,
+            };
+        });
     };
 
     const addSubtask = () => {
@@ -763,8 +711,8 @@ const GTDCreatePage: React.FC = () => {
                             Клиент / Проект *
                         </Typography>
 
-                        {/* Client Search */}
-                        {clients.length > 5 && (
+                        {/* Client Search - Hide when client is selected */}
+                        {!formData.clientId && clients.length > 5 && (
                             <TextField
                                 fullWidth
                                 size="small"
@@ -792,40 +740,68 @@ const GTDCreatePage: React.FC = () => {
 
                         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, mb: 3 }}>
                             {(() => {
+                                const selectedId = formData.clientId;
+
+                                // UI when client IS selected (Collapsed state)
+                                if (selectedId) {
+                                    const client = clients.find(c => c.id === selectedId);
+                                    if (client) {
+                                        return (
+                                            <Paper
+                                                sx={{
+                                                    p: 2,
+                                                    borderRadius: 2,
+                                                    border: 2,
+                                                    borderColor: 'primary.main',
+                                                    bgcolor: alpha(theme.palette.primary.main, 0.04),
+                                                    display: 'flex',
+                                                    justifyContent: 'space-between',
+                                                    alignItems: 'center'
+                                                }}
+                                            >
+                                                <Box>
+                                                    <Typography variant="caption" color="primary.main" fontWeight={600}>Выбран проект</Typography>
+                                                    <Typography fontWeight="medium">{client.name}</Typography>
+                                                    {client.address && (
+                                                        <Typography variant="caption" color="text.secondary">
+                                                            {client.address}
+                                                        </Typography>
+                                                    )}
+                                                </Box>
+                                                <Button
+                                                    size="small"
+                                                    variant="outlined"
+                                                    onClick={() => handleClientSelect(client)}
+                                                    sx={{ borderRadius: 2, textTransform: 'none' }}
+                                                >
+                                                    Изменить
+                                                </Button>
+                                            </Paper>
+                                        );
+                                    }
+                                }
+
+                                // UI when client is NOT selected (List state)
                                 const sorted = sortClients(clients);
                                 const filtered = sorted.filter(c => !clientSearch || c.name.toLowerCase().includes(clientSearch.toLowerCase()));
-                                // Ensure selected client is always visible at the top
-                                const selectedId = formData.clientId;
-                                const reordered = selectedId
-                                    ? [
-                                        ...filtered.filter(c => c.id === selectedId),
-                                        ...filtered.filter(c => c.id !== selectedId),
-                                    ]
-                                    : filtered;
-                                const visible = showAllClients ? reordered : reordered.slice(0, 5);
-                                const hidden = reordered.length - visible.length;
+                                const visible = showAllClients ? filtered : filtered.slice(0, 5);
+                                const hidden = filtered.length - visible.length;
+
                                 return (
                                     <>
                                         {visible.map(client => (
                                             <Paper
                                                 key={client.id}
-                                                onClick={() => setFormData(prev => ({
-                                                    ...prev,
-                                                    clientId: prev.clientId === client.id ? null : client.id,
-                                                    clientName: prev.clientId === client.id ? null : client.name,
-                                                }))}
+                                                onClick={() => handleClientSelect(client)}
                                                 sx={{
                                                     p: 2,
                                                     borderRadius: 2,
                                                     cursor: 'pointer',
                                                     border: 2,
-                                                    borderColor: formData.clientId === client.id
-                                                        ? 'primary.main'
-                                                        : 'divider',
-                                                    bgcolor: formData.clientId === client.id
-                                                        ? alpha(theme.palette.primary.main, 0.08)
-                                                        : 'background.paper',
+                                                    borderColor: 'divider',
+                                                    bgcolor: 'background.paper',
                                                     transition: 'all 0.2s',
+                                                    '&:hover': { borderColor: 'primary.main', bgcolor: alpha(theme.palette.primary.main, 0.02) },
                                                     '&:active': { transform: 'scale(0.98)' }
                                                 }}
                                             >
@@ -846,33 +822,33 @@ const GTDCreatePage: React.FC = () => {
                                                 Ещё {hidden} клиентов
                                             </Button>
                                         )}
+
+                                        {/* Add New Client Link normally appears at the end of the client list */}
+                                        <Paper
+                                            onClick={() => navigate('/crm/clients/new')}
+                                            sx={{
+                                                p: 2,
+                                                borderRadius: 2,
+                                                cursor: 'pointer',
+                                                border: 2,
+                                                borderColor: 'divider',
+                                                borderStyle: 'dashed',
+                                                bgcolor: 'background.paper',
+                                                transition: 'all 0.2s',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: 1,
+                                                '&:hover': { borderColor: 'primary.main', bgcolor: alpha(theme.palette.primary.main, 0.04) },
+                                                '&:active': { transform: 'scale(0.98)' }
+                                            }}
+                                        >
+                                            <AddIcon color="primary" fontSize="small" />
+                                            <Typography fontWeight="medium" color="primary.main">Добавить клиента</Typography>
+                                            <OpenInNewIcon fontSize="small" color="action" sx={{ ml: 'auto' }} />
+                                        </Paper>
                                     </>
                                 );
                             })()}
-
-                            {/* Add New Client Link */}
-                            <Paper
-                                onClick={() => navigate('/crm/clients/new')}
-                                sx={{
-                                    p: 2,
-                                    borderRadius: 2,
-                                    cursor: 'pointer',
-                                    border: 2,
-                                    borderColor: 'divider',
-                                    borderStyle: 'dashed',
-                                    bgcolor: 'background.paper',
-                                    transition: 'all 0.2s',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: 1,
-                                    '&:hover': { borderColor: 'primary.main', bgcolor: alpha(theme.palette.primary.main, 0.04) },
-                                    '&:active': { transform: 'scale(0.98)' }
-                                }}
-                            >
-                                <AddIcon color="primary" fontSize="small" />
-                                <Typography fontWeight="medium" color="primary.main">Добавить клиента</Typography>
-                                <OpenInNewIcon fontSize="small" color="action" sx={{ ml: 'auto' }} />
-                            </Paper>
                         </Box>
 
                         {/* ── Task Title ── */}
@@ -1452,15 +1428,6 @@ const GTDCreatePage: React.FC = () => {
                                 <Typography variant="body2" color="text.secondary">
                                     Чек-лист работ
                                 </Typography>
-                                <Button
-                                    size="small"
-                                    startIcon={aiLoading ? <CircularProgress size={16} /> : <AIIcon />}
-                                    onClick={generateSubtasks}
-                                    disabled={aiLoading}
-                                    sx={{ borderRadius: 2 }}
-                                >
-                                    AI генерация
-                                </Button>
                             </Box>
 
                             {formData.subtasks.length > 0 ? (
@@ -1486,7 +1453,7 @@ const GTDCreatePage: React.FC = () => {
                                     }}
                                 >
                                     <Typography color="text.secondary">
-                                        Нажмите "AI генерация" или добавьте вручную
+                                        Добавьте пункты чек-листа вручную
                                     </Typography>
                                 </Paper>
                             )}
@@ -1517,15 +1484,6 @@ const GTDCreatePage: React.FC = () => {
                                 <Typography variant="body2" color="text.secondary">
                                     Материалы
                                 </Typography>
-                                <Button
-                                    size="small"
-                                    startIcon={aiLoading ? <CircularProgress size={16} /> : <AIIcon />}
-                                    onClick={generateMaterials}
-                                    disabled={aiLoading}
-                                    sx={{ borderRadius: 2 }}
-                                >
-                                    AI подбор
-                                </Button>
                             </Box>
 
                             {formData.materials.length > 0 ? (

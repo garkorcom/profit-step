@@ -1,10 +1,9 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
     Container, Grid, Paper, Typography, Box, TextField, Select, MenuItem,
     FormControl, InputLabel, Tabs, Tab, Button, Card, CardContent, Divider,
     Stack, IconButton, Tooltip, AppBar, Toolbar, useTheme, useMediaQuery,
-    InputAdornment, Chip, Dialog, DialogTitle, DialogContent, DialogActions,
-    CircularProgress, List, ListItem, ListItemText, ListItemIcon
+    InputAdornment, Chip, Menu, Snackbar, Alert, CircularProgress
 } from '@mui/material';
 import {
     Lightbulb as LightIcon, Power as PowerIcon, ToggleOn as SwitchIcon,
@@ -14,126 +13,21 @@ import {
     Print as PrintIcon, ContentCopy as CopyIcon, Delete as ClearIcon,
     SaveAlt as ExportIcon, FlashOn as FlashOnIcon, Add as AddIcon,
     Remove as RemoveIcon, AutoAwesome as AutoAwesomeIcon,
-    CloudUpload as CloudUploadIcon, CheckCircle as CheckCircleIcon
+    Cable as CableIcon, PictureAsPdf as PdfIcon,
+    Save as SaveIcon, FolderOpen as ProjectsIcon, TableChart as ExcelIcon
 } from '@mui/icons-material';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import * as XLSX from 'xlsx';
+
+import { BlueprintUploadDialog } from '../../components/estimates/BlueprintUploadDialog';
+import { AiMappingDialog } from '../../components/estimates/AiMappingDialog';
+import { useAuth } from '../../auth/AuthContext';
+import { savedEstimateApi } from '../../api/savedEstimateApi';
 
 // ============== DATA ==============
-const DEVICES = {
-    lighting: [
-        { id: 'recessed_ic', name: 'Recessed Light (IC)', matRate: 35, laborRate: 0.35, wireLen: 35, wireType: '14-2' },
-        { id: 'recessed_nc', name: 'Recessed Light (NC)', matRate: 28, laborRate: 0.30, wireLen: 35, wireType: '14-2' },
-        { id: 'surface', name: 'Surface Mount', matRate: 45, laborRate: 0.40, wireLen: 40, wireType: '14-2' },
-        { id: 'pendant', name: 'Pendant (S.B.O.)', matRate: 0, laborRate: 0.50, wireLen: 40, wireType: '14-2' },
-        { id: 'chandelier', name: 'Chandelier (S.B.O.)', matRate: 0, laborRate: 1.50, wireLen: 45, wireType: '14-2' },
-        { id: 'ceiling_fan', name: 'Ceiling Fan (S.B.O.)', matRate: 0, laborRate: 0.75, wireLen: 40, wireType: '14-3' },
-        { id: 'under_cabinet', name: 'Under Cabinet LED', matRate: 25, laborRate: 0.30, wireLen: 20, wireType: '14-2' },
-        { id: 'exhaust_fan', name: 'Exhaust Fan', matRate: 45, laborRate: 0.50, wireLen: 30, wireType: '14-2' },
-        { id: 'bath_exhaust', name: 'Bath Exhaust w/Light', matRate: 75, laborRate: 0.55, wireLen: 25, wireType: '14-2' },
-    ],
-    receptacles: [
-        { id: 'duplex', name: 'Duplex Receptacle', matRate: 8, laborRate: 0.25, wireLen: 25, wireType: '12-2' },
-        { id: 'gfi', name: 'GFI Receptacle', matRate: 25, laborRate: 0.30, wireLen: 30, wireType: '12-2' },
-        { id: 'dedicated_20a', name: '20A Dedicated', matRate: 12, laborRate: 0.35, wireLen: 40, wireType: '12-2' },
-        { id: 'outlet_240_30', name: '240V 30A (Dryer)', matRate: 35, laborRate: 0.50, wireLen: 50, wireType: '10-3' },
-        { id: 'outlet_240_50', name: '240V 50A (Range)', matRate: 45, laborRate: 0.60, wireLen: 45, wireType: '6-3' },
-        { id: 'floor_outlet', name: 'Floor Outlet', matRate: 85, laborRate: 0.75, wireLen: 35, wireType: '12-2' },
-        { id: 'exterior', name: 'Exterior WP Recept', matRate: 35, laborRate: 0.40, wireLen: 45, wireType: '12-2' },
-    ],
-    switches: [
-        { id: 'single_pole', name: 'Single Pole Switch', matRate: 5, laborRate: 0.20, wireLen: 0, wireType: '' },
-        { id: '3way', name: '3-Way Switch', matRate: 8, laborRate: 0.25, wireLen: 15, wireType: '14-3' },
-        { id: '4way', name: '4-Way Switch', matRate: 12, laborRate: 0.30, wireLen: 15, wireType: '14-3' },
-        { id: 'dimmer', name: 'Dimmer Switch', matRate: 35, laborRate: 0.30, wireLen: 0, wireType: '' },
-        { id: 'smart_switch', name: 'Smart Switch (S.B.O.)', matRate: 0, laborRate: 0.35, wireLen: 0, wireType: '' },
-        { id: 'occupancy', name: 'Occupancy Sensor', matRate: 45, laborRate: 0.35, wireLen: 0, wireType: '' },
-    ],
-    appliances: [
-        { id: 'range', name: 'Range 50A', matRate: 25, laborRate: 0.60, wireLen: 40, wireType: '6-3' },
-        { id: 'cooktop', name: 'Cooktop 40A', matRate: 25, laborRate: 0.55, wireLen: 40, wireType: '8-3' },
-        { id: 'wall_oven', name: 'Wall Oven 30A', matRate: 25, laborRate: 0.50, wireLen: 45, wireType: '10-3' },
-        { id: 'double_oven', name: 'Double Oven 50A', matRate: 25, laborRate: 0.60, wireLen: 45, wireType: '6-3' },
-        { id: 'dryer', name: 'Dryer 30A', matRate: 25, laborRate: 0.50, wireLen: 50, wireType: '10-3' },
-        { id: 'washer', name: 'Washer 20A', matRate: 12, laborRate: 0.35, wireLen: 40, wireType: '12-2' },
-        { id: 'dishwasher', name: 'Dishwasher', matRate: 12, laborRate: 0.35, wireLen: 35, wireType: '12-2' },
-        { id: 'disposal', name: 'Disposal', matRate: 12, laborRate: 0.30, wireLen: 30, wireType: '12-2' },
-        { id: 'microwave', name: 'Microwave/Hood', matRate: 12, laborRate: 0.35, wireLen: 35, wireType: '12-2' },
-        { id: 'refrigerator', name: 'Refrigerator', matRate: 12, laborRate: 0.35, wireLen: 45, wireType: '12-2' },
-        { id: 'freezer', name: 'Freezer (Garage)', matRate: 12, laborRate: 0.35, wireLen: 50, wireType: '12-2' },
-        { id: 'water_heater', name: 'Water Heater 30A', matRate: 25, laborRate: 0.50, wireLen: 55, wireType: '10-2' },
-        { id: 'tankless_wh', name: 'Tankless WH 60A', matRate: 35, laborRate: 0.65, wireLen: 55, wireType: '6-2' },
-        { id: 'ev_charger', name: 'EV Charger 50A', matRate: 65, laborRate: 0.75, wireLen: 65, wireType: '6-3' },
-        { id: 'ev_charger_60', name: 'EV Charger 60A', matRate: 75, laborRate: 0.85, wireLen: 65, wireType: '4-3' },
-    ],
-    hvac: [
-        { id: 'ac_30a', name: 'A/C Condenser 3ton', matRate: 45, laborRate: 0.75, wireLen: 60, wireType: '10-2' },
-        { id: 'ac_40a', name: 'A/C Condenser 4-5ton', matRate: 55, laborRate: 0.85, wireLen: 60, wireType: '8-2' },
-        { id: 'ac_disc', name: 'A/C Disconnect', matRate: 45, laborRate: 0.40, wireLen: 0, wireType: '' },
-        { id: 'mini_split', name: 'Mini-Split 30A', matRate: 55, laborRate: 0.75, wireLen: 50, wireType: '10-2' },
-        { id: 'air_handler', name: 'Air Handler', matRate: 12, laborRate: 0.35, wireLen: 35, wireType: '12-2' },
-        { id: 'thermostat', name: 'Thermostat Wire', matRate: 15, laborRate: 0.15, wireLen: 45, wireType: '18-5' },
-    ],
-    lowvoltage: [
-        { id: 'smoke', name: 'Smoke Detector', matRate: 25, laborRate: 0.25, wireLen: 30, wireType: '14-3' },
-        { id: 'smoke_co', name: 'Smoke/CO Combo', matRate: 45, laborRate: 0.30, wireLen: 30, wireType: '14-3' },
-        { id: 'doorbell', name: 'Doorbell/Chime', matRate: 45, laborRate: 0.50, wireLen: 50, wireType: '18-2' },
-        { id: 'doorbell_cam', name: 'Video Doorbell Prep', matRate: 25, laborRate: 0.45, wireLen: 50, wireType: '18-2' },
-        { id: 'cat6', name: 'Cat6 Data Drop', matRate: 25, laborRate: 0.45, wireLen: 75, wireType: 'cat6' },
-        { id: 'coax', name: 'Coax/TV Drop', matRate: 15, laborRate: 0.35, wireLen: 75, wireType: 'rg6' },
-        { id: 'speaker_wire', name: 'Speaker Wire Drop', matRate: 15, laborRate: 0.35, wireLen: 60, wireType: '16-2' },
-        { id: 'central_vac', name: 'Central Vac Outlet', matRate: 25, laborRate: 0.30, wireLen: 35, wireType: '14-2' },
-    ],
-};
-
-const GEAR = [
-    { id: 'panel_200', name: '200A Main Panel', matRate: 450, laborRate: 6.0 },
-    { id: 'panel_400', name: '400A Main Panel', matRate: 950, laborRate: 8.0 },
-    { id: 'ct_400', name: '400A CT Cabinet', matRate: 1200, laborRate: 6.0 },
-    { id: 'ct_600', name: '600A CT Cabinet', matRate: 1800, laborRate: 8.0 },
-    { id: 'subpanel_100', name: '100A Sub-Panel', matRate: 250, laborRate: 3.0 },
-    { id: 'subpanel_125', name: '125A Sub-Panel', matRate: 285, laborRate: 3.5 },
-    { id: 'subpanel_200', name: '200A Sub-Panel', matRate: 350, laborRate: 4.0 },
-    { id: 'meter_200', name: 'Meter Base 200A', matRate: 180, laborRate: 2.0 },
-    { id: 'meter_320', name: 'Meter Base 320A', matRate: 280, laborRate: 2.5 },
-    { id: 'meter_400', name: 'Meter Base 400A', matRate: 350, laborRate: 3.0 },
-    { id: 'grounding', name: 'Grounding System', matRate: 125, laborRate: 2.0 },
-    { id: 'surge', name: 'Whole House Surge', matRate: 185, laborRate: 1.0 },
-];
-
-const POOL = [
-    { id: 'pool_bond', name: 'Pool Bonding Grid', matRate: 250, laborRate: 4.0 },
-    { id: 'pool_light_jbox', name: 'Pool Light J-Box', matRate: 85, laborRate: 1.0 },
-    { id: 'pool_transformer', name: 'Pool Transformer', matRate: 180, laborRate: 1.5 },
-    { id: 'pool_pump', name: 'Pool Pump Circuit', matRate: 85, laborRate: 1.5, wireLen: 70, wireType: '12-2' },
-    { id: 'pool_heater', name: 'Pool Heater (gas)', matRate: 45, laborRate: 1.0, wireLen: 75, wireType: '12-2' },
-    { id: 'pool_heater_elec', name: 'Pool Heater (elec)', matRate: 65, laborRate: 1.5, wireLen: 75, wireType: '6-3' },
-    { id: 'spa_pump', name: 'Spa/Jacuzzi 50A', matRate: 95, laborRate: 1.5, wireLen: 60, wireType: '6-3' },
-    { id: 'pool_gfi', name: 'Pool GFI Breaker', matRate: 65, laborRate: 0.25 },
-    { id: 'pool_disc', name: 'Pool Disconnect 60A', matRate: 85, laborRate: 1.0 },
-    { id: 'pool_automation', name: 'Pool Automation Panel', matRate: 0, laborRate: 2.0 },
-];
-
-const GENERATOR = [
-    { id: 'gen_pad', name: 'Generator Pad Prep', matRate: 150, laborRate: 2.0 },
-    { id: 'ats_200', name: 'ATS 200A', matRate: 1500, laborRate: 6.0 },
-    { id: 'ats_400', name: 'ATS 400A', matRate: 3500, laborRate: 8.0 },
-    { id: 'gen_whip', name: 'Generator Whip', matRate: 250, laborRate: 1.5 },
-    { id: 'gen_disc', name: 'Generator Disconnect', matRate: 185, laborRate: 1.5 },
-    { id: 'gen_wire', name: 'Generator Feed Wire', matRate: 0, laborRate: 2.0, wireLen: 35, wireType: '2-2-2-4' },
-    { id: 'gen_coord', name: 'Gas/Startup Coord', matRate: 0, laborRate: 4.0 },
-    { id: 'interlock', name: 'Interlock Kit (no ATS)', matRate: 125, laborRate: 1.5 },
-    { id: 'inlet_box', name: 'Power Inlet Box 50A', matRate: 95, laborRate: 1.0 },
-];
-
-const LANDSCAPE = [
-    { id: 'land_trans_300', name: 'LV Transformer 300W', matRate: 145, laborRate: 1.0 },
-    { id: 'land_trans_600', name: 'LV Transformer 600W', matRate: 225, laborRate: 1.5 },
-    { id: 'land_trans_900', name: 'LV Transformer 900W', matRate: 325, laborRate: 2.0 },
-    { id: 'land_path', name: 'Path Light (S.B.O.)', matRate: 0, laborRate: 0.25, wireLen: 25, wireType: '12-2lv' },
-    { id: 'land_spot', name: 'Spot Light (S.B.O.)', matRate: 0, laborRate: 0.30, wireLen: 30, wireType: '12-2lv' },
-    { id: 'land_well', name: 'Well Light (S.B.O.)', matRate: 0, laborRate: 0.40, wireLen: 35, wireType: '12-2lv' },
-    { id: 'land_flood', name: 'Flood Light 120V', matRate: 85, laborRate: 0.60, wireLen: 55, wireType: '12-2' },
-    { id: 'land_wire', name: 'LV Wire Run (per 100ft)', matRate: 45, laborRate: 0.50 },
-];
+import { DEVICES, GEAR, POOL, GENERATOR, LANDSCAPE, WIRE } from '../../constants/electricalDevices';
+export { DEVICES, GEAR, POOL, GENERATOR, LANDSCAPE, WIRE };
 
 const EQUIPMENT_SBO = [
     { id: 'eq_fixtures', name: 'Light Fixtures Package', defaultPrice: 5000 },
@@ -203,121 +97,6 @@ const WIRE_RATES: any = {
     '12-2lv': { name: '12-2 LV Landscape', rate: 0.35, laborPer100: 0.40 },
     'cat6': { name: 'Cat6', rate: 0.75, laborPer100: 0.60 },
     'rg6': { name: 'RG6 Coax', rate: 0.35, laborPer100: 0.50 },
-};
-
-const BlueprintUploadDialog = ({ open, onClose, onApply }: any) => {
-    const [analyzing, setAnalyzing] = useState(false);
-    const [result, setResult] = useState<any>(null);
-
-    const fileInputRef = useRef<HTMLInputElement>(null);
-
-    const handleUploadClick = () => {
-        fileInputRef.current?.click();
-    };
-
-    const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-        if (event.target.files && event.target.files[0]) {
-            setAnalyzing(true);
-            // Simulate AI Analysis
-            setTimeout(() => {
-                setAnalyzing(false);
-                setResult({
-                    recessed_ic: 15,
-                    duplex: 22,
-                    single_pole: 12,
-                    '3way': 4,
-                    bath_exhaust: 2,
-                    smoke_co: 5
-                });
-            }, 2500);
-        }
-    };
-
-    const handleApply = () => {
-        if (result) {
-            onApply(result);
-            onClose();
-            setResult(null);
-        }
-    };
-
-    return (
-        <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
-            <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                <AutoAwesomeIcon color="primary" />
-                AI Blueprint Analysis
-            </DialogTitle>
-            <DialogContent>
-                <input
-                    type="file"
-                    ref={fileInputRef}
-                    style={{ display: 'none' }}
-                    accept="image/*,.pdf"
-                    onChange={handleFileChange}
-                />
-                {!result && !analyzing && (
-                    <Box
-                        sx={{
-                            border: '2px dashed',
-                            borderColor: 'divider',
-                            borderRadius: 2,
-                            p: 4,
-                            textAlign: 'center',
-                            cursor: 'pointer',
-                            '&:hover': { bgcolor: 'action.hover', borderColor: 'primary.main' }
-                        }}
-                        onClick={handleUploadClick}
-                    >
-                        <CloudUploadIcon sx={{ fontSize: 48, color: 'text.secondary', mb: 2 }} />
-                        <Typography variant="h6" gutterBottom>Upload Floor Plan</Typography>
-                        <Typography variant="body2" color="text.secondary">
-                            Drag & drop or click to upload blueprint image
-                        </Typography>
-                    </Box>
-                )}
-
-                {analyzing && (
-                    <Box textAlign="center" py={4}>
-                        <CircularProgress size={48} sx={{ mb: 2 }} />
-                        <Typography>Analyzing blueprint structure...</Typography>
-                        <Typography variant="caption" color="text.secondary">Detecting devices, switches, and outlets</Typography>
-                    </Box>
-                )}
-
-                {result && (
-                    <Box>
-                        <Box display="flex" alignItems="center" gap={1} mb={2} bgcolor="success.light" p={2} borderRadius={1} color="success.contrastText">
-                            <CheckCircleIcon />
-                            <Typography fontWeight="medium">Analysis Complete!</Typography>
-                        </Box>
-                        <Typography variant="subtitle2" gutterBottom>Detected Items:</Typography>
-                        <List dense sx={{ bgcolor: 'background.paper', borderRadius: 1, border: 1, borderColor: 'divider' }}>
-                            {Object.entries(result).map(([key, qty]: [string, any]) => (
-                                <ListItem key={key} divider>
-                                    <ListItemText
-                                        primary={key.replace('_', ' ').toUpperCase()}
-                                        secondary="High confidence detection"
-                                    />
-                                    <Chip label={`+${qty}`} color="primary" size="small" />
-                                </ListItem>
-                            ))}
-                        </List>
-                    </Box>
-                )}
-            </DialogContent>
-            <DialogActions>
-                <Button onClick={onClose}>Cancel</Button>
-                <Button
-                    onClick={handleApply}
-                    variant="contained"
-                    disabled={!result}
-                    startIcon={<AutoAwesomeIcon />}
-                >
-                    Apply to Estimate
-                </Button>
-            </DialogActions>
-        </Dialog>
-    );
 };
 
 const ItemRow = React.memo(({ item, qty, onChange, category, isMobile, isEditingRates, onRateChange }: any) => {
@@ -486,6 +265,10 @@ const Section = React.memo(({ items, qtyMap, onChange, title, icon, category, is
 export default function ElectricalEstimatorPage() {
     const theme = useTheme();
     const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+    const { userProfile } = useAuth();
+
+    const [savingProject, setSavingProject] = useState(false);
+    const [saveSnackbar, setSaveSnackbar] = useState('');
 
     const [projectName, setProjectName] = useState('New Project');
     const [projectType, setProjectType] = useState('residential');
@@ -499,23 +282,30 @@ export default function ElectricalEstimatorPage() {
     const [poolData, setPoolData] = useState(POOL);
     const [genData, setGenData] = useState(GENERATOR);
     const [landData, setLandData] = useState(LANDSCAPE);
-    const [wireRatesData, setWireRatesData] = useState(WIRE_RATES);
+    const [wireRatesData] = useState(WIRE_RATES);
 
     const [quantities, setQuantities] = useState<any>({});
     const [gearQty, setGearQty] = useState<any>({});
     const [poolQty, setPoolQty] = useState<any>({});
     const [genQty, setGenQty] = useState<any>({});
     const [landQty, setLandQty] = useState<any>({});
+    const [wireQty, setWireQty] = useState<any>({});
     const [equipmentPrices, setEquipmentPrices] = useState<any>({});
-    const [laborRate, setLaborRate] = useState(35);
+    const [laborRate] = useState(35);
     const [overheadPct, setOverheadPct] = useState(25);
     const [profitPct, setProfitPct] = useState(10);
-    const [activeTab, setActiveTab] = useState(0);
+    const [activeTab, setActiveTab] = useState<number>(0);
     const [notes, setNotes] = useState('');
-    const [showExport, setShowExport] = useState(false);
     const [isEditingRates, setIsEditingRates] = useState(false);
     const [showAiDialog, setShowAiDialog] = useState(false);
-    const printRef = useRef(null);
+    const [exportAnchorEl, setExportAnchorEl] = useState<null | HTMLElement>(null);
+
+    const [unmappedItems, setUnmappedItems] = useState<Record<string, number>>({});
+    const [pendingMappingData, setPendingMappingData] = useState<Record<string, number> | null>(null);
+
+    const [currentEstimateId, setCurrentEstimateId] = useState<string | null>(null);
+    const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
+    const [autosaveStatus, setAutosaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
 
     const updateQty = (setter: any) => (id: string, value: string) => {
         setter((prev: any) => ({ ...prev, [id]: Math.max(0, parseInt(value) || 0) }));
@@ -565,18 +355,74 @@ export default function ElectricalEstimatorPage() {
     };
 
     const handleAiApply = (detected: any) => {
+        setPendingMappingData(detected);
+        setShowAiDialog(false);
+    };
+
+    const handleFinalMapping = (mapped: Record<string, number>, unmapped: Record<string, number>) => {
+        const devKeys = new Set(Object.values(DEVICES).flat().map((i: any) => i.id));
+        const gearKeys = new Set(GEAR.map(i => i.id));
+        const poolKeys = new Set(POOL.map(i => i.id));
+        const genKeys = new Set(GENERATOR.map(i => i.id));
+        const landKeys = new Set(LANDSCAPE.map(i => i.id));
+        const wireKeys = new Set(WIRE.map(i => i.id));
+
         setQuantities((prev: any) => {
             const next = { ...prev };
-            Object.entries(detected).forEach(([k, v]: [string, any]) => {
+            Object.entries(mapped).forEach(([k, v]) => {
+                if (devKeys.has(k)) next[k] = (next[k] || 0) + v;
+            });
+            return next;
+        });
+        setGearQty((prev: any) => {
+            const next = { ...prev };
+            Object.entries(mapped).forEach(([k, v]) => {
+                if (gearKeys.has(k)) next[k] = (next[k] || 0) + v;
+            });
+            return next;
+        });
+        setPoolQty((prev: any) => {
+            const next = { ...prev };
+            Object.entries(mapped).forEach(([k, v]) => {
+                if (poolKeys.has(k)) next[k] = (next[k] || 0) + v;
+            });
+            return next;
+        });
+        setGenQty((prev: any) => {
+            const next = { ...prev };
+            Object.entries(mapped).forEach(([k, v]) => {
+                if (genKeys.has(k)) next[k] = (next[k] || 0) + v;
+            });
+            return next;
+        });
+        setLandQty((prev: any) => {
+            const next = { ...prev };
+            Object.entries(mapped).forEach(([k, v]) => {
+                if (landKeys.has(k)) next[k] = (next[k] || 0) + v;
+            });
+            return next;
+        });
+        setWireQty((prev: any) => {
+            const next = { ...prev };
+            Object.entries(mapped).forEach(([k, v]) => {
+                if (wireKeys.has(k)) next[k] = (next[k] || 0) + v;
+            });
+            return next;
+        });
+
+        setUnmappedItems(prev => {
+            const next = { ...prev };
+            Object.entries(unmapped).forEach(([k, v]) => {
                 next[k] = (next[k] || 0) + v;
             });
             return next;
         });
-        setShowAiDialog(false);
+
+        setPendingMappingData(null);
     };
 
     const clearAll = () => {
-        setQuantities({}); setGearQty({}); setPoolQty({}); setGenQty({}); setLandQty({}); setEquipmentPrices({});
+        setQuantities({}); setGearQty({}); setPoolQty({}); setGenQty({}); setLandQty({}); setWireQty({}); setEquipmentPrices({});
         setProjectName('New Project'); setSqft(2500); setStories(1); setTypeMult(1);
     };
 
@@ -608,6 +454,7 @@ export default function ElectricalEstimatorPage() {
         const poolRes = processItems(poolData, poolQty);
         const genRes = processItems(genData, genQty);
         const landRes = processItems(landData, landQty);
+        const wireRes = processItems(WIRE, wireQty, false);
 
         let wireMat = 0, wireLabor = 0;
         Object.entries(wireByType).forEach(([type, len]: [string, any]) => {
@@ -621,7 +468,8 @@ export default function ElectricalEstimatorPage() {
 
         const sectionsData = {
             devices: { mat: devicesMat, labor: devicesLabor },
-            wire: { mat: wireMat, labor: wireLabor },
+            wire_auto: { mat: wireMat, labor: wireLabor },
+            wire_manual: { mat: wireRes.mat, labor: wireRes.labor },
             gear: { mat: gearRes.mat, labor: gearRes.labor },
             pool: { mat: poolRes.mat, labor: poolRes.labor },
             generator: { mat: genRes.mat, labor: genRes.labor },
@@ -655,13 +503,14 @@ export default function ElectricalEstimatorPage() {
             productiveHrs, nonProdHrs, totalHrs, laborCost, matLaborCost, overhead, profit,
             eqNet, eqTax, eqMarkup, eqTotal, basePrice, totalPrice
         };
-    }, [quantities, gearQty, poolQty, genQty, landQty, equipmentPrices, laborRate, overheadPct, profitPct, storyMult, typeMult, devicesData, gearData, poolData, genData, landData, wireRatesData]);
+    }, [quantities, gearQty, poolQty, genQty, landQty, wireQty, equipmentPrices, laborRate, overheadPct, profitPct, storyMult, typeMult, devicesData, gearData, poolData, genData, landData, wireRatesData]);
 
     const fmt = (v: number) => '$' + v.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
     const fmtHr = (v: number) => v.toFixed(1) + ' hr';
 
     const tabs = [
         { id: 'devices', icon: <LightIcon />, label: 'Devices' },
+        { id: 'wire', icon: <CableIcon />, label: 'Wire' },
         { id: 'gear', icon: <GearIcon />, label: 'Gear' },
         { id: 'pool', icon: <PoolIcon />, label: 'Pool' },
         { id: 'generator', icon: <GeneratorIcon />, label: 'Generator' },
@@ -669,6 +518,231 @@ export default function ElectricalEstimatorPage() {
         { id: 'equipment', icon: <EquipmentIcon />, label: 'Equipment' },
         { id: 'summary', icon: <SummaryIcon />, label: 'Summary' },
     ];
+
+    // ===== PDF Export =====
+    const generateEstimatePDF = () => {
+        setIsGeneratingPDF(true);
+        setTimeout(() => {
+            try {
+                const pdf = new jsPDF();
+                // Header
+                pdf.setFontSize(18);
+                pdf.text('ELECTRICAL ESTIMATE', 14, 20);
+                pdf.setFontSize(10);
+                pdf.setTextColor(100);
+                pdf.text(`Project: ${projectName} | ${projectType} | ${sqft} sq ft | ${stories} story`, 14, 28);
+                pdf.text(`Date: ${new Date().toLocaleDateString()} | Overhead: ${overheadPct}% | Profit: ${profitPct}%`, 14, 34);
+
+                // Gather all items with qty > 0
+                const sections: { name: string; items: any[]; qtyMap: any }[] = [
+                    ...Object.entries(DEVICES).map(([key, items]) => ({ name: key.charAt(0).toUpperCase() + key.slice(1), items, qtyMap: quantities })),
+                    { name: 'Wire & Conduit', items: WIRE, qtyMap: wireQty },
+                    { name: 'Panels & Gear', items: gearData, qtyMap: gearQty },
+                    { name: 'Pool & Spa', items: poolData, qtyMap: poolQty },
+                    { name: 'Generator', items: genData, qtyMap: genQty },
+                    { name: 'Landscape', items: landData, qtyMap: landQty },
+                ];
+
+                let startY = 42;
+                sections.forEach(sec => {
+                    const rows = sec.items.filter(item => (sec.qtyMap[item.id] || 0) > 0)
+                        .map(item => {
+                            const qty = sec.qtyMap[item.id] || 0;
+                            return [
+                                item.name,
+                                `$${item.matRate}`,
+                                `${item.laborRate}h`,
+                                qty.toString(),
+                                `$${(qty * item.matRate).toFixed(2)}`,
+                            ];
+                        });
+                    if (rows.length === 0) return;
+
+                    pdf.setFontSize(11);
+                    pdf.setTextColor(33, 33, 33);
+                    pdf.text(sec.name.toUpperCase(), 14, startY);
+                    startY += 2;
+                    autoTable(pdf, {
+                        startY,
+                        head: [['Item', 'Mat $', 'Labor Hr', 'Qty', 'Mat Total']],
+                        body: rows,
+                        styles: { fontSize: 7.5 },
+                        headStyles: { fillColor: [25, 118, 210] },
+                        margin: { left: 14, right: 14 },
+                        theme: 'grid',
+                    });
+                    startY = (pdf as any).lastAutoTable.finalY + 8;
+                    if (startY > 260) { pdf.addPage(); startY = 20; }
+                });
+
+                // Equipment S.B.O.
+                const eqRows = EQUIPMENT_SBO.filter(eq => (equipmentPrices[eq.id] || 0) > 0)
+                    .map(eq => {
+                        const price = equipmentPrices[eq.id] || 0;
+                        return [eq.name, '', '', '1', `$${price.toFixed(2)}`];
+                    });
+                if (eqRows.length > 0) {
+                    if (startY > 250) { pdf.addPage(); startY = 20; }
+                    pdf.setFontSize(11);
+                    pdf.setTextColor(33, 33, 33);
+                    pdf.text('EQUIPMENT (S.B.O.)', 14, startY);
+                    startY += 2;
+                    autoTable(pdf, {
+                        startY,
+                        head: [['Item', '', '', '', 'Price']],
+                        body: eqRows,
+                        styles: { fontSize: 7.5 },
+                        headStyles: { fillColor: [76, 175, 80] },
+                        margin: { left: 14, right: 14 },
+                        theme: 'grid',
+                    });
+                    startY = (pdf as any).lastAutoTable.finalY + 8;
+                }
+
+                // Summary
+                if (startY > 220) { pdf.addPage(); startY = 20; }
+                pdf.setFontSize(12);
+                pdf.setTextColor(33, 33, 33);
+                pdf.text('SUMMARY', 14, startY);
+                startY += 4;
+                autoTable(pdf, {
+                    startY,
+                    body: [
+                        ['Materials (Base)', fmt(calc.materialsBase)],
+                        ['Materials (+18%)', fmt(calc.materialsFinal)],
+                        [`Labor (${fmtHr(calc.totalHrs)})`, fmt(calc.laborCost)],
+                        ['Mat + Labor', fmt(calc.matLaborCost)],
+                        [`Overhead (${overheadPct}%)`, fmt(calc.overhead)],
+                        [`Profit (${profitPct}%)`, fmt(calc.profit)],
+                        ['Sales Tax', fmt(calc.salesTaxMat)],
+                        ['BASE PRICE', fmt(calc.basePrice)],
+                        ['', ''],
+                        ['Equipment (Net)', fmt(calc.eqNet)],
+                        ['Equipment (Tax+Markup)', fmt(calc.eqTax + calc.eqMarkup)],
+                        ['Equipment Total', fmt(calc.eqTotal)],
+                        ['', ''],
+                        ['TOTAL PRICE', fmt(calc.totalPrice)],
+                        ['Cost per sq ft', fmt(calc.totalPrice / sqft)],
+                    ],
+                    styles: { fontSize: 9 },
+                    columnStyles: { 0: { fontStyle: 'bold' } },
+                    theme: 'plain',
+                    margin: { left: 14 },
+                });
+
+                if (notes) {
+                    const notesY = (pdf as any).lastAutoTable.finalY + 8;
+                    pdf.setFontSize(9);
+                    pdf.text(`Notes: ${notes}`, 14, notesY);
+                }
+
+                const pdfBlobUrl = pdf.output('bloburl');
+                window.open(pdfBlobUrl, '_blank');
+                pdf.save(`${projectName.replace(/\s+/g, '_')}_Estimate.pdf`);
+                setSaveSnackbar('PDF готов, скачивание началось');
+            } catch (err: any) {
+                console.error('PDF generation error', err);
+                setSaveSnackbar(`Ошибка генерации PDF: ${err.message || 'Сбой'}`);
+            } finally {
+                setIsGeneratingPDF(false);
+            }
+        }, 100);
+    };
+
+    // ===== Excel Export =====
+    const generateExcelExport = () => {
+        const wb = XLSX.utils.book_new();
+
+        // Gather all sections
+        const allSections: { name: string; items: any[]; qtyMap: any }[] = [
+            ...Object.entries(DEVICES).map(([key, items]) => ({ name: key.charAt(0).toUpperCase() + key.slice(1), items, qtyMap: quantities })),
+            { name: 'Wire & Conduit', items: WIRE, qtyMap: wireQty },
+            { name: 'Panels & Gear', items: gearData, qtyMap: gearQty },
+            { name: 'Pool & Spa', items: poolData, qtyMap: poolQty },
+            { name: 'Generator', items: genData, qtyMap: genQty },
+            { name: 'Landscape', items: landData, qtyMap: landQty },
+        ];
+
+        // Sheet 1: All Items
+        const itemsData: any[][] = [
+            ['ELECTRICAL ESTIMATE'],
+            [`Project: ${projectName} | ${projectType} | ${sqft} sq ft | ${stories} story`],
+            [`Date: ${new Date().toLocaleDateString()} | Overhead: ${overheadPct}% | Profit: ${profitPct}%`],
+            [],
+            ['Section', 'Item', 'Material $', 'Labor Hr', 'Qty', 'Mat Total $', 'Labor Total Hr'],
+        ];
+        allSections.forEach(sec => {
+            sec.items.forEach(item => {
+                const qty = sec.qtyMap[item.id] || 0;
+                if (qty > 0) {
+                    itemsData.push([
+                        sec.name, item.name, item.matRate, item.laborRate,
+                        qty, qty * item.matRate, +(qty * item.laborRate).toFixed(2),
+                    ]);
+                }
+            });
+        });
+        const wsItems = XLSX.utils.aoa_to_sheet(itemsData);
+        // Set column widths
+        wsItems['!cols'] = [
+            { wch: 18 }, { wch: 30 }, { wch: 12 }, { wch: 12 }, { wch: 8 }, { wch: 14 }, { wch: 14 },
+        ];
+        XLSX.utils.book_append_sheet(wb, wsItems, 'Estimate');
+
+        // Sheet 2: Equipment S.B.O.
+        const eqData: any[][] = [
+            ['EQUIPMENT (S.B.O.)'],
+            [],
+            ['Item', 'Default Price', 'Actual Price'],
+        ];
+        EQUIPMENT_SBO.forEach(eq => {
+            const price = equipmentPrices[eq.id] || 0;
+            eqData.push([eq.name, eq.defaultPrice, price]);
+        });
+        eqData.push([]);
+        eqData.push(['Equipment Net', '', calc.eqNet]);
+        eqData.push(['Tax + Markup', '', calc.eqTax + calc.eqMarkup]);
+        eqData.push(['Equipment Total', '', calc.eqTotal]);
+        const wsEq = XLSX.utils.aoa_to_sheet(eqData);
+        wsEq['!cols'] = [{ wch: 30 }, { wch: 14 }, { wch: 14 }];
+        XLSX.utils.book_append_sheet(wb, wsEq, 'Equipment');
+
+        // Sheet 3: Summary
+        const summaryData: any[][] = [
+            ['SUMMARY'],
+            [],
+            ['Parameter', 'Value'],
+            ['Project Name', projectName],
+            ['Project Type', projectType],
+            ['Area (sq ft)', sqft],
+            ['Stories', stories],
+            ['Labor Rate ($/hr)', laborRate],
+            [],
+            ['Materials (Base)', calc.materialsBase],
+            ['Materials (+18%)', calc.materialsFinal],
+            ['Sales Tax (7%)', calc.salesTaxMat],
+            ['Total Labor Hours', +calc.totalHrs.toFixed(1)],
+            ['Labor Cost', calc.laborCost],
+            ['Mat + Labor', calc.matLaborCost],
+            [`Overhead (${overheadPct}%)`, calc.overhead],
+            [`Profit (${profitPct}%)`, calc.profit],
+            ['BASE PRICE', calc.basePrice],
+            [],
+            ['Equipment Net', calc.eqNet],
+            ['Equipment Tax+Markup', calc.eqTax + calc.eqMarkup],
+            ['Equipment Total', calc.eqTotal],
+            [],
+            ['TOTAL PRICE', calc.totalPrice],
+            ['Cost per sq ft', +(calc.totalPrice / sqft).toFixed(2)],
+            [],
+            ['Notes', notes || ''],
+        ];
+        const wsSummary = XLSX.utils.aoa_to_sheet(summaryData);
+        wsSummary['!cols'] = [{ wch: 22 }, { wch: 18 }];
+        XLSX.utils.book_append_sheet(wb, wsSummary, 'Summary');
+
+        XLSX.writeFile(wb, `${projectName.replace(/\s+/g, '_')}_Estimate.xlsx`);
+    };
 
     const generatePrintContent = () => {
         const date = new Date().toLocaleDateString();
@@ -713,6 +787,105 @@ Notes: ${notes || 'N/A'}
         alert('Copied to clipboard!');
     };
 
+    const downloadTxt = () => {
+        const element = document.createElement("a");
+        const file = new Blob([generatePrintContent()], { type: 'text/plain' });
+        element.href = URL.createObjectURL(file);
+        element.download = `${projectName.replace(/\s+/g, '_')}_Estimate.txt`;
+        document.body.appendChild(element);
+        element.click();
+    };
+
+    // ===== Save Project =====
+    const handleSaveProject = async () => {
+        if (!userProfile?.companyId || !userProfile?.id) {
+            setSaveSnackbar('Войдите в систему для сохранения');
+            return;
+        }
+        setSavingProject(true);
+        try {
+            // Merge all quantity maps
+            const allQuantities: Record<string, number> = {};
+            Object.entries(quantities).forEach(([k, v]: [string, any]) => { if (v > 0) allQuantities[k] = v; });
+            Object.entries(gearQty).forEach(([k, v]: [string, any]) => { if (v > 0) allQuantities[k] = v; });
+            Object.entries(poolQty).forEach(([k, v]: [string, any]) => { if (v > 0) allQuantities[k] = v; });
+            Object.entries(genQty).forEach(([k, v]: [string, any]) => { if (v > 0) allQuantities[k] = v; });
+            Object.entries(landQty).forEach(([k, v]: [string, any]) => { if (v > 0) allQuantities[k] = v; });
+            Object.entries(wireQty).forEach(([k, v]: [string, any]) => { if (v > 0) allQuantities[k] = v; });
+
+            const dataToSave = {
+                companyId: userProfile.companyId,
+                createdBy: userProfile.id,
+                projectName,
+                areaSqft: sqft,
+                batchId: `manual_${Date.now()}`,
+                quantities: allQuantities,
+                originalQuantities: allQuantities,
+                laborRate,
+                wirePrice: 0.45,
+                totalMaterials: calc.materialsFinal,
+                totalLabor: calc.laborCost,
+                totalWire: calc.sectionsData.wire_auto.mat + calc.sectionsData.wire_manual.mat,
+                grandTotal: calc.totalPrice,
+                filesCount: 0,
+                electricalCount: Object.keys(allQuantities).length,
+                status: 'draft' as const,
+                ...(notes ? { notes } : {}),
+            };
+
+            if (currentEstimateId) {
+                await savedEstimateApi.update(currentEstimateId, dataToSave);
+            } else {
+                const newId = await savedEstimateApi.save(dataToSave);
+                setCurrentEstimateId(newId);
+            }
+
+            setSaveSnackbar('Проект сохранён ✅');
+            setAutosaveStatus('saved');
+        } catch (err: any) {
+            console.error('Save failed:', err);
+            setSaveSnackbar(`Ошибка сохранения: ${err.message || 'Сбой сети'}`);
+            setAutosaveStatus('idle');
+        }
+        setSavingProject(false);
+    };
+
+    // ===== Auto Save Project (every 30s) =====
+    useEffect(() => {
+        if (!currentEstimateId || savingProject || !userProfile?.companyId) return;
+
+        const timer = setTimeout(() => {
+            setAutosaveStatus('saving');
+            const allQuantities: Record<string, number> = {};
+            Object.entries(quantities).forEach(([k, v]: [string, any]) => { if (v > 0) allQuantities[k] = v; });
+            Object.entries(gearQty).forEach(([k, v]: [string, any]) => { if (v > 0) allQuantities[k] = v; });
+            Object.entries(poolQty).forEach(([k, v]: [string, any]) => { if (v > 0) allQuantities[k] = v; });
+            Object.entries(genQty).forEach(([k, v]: [string, any]) => { if (v > 0) allQuantities[k] = v; });
+            Object.entries(landQty).forEach(([k, v]: [string, any]) => { if (v > 0) allQuantities[k] = v; });
+            Object.entries(wireQty).forEach(([k, v]: [string, any]) => { if (v > 0) allQuantities[k] = v; });
+
+            savedEstimateApi.update(currentEstimateId, {
+                projectName,
+                quantities: allQuantities,
+                laborRate,
+                wirePrice: 0.45,
+                totalMaterials: calc.materialsFinal,
+                totalLabor: calc.laborCost,
+                totalWire: calc.sectionsData.wire_auto.mat + calc.sectionsData.wire_manual.mat,
+                grandTotal: calc.totalPrice,
+                status: 'draft',
+                ...(notes ? { notes } : {}),
+            }).then(() => {
+                setAutosaveStatus('saved');
+            }).catch(err => {
+                console.error('Autosave failed:', err);
+                setAutosaveStatus('idle');
+            });
+        }, 30000);
+
+        return () => clearTimeout(timer);
+    }, [quantities, gearQty, poolQty, genQty, landQty, wireQty, projectName, laborRate, calc, notes, currentEstimateId, savingProject, userProfile]);
+
     return (
         <Box sx={{ minHeight: '100vh', bgcolor: 'background.default', pb: 8 }}>
             <AppBar position="static" color="default" elevation={1} sx={{ bgcolor: 'background.paper' }}>
@@ -720,6 +893,14 @@ Notes: ${notes || 'N/A'}
                     <Typography variant="h6" color="primary" sx={{ flexGrow: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
                         <FlashOnIcon /> Electrical Estimator Pro
                     </Typography>
+                    <Button
+                        color="inherit"
+                        startIcon={<ProjectsIcon />}
+                        onClick={() => window.location.href = '/estimates/projects'}
+                        sx={{ mr: 1 }}
+                    >
+                        Проекты
+                    </Button>
                     <Button color="inherit" onClick={() => window.location.href = '/dashboard'}>Dashboard</Button>
                 </Toolbar>
             </AppBar>
@@ -731,7 +912,15 @@ Notes: ${notes || 'N/A'}
                         <Card variant="outlined">
                             <CardContent>
                                 <Stack direction="row" justifyContent="space-between" alignItems="center" mb={2}>
-                                    <Typography variant="h6">Project Details</Typography>
+                                    <Box display="flex" alignItems="center">
+                                        <Typography variant="h6">Project Details</Typography>
+                                        {currentEstimateId && (
+                                            <Typography variant="caption" color="text.secondary" sx={{ ml: 2, display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                                {autosaveStatus === 'saving' && <><CircularProgress size={10} color="inherit" /> Сохранение...</>}
+                                                {autosaveStatus === 'saved' && <><SaveIcon sx={{ fontSize: 12 }} /> Сохранено</>}
+                                            </Typography>
+                                        )}
+                                    </Box>
                                     <Box>
                                         <Button
                                             size="small"
@@ -796,27 +985,50 @@ Notes: ${notes || 'N/A'}
                                     >
                                         AI Analysis
                                     </Button>
-                                    <Tooltip title="Export/Print">
-                                        <IconButton size="small" color="success" onClick={() => setShowExport(!showExport)}>
-                                            <ExportIcon />
-                                        </IconButton>
+                                    <Tooltip title="Export">
+                                        <Button
+                                            size="small"
+                                            color="success"
+                                            variant="outlined"
+                                            startIcon={isGeneratingPDF ? <CircularProgress size={16} color="inherit" /> : <ExportIcon />}
+                                            onClick={(e) => setExportAnchorEl(e.currentTarget)}
+                                            disabled={isGeneratingPDF}
+                                        >
+                                            {isGeneratingPDF ? 'Generating...' : 'Export ▾'}
+                                        </Button>
                                     </Tooltip>
+                                    <Menu
+                                        anchorEl={exportAnchorEl}
+                                        open={Boolean(exportAnchorEl)}
+                                        onClose={() => setExportAnchorEl(null)}
+                                    >
+                                        <MenuItem onClick={() => { generateEstimatePDF(); setExportAnchorEl(null); }}>
+                                            <PdfIcon sx={{ mr: 1 }} fontSize="small" /> Смета (PDF)
+                                        </MenuItem>
+                                        <MenuItem onClick={() => { generateExcelExport(); setExportAnchorEl(null); }}>
+                                            <ExcelIcon sx={{ mr: 1 }} fontSize="small" /> Excel (.xlsx)
+                                        </MenuItem>
+                                        <MenuItem onClick={() => { downloadTxt(); setExportAnchorEl(null); }}>
+                                            <ExportIcon sx={{ mr: 1 }} fontSize="small" /> Download .txt
+                                        </MenuItem>
+                                        <MenuItem onClick={() => { copyToClipboard(); setExportAnchorEl(null); }}>
+                                            <CopyIcon sx={{ mr: 1 }} fontSize="small" /> Copy to Clipboard
+                                        </MenuItem>
+                                        <MenuItem onClick={() => { window.print(); setExportAnchorEl(null); }}>
+                                            <PrintIcon sx={{ mr: 1 }} fontSize="small" /> Print
+                                        </MenuItem>
+                                    </Menu>
+                                    <Button
+                                        size="small"
+                                        variant="contained"
+                                        color="primary"
+                                        startIcon={<SaveIcon />}
+                                        onClick={handleSaveProject}
+                                        disabled={savingProject}
+                                    >
+                                        {savingProject ? 'Сохранение...' : 'Сохранить'}
+                                    </Button>
                                 </Stack>
-                                {showExport && (
-                                    <Box mt={2} p={2} bgcolor="grey.50" borderRadius={1} border={1} borderColor="grey.200">
-                                        <Stack direction="row" spacing={2} mb={2}>
-                                            <Button startIcon={<CopyIcon />} variant="contained" size="small" onClick={copyToClipboard}>
-                                                Copy to Clipboard
-                                            </Button>
-                                            <Button startIcon={<PrintIcon />} variant="outlined" size="small" onClick={() => window.print()}>
-                                                Print
-                                            </Button>
-                                        </Stack>
-                                        <Box component="pre" sx={{ fontSize: '0.75rem', overflow: 'auto', maxHeight: 200, bgcolor: 'white', p: 1, borderRadius: 1 }}>
-                                            {generatePrintContent()}
-                                        </Box>
-                                    </Box>
-                                )}
                             </CardContent>
                         </Card>
                     </Grid>
@@ -838,37 +1050,63 @@ Notes: ${notes || 'N/A'}
 
                             <Box p={3}>
                                 {activeTab === 0 && (
-                                    <Grid container spacing={4}>
-                                        <Grid size={{ xs: 12, md: 6 }}>
-                                            <Section items={devicesData.lighting} qtyMap={quantities} onChange={updateQty(setQuantities)} title="Lighting" icon={<LightIcon />} category="devices" isMobile={isMobile} isEditingRates={isEditingRates} onRateChange={updateRate} />
-                                            <Section items={devicesData.receptacles} qtyMap={quantities} onChange={updateQty(setQuantities)} title="Receptacles" icon={<PowerIcon />} category="devices" isMobile={isMobile} isEditingRates={isEditingRates} onRateChange={updateRate} />
-                                            <Section items={devicesData.switches} qtyMap={quantities} onChange={updateQty(setQuantities)} title="Switches" icon={<SwitchIcon />} category="devices" isMobile={isMobile} isEditingRates={isEditingRates} onRateChange={updateRate} />
+                                    <>
+                                        {Object.keys(unmappedItems).length > 0 && (
+                                            <Box mb={4}>
+                                                <Alert severity="warning" sx={{ mb: 2 }}>
+                                                    The following items were found by the AI but could not be mapped to the price list.
+                                                </Alert>
+                                                <Typography variant="h6" color="warning.main" mb={2}>⚠️ Unmapped AI Items</Typography>
+                                                <Grid container spacing={1}>
+                                                    {Object.entries(unmappedItems).map(([itemName, qty]) => (
+                                                        <Grid size={{ xs: 12, md: 6 }} key={itemName}>
+                                                            <Paper variant="outlined" sx={{ p: 1, display: 'flex', alignItems: 'center', bgcolor: 'warning.50', borderColor: 'warning.light' }}>
+                                                                <Box flex={1}>
+                                                                    <Typography variant="body2" fontWeight="bold" textTransform="capitalize">{itemName.replace(/_/g, ' ')}</Typography>
+                                                                </Box>
+                                                                <Chip label={qty} color="warning" size="small" />
+                                                            </Paper>
+                                                        </Grid>
+                                                    ))}
+                                                </Grid>
+                                            </Box>
+                                        )}
+                                        <Grid container spacing={4}>
+                                            <Grid size={{ xs: 12, md: 6 }}>
+                                                <Section items={devicesData.lighting} qtyMap={quantities} onChange={updateQty(setQuantities)} title="Lighting" icon={<LightIcon />} category="devices" isMobile={isMobile} isEditingRates={isEditingRates} onRateChange={updateRate} />
+                                                <Section items={devicesData.receptacles} qtyMap={quantities} onChange={updateQty(setQuantities)} title="Receptacles" icon={<PowerIcon />} category="devices" isMobile={isMobile} isEditingRates={isEditingRates} onRateChange={updateRate} />
+                                                <Section items={devicesData.switches} qtyMap={quantities} onChange={updateQty(setQuantities)} title="Switches" icon={<SwitchIcon />} category="devices" isMobile={isMobile} isEditingRates={isEditingRates} onRateChange={updateRate} />
+                                            </Grid>
+                                            <Grid size={{ xs: 12, md: 6 }}>
+                                                <Section items={devicesData.appliances} qtyMap={quantities} onChange={updateQty(setQuantities)} title="Appliances" icon={<ApplianceIcon />} category="devices" isMobile={isMobile} isEditingRates={isEditingRates} onRateChange={updateRate} />
+                                                <Section items={devicesData.hvac} qtyMap={quantities} onChange={updateQty(setQuantities)} title="HVAC" icon={<HvacIcon />} category="devices" isMobile={isMobile} isEditingRates={isEditingRates} onRateChange={updateRate} />
+                                                <Section items={devicesData.lowvoltage} qtyMap={quantities} onChange={updateQty(setQuantities)} title="Low Voltage" icon={<LowVoltageIcon />} category="devices" isMobile={isMobile} isEditingRates={isEditingRates} onRateChange={updateRate} />
+                                            </Grid>
                                         </Grid>
-                                        <Grid size={{ xs: 12, md: 6 }}>
-                                            <Section items={devicesData.appliances} qtyMap={quantities} onChange={updateQty(setQuantities)} title="Appliances" icon={<ApplianceIcon />} category="devices" isMobile={isMobile} isEditingRates={isEditingRates} onRateChange={updateRate} />
-                                            <Section items={devicesData.hvac} qtyMap={quantities} onChange={updateQty(setQuantities)} title="HVAC" icon={<HvacIcon />} category="devices" isMobile={isMobile} isEditingRates={isEditingRates} onRateChange={updateRate} />
-                                            <Section items={devicesData.lowvoltage} qtyMap={quantities} onChange={updateQty(setQuantities)} title="Low Voltage" icon={<LowVoltageIcon />} category="devices" isMobile={isMobile} isEditingRates={isEditingRates} onRateChange={updateRate} />
-                                        </Grid>
-                                    </Grid>
+                                    </>
                                 )}
 
                                 {activeTab === 1 && (
-                                    <Section items={gearData} qtyMap={gearQty} onChange={updateQty(setGearQty)} title="Panels & Service" icon={<GearIcon />} category="gear" isMobile={isMobile} isEditingRates={isEditingRates} onRateChange={updateRate} />
+                                    <Section items={WIRE} qtyMap={wireQty} onChange={updateQty(setWireQty)} title="Wiring & Rough-In" icon={<CableIcon />} category="wire" isMobile={isMobile} isEditingRates={isEditingRates} onRateChange={updateRate} />
                                 )}
 
                                 {activeTab === 2 && (
-                                    <Section items={poolData} qtyMap={poolQty} onChange={updateQty(setPoolQty)} title="Pool & Spa" icon={<PoolIcon />} category="pool" isMobile={isMobile} isEditingRates={isEditingRates} onRateChange={updateRate} />
+                                    <Section items={gearData} qtyMap={gearQty} onChange={updateQty(setGearQty)} title="Panels & Service" icon={<GearIcon />} category="gear" isMobile={isMobile} isEditingRates={isEditingRates} onRateChange={updateRate} />
                                 )}
 
                                 {activeTab === 3 && (
-                                    <Section items={genData} qtyMap={genQty} onChange={updateQty(setGenQty)} title="Generator & Backup" icon={<GeneratorIcon />} category="generator" isMobile={isMobile} isEditingRates={isEditingRates} onRateChange={updateRate} />
+                                    <Section items={poolData} qtyMap={poolQty} onChange={updateQty(setPoolQty)} title="Pool & Spa" icon={<PoolIcon />} category="pool" isMobile={isMobile} isEditingRates={isEditingRates} onRateChange={updateRate} />
                                 )}
 
                                 {activeTab === 4 && (
-                                    <Section items={landData} qtyMap={landQty} onChange={updateQty(setLandQty)} title="Landscape Lighting" icon={<LandscapeIcon />} category="landscape" isMobile={isMobile} isEditingRates={isEditingRates} onRateChange={updateRate} />
+                                    <Section items={genData} qtyMap={genQty} onChange={updateQty(setGenQty)} title="Generator & Backup" icon={<GeneratorIcon />} category="generator" isMobile={isMobile} isEditingRates={isEditingRates} onRateChange={updateRate} />
                                 )}
 
                                 {activeTab === 5 && (
+                                    <Section items={landData} qtyMap={landQty} onChange={updateQty(setLandQty)} title="Landscape Lighting" icon={<LandscapeIcon />} category="landscape" isMobile={isMobile} isEditingRates={isEditingRates} onRateChange={updateRate} />
+                                )}
+
+                                {activeTab === 6 && (
                                     <Box>
                                         <Box display="flex" alignItems="center" gap={1} mb={2}>
                                             <EquipmentIcon color="primary" />
@@ -920,7 +1158,7 @@ Notes: ${notes || 'N/A'}
                                     </Box>
                                 )}
 
-                                {activeTab === 6 && (
+                                {activeTab === 7 && (
                                     <Grid container spacing={3}>
                                         <Grid size={{ xs: 12, md: 6 }}>
                                             <Card variant="outlined">
@@ -1061,12 +1299,26 @@ Notes: ${notes || 'N/A'}
                 </Grid>
             </Container>
 
-            {/* AI Dialog */}
+            {/* AI Dialogs */}
             <BlueprintUploadDialog
                 open={showAiDialog}
                 onClose={() => setShowAiDialog(false)}
                 onApply={handleAiApply}
             />
+
+            {pendingMappingData && (
+                <AiMappingDialog
+                    open={!!pendingMappingData}
+                    onClose={() => setPendingMappingData(null)}
+                    aiResults={pendingMappingData}
+                    onApply={handleFinalMapping}
+                    DEVICES={DEVICES}
+                    GEAR={GEAR}
+                    POOL={POOL}
+                    GENERATOR={GENERATOR}
+                    LANDSCAPE={LANDSCAPE}
+                />
+            )}
 
             {/* Sticky Footer for Mobile */}
             {isMobile && (
@@ -1088,12 +1340,28 @@ Notes: ${notes || 'N/A'}
                             <Typography variant="caption">Total Estimate</Typography>
                             <Typography variant="h6" fontWeight="bold">{fmt(calc.totalPrice)}</Typography>
                         </Box>
-                        <Button variant="contained" color="secondary" onClick={() => setActiveTab(6)}>
+                        <Button variant="contained" color="secondary" onClick={() => setActiveTab(7)}>
                             View Summary
                         </Button>
                     </Box>
                 </Paper>
             )}
+
+            {/* Save Snackbar */}
+            <Snackbar
+                open={!!saveSnackbar}
+                autoHideDuration={3000}
+                onClose={() => setSaveSnackbar('')}
+                anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+            >
+                <Alert
+                    onClose={() => setSaveSnackbar('')}
+                    severity={saveSnackbar.includes('✅') ? 'success' : 'error'}
+                    variant="filled"
+                >
+                    {saveSnackbar}
+                </Alert>
+            </Snackbar>
         </Box>
     );
 }

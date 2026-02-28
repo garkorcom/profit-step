@@ -39,7 +39,6 @@ import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import KeyboardIcon from '@mui/icons-material/Keyboard';
 import GTDColumn from './GTDColumn';
 import GTDEditDialog from './GTDEditDialog';
-import GTDQuickAddDialog, { AIEstimateData } from './GTDQuickAddDialog';
 import ColumnIndicator from './ColumnIndicator';
 import { useGTDTasks } from '../../hooks/useGTDTasks';
 import { useSessionManager } from '../../hooks/useSessionManager';
@@ -100,6 +99,7 @@ const GTDBoard: React.FC = () => {
     // ==================== МОБИЛЬНОЕ СОСТОЯНИЕ ====================
     const [selectedTab, setSelectedTab] = useState(0);    // Активная вкладка (мобильный)
     const [showFilters, setShowFilters] = useState(false); // Показать фильтры (мобильный)
+    const [showAllProjects, setShowAllProjects] = useState(false); // Показать все проекты в фильтрах
     const [shortcutAnchor, setShortcutAnchor] = useState<HTMLElement | null>(null); // Keyboard help popover
 
     // ==================== SWIPE NAVIGATION ====================
@@ -123,8 +123,7 @@ const GTDBoard: React.FC = () => {
         threshold: 75,
     });
 
-    // ==================== QUICK ADD DIALOG ====================
-    const [quickAddOpen, setQuickAddOpen] = useState(false);
+
 
     /**
      * Lookup-таблица клиентов по ID
@@ -179,23 +178,14 @@ const GTDBoard: React.FC = () => {
     };
 
     // 3. Task Actions
-    const handleAddTaskWrapper = async (
+    const handleAddTaskWrapper = useCallback(async (
         title: string,
         columnId: GTDStatus,
-        clientId?: string,
-        assigneeId?: string,
-        aiData?: AIEstimateData,
-        extra?: {
-            dueDate?: string;
-            startDate?: string;
-            startTime?: string;
-            estimatedDurationMinutes?: number;
-            priority?: any;
-            description?: string;
-        }
     ) => {
-        await addTask(title, columnId, clients, users, clientId, assigneeId, aiData, extra);
-    };
+        const targetClientId = selectedClientId !== 'all' ? selectedClientId : undefined;
+        const targetAssigneeId = selectedAssigneeId !== 'all' ? selectedAssigneeId : undefined;
+        await addTask(title, columnId, clients, users, targetClientId, targetAssigneeId);
+    }, [selectedClientId, selectedAssigneeId, addTask, clients, users]);
 
     // Keyboard shortcuts
     useEffect(() => {
@@ -266,6 +256,33 @@ const GTDBoard: React.FC = () => {
         });
         return result;
     }, [columns, selectedClientId, selectedAssigneeId, selectedDateFilter]);
+
+    // Calculate Active Clients based on active tasks
+    const activeClients = useMemo(() => {
+        const counts: Record<string, number> = {};
+
+        // Aggregate task counts, excluding 'done' column
+        Object.keys(columns).forEach(key => {
+            if (key === 'done') return;
+            const tasks = columns[key as GTDStatus];
+            tasks.forEach(task => {
+                if (task.clientId) {
+                    counts[task.clientId] = (counts[task.clientId] || 0) + 1;
+                }
+            });
+        });
+
+        // Map to Client objects and sort
+        const activeIds = Object.keys(counts);
+        return activeIds
+            .map(id => clientsMap[id])
+            .filter(Boolean) // Remove nulls if a client was deleted but task exists
+            .sort((a, b) => {
+                const countDiff = counts[b.id] - counts[a.id];
+                if (countDiff !== 0) return countDiff; // Sort by task count descending
+                return a.name.localeCompare(b.name); // Then alphabetically
+            });
+    }, [columns, clientsMap]);
 
     // Total task count across all filtered columns
     const totalTaskCount = useMemo(() => {
@@ -338,8 +355,8 @@ const GTDBoard: React.FC = () => {
 
                     {/* Filter Chips */}
                     <Box sx={{ display: 'flex', gap: 0.75, alignItems: 'center', overflowX: 'auto', flex: 1, '&::-webkit-scrollbar': { display: 'none' } }}>
-                        {/* Client filter chips */}
-                        {clients.slice(0, 6).map(c => (
+                        {/* Client filter chips (Active or All projects) */}
+                        {(showAllProjects ? clients : activeClients.slice(0, 8)).map(c => (
                             <Chip
                                 key={c.id}
                                 label={c.name}
@@ -365,8 +382,28 @@ const GTDBoard: React.FC = () => {
                             />
                         ))}
 
+                        {/* Toggle All Projects */}
+                        {clients.length > activeClients.slice(0, 8).length && (
+                            <Chip
+                                label={showAllProjects ? "Скрыть" : "Все проекты"}
+                                size="small"
+                                variant="outlined"
+                                onClick={() => setShowAllProjects(!showAllProjects)}
+                                sx={{
+                                    borderRadius: '8px',
+                                    fontSize: '12px',
+                                    fontWeight: 500,
+                                    height: 30,
+                                    color: 'text.secondary',
+                                    borderColor: 'rgba(0,0,0,0.12)',
+                                    bgcolor: 'rgba(0,0,0,0.02)',
+                                    '&:hover': { bgcolor: 'rgba(0,0,0,0.06)' },
+                                }}
+                            />
+                        )}
+
                         {/* Separator */}
-                        {clients.length > 0 && (
+                        {(activeClients.length > 0 || clients.length > 0) && (
                             <Box sx={{ width: 1, height: 20, bgcolor: 'rgba(0,0,0,0.1)', flexShrink: 0 }} />
                         )}
 
@@ -526,7 +563,7 @@ const GTDBoard: React.FC = () => {
                     <Button
                         variant="contained"
                         startIcon={<AddIcon />}
-                        onClick={() => navigate(`/crm/gtd/new?column=${activeColumn?.id || 'inbox'}`)}
+                        onClick={() => navigate(`/crm/gtd/new?column=${activeColumn?.id || 'inbox'}${selectedClientId && selectedClientId !== 'all' ? `&clientId=${selectedClientId}` : ''}`)}
                         sx={{
                             height: 36,
                             borderRadius: '10px',
@@ -743,7 +780,7 @@ const GTDBoard: React.FC = () => {
                 <Fab
                     color="primary"
                     aria-label="add task"
-                    onClick={() => navigate(`/crm/gtd/new?column=${activeColumn?.id || 'inbox'}`)}
+                    onClick={() => navigate(`/crm/gtd/new?column=${activeColumn?.id || 'inbox'}${selectedClientId && selectedClientId !== 'all' ? `&clientId=${selectedClientId}` : ''}`)}
                     sx={{
                         position: 'fixed',
                         bottom: 24,
@@ -756,21 +793,6 @@ const GTDBoard: React.FC = () => {
                     <AddIcon />
                 </Fab>
             )}
-
-            {/* Quick Add Dialog - New Mobile-First Design */}
-            <GTDQuickAddDialog
-                open={quickAddOpen}
-                onClose={() => setQuickAddOpen(false)}
-                onAdd={(title, columnId, clientId, assigneeId, priority, aiData) => {
-                    handleAddTaskWrapper(title, columnId, clientId, assigneeId, aiData, {
-                        priority
-                    });
-                }}
-                targetColumn={activeColumn?.id || 'inbox'}
-                clients={clients}
-                users={users}
-                currentUser={currentUser}
-            />
 
             {/* Edit Dialog */}
             {editingTask && (

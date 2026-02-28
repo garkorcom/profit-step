@@ -26,7 +26,6 @@ import {
     PlayArrow as PlayIcon,
     Stop as StopIcon,
     Delete as DeleteIcon,
-    AutoAwesome as AIIcon,
     Add as AddIcon,
     DragIndicator as DragIcon,
     AccessTime as TimeIcon,
@@ -34,19 +33,24 @@ import {
     CalendarMonth as CalendarIcon,
     Schedule as ScheduleIcon,
     Inventory as InventoryIcon,
+    Contacts as ContactsIcon,
+    WhatsApp as WhatsAppIcon,
+    Telegram as TelegramIcon
 } from '@mui/icons-material';
 import { doc, updateDoc, onSnapshot, Timestamp, collection, getDocs, query, where, deleteDoc, orderBy } from 'firebase/firestore';
-import { db } from '../../firebase/firebase';
+import { db, functions } from '../../firebase/firebase';
 import { useAuth } from '../../auth/AuthContext';
 import { httpsCallable } from 'firebase/functions';
-import { functions } from '../../firebase/firebase';
-import { GTDTask, GTDStatus, GTDPriority, ChecklistItem, PRIORITY_COLORS } from '../../types/gtd.types';
+import { GTDTask, GTDStatus, GTDPriority, ChecklistItem } from '../../types/gtd.types';
 import { useSessionManager } from '../../hooks/useSessionManager';
+import { SmartCockpitInput } from '../../components/tasks/SmartCockpitInput';
+import { TaskHistoryTimeline } from '../../components/gtd/TaskHistoryTimeline';
 import { format as formatDate } from 'date-fns';
 import { ru } from 'date-fns/locale';
 import TaskMaterialsTab from '../../components/crm/TaskMaterialsTab';
 import { TaskMaterial } from '../../types/inventory.types';
 import { calculateMaterialsCost } from '../../features/inventory/inventoryService';
+import GlobalContactQuickAdd from '../../components/contacts/GlobalContactQuickAdd';
 
 // ═══════════════════════════════════════════════════════════
 // HELPER TYPES
@@ -241,7 +245,7 @@ const UnifiedCockpitPage: React.FC = () => {
     const backPath = (location.state as any)?.from || '/crm/gtd';
 
     // Session manager for timer
-    const { activeSession, startSession, stopSession, loading: sessionLoading } = useSessionManager(
+    const { activeSession, startSession, stopSession } = useSessionManager(
         currentUser?.uid,
         currentUser?.displayName || undefined
     );
@@ -271,7 +275,6 @@ const UnifiedCockpitPage: React.FC = () => {
     const [clientName, setClientName] = useState<string | null>(null);
     const [assigneeId, setAssigneeId] = useState<string | null>(null);
     const [assigneeName, setAssigneeName] = useState<string | null>(null);
-    const [estimatedCost, setEstimatedCost] = useState<number | ''>('');
     const [needsEstimate, setNeedsEstimate] = useState(false);
     const [priority, setPriority] = useState<GTDPriority>('none');
 
@@ -288,14 +291,14 @@ const UnifiedCockpitPage: React.FC = () => {
     // Contacts state
     const [contacts, setContacts] = useState<any[]>([]);
     const [linkedContactIds, setLinkedContactIds] = useState<string[]>([]);
+    const [globalContactOpen, setGlobalContactOpen] = useState(false);
 
-    // Reference data
+    // reference arrays
     const [clients, setClients] = useState<Client[]>([]);
     const [users, setUsers] = useState<User[]>([]);
 
-    // AI state
-    const [estimating, setEstimating] = useState(false);
-    const [estimateResult, setEstimateResult] = useState<{ low: number; high: number; suggested: number } | null>(null);
+    // AI modification state
+    const [isAiModifying, setIsAiModifying] = useState(false);
 
     // Tab state
     const [activeTab, setActiveTab] = useState(0);
@@ -325,7 +328,6 @@ const UnifiedCockpitPage: React.FC = () => {
                 setClientName(data.clientName || null);
                 setAssigneeId(data.assigneeId || null);
                 setAssigneeName(data.assigneeName || null);
-                setEstimatedCost(data.estimatedCost || '');
                 setNeedsEstimate(data.needsEstimate || false);
                 setPriority(data.priority || 'none');
                 setEstimatedDurationMinutes(data.estimatedDurationMinutes || '');
@@ -470,7 +472,6 @@ const UnifiedCockpitPage: React.FC = () => {
                 clientName: clientName || null,
                 assigneeId: assigneeId || null,
                 assigneeName: assigneeName || null,
-                estimatedCost: estimatedCost || null,
                 needsEstimate,
                 priority,
                 estimatedDurationMinutes: estimatedDurationMinutes || null,
@@ -497,7 +498,7 @@ const UnifiedCockpitPage: React.FC = () => {
             // Allow onSnapshot re-init after a short delay
             setTimeout(() => { savingRef.current = false; }, 1000);
         }
-    }, [taskId, title, description, status, checklist, clientId, clientName, assigneeId, assigneeName, estimatedCost, needsEstimate, priority, estimatedDurationMinutes, startDate, dueDate, coAssignees, materials, linkedContactIds, task, currentUser]);
+    }, [taskId, title, description, status, checklist, clientId, clientName, assigneeId, assigneeName, needsEstimate, priority, estimatedDurationMinutes, startDate, dueDate, coAssignees, materials, linkedContactIds, task, currentUser]);
 
     // ── Debounced autosave ──
     useEffect(() => {
@@ -551,31 +552,70 @@ const UnifiedCockpitPage: React.FC = () => {
         }
     };
 
-    const handleAIEstimate = async () => {
-        if (!taskId) return;
-        setEstimating(true);
-
+    const handleAiModification = async (command: string) => {
+        if (!taskId || !task) return;
+        setIsAiModifying(true);
         try {
-            const generatePriceEstimate = httpsCallable(functions, 'generatePriceEstimate');
-            const result = await generatePriceEstimate({ taskId });
-            const data = result.data as { lowPrice: number; highPrice: number; suggestedPrice: number };
-            setEstimateResult({
-                low: data.lowPrice,
-                high: data.highPrice,
-                suggested: data.suggestedPrice
-            });
-        } catch (error) {
-            console.error('Estimate failed:', error);
-        } finally {
-            setEstimating(false);
-        }
-    };
+            const modifyTaskCallable = httpsCallable(functions, 'modifyAiTask');
 
-    const applyEstimate = () => {
-        if (estimateResult) {
-            setEstimatedCost(estimateResult.suggested);
-            setHasChanges(true);
-            setEstimateResult(null);
+            // Build current snapshot
+            const currentSnapshot = {
+                title,
+                description,
+                estimatedDurationMinutes: Number(estimatedDurationMinutes) || 0,
+                checklistItems: checklist
+            };
+
+            const result = await modifyTaskCallable({
+                currentTask: currentSnapshot,
+                userCommand: command
+            });
+
+            const data = result.data as any; // TaskModification
+
+            const changedFields = [];
+
+            if (data.title && data.title !== title) {
+                setTitle(data.title);
+                changedFields.push('название');
+            }
+            if (data.description !== undefined && data.description !== description) {
+                setDescription(data.description);
+                changedFields.push('описание');
+            }
+            if (data.estimatedDurationMinutes !== undefined && data.estimatedDurationMinutes !== estimatedDurationMinutes) {
+                setEstimatedDurationMinutes(data.estimatedDurationMinutes);
+                changedFields.push('длительность');
+            }
+            if (data.checklistItems) {
+                setChecklist(data.checklistItems);
+                changedFields.push('чеклист');
+            }
+
+            if (changedFields.length > 0) {
+                setHasChanges(true);
+
+                // Immediately save the history log to avoid race conditions with generic auto-save
+                const historyUpdates: any[] = [...(task?.taskHistory || [])];
+                historyUpdates.push({
+                    type: 'ai_mutation_snapshot',
+                    description: `AI-редактура: изменены ${changedFields.join(', ')}`,
+                    userId: currentUser?.uid,
+                    userName: currentUser?.displayName || '',
+                    timestamp: Timestamp.now(),
+                    prompt: command
+                });
+
+                await updateDoc(doc(db, 'gtd_tasks', taskId), {
+                    taskHistory: historyUpdates
+                });
+            }
+
+        } catch (error: any) {
+            console.error('AI Modification Failed:', error);
+            setSaveError(error.message || 'Ошибка AI-ассистента. Проверьте логи.');
+        } finally {
+            setIsAiModifying(false);
         }
     };
 
@@ -766,6 +806,11 @@ const UnifiedCockpitPage: React.FC = () => {
                 <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, gap: 3 }}>
                     {/* LEFT COLUMN: Content (65%) */}
                     <Box sx={{ flex: { xs: '1 1 100%', md: '1 1 65%' }, minWidth: 0 }}>
+                        <SmartCockpitInput
+                            onCommandSubmit={handleAiModification}
+                            isLoading={isAiModifying}
+                        />
+
                         <Paper sx={{ p: 3 }}>
                             {/* Title */}
                             <TextField
@@ -849,6 +894,7 @@ const UnifiedCockpitPage: React.FC = () => {
                                 <Tab icon={<TimeIcon />} label="Журнал работ" />
                                 <Tab icon={<PersonIcon />} label="История" />
                                 <Tab icon={<InventoryIcon />} label="Материалы" />
+                                <Tab icon={<ContactsIcon />} label="Справочник" />
                             </Tabs>
 
                             {activeTab === 0 && (
@@ -875,147 +921,7 @@ const UnifiedCockpitPage: React.FC = () => {
                             )}
 
                             {activeTab === 1 && (
-                                <Box sx={{ py: 2, maxHeight: '60vh', overflowY: 'auto', pr: 1 }}>
-                                    <Stack spacing={1.5}>
-                                        {task.createdAt && (
-                                            <Box display="flex" alignItems="flex-start" gap={1.5}>
-                                                <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: 'primary.main', mt: 0.8, flexShrink: 0 }} />
-                                                <Box>
-                                                    <Typography variant="body2" fontWeight={500}>
-                                                        Задача создана
-                                                    </Typography>
-                                                    <Typography variant="caption" color="text.secondary">
-                                                        {formatDate(
-                                                            (task.createdAt as any)?.toDate ? (task.createdAt as any).toDate() : new Date(task.createdAt as any),
-                                                            'dd MMM yyyy, HH:mm',
-                                                            { locale: ru }
-                                                        )}
-                                                        {task.ownerName ? ` · ${task.ownerName}` : ''}
-                                                    </Typography>
-                                                </Box>
-                                            </Box>
-                                        )}
-
-                                        {task.assigneeName && (
-                                            <Box display="flex" alignItems="flex-start" gap={1.5}>
-                                                <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: 'info.main', mt: 0.8, flexShrink: 0 }} />
-                                                <Box>
-                                                    <Typography variant="body2" fontWeight={500}>
-                                                        Назначен исполнитель: {task.assigneeName}
-                                                    </Typography>
-                                                </Box>
-                                            </Box>
-                                        )}
-
-                                        {task.startDate && (
-                                            <Box display="flex" alignItems="flex-start" gap={1.5}>
-                                                <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: 'warning.main', mt: 0.8, flexShrink: 0 }} />
-                                                <Box>
-                                                    <Typography variant="body2" fontWeight={500}>
-                                                        План старта
-                                                    </Typography>
-                                                    <Typography variant="caption" color="text.secondary">
-                                                        {formatDate(
-                                                            (task.startDate as any)?.toDate ? (task.startDate as any).toDate() : new Date(task.startDate as any),
-                                                            'dd MMM yyyy',
-                                                            { locale: ru }
-                                                        )}
-                                                    </Typography>
-                                                </Box>
-                                            </Box>
-                                        )}
-
-                                        {task.dueDate && (
-                                            <Box display="flex" alignItems="flex-start" gap={1.5}>
-                                                <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: 'error.main', mt: 0.8, flexShrink: 0 }} />
-                                                <Box>
-                                                    <Typography variant="body2" fontWeight={500}>
-                                                        Дедлайн
-                                                    </Typography>
-                                                    <Typography variant="caption" color="text.secondary">
-                                                        {formatDate(
-                                                            (task.dueDate as any)?.toDate ? (task.dueDate as any).toDate() : new Date(task.dueDate as any),
-                                                            'dd MMM yyyy',
-                                                            { locale: ru }
-                                                        )}
-                                                    </Typography>
-                                                </Box>
-                                            </Box>
-                                        )}
-
-                                        {task.completedAt && (
-                                            <Box display="flex" alignItems="flex-start" gap={1.5}>
-                                                <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: 'success.main', mt: 0.8, flexShrink: 0 }} />
-                                                <Box>
-                                                    <Typography variant="body2" fontWeight={500}>
-                                                        ✅ Задача завершена
-                                                    </Typography>
-                                                    <Typography variant="caption" color="text.secondary">
-                                                        {formatDate(
-                                                            (task.completedAt as any)?.toDate ? (task.completedAt as any).toDate() : new Date(task.completedAt as any),
-                                                            'dd MMM yyyy, HH:mm',
-                                                            { locale: ru }
-                                                        )}
-                                                    </Typography>
-                                                </Box>
-                                            </Box>
-                                        )}
-
-                                        {task.updatedAt && (
-                                            <Box display="flex" alignItems="flex-start" gap={1.5}>
-                                                <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: 'grey.400', mt: 0.8, flexShrink: 0 }} />
-                                                <Box>
-                                                    <Typography variant="body2" fontWeight={500}>
-                                                        Последнее обновление
-                                                    </Typography>
-                                                    <Typography variant="caption" color="text.secondary">
-                                                        {formatDate(
-                                                            (task.updatedAt as any)?.toDate ? (task.updatedAt as any).toDate() : new Date(task.updatedAt as any),
-                                                            'dd MMM yyyy, HH:mm',
-                                                            { locale: ru }
-                                                        )}
-                                                    </Typography>
-                                                </Box>
-                                            </Box>
-                                        )}
-
-                                        {/* Task History Events */}
-                                        {task.taskHistory && task.taskHistory.length > 0 && (
-                                            <>
-                                                <Divider sx={{ my: 1 }} />
-                                                <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase', letterSpacing: 1, fontWeight: 600 }}>
-                                                    Журнал изменений
-                                                </Typography>
-                                                {[...task.taskHistory].reverse().map((event, idx) => {
-                                                    const eventColors: Record<string, string> = {
-                                                        co_assignee_added: '#4caf50',
-                                                        co_assignee_removed: '#f44336',
-                                                        assigned: '#2196f3',
-                                                        status_changed: '#ff9800',
-                                                        completed: '#4caf50',
-                                                        created: '#2196f3',
-                                                        updated: '#9e9e9e',
-                                                    };
-                                                    const ts = event.timestamp?.toDate ? event.timestamp.toDate() : (event.timestamp ? new Date(event.timestamp) : null);
-                                                    return (
-                                                        <Box key={idx} display="flex" alignItems="flex-start" gap={1.5}>
-                                                            <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: eventColors[event.type] || '#9e9e9e', mt: 0.8, flexShrink: 0 }} />
-                                                            <Box>
-                                                                <Typography variant="body2" fontWeight={500}>
-                                                                    {event.description}
-                                                                </Typography>
-                                                                <Typography variant="caption" color="text.secondary">
-                                                                    {ts ? formatDate(ts, 'dd MMM yyyy, HH:mm', { locale: ru }) : ''}
-                                                                    {event.userName ? ` · ${event.userName}` : ''}
-                                                                </Typography>
-                                                            </Box>
-                                                        </Box>
-                                                    );
-                                                })}
-                                            </>
-                                        )}
-                                    </Stack>
-                                </Box>
+                                <TaskHistoryTimeline task={task} />
                             )}
 
                             {activeTab === 2 && (
@@ -1031,6 +937,100 @@ const UnifiedCockpitPage: React.FC = () => {
                                         setHasChanges(true);
                                     }}
                                 />
+                            )}
+
+                            {activeTab === 3 && (
+                                <Box sx={{ py: 2, pr: 1 }}>
+                                    <Box display="flex" gap={2} alignItems="center" mb={3}>
+                                        <Autocomplete
+                                            multiple
+                                            fullWidth
+                                            size="small"
+                                            value={contacts.filter(c => linkedContactIds.includes(c.id))}
+                                            options={contacts}
+                                            getOptionLabel={(opt: any) => opt.name || ''}
+                                            onChange={(_, newVal: any[]) => {
+                                                const newIds = newVal.map(v => v.id);
+                                                setLinkedContactIds(newIds);
+                                                setHasChanges(true);
+                                            }}
+                                            renderInput={(params) => (
+                                                <TextField {...params} label="Привязать контакт из базы" placeholder="Имя, телефон..." />
+                                            )}
+                                        />
+                                        <Button
+                                            variant="outlined"
+                                            startIcon={<AddIcon />}
+                                            onClick={() => setGlobalContactOpen(true)}
+                                            sx={{ whiteSpace: 'nowrap' }}
+                                        >
+                                            Новый
+                                        </Button>
+                                    </Box>
+
+                                    <Stack spacing={2}>
+                                        {linkedContactIds.length === 0 ? (
+                                            <Typography color="text.secondary" variant="body2">Нет привязанных контактов.</Typography>
+                                        ) : (
+                                            contacts.filter(c => linkedContactIds.includes(c.id)).map(contact => (
+                                                <Paper key={contact.id} variant="outlined" sx={{ p: 2, bgcolor: 'background.default' }}>
+                                                    <Box display="flex" alignItems="flex-start" gap={2}>
+                                                        <Avatar sx={{ width: 44, height: 44, bgcolor: 'primary.main', fontWeight: 600 }}>
+                                                            {contact.name?.charAt(0)}
+                                                        </Avatar>
+                                                        <Box flex={1}>
+                                                            <Typography variant="subtitle1" fontWeight={600} mb={0.5}>{contact.name}</Typography>
+                                                            {contact.roles && contact.roles.length > 0 && (
+                                                                <Box display="flex" gap={0.5} mb={1.5} flexWrap="wrap">
+                                                                    {contact.roles.map((r: string) => (
+                                                                        <Chip key={r} label={r} size="small" variant="outlined" sx={{ height: 22, fontSize: '0.7rem' }} />
+                                                                    ))}
+                                                                </Box>
+                                                            )}
+                                                            <Box display="flex" flexDirection="column" gap={0.5}>
+                                                                {(contact.phones || []).map((p: any, i: number) => {
+                                                                    const cleanNumber = p.number.replace(/\\D/g, '');
+                                                                    return (
+                                                                        <Box key={i} display="flex" alignItems="center" gap={1} mb={0.5}>
+                                                                            <Typography variant="body2" sx={{ display: 'flex', alignItems: 'center' }}>
+                                                                                <Link href={`tel:${p.number}`} underline="hover" color="primary.main" fontWeight={500}>📞 {p.number}</Link>
+                                                                                {p.label ? <Typography component="span" variant="caption" color="text.secondary" ml={1}>• {p.label}</Typography> : ''}
+                                                                            </Typography>
+                                                                            <IconButton component="a" size="small" href={`https://wa.me/${cleanNumber}`} target="_blank" rel="noopener noreferrer" color="success" sx={{ padding: '2px' }} title="WhatsApp">
+                                                                                <WhatsAppIcon fontSize="small" sx={{ fontSize: 18 }} />
+                                                                            </IconButton>
+                                                                            <IconButton component="a" size="small" href={`https://t.me/+${cleanNumber}`} target="_blank" rel="noopener noreferrer" color="info" sx={{ padding: '2px' }} title="Telegram">
+                                                                                <TelegramIcon fontSize="small" sx={{ fontSize: 18 }} />
+                                                                            </IconButton>
+                                                                        </Box>
+                                                                    );
+                                                                })}
+                                                                {(contact.emails || []).map((e: any, i: number) => (
+                                                                    <Typography key={i} variant="body2">
+                                                                        <Link href={`mailto:${e.address}`} underline="hover" color="info.main">✉️ {e.address}</Link>
+                                                                        {e.label ? <Typography component="span" variant="caption" color="text.secondary" ml={1}>• {e.label}</Typography> : ''}
+                                                                    </Typography>
+                                                                ))}
+                                                            </Box>
+                                                        </Box>
+                                                    </Box>
+                                                </Paper>
+                                            ))
+                                        )}
+                                    </Stack>
+
+                                    <GlobalContactQuickAdd
+                                        open={globalContactOpen}
+                                        onClose={() => setGlobalContactOpen(false)}
+                                        onContactAdded={(newContact: any) => {
+                                            setContacts(prev => [...prev, newContact].sort((a: any, b: any) => (a.name || '').localeCompare(b.name || '')));
+                                            if (newContact.id) {
+                                                setLinkedContactIds(prev => [...prev, newContact.id!]);
+                                                setHasChanges(true);
+                                            }
+                                        }}
+                                    />
+                                </Box>
                             )}
                         </Paper>
                     </Box>
@@ -1062,20 +1062,7 @@ const UnifiedCockpitPage: React.FC = () => {
                                 sx={{ mb: 2 }}
                             />
 
-                            {/* Linked Contacts (Read-only on this page for now, editable in Dialog) */}
-                            {linkedContactIds.length > 0 && (
-                                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mb: 1 }}>
-                                    {contacts.filter(c => linkedContactIds.includes(c.id)).map(contact => (
-                                        <Chip
-                                            key={contact.id}
-                                            label={contact.name}
-                                            size="small"
-                                            variant="outlined"
-                                            avatar={<Avatar sx={{ width: 18, height: 18 }}>{contact.name?.charAt(0)}</Avatar>}
-                                        />
-                                    ))}
-                                </Box>
-                            )}
+                            {/* Linked Contacts (v3 handled in Main Tab) */}
 
                             <Divider sx={{ my: 2 }} />
 
@@ -1368,54 +1355,6 @@ const UnifiedCockpitPage: React.FC = () => {
                                 label="Needs estimate"
                                 sx={{ mb: 2 }}
                             />
-
-                            <TextField
-                                fullWidth
-                                size="small"
-                                label="Estimated Cost"
-                                type="number"
-                                value={estimatedCost}
-                                onChange={(e) => {
-                                    const val = e.target.value ? Math.max(0, Number(e.target.value)) : '';
-                                    setEstimatedCost(val);
-                                    setHasChanges(true);
-                                }}
-                                InputProps={{
-                                    inputProps: { min: 0 },
-                                    startAdornment: <InputAdornment position="start">$</InputAdornment>
-                                }}
-                                sx={{ mb: 2 }}
-                            />
-
-                            {/* AI Estimate */}
-                            <Button
-                                fullWidth
-                                variant="outlined"
-                                startIcon={estimating ? <CircularProgress size={16} /> : <AIIcon />}
-                                onClick={handleAIEstimate}
-                                disabled={estimating}
-                                sx={{ mb: 2 }}
-                            >
-                                {estimating ? 'Estimating...' : 'AI Estimate'}
-                            </Button>
-
-                            {estimateResult && (
-                                <Alert
-                                    severity="info"
-                                    action={
-                                        <Button size="small" onClick={applyEstimate}>
-                                            Apply
-                                        </Button>
-                                    }
-                                    sx={{ mb: 2 }}
-                                >
-                                    AI suggests: ${estimateResult.suggested}
-                                    <br />
-                                    <Typography variant="caption">
-                                        Range: ${estimateResult.low} - ${estimateResult.high}
-                                    </Typography>
-                                </Alert>
-                            )}
                         </Paper>
                     </Box>
                 </Box>

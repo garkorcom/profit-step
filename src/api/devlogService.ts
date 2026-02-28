@@ -8,6 +8,7 @@ import {
     where,
     orderBy,
     serverTimestamp,
+    Timestamp,
 } from 'firebase/firestore';
 import { db } from '../firebase/firebase';
 import type {
@@ -107,6 +108,109 @@ export const togglePublishDevLog = async (
         publishedAt: isPublished ? serverTimestamp() : null,
         updatedAt: serverTimestamp(),
     });
+};
+
+// ==================== AUTO-GATHER DAILY ACCOMPLISHMENTS ====================
+
+export const getTodayAccomplishments = async (userId: string): Promise<{ notes: string, totalMinutes: number }> => {
+    // 1. Determine today's boundaries
+    const now = new Date();
+    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
+    const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+
+    const startTimestamp = Timestamp.fromDate(startOfDay);
+    const endTimestamp = Timestamp.fromDate(endOfDay);
+
+    let totalMinutes = 0;
+    const notesLines: string[] = [];
+
+    // 2. Query work_sessions ended today
+    try {
+        const sessionsQuery = query(
+            collection(db, 'work_sessions'),
+            where('employeeId', '==', userId),
+            where('endTime', '>=', startTimestamp),
+            where('endTime', '<=', endTimestamp)
+        );
+        const sessionsSnapshot = await getDocs(sessionsQuery);
+        const sessions = sessionsSnapshot.docs.map(d => d.data());
+
+        if (sessions.length > 0) {
+            notesLines.push('**Рабочие сессии за сегодня:**');
+            sessions.forEach(session => {
+                const title = session.relatedTaskTitle || session.description || session.plannedTaskSummary || 'Сессия без описания';
+                const duration = session.durationMinutes || 0;
+                totalMinutes += duration;
+
+                let details = '';
+                if (session.resultSummary) {
+                    details = ` - *Результат:* ${session.resultSummary}`;
+                }
+                notesLines.push(`- ⏱️ ${title} (${duration} мин)${details}`);
+            });
+            notesLines.push(''); // empty line
+        }
+    } catch (e) {
+        console.error('Error fetching work_sessions:', e);
+    }
+
+    // 3. Query gtd_tasks completed today
+    try {
+        const tasksQuery = query(
+            collection(db, 'gtd_tasks'),
+            where('ownerId', '==', userId),
+            where('status', '==', 'done'),
+            where('completedAt', '>=', startTimestamp),
+            where('completedAt', '<=', endTimestamp)
+        );
+        const tasksSnapshot = await getDocs(tasksQuery);
+        const tasks = tasksSnapshot.docs.map(d => d.data());
+
+        // Also check tasks where the user is an assignee
+        const assigneeTasksQuery = query(
+            collection(db, 'gtd_tasks'),
+            where('assigneeId', '==', userId),
+            where('status', '==', 'done'),
+            where('completedAt', '>=', startTimestamp),
+            where('completedAt', '<=', endTimestamp)
+        );
+        const assigneeTasksSnapshot = await getDocs(assigneeTasksQuery);
+        const assigneeTasks = assigneeTasksSnapshot.docs.map(d => d.data());
+
+        // Merge and deduplicate just in case
+        const allTasksMap = new Map();
+        tasks.forEach(t => allTasksMap.set(t.id, t));
+        assigneeTasks.forEach(t => allTasksMap.set(t.id, t));
+        const allCompletedTasks = Array.from(allTasksMap.values());
+
+        if (allCompletedTasks.length > 0) {
+            notesLines.push('**Завершенные задачи за сегодня:**');
+            allCompletedTasks.forEach(task => {
+                const duration = task.actualDurationMinutes || task.estimatedDurationMinutes || 0;
+                // We do NOT add to totalMinutes here to avoid double-counting if work_sessions correctly mapped to gtd_tasks logic.
+                // However, if the user works without tracking sessions, we might want to sum. For now, tracking relies heavily on sessions or manual logging.
+                // Let's add it only if there are no related sessions for this task in the day.
+                // Simple approach: add task actual duration if provided and totalMinutes is still low. (Adjust as needed)
+                if (totalMinutes === 0) {
+                    totalMinutes += duration;
+                }
+
+                notesLines.push(`- ✅ ${task.title} (${duration > 0 ? duration + ' мин' : 'время не указано'})`);
+            });
+        }
+    } catch (e) {
+        console.error('Error fetching gtd_tasks:', e);
+    }
+
+    // 4. Fallback if nothing found
+    if (notesLines.length === 0) {
+        notesLines.push('Система не нашла завершенных задач или затреканного времени (work_sessions) за сегодня. Запишите вручную!');
+    }
+
+    return {
+        notes: notesLines.join('\n'),
+        totalMinutes
+    };
 };
 
 // ==================== MOCK AI GENERATOR (v2) ====================

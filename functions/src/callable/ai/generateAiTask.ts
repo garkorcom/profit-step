@@ -20,9 +20,9 @@ const ChecklistItemSchema = z.object({
 const TaskDraftSchema = z.object({
     title: z.string(),
     description: z.string().optional().default(""),
-    assigneeIds: z.array(z.string()),
-    projectId: z.string(),
-    dueDate: z.string(),
+    assigneeIds: z.array(z.string()).optional().default([]),
+    projectId: z.string().optional(),
+    dueDate: z.string().optional(),
     priority: z.enum(["low", "medium", "high", "urgent"]),
     estimatedMinutes: z.number().optional(),
     zone: z.string().optional(),
@@ -256,7 +256,7 @@ const TOOL_DEFINITION: Anthropic.Tool = {
                         },
                     },
                 },
-                required: ["title", "assigneeIds", "projectId", "dueDate", "priority"],
+                required: ["title", "priority"],
             },
             analysis: {
                 type: "object",
@@ -322,6 +322,11 @@ function buildSystemPrompt(
 
 CURRENT SYSTEM TIME: ${clientDatetime}
 
+FORMATTING AND LANGUAGE RULES:
+1. The user input might be raw voice-to-text transcription containing phonetic errors, run-on sentences, or poor grammar. You MUST fix these errors.
+2. Regardless of the input language (Russian/English), you MUST output the final \`title\`, \`description\`, and \`checklist\` items in PROFESSIONAL ENGLISH. 
+3. Ensure electrical/construction terminology is accurately translated.
+
 RULES:
 - Match employee names loosely (fuzzy). "Mike" → find closest match in employee list.
 - Match project names loosely. Use the projectId from context if user references it.
@@ -332,6 +337,7 @@ RULES:
   If the matched item status is "completed" or "paid", flag as possible warranty/rework.
 - Check recent tasks for possible duplicates.
 - Confidence: 0.0-1.0 for each field. Be honest about uncertainty.
+- CRITICAL: If you cannot reliably determine a field (assignee, project, dueDate, zone, etc), OMIT IT entirely. Do NOT use placeholder strings like '<UNKNOWN>'.
 
 CONTEXT:
 Project: ${(context.project.name || "").slice(0, 200)} (${(context.project.clientName || "").slice(0, 200)})

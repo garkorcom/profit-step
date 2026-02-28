@@ -460,4 +460,4 @@ const GTDTaskCard: React.FC<GTDTaskCardProps> = ({
     );
 };
 
-export default GTDTaskCard;
+export default React.memo(GTDTaskCard);

@@ -127,10 +127,23 @@ export async function registerServiceWorker() {
                 if (newWorker) {
                     newWorker.addEventListener('statechange', () => {
                         if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                            // New content is available, show update notification
-                            console.log('[SW] New content available, refresh to update');
+                            // Новый контент доступен — отправляем команду skipWaiting
+                            // и перезагружаем страницу, чтобы пользователь сразу увидел обновление.
+                            console.log('[SW] New content available, auto-reloading...');
+                            newWorker.postMessage('skipWaiting');
                         }
                     });
+                }
+            });
+
+            // Когда новый Service Worker взял управление — перезагружаем страницу,
+            // чтобы гарантированно подтянуть свежий код из нового кэша.
+            let refreshing = false;
+            navigator.serviceWorker.addEventListener('controllerchange', () => {
+                if (!refreshing) {
+                    refreshing = true;
+                    console.log('[SW] Controller changed, reloading page...');
+                    window.location.reload();
                 }
             });
 

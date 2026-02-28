@@ -82,6 +82,8 @@ export const useGTDTasks = (currentUser: any, showAllTasks: boolean = false) => 
         const sourceColId = source.droppableId as GTDStatus;
         const destColId = destination.droppableId as GTDStatus;
 
+        let updatedTaskRef: GTDTask | null = null;
+
         // Save previous state for rollback
         setColumns(prev => {
             prevColumnsRef.current = prev;
@@ -91,8 +93,12 @@ export const useGTDTasks = (currentUser: any, showAllTasks: boolean = false) => 
             const destList = sourceColId === destColId ? sourceList : [...prev[destColId]];
 
             const [movedTask] = sourceList.splice(source.index, 1);
-            movedTask.status = destColId;
-            destList.splice(destination.index, 0, movedTask);
+
+            // Fix 1 & 3: Deep clone to prevent state mutation and keep a reference
+            const updatedTask = { ...movedTask, status: destColId };
+            updatedTaskRef = updatedTask;
+
+            destList.splice(destination.index, 0, updatedTask);
 
             return {
                 ...prev,
@@ -101,14 +107,26 @@ export const useGTDTasks = (currentUser: any, showAllTasks: boolean = false) => 
             };
         });
 
-        // Find the moved task for return value
-        const movedTask = columns[sourceColId]?.[source.index];
-
         // Firestore Update
-        if (currentUser) {
+        if (currentUser && updatedTaskRef) {
             try {
                 const taskRef = doc(db, 'gtd_tasks', draggableId);
                 const updates: any = { status: destColId, updatedAt: Timestamp.now() };
+
+                // Safe TaskHistory update
+                const newHistoryEvent = {
+                    type: 'status_changed',
+                    description: `Статус изменен на "${destColId.replace('_', ' ')}"`,
+                    userId: currentUser.uid,
+                    userName: currentUser.displayName || 'Пользователь',
+                    timestamp: Timestamp.now()
+                };
+
+                // Add to the cloned object's history, then save the full array.
+                // This prevents `arrayUnion` from failing on documents missing the taskHistory field.
+                const currentHistory = (updatedTaskRef as any).taskHistory || [];
+                const updatedHistory = [...currentHistory, newHistoryEvent];
+                updates.taskHistory = updatedHistory;
 
                 // Auto-set completedAt when moving to Done
                 if (destColId === 'done' && sourceColId !== 'done') {
@@ -120,7 +138,7 @@ export const useGTDTasks = (currentUser: any, showAllTasks: boolean = false) => 
                 }
 
                 await updateDoc(taskRef, updates);
-                return movedTask ? { movedTask: { ...movedTask, status: destColId }, destColId } : null;
+                return { movedTask: updatedTaskRef as GTDTask, destColId };
             } catch (error) {
                 console.error("Error moving task:", error);
                 // Rollback to previous state
@@ -132,7 +150,7 @@ export const useGTDTasks = (currentUser: any, showAllTasks: boolean = false) => 
             }
         }
         return null;
-    }, [currentUser, columns]);
+    }, [currentUser]);
 
     const addTask = useCallback(async (
         title: string,
@@ -141,16 +159,7 @@ export const useGTDTasks = (currentUser: any, showAllTasks: boolean = false) => 
         users: UserProfile[],
         clientId?: string,
         assigneeId?: string,
-        aiData?: {
-            estimatedHours?: number;
-            estimatedCost?: number;
-            crewSize?: number;
-            aiMaterials?: string[];
-            selectedMaterials?: string[];
-            aiTools?: string[];
-            selectedTools?: string[];
-            aiReasoning?: string;
-        },
+
         extra?: {
             dueDate?: string;
             startDate?: string;
@@ -197,18 +206,7 @@ export const useGTDTasks = (currentUser: any, showAllTasks: boolean = false) => 
                 ...(columnId === 'done' && { completedAt: Timestamp.now() }),
                 // Auto-set needsEstimate if created in Estimate
                 ...(columnId === 'estimate' && { needsEstimate: true }),
-                // AI Estimation fields (only include if defined to avoid Firestore errors)
-                ...(aiData && {
-                    ...(aiData.estimatedHours && { estimatedDurationMinutes: Math.round(aiData.estimatedHours * 60) }),
-                    ...(aiData.estimatedCost !== undefined && { estimatedCost: aiData.estimatedCost }),
-                    ...(aiData.crewSize !== undefined && { crewSize: aiData.crewSize }),
-                    ...(aiData.aiMaterials && aiData.aiMaterials.length > 0 && { aiMaterials: aiData.aiMaterials }),
-                    ...(aiData.selectedMaterials && aiData.selectedMaterials.length > 0 && { selectedMaterials: aiData.selectedMaterials }),
-                    ...(aiData.aiTools && aiData.aiTools.length > 0 && { aiTools: aiData.aiTools }),
-                    ...(aiData.selectedTools && aiData.selectedTools.length > 0 && { selectedTools: aiData.selectedTools }),
-                    ...(aiData.aiReasoning && { aiReasoning: aiData.aiReasoning }),
-                    aiEstimateUsed: true,
-                }),
+
             };
             await addDoc(collection(db, 'gtd_tasks'), newTask);
         } catch (error) {

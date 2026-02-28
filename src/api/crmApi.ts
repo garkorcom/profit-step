@@ -12,8 +12,22 @@ import {
     Timestamp,
     limit
 } from 'firebase/firestore';
-import { db } from '../firebase/firebase';
+import { db, functions } from '../firebase/firebase';
+import { httpsCallable } from 'firebase/functions';
 import { Client, ClientStatus, ClientType } from '../types/crm.types';
+
+export interface ParseClientWebsiteRequest {
+    url: string;
+}
+
+export interface ParseClientWebsiteResponse {
+    name?: string;
+    type?: string;
+    phone?: string;
+    email?: string;
+    address?: string;
+    website?: string;
+}
 
 const CLIENTS_COLLECTION = 'clients';
 
@@ -82,6 +96,22 @@ export const crmApi = {
             });
         } catch (error) {
             console.error('Error updating client:', error);
+            throw error;
+        }
+    },
+
+    // --- AI ---
+
+    async parseClientWebsite(url: string): Promise<ParseClientWebsiteResponse> {
+        try {
+            const callable = httpsCallable<ParseClientWebsiteRequest, ParseClientWebsiteResponse>(
+                functions,
+                'parseClientWebsite'
+            );
+            const result = await callable({ url });
+            return result.data;
+        } catch (error) {
+            console.error('Error parsing client website:', error);
             throw error;
         }
     }

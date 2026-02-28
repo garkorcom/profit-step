@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
     Dialog, DialogTitle, DialogContent, DialogActions,
     Button, TextField, Box, Typography, IconButton,
-    Grid, Chip, CircularProgress, Alert, Stack
+    Chip, CircularProgress, Alert, Stack
 } from '@mui/material';
 import {
     Close as CloseIcon,
@@ -18,6 +18,8 @@ interface GlobalContactQuickAddProps {
     open: boolean;
     onClose: () => void;
     onContactAdded?: (newContact: Contact) => void;
+    onContactUpdated?: (updatedContact: Contact) => void;
+    initialContact?: Contact | null;
     // Context capture
     currentProjectId?: string;
 }
@@ -26,6 +28,8 @@ const GlobalContactQuickAdd: React.FC<GlobalContactQuickAddProps> = ({
     open,
     onClose,
     onContactAdded,
+    onContactUpdated,
+    initialContact,
     currentProjectId
 }) => {
     const { currentUser, userProfile } = useAuth();
@@ -53,34 +57,50 @@ const GlobalContactQuickAdd: React.FC<GlobalContactQuickAddProps> = ({
     // Reset form when opened
     useEffect(() => {
         if (open) {
-            setName('');
-            setRoles([]);
-            setNewRole('');
-            setPhones([{ number: '', label: 'Мобильный' }]);
-            setEmails([]);
-            setDefaultCity('');
-            setWhatsapp('');
-            setTelegram('');
-            setNotes('');
-            setError(null);
+            if (initialContact) {
+                // Edit Mode
+                setName(initialContact.name);
+                setRoles(initialContact.roles || []);
+                setNewRole('');
+                setPhones(initialContact.phones?.length ? initialContact.phones : [{ number: '', label: 'Мобильный' }]);
+                setEmails(initialContact.emails || []);
+                setDefaultCity(initialContact.defaultCity || '');
+                setWhatsapp(initialContact.messengers?.whatsapp || '');
+                setTelegram(initialContact.messengers?.telegram || '');
+                setNotes(initialContact.notes || '');
+                setError(null);
+                setLocationCaptured(null);
+            } else {
+                // Create Mode
+                setName('');
+                setRoles([]);
+                setNewRole('');
+                setPhones([{ number: '', label: 'Мобильный' }]);
+                setEmails([]);
+                setDefaultCity('');
+                setWhatsapp('');
+                setTelegram('');
+                setNotes('');
+                setError(null);
 
-            // Try capturing geolocation
-            if ('geolocation' in navigator) {
-                navigator.geolocation.getCurrentPosition(
-                    (position) => {
-                        setLocationCaptured({
-                            lat: position.coords.latitude,
-                            lng: position.coords.longitude
-                        });
-                    },
-                    (err) => {
-                        console.warn("Geolocation denied or unavailable", err);
-                        setLocationCaptured(null);
-                    }
-                );
+                // Try capturing geolocation
+                if ('geolocation' in navigator) {
+                    navigator.geolocation.getCurrentPosition(
+                        (position) => {
+                            setLocationCaptured({
+                                lat: position.coords.latitude,
+                                lng: position.coords.longitude
+                            });
+                        },
+                        (err) => {
+                            console.warn("Geolocation denied or unavailable", err);
+                            setLocationCaptured(null);
+                        }
+                    );
+                }
             }
         }
-    }, [open]);
+    }, [open, initialContact]);
 
     // Handle Phone Changes
     const handlePhoneChange = (index: number, field: keyof ContactPhone, value: string) => {
@@ -140,15 +160,21 @@ const GlobalContactQuickAdd: React.FC<GlobalContactQuickAddProps> = ({
                 defaultCity: defaultCity.trim() || undefined,
                 linkedProjects,
                 notes: notes.trim() || undefined,
-                createdBy: currentUser.uid,
-                createdLocation
+                createdBy: initialContact ? initialContact.createdBy : currentUser.uid,
+                createdLocation: initialContact ? initialContact.createdLocation : createdLocation
             };
 
-            const authorName = userProfile?.displayName || currentUser.email || 'Пользователь';
-            const newId = await contactsService.createContact(newContactData, currentUser.uid, authorName);
-
-            if (onContactAdded) {
-                onContactAdded({ id: newId, ...newContactData, createdAt: null as any }); // createdAt is mocked here for frontend optimistic update if needed
+            if (initialContact) {
+                await contactsService.updateContact(initialContact.id!, newContactData);
+                if (onContactUpdated) {
+                    onContactUpdated({ id: initialContact.id, ...newContactData, createdAt: initialContact.createdAt });
+                }
+            } else {
+                const authorName = userProfile?.displayName || currentUser.email || 'Пользователь';
+                const newId = await contactsService.createContact(newContactData, currentUser.uid, authorName);
+                if (onContactAdded) {
+                    onContactAdded({ id: newId, ...newContactData, createdAt: null as any });
+                }
             }
 
             onClose();
@@ -163,7 +189,9 @@ const GlobalContactQuickAdd: React.FC<GlobalContactQuickAddProps> = ({
     return (
         <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth scroll="paper">
             <DialogTitle sx={{ m: 0, p: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <Typography variant="h6" fontWeight="bold">Внести контакт</Typography>
+                <Typography variant="h6" fontWeight="bold">
+                    {initialContact ? 'Редактировать контакт' : 'Внести контакт'}
+                </Typography>
                 <IconButton onClick={onClose} size="small"><CloseIcon /></IconButton>
             </DialogTitle>
 
@@ -318,21 +346,21 @@ const GlobalContactQuickAdd: React.FC<GlobalContactQuickAddProps> = ({
                 </Box>
             </DialogContent>
 
-            <DialogActions sx={{ p: 2, display: 'flex', justifyContent: 'space-between' }}>
+            <DialogActions sx={{ p: 2, display: 'flex', justifyContent: 'space-between', bgcolor: 'background.default' }}>
                 <Typography variant="caption" color="text.secondary">
                     {currentProjectId ? `Будет привязан к проекту: ${currentProjectId}` : 'Без привязки к проекту'}
                 </Typography>
                 <Box>
-                    <Button onClick={onClose} disabled={loading} sx={{ mr: 1 }}>
+                    <Button onClick={onClose} disabled={loading} color="inherit" sx={{ mr: 1 }}>
                         Отмена
                     </Button>
                     <Button
-                        variant="contained"
                         onClick={handleSubmit}
+                        variant="contained"
                         disabled={loading || !name.trim()}
-                        startIcon={loading ? <CircularProgress size={20} /> : null}
+                        sx={{ px: 4 }}
                     >
-                        Сохранить
+                        {loading ? <CircularProgress size={24} /> : (initialContact ? 'Сохранить' : 'Добавить')}
                     </Button>
                 </Box>
             </DialogActions>

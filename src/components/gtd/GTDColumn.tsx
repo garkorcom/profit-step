@@ -736,4 +736,4 @@ const GTDColumn: React.FC<GTDColumnProps> = ({
     );
 };
 
-export default GTDColumn;
+export default React.memo(GTDColumn);

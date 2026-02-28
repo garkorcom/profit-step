@@ -19,7 +19,6 @@ import {
     Button,
     CircularProgress,
     Chip,
-    IconButton,
     Dialog,
     DialogTitle,
     DialogContent,
@@ -33,18 +32,17 @@ import {
     Divider,
     Card,
     CardContent,
-    Grid
+    Grid,
+    Autocomplete
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import ExpandLessIcon from '@mui/icons-material/ExpandLess';
-import AccountBalanceWalletIcon from '@mui/icons-material/AccountBalanceWallet';
-import ReceiptIcon from '@mui/icons-material/Receipt';
 import PaymentIcon from '@mui/icons-material/Payment';
 
 import { projectsApi } from '../../api/projectsApi';
 import { Project, LedgerEntry, LedgerCategory } from '../../types/crm.types';
 import { useAuth } from '../../auth/AuthContext';
+import { Contact } from '../../types/contact.types';
+import { contactsService } from '../../services/contactsService';
 
 interface ProjectFinanceTabProps {
     clientId: string;
@@ -79,10 +77,25 @@ const ProjectFinanceTab: React.FC<ProjectFinanceTabProps> = ({ clientId, clientN
     const [entryCategory, setEntryCategory] = useState<LedgerCategory>('labor');
     const [entryAmount, setEntryAmount] = useState('');
     const [entryDescription, setEntryDescription] = useState('');
+    const [contacts, setContacts] = useState<Contact[]>([]);
+    const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
 
     useEffect(() => {
         loadProjects();
-    }, [clientId]);
+        if (userProfile?.companyId) {
+            loadContacts(userProfile.companyId);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [clientId, userProfile?.companyId]);
+
+    const loadContacts = async (companyId: string) => {
+        try {
+            const data = await contactsService.getContacts(companyId);
+            setContacts(data);
+        } catch (error) {
+            console.error('Error loading contacts:', error);
+        }
+    };
 
     const loadProjects = async () => {
         setLoading(true);
@@ -151,6 +164,8 @@ const ProjectFinanceTab: React.FC<ProjectFinanceTabProps> = ({ clientId, clientN
                 amount: parseFloat(entryAmount),
                 description: entryDescription || categoryLabels[entryCategory],
                 sourceType: 'manual',
+                linkedContactId: selectedContact?.id || undefined,
+                linkedContactName: selectedContact?.name || undefined,
                 date: new Date(),
                 createdBy: userProfile.id
             });
@@ -158,6 +173,7 @@ const ProjectFinanceTab: React.FC<ProjectFinanceTabProps> = ({ clientId, clientN
             // Reset form
             setEntryAmount('');
             setEntryDescription('');
+            setSelectedContact(null);
             setAddEntryOpen(false);
 
             // Reload data
@@ -444,6 +460,21 @@ const ProjectFinanceTab: React.FC<ProjectFinanceTabProps> = ({ clientId, clientN
                         sx={{ mt: 2 }}
                         multiline
                         rows={2}
+                    />
+
+                    <Autocomplete
+                        options={contacts}
+                        getOptionLabel={(option) => option.name}
+                        value={selectedContact}
+                        onChange={(_, newValue) => setSelectedContact(newValue)}
+                        renderInput={(params) => (
+                            <TextField
+                                {...params}
+                                label="Контакт (Опционально)"
+                                placeholder="Выберите подрядчика/клиента"
+                            />
+                        )}
+                        sx={{ mt: 2 }}
                     />
                 </DialogContent>
                 <DialogActions>

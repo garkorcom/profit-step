@@ -15,19 +15,35 @@ import {
 import { Contact } from '../types/contact.types';
 
 const COLLECTION_NAME = 'contacts';
-const DEVLOGS_COLLECTION = 'devlogs';
+const DEVLOGS_COLLECTION = 'dev_logs';
 
 export const contactsService = {
+    /**
+     * Helper to safely remove undefined fields
+     */
+    cleanPayload(obj: any): any {
+        return Object.entries(obj).reduce((acc, [key, val]) => {
+            if (val === undefined) return acc;
+            if (val && typeof val === 'object' && !Array.isArray(val) && !(val instanceof Timestamp)) {
+                acc[key] = this.cleanPayload(val);
+                return acc;
+            }
+            acc[key] = val;
+            return acc;
+        }, {} as any);
+    },
+
     /**
      * Create a new contact
      */
     async createContact(contactData: Omit<Contact, 'id' | 'createdAt'>, userId: string, userName?: string): Promise<string> {
         try {
-            const newContactData = {
+            const rawData = {
                 ...contactData,
                 createdAt: Timestamp.now(),
                 createdBy: userId,
             };
+            const newContactData = this.cleanPayload(rawData);
 
             const docRef = await addDoc(collection(db, COLLECTION_NAME), newContactData);
 
@@ -35,8 +51,9 @@ export const contactsService = {
             await this.logContactCreation(docRef.id, newContactData, userName || 'System');
 
             return docRef.id;
-        } catch (error) {
+        } catch (error: any) {
             console.error('Error creating contact:', error);
+            console.error('Payload attempted:', JSON.stringify(contactData, null, 2));
             throw error;
         }
     },

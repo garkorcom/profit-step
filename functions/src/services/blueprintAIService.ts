@@ -1,0 +1,475 @@
+import { GoogleGenerativeAI } from '@google/generative-ai';
+import Anthropic from '@anthropic-ai/sdk';
+import OpenAI from 'openai';
+import { logger } from 'firebase-functions';
+import { safeConfig } from '../utils/safeConfig';
+import { BlueprintAgentResult, BlueprintDiscrepancy, BlueprintFileClassification } from '../types/blueprint.types';
+
+// ===== API Keys =====
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || safeConfig().gemini?.api_key;
+const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || safeConfig().anthropic?.api_key || safeConfig().anthropic?.key;
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY || safeConfig().openai?.api_key || safeConfig().openai?.key;
+
+// ===== Valid takeoff keys =====
+const VALID_TAKEOFF_KEYS = new Set([
+    'recessed_ic', 'recessed_nc', 'surface', 'duplex', 'gfi', 'dedicated_20a',
+    'outlet_240_30', 'outlet_240_50', 'floor_outlet', 'single_pole', '3way',
+    'dimmer', 'bath_exhaust', 'smoke_co', 'panel_200', 'subpanel_100',
+    'cat6', 'exterior', 'ceiling_fan', 'chandelier', 'pendant',
+    'range', 'cooktop', 'wall_oven', 'microwave', 'dishwasher',
+    'dryer', 'water_heater', 'ac_30a', 'ev_charger',
+    'under_cabinet', 'exhaust_fan',
+    'pool_pump', 'pool_light', 'pool_heater', 'spa_blower',
+    'generator_panel', 'transfer_switch',
+    'landscape_light', 'landscape_transformer', 'irrigation_controller'
+]);
+
+const TAKEOFF_PROMPT = `You are a professional Master Electrician and Estimator.
+Your task is to analyze the provided Electrical Blueprint.
+
+STRATEGY:
+1. First, locate the SYMBOL LEGEND on the blueprint to identify what each symbol means.
+2. Divide the floor plan into 4 QUADRANTS (NW, NE, SW, SE) and scan each systematically.
+3. Cross-reference symbols found on the plan with the legend.
+4. Sum up totals across all quadrants.
+
+RULES:
+1. ONLY count electrical devices, receptacles, switches, lighting, panels, and equipment.
+2. DO NOT count wire lengths or conduit runs.
+3. Your output MUST be a valid JSON object.
+4. The JSON keys MUST use ONLY these standard keys:
+
+  LIGHTING: recessed_ic, recessed_nc, surface, exterior, ceiling_fan, chandelier, pendant, under_cabinet
+  RECEPTACLES: duplex, gfi, dedicated_20a, outlet_240_30, outlet_240_50, floor_outlet
+  SWITCHES: single_pole, 3way, dimmer
+  VENTILATION: bath_exhaust, exhaust_fan, smoke_co
+  PANELS: panel_200, subpanel_100
+  DATA: cat6
+  APPLIANCES: range, cooktop, wall_oven, microwave, dishwasher, dryer, water_heater, ac_30a, ev_charger
+  POOL: pool_pump, pool_light, pool_heater, spa_blower
+  GENERATOR: generator_panel, transfer_switch
+  LANDSCAPE: landscape_light, landscape_transformer, irrigation_controller
+
+5. Values MUST be non-negative integers. DO NOT include items with count 0.
+6. Return ONLY the JSON object, no markdown, no \`\`\`json blocks.
+Example: {"recessed_ic": 42, "duplex": 28, "single_pole": 12, "panel_200": 1}
+`;
+
+const DISCREPANCY_PROMPT = `You are a professional Master Electrician acting as Senior Auditor.
+INDEPENDENTLY re-count the following items on the blueprint.
+
+RULES:
+1. Divide the blueprint into 4 quadrants and scan each.
+2. Count carefully. Double-check.
+3. Return ONLY a valid JSON object, no markdown.
+4. Keys must be exactly the items listed below, values are integers.
+
+ITEMS TO RE-COUNT:
+{ITEMS_LIST}
+
+Example: {"recessed_ic": 45, "duplex": 32}
+`;
+
+const METADATA_PROMPT = `Extract Project Name/Description, Address, and Area (sq ft) from this blueprint.
+Return ONLY a JSON object: {"description": "...", "address": "...", "areaSqft": 2500}
+Use null for missing values. No markdown.`;
+
+// ===== Blueprint Input: supports both PDF and images =====
+export interface BlueprintInput {
+    buffer: Buffer;
+    mimeType: string; // 'application/pdf' | 'image/png' | 'image/jpeg'
+    fileName: string;
+    base64: string; // Pre-computed once to avoid 3x encoding in memory
+    isPdf: boolean;
+}
+
+/**
+ * Detect the actual MIME type from the buffer header bytes.
+ */
+export function detectMimeType(buffer: Buffer, fileName: string): string {
+    if (buffer[0] === 0x25 && buffer[1] === 0x50 && buffer[2] === 0x44 && buffer[3] === 0x46) {
+        return 'application/pdf'; // %PDF
+    }
+    if (buffer[0] === 0x89 && buffer[1] === 0x50) {
+        return 'image/png';
+    }
+    if (buffer[0] === 0xFF && buffer[1] === 0xD8) {
+        return 'image/jpeg';
+    }
+    // Fallback: guess from extension
+    const ext = fileName.split('.').pop()?.toLowerCase();
+    if (ext === 'pdf') return 'application/pdf';
+    if (ext === 'png') return 'image/png';
+    if (ext === 'jpg' || ext === 'jpeg') return 'image/jpeg';
+    return 'application/pdf'; // default
+}
+
+// ===== Helpers =====
+function flattenResult(raw: Record<string, any>): Record<string, any> {
+    // Gemini sometimes returns nested: {"LIGHTING": {"recessed_ic": 42}, "RECEPTACLES": {"duplex": 28}}
+    // We need to flatten this to {"recessed_ic": 42, "duplex": 28}
+    const flat: Record<string, any> = {};
+    for (const [key, value] of Object.entries(raw)) {
+        if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+            // Nested category — flatten it
+            for (const [innerKey, innerValue] of Object.entries(value)) {
+                flat[innerKey] = innerValue;
+            }
+        } else {
+            flat[key] = value;
+        }
+    }
+    return flat;
+}
+
+function sanitizeAgentResult(raw: Record<string, any>, agentLabel: string): BlueprintAgentResult {
+    const flattened = flattenResult(raw);
+    const cleaned: BlueprintAgentResult = {};
+    const unknownKeys: string[] = [];
+
+    for (const [key, value] of Object.entries(flattened)) {
+        if (!VALID_TAKEOFF_KEYS.has(key)) { unknownKeys.push(key); continue; }
+        const num = Number(value);
+        if (!Number.isFinite(num) || num < 0) continue;
+        if (num === 0) continue;
+        cleaned[key] = Math.round(num);
+    }
+    if (unknownKeys.length > 0) {
+        logger.warn(`${agentLabel}: filtered unknown keys: ${unknownKeys.join(', ')}`);
+    }
+    return cleaned;
+}
+
+function parseJsonResponse(text: string): any {
+    // Try direct parse first
+    let cleaned = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+    try {
+        return JSON.parse(cleaned);
+    } catch {
+        // Try to extract JSON object from mixed text response
+        const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+            return JSON.parse(jsonMatch[0]);
+        }
+        throw new Error('No valid JSON found in response');
+    }
+}
+
+// ===== Metadata Extraction (Gemini — supports PDF natively) =====
+export async function extractBlueprintMetadata(input: BlueprintInput): Promise<{ description?: string; address?: string; areaSqft?: number }> {
+    if (!GEMINI_API_KEY) return {};
+
+    try {
+        const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+        const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+
+        const result = await model.generateContent({
+            contents: [{
+                role: 'user',
+                parts: [
+                    { text: METADATA_PROMPT },
+                    { inlineData: { mimeType: input.mimeType, data: input.base64 } }
+                ]
+            }]
+        });
+
+        const metadata = parseJsonResponse(result.response.text().trim());
+        return {
+            description: metadata.description || undefined,
+            address: metadata.address || undefined,
+            areaSqft: metadata.areaSqft ? Number(metadata.areaSqft) : undefined
+        };
+    } catch (e) {
+        logger.error('Gemini metadata extraction failed', e);
+        return {};
+    }
+}
+
+// ===== Gemini Analysis (supports PDF natively!) =====
+export async function analyzeWithGemini(input: BlueprintInput): Promise<BlueprintAgentResult> {
+    if (!GEMINI_API_KEY) throw new Error('GEMINI_API_KEY not configured');
+
+    const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+
+    logger.info(`Gemini: sending ${input.mimeType} (${(input.buffer.length / 1024).toFixed(0)}KB)`);
+
+    const result = await model.generateContent({
+        contents: [{
+            role: 'user',
+            parts: [
+                { text: TAKEOFF_PROMPT },
+                { inlineData: { mimeType: input.mimeType, data: input.base64 } }
+            ]
+        }]
+    });
+
+    const text = result.response.text().trim();
+    try {
+        return sanitizeAgentResult(parseJsonResponse(text), 'Gemini');
+    } catch (e) {
+        logger.error('Gemini returned invalid JSON', { text: text.substring(0, 500) });
+        throw new Error('Gemini parsing failed');
+    }
+}
+
+// ===== Claude Analysis (supports PDF natively via document type!) =====
+export async function analyzeWithClaude(input: BlueprintInput): Promise<BlueprintAgentResult> {
+    if (!ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY not configured');
+
+    const anthropic = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
+
+    logger.info(`Claude: sending ${input.mimeType} (${(input.buffer.length / 1024).toFixed(0)}KB)`);
+
+    // Claude handles PDFs via 'document' type, images via 'image' type
+    const fileContent = input.isPdf
+        ? { type: 'document' as const, source: { type: 'base64' as const, media_type: 'application/pdf' as const, data: input.base64 } }
+        : { type: 'image' as const, source: { type: 'base64' as const, media_type: input.mimeType as 'image/png' | 'image/jpeg', data: input.base64 } };
+
+    const msg = await anthropic.messages.create({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 1500,
+        messages: [{
+            role: 'user',
+            content: [
+                fileContent,
+                { type: 'text', text: TAKEOFF_PROMPT }
+            ]
+        }]
+    });
+
+    if (msg.content[0].type !== 'text') throw new Error('Claude non-text response');
+
+    const text = msg.content[0].text.trim();
+    try {
+        return sanitizeAgentResult(parseJsonResponse(text), 'Claude');
+    } catch (e) {
+        logger.error('Claude returned invalid JSON', { text: text.substring(0, 500) });
+        throw new Error('Claude parsing failed');
+    }
+}
+
+// ===== OpenAI Analysis =====
+// GPT-4o only supports images, NOT PDFs.
+// Special sentinel: returns null for PDF (caller checks).
+export const OPENAI_SKIPPED = '__SKIPPED_PDF__';
+
+export async function analyzeWithOpenAI(input: BlueprintInput): Promise<BlueprintAgentResult | null> {
+    if (!OPENAI_API_KEY) throw new Error('OPENAI_API_KEY not configured');
+
+    if (input.isPdf) {
+        logger.info('OpenAI: PDF detected → skipping (GPT-4o images only)');
+        return null; // Sentinel: caller treats null as 'skipped'
+    }
+
+    const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
+
+    logger.info(`OpenAI: sending ${input.mimeType} (${(input.buffer.length / 1024).toFixed(0)}KB)`);
+
+    const response = await openai.chat.completions.create({
+        model: 'gpt-4o',
+        messages: [{
+            role: 'user',
+            content: [
+                { type: 'text', text: TAKEOFF_PROMPT },
+                {
+                    type: 'image_url',
+                    image_url: {
+                        url: `data:${input.mimeType};base64,${input.base64}`,
+                        detail: 'high'
+                    }
+                }
+            ]
+        }],
+        max_tokens: 1500,
+    });
+
+    const text = response.choices[0]?.message?.content?.trim() || '';
+    try {
+        return sanitizeAgentResult(parseJsonResponse(text), 'OpenAI');
+    } catch (e) {
+        logger.error('OpenAI returned invalid JSON', { text: text.substring(0, 500) });
+        throw new Error('OpenAI parsing failed');
+    }
+}
+
+// ===== Compare Results (median/voting) =====
+function selectBestQty(counts: number[]): number {
+    if (counts.length === 0) return 0;
+    if (counts.length === 1) return counts[0];
+    if (counts.length === 2) return Math.ceil((counts[0] + counts[1]) / 2);
+
+    const [a, b, c] = counts.sort((x, y) => x - y);
+    if (a === b) return a;
+    if (b === c) return b;
+    return b; // median
+}
+
+export function compareResults(
+    geminiResult?: BlueprintAgentResult,
+    claudeResult?: BlueprintAgentResult,
+    openAiResult?: BlueprintAgentResult
+): { discrepancies: BlueprintDiscrepancy[], finalResult: BlueprintAgentResult } {
+    const discrepancies: BlueprintDiscrepancy[] = [];
+    const finalResult: BlueprintAgentResult = {};
+
+    const allKeys = new Set([
+        ...Object.keys(geminiResult || {}),
+        ...Object.keys(claudeResult || {}),
+        ...Object.keys(openAiResult || {})
+    ]);
+
+    for (const key of allKeys) {
+        const gQty = geminiResult !== undefined ? (geminiResult[key] ?? 0) : null;
+        const cQty = claudeResult !== undefined ? (claudeResult[key] ?? 0) : null;
+        const oQty = openAiResult !== undefined ? (openAiResult[key] ?? 0) : null;
+
+        const validCounts = [gQty, cQty, oQty].filter(v => v !== null) as number[];
+        if (validCounts.length === 0) continue;
+
+        const firstVal = validCounts[0];
+        const match = validCounts.every(v => v === firstVal);
+        const suggestedQty = selectBestQty(validCounts);
+
+        if (suggestedQty === 0 && match) continue;
+
+        if (!match || validCounts.length < 3) {
+            discrepancies.push({
+                itemId: key,
+                geminiQty: gQty,
+                claudeQty: cQty,
+                openAiQty: oQty,
+                match: false,
+                suggestedQty
+            });
+        }
+
+        finalResult[key] = suggestedQty;
+    }
+
+    return { discrepancies, finalResult };
+}
+
+// ===== V3 Reconciliation (arbiter rotation) =====
+export async function performTargetedReconciliation(
+    input: BlueprintInput,
+    discrepancies: BlueprintDiscrepancy[]
+): Promise<BlueprintAgentResult> {
+    if (discrepancies.length === 0) return {};
+
+    const itemsList = discrepancies.map(d => `- ${d.itemId}`).join('\n');
+    const prompt = DISCREPANCY_PROMPT.replace('{ITEMS_LIST}', itemsList);
+    const base64Data = input.base64;
+    const isPdf = input.isPdf;
+
+    // Arbiter rotation: Claude → OpenAI (images only) → Gemini
+    if (ANTHROPIC_API_KEY) {
+        logger.info('V3 Arbiter: Claude');
+        try {
+            const anthropic = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
+            const fileContent = isPdf
+                ? { type: 'document' as const, source: { type: 'base64' as const, media_type: 'application/pdf' as const, data: base64Data } }
+                : { type: 'image' as const, source: { type: 'base64' as const, media_type: input.mimeType as 'image/png' | 'image/jpeg', data: base64Data } };
+            const msg = await anthropic.messages.create({
+                model: 'claude-sonnet-4-20250514',
+                max_tokens: 1500,
+                messages: [{ role: 'user', content: [fileContent, { type: 'text', text: prompt }] }]
+            });
+            if (msg.content[0].type === 'text') {
+                return sanitizeAgentResult(parseJsonResponse(msg.content[0].text.trim()), 'Claude-Arbiter');
+            }
+        } catch (e) { logger.warn('Claude arbiter failed', e); }
+    }
+
+    if (OPENAI_API_KEY && !isPdf) {
+        logger.info('V3 Arbiter: OpenAI');
+        try {
+            const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
+            const response = await openai.chat.completions.create({
+                model: 'gpt-4o',
+                messages: [{
+                    role: 'user', content: [
+                        { type: 'text', text: prompt },
+                        { type: 'image_url', image_url: { url: `data:${input.mimeType};base64,${base64Data}`, detail: 'high' } }
+                    ]
+                }],
+                max_tokens: 1500,
+            });
+            const text = response.choices[0]?.message?.content?.trim() || '';
+            return sanitizeAgentResult(parseJsonResponse(text), 'OpenAI-Arbiter');
+        } catch (e) { logger.warn('OpenAI arbiter failed', e); }
+    }
+
+    // Fallback: Gemini
+    if (GEMINI_API_KEY) {
+        logger.info('V3 Arbiter: Gemini (fallback)');
+        const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+        const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+        const result = await model.generateContent({
+            contents: [{
+                role: 'user', parts: [
+                    { text: prompt },
+                    { inlineData: { mimeType: input.mimeType, data: base64Data } }
+                ]
+            }]
+        });
+        return sanitizeAgentResult(parseJsonResponse(result.response.text().trim()), 'Gemini-Arbiter');
+    }
+
+    throw new Error('No API keys available for reconciliation');
+}
+
+// ===== Classify Blueprint (quick Gemini call) =====
+const CLASSIFY_PROMPT = `Analyze this document and classify it into EXACTLY ONE category.
+
+Categories:
+- electrical_plan (floor plan or blueprint showing electrical symbols, outlets, switches, lighting)
+- schedule (panel schedule, circuit schedule, or equipment schedule table)
+- cover (title page, cover sheet, table of contents, or general notes)
+- specification (written specifications, material lists, or code references)
+- other (anything else — plumbing, HVAC, structural, landscape, or unrelated)
+
+Return ONLY the category name, nothing else.
+Example: electrical_plan`;
+
+export async function classifyBlueprint(input: BlueprintInput): Promise<BlueprintFileClassification> {
+    if (!GEMINI_API_KEY) return 'other';
+
+    try {
+        const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+        const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+
+        const result = await model.generateContent({
+            contents: [{
+                role: 'user',
+                parts: [
+                    { text: CLASSIFY_PROMPT },
+                    { inlineData: { mimeType: input.mimeType, data: input.base64 } }
+                ]
+            }]
+        });
+
+        const text = result.response.text().trim().toLowerCase().replace(/[^a-z_]/g, '');
+        const valid: BlueprintFileClassification[] = ['electrical_plan', 'schedule', 'cover', 'specification', 'other'];
+        if (valid.includes(text as BlueprintFileClassification)) {
+            return text as BlueprintFileClassification;
+        }
+        logger.warn(`Gemini classified as unknown: "${text}", defaulting to "other"`);
+        return 'other';
+    } catch (e) {
+        logger.error('Classification failed', e);
+        return 'other';
+    }
+}
+
+// ===== Merge Results (sum counts across multiple files) =====
+export function mergeResults(results: BlueprintAgentResult[]): BlueprintAgentResult {
+    const merged: BlueprintAgentResult = {};
+    for (const result of results) {
+        for (const [key, value] of Object.entries(result)) {
+            merged[key] = (merged[key] || 0) + value;
+        }
+    }
+    return merged;
+}
+

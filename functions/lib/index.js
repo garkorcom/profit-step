@@ -9,8 +9,8 @@
  * - adminDeleteUser: Безопасное удаление пользователя администратором
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.generateDayPlan = exports.generatePriceEstimate = exports.syncActiveTimer = exports.onSessionChangeUpdateCost = exports.verifyTask = exports.submitForReview = exports.checkLongBreaks = exports.updateWorkSession = exports.mergeNotes = exports.splitChecklistItem = exports.onNoteCreated = exports.onReceiptUpdate = exports.onWorkSessionUpdate = exports.onWorkSessionCreate = exports.generateDailyPayroll = exports.closePayrollPeriod = exports.forceFinishAllSessions = exports.sendDeadlineReminders = exports.finalizeExpiredSessions = exports.onCostsBotMessage = exports.onWorkerBotMessage = exports.parseSmartInput = exports.estimateTask = exports.generateLeadSummary = exports.sendMessage = exports.onTelegramMessage = exports.onWhatsAppMessage = exports.onLeadCreate = exports.updateCompanyMemberCount_v2 = exports.trackUserActivation_v2 = exports.logUserUpdates_v2 = exports.incrementLoginCount_v2 = exports.inviteUser = exports.adminDeleteUser = exports.onUserDelete = exports.onUserCreate = exports.admin_manageUser = exports.admin_createUserWithPassword = exports.logPaginationMetrics = exports.diagnoseBot = exports.logInvitationAccepted = exports.logInvitationSent = exports.logUserDeleted = exports.logUserCreated = exports.brevoWebhookHandler = exports.trackFirstInvite = exports.initializeUserActivation = exports.aggregateEngagementMetrics = exports.aggregateGrowthMetrics = exports.processAvatar = void 0;
-exports.confirmAiTask = exports.generateAiTask = exports.categorizeBankTransactions = exports.uploadBankStatement = exports.sendWeeklyDigest = exports.onCostUpdate = exports.onCostCreated = exports.onTaskUpdate = exports.scheduledDayPlan = void 0;
+exports.submitForReview = exports.checkLongBreaks = exports.updateWorkSession = exports.mergeNotes = exports.splitChecklistItem = exports.refineAnalysisCallable = exports.analyzePageCallable = exports.onBlueprintBatchCreated = exports.onBlueprintJobCreated = exports.onNoteCreated = exports.onReceiptUpdate = exports.onWorkSessionUpdate = exports.onWorkSessionCreate = exports.generateDailyPayroll = exports.closePayrollPeriod = exports.forceFinishAllSessions = exports.sendDeadlineReminders = exports.finalizeExpiredSessions = exports.onCostsBotMessage = exports.onWorkerBotMessage = exports.parseClientWebsite = exports.parseSmartInput = exports.estimateTask = exports.generateLeadSummary = exports.sendMessage = exports.onTelegramMessage = exports.onWhatsAppMessage = exports.onLeadCreate = exports.updateCompanyMemberCount_v2 = exports.trackUserActivation_v2 = exports.logUserUpdates_v2 = exports.incrementLoginCount_v2 = exports.inviteUser = exports.adminDeleteUser = exports.onUserDelete = exports.onUserCreate = exports.admin_manageUser = exports.admin_createUserWithPassword = exports.logPaginationMetrics = exports.diagnoseBot = exports.logInvitationAccepted = exports.logInvitationSent = exports.logUserDeleted = exports.logUserCreated = exports.brevoWebhookHandler = exports.trackFirstInvite = exports.initializeUserActivation = exports.aggregateEngagementMetrics = exports.aggregateGrowthMetrics = exports.processAvatar = void 0;
+exports.modifyAiTask = exports.confirmAiTask = exports.generateAiTask = exports.categorizeBankTransactions = exports.uploadBankStatement = exports.onCostUpdate = exports.onCostCreated = exports.onTaskUpdate = exports.scheduledDayPlan = exports.generateDayPlan = exports.generatePriceEstimate = exports.syncActiveTimer = exports.onSessionChangeUpdateCost = exports.verifyTask = void 0;
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 const crypto = require("crypto");
@@ -437,6 +437,8 @@ var estimateTask_1 = require("./callable/ai/estimateTask");
 Object.defineProperty(exports, "estimateTask", { enumerable: true, get: function () { return estimateTask_1.estimateTask; } });
 var parseSmartInput_1 = require("./callable/ai/parseSmartInput");
 Object.defineProperty(exports, "parseSmartInput", { enumerable: true, get: function () { return parseSmartInput_1.parseSmartInput; } });
+var parseClientWebsite_1 = require("./callable/ai/parseClientWebsite");
+Object.defineProperty(exports, "parseClientWebsite", { enumerable: true, get: function () { return parseClientWebsite_1.parseClientWebsite; } });
 var onWorkerBotMessage_1 = require("./triggers/telegram/onWorkerBotMessage");
 Object.defineProperty(exports, "onWorkerBotMessage", { enumerable: true, get: function () { return onWorkerBotMessage_1.onWorkerBotMessage; } });
 var onCostsBotMessage_1 = require("./triggers/telegram/onCostsBotMessage");
@@ -463,6 +465,14 @@ Object.defineProperty(exports, "onReceiptUpdate", { enumerable: true, get: funct
 // Notes: Inbox AI processing
 var onNoteCreated_1 = require("./triggers/firestore/onNoteCreated");
 Object.defineProperty(exports, "onNoteCreated", { enumerable: true, get: function () { return onNoteCreated_1.onNoteCreated; } });
+// Blueprints: AI Takeoff processing
+var onBlueprintJobCreated_1 = require("./triggers/firestore/onBlueprintJobCreated");
+Object.defineProperty(exports, "onBlueprintJobCreated", { enumerable: true, get: function () { return onBlueprintJobCreated_1.onBlueprintJobCreated; } });
+var onBlueprintBatchCreated_1 = require("./triggers/firestore/onBlueprintBatchCreated");
+Object.defineProperty(exports, "onBlueprintBatchCreated", { enumerable: true, get: function () { return onBlueprintBatchCreated_1.onBlueprintBatchCreated; } });
+var analyzePage_1 = require("./callable/ai/analyzePage");
+Object.defineProperty(exports, "analyzePageCallable", { enumerable: true, get: function () { return analyzePage_1.analyzePageCallable; } });
+Object.defineProperty(exports, "refineAnalysisCallable", { enumerable: true, get: function () { return analyzePage_1.refineAnalysisCallable; } });
 // Notes: Split & Merge operations
 var splitChecklistItem_1 = require("./callable/notes/splitChecklistItem");
 Object.defineProperty(exports, "splitChecklistItem", { enumerable: true, get: function () { return splitChecklistItem_1.splitChecklistItem; } });
@@ -501,8 +511,6 @@ var onCostCreated_1 = require("./triggers/firestore/onCostCreated");
 Object.defineProperty(exports, "onCostCreated", { enumerable: true, get: function () { return onCostCreated_1.onCostCreated; } });
 Object.defineProperty(exports, "onCostUpdate", { enumerable: true, get: function () { return onCostCreated_1.onCostUpdate; } });
 // Weekly analytics digest (v1 - stable)
-var weeklyDigest_1 = require("./scheduled/weeklyDigest");
-Object.defineProperty(exports, "sendWeeklyDigest", { enumerable: true, get: function () { return weeklyDigest_1.sendWeeklyDigest; } });
 // ========================================
 // BANK STATEMENTS (Tax Module)
 // Standalone module for tax categorization
@@ -517,4 +525,6 @@ Object.defineProperty(exports, "categorizeBankTransactions", { enumerable: true,
 var generateAiTask_1 = require("./callable/ai/generateAiTask");
 Object.defineProperty(exports, "generateAiTask", { enumerable: true, get: function () { return generateAiTask_1.generateAiTask; } });
 Object.defineProperty(exports, "confirmAiTask", { enumerable: true, get: function () { return generateAiTask_1.confirmAiTask; } });
+var modifyAiTask_1 = require("./callable/ai/modifyAiTask");
+Object.defineProperty(exports, "modifyAiTask", { enumerable: true, get: function () { return modifyAiTask_1.modifyAiTask; } });
 //# sourceMappingURL=index.js.map

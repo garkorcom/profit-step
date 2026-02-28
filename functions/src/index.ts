@@ -552,6 +552,7 @@ export { sendMessage } from './callable/messaging/sendMessage';
 export { generateLeadSummary } from './callable/ai/generateLeadSummary';
 export { estimateTask } from './callable/ai/estimateTask';
 export { parseSmartInput } from './callable/ai/parseSmartInput';
+export { parseClientWebsite } from './callable/ai/parseClientWebsite';
 export { onWorkerBotMessage } from './triggers/telegram/onWorkerBotMessage';
 export { onCostsBotMessage } from './triggers/telegram/onCostsBotMessage';
 
@@ -571,6 +572,11 @@ export { onReceiptUpdate } from './triggers/receipts/onReceiptUpdate';
 
 // Notes: Inbox AI processing
 export { onNoteCreated } from './triggers/firestore/onNoteCreated';
+
+// Blueprints: AI Takeoff processing
+export { onBlueprintJobCreated } from './triggers/firestore/onBlueprintJobCreated';
+export { onBlueprintBatchCreated } from './triggers/firestore/onBlueprintBatchCreated';
+export { analyzePageCallable, refineAnalysisCallable } from './callable/ai/analyzePage';
 
 // Notes: Split & Merge operations
 export { splitChecklistItem } from './callable/notes/splitChecklistItem';
@@ -605,7 +611,7 @@ export { onTaskUpdate } from './triggers/firestore/onTaskUpdate';
 export { onCostCreated, onCostUpdate } from './triggers/firestore/onCostCreated';
 
 // Weekly analytics digest (v1 - stable)
-export { sendWeeklyDigest } from './scheduled/weeklyDigest';
+
 
 // ========================================
 // BANK STATEMENTS (Tax Module)
@@ -620,3 +626,4 @@ export { categorizeBankTransactions } from './callable/finance/categorizeBankTra
 // ========================================
 
 export { generateAiTask, confirmAiTask } from './callable/ai/generateAiTask';
+export { modifyAiTask } from './callable/ai/modifyAiTask';

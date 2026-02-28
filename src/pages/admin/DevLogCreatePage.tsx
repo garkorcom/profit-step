@@ -32,6 +32,7 @@ import {
     Search as SEOIcon,
     EmojiEmotions as FunIcon,
     BusinessCenter as SeriousIcon,
+    AutoMode as AutoModeIcon,
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -39,6 +40,7 @@ import {
     mockGenerateLogDraft,
     saveDevLog,
     createFeature,
+    getTodayAccomplishments,
 } from '../../api/devlogService';
 import type {
     DevFeature,
@@ -110,6 +112,7 @@ const DevLogCreatePage: React.FC = () => {
 
     // AI state
     const [isGenerating, setIsGenerating] = useState(false);
+    const [isGathering, setIsGathering] = useState(false);
     const [aiResult, setAiResult] = useState<AIGenerationResult | null>(null);
     const [activeTab, setActiveTab] = useState<'story' | 'technical' | 'code' | 'seo'>('story');
 
@@ -177,6 +180,37 @@ const DevLogCreatePage: React.FC = () => {
             setSnackbar({ open: true, message: 'Ошибка сохранения', severity: 'error' });
         } finally {
             setIsSaving(false);
+        }
+    };
+
+    const handleGatherToday = async () => {
+        if (!currentUser) return;
+        setIsGathering(true);
+        try {
+            const result = await getTodayAccomplishments(currentUser.uid);
+
+            // Append if there's already some text
+            const newNotes = formData.notes
+                ? `${formData.notes}\n\n${result.notes}`
+                : result.notes;
+
+            // Add new minutes to existing (or just replace if 0)
+            const newMinutes = formData.timeSpentMinutes === 0
+                ? result.totalMinutes
+                : formData.timeSpentMinutes + result.totalMinutes;
+
+            setFormData(prev => ({
+                ...prev,
+                notes: newNotes,
+                timeSpentMinutes: newMinutes
+            }));
+
+            setSnackbar({ open: true, message: '✅ Задачи за сегодня успешно собраны!', severity: 'success' });
+        } catch (e) {
+            console.error('Error gathering accomplishments:', e);
+            setSnackbar({ open: true, message: 'Ошибка при сборе данных за сегодня', severity: 'error' });
+        } finally {
+            setIsGathering(false);
         }
     };
 
@@ -327,9 +361,26 @@ const DevLogCreatePage: React.FC = () => {
 
                             {/* Notes */}
                             <Box sx={{ mb: 2 }}>
-                                <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                                    <NotesIcon sx={{ color: 'rgba(255,255,255,0.5)', mr: 1, fontSize: 18 }} />
-                                    <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.6)' }}>Заметки / Поток сознания</Typography>
+                                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+                                    <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                                        <NotesIcon sx={{ color: 'rgba(255,255,255,0.5)', mr: 1, fontSize: 18 }} />
+                                        <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.6)' }}>Заметки / Поток сознания</Typography>
+                                    </Box>
+                                    <Button
+                                        size="small"
+                                        onClick={handleGatherToday}
+                                        disabled={isGathering}
+                                        startIcon={isGathering ? <CircularProgress size={14} /> : <AutoModeIcon fontSize="small" />}
+                                        sx={{
+                                            color: '#a5d6a7',
+                                            textTransform: 'none',
+                                            fontSize: 12,
+                                            background: 'rgba(165,214,167,0.1)',
+                                            '&:hover': { background: 'rgba(165,214,167,0.2)' }
+                                        }}
+                                    >
+                                        Собрать итоги за сегодня
+                                    </Button>
                                 </Box>
                                 <TextField multiline minRows={5} maxRows={12} fullWidth
                                     placeholder="Что делал, какие проблемы, какие решения нашел..."

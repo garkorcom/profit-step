@@ -12,7 +12,6 @@ import {
     getDoc,
     addDoc,
     updateDoc,
-    deleteDoc,
     query,
     where,
     orderBy,
@@ -210,6 +209,8 @@ export const projectsApi = {
         description: string;
         sourceType: LedgerSourceType;
         sourceId?: string;
+        linkedContactId?: string;
+        linkedContactName?: string;
         date: Date;
         createdBy: string;
     }): Promise<string> {

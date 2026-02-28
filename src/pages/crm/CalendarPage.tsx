@@ -10,7 +10,7 @@
  */
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, Link as RouterLink } from 'react-router-dom';
 import {
     Box,
     Typography,
@@ -65,12 +65,12 @@ import {
 } from 'date-fns';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
+import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import AddIcon from '@mui/icons-material/Add';
 import WarningIcon from '@mui/icons-material/Warning';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import FilterListIcon from '@mui/icons-material/FilterList';
 import DownloadIcon from '@mui/icons-material/Download';
-import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import { GTDTask, GTDStatus } from '../../types/gtd.types';
 import { Client } from '../../types/crm.types';
 import GTDEditDialog from '../../components/gtd/GTDEditDialog';
@@ -135,9 +135,7 @@ const DroppableDayCell: React.FC<{
     ({ day, children, onClick, isCurrentMonth, isToday, viewMode, taskCount = 0, onShowMore }) => {
         const { isOver, setNodeRef } = useDroppable({ id: day.toISOString() });
 
-        // Fixed heights based on view mode
         const cellHeight = viewMode === 'week' ? 200 : 110;
-        const maxVisibleTasks = viewMode === 'week' ? 5 : 3;
 
         return (
             <Box
@@ -179,7 +177,7 @@ const DroppableDayCell: React.FC<{
 // --- HOURS FOR DAY VIEW ---
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
 
-const CalendarPage: React.FC = () => {
+const CalendarPage: React.FC<{ hideHeader?: boolean }> = ({ hideHeader }) => {
     const { currentUser } = useAuth();
     const theme = useTheme();
     const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
@@ -569,91 +567,108 @@ const CalendarPage: React.FC = () => {
                     overflow: 'hidden'
                 }}>
                     {/* --- HEADER --- */}
-                    <Box sx={{
-                        px: 2,
-                        py: 1.5,
-                        display: 'flex',
-                        flexDirection: isMobile ? 'column' : 'row',
-                        alignItems: isMobile ? 'stretch' : 'center',
-                        justifyContent: 'space-between',
-                        borderBottom: '1px solid #E0E0E0',
-                        gap: isMobile ? 2 : 0
-                    }}>
-                        {/* Top Row (Mobile): Title + Navigation */}
-                        <Box display="flex" alignItems="center" justifyContent="space-between" width={isMobile ? '100%' : 'auto'}>
-                            <Box display="flex" alignItems="center" gap={1}>
-                                <Typography variant="h6" fontWeight="600" sx={{ letterSpacing: '-0.02em', fontFamily: 'Inter, system-ui, sans-serif' }}>
-                                    {isMobile ? format(currentDate, 'MMMM') : 'Calendar'}
-                                </Typography>
-                                {!isMobile && (
-                                    <Typography variant="body1" fontWeight="500" sx={{ minWidth: 160, ml: 2 }}>
-                                        {viewMode === 'day' ? format(currentDate, 'EEEE, MMM d') : format(currentDate, 'MMMM yyyy')}
+                    {!hideHeader && (
+                        <Box sx={{
+                            px: 2,
+                            py: 1.5,
+                            display: 'flex',
+                            flexDirection: isMobile ? 'column' : 'row',
+                            alignItems: isMobile ? 'stretch' : 'center',
+                            justifyContent: 'space-between',
+                            borderBottom: '1px solid #E0E0E0',
+                            gap: isMobile ? 2 : 0
+                        }}>
+                            {/* Top Row (Mobile): Title + Navigation */}
+                            <Box display="flex" alignItems="center" justifyContent="space-between" width={isMobile ? '100%' : 'auto'}>
+                                <Box display="flex" alignItems="center" gap={1}>
+                                    <Button
+                                        component={RouterLink}
+                                        to="/crm/gtd"
+                                        startIcon={<ArrowBackIcon />}
+                                        size="small"
+                                        sx={{
+                                            color: 'text.secondary',
+                                            textTransform: 'none',
+                                            minWidth: 'auto',
+                                            mr: 1,
+                                            '&:hover': { bgcolor: 'transparent', color: 'text.primary' }
+                                        }}
+                                    >
+                                        {!isMobile && "Задачи"}
+                                    </Button>
+                                    <Typography variant="h6" fontWeight="600" sx={{ letterSpacing: '-0.02em', fontFamily: 'Inter, system-ui, sans-serif' }}>
+                                        {isMobile ? format(currentDate, 'MMMM') : 'Календарь'}
                                     </Typography>
-                                )}
+                                    {!isMobile && (
+                                        <Typography variant="body1" fontWeight="500" sx={{ minWidth: 160, ml: 2 }}>
+                                            {viewMode === 'day' ? format(currentDate, 'EEEE, MMM d') : format(currentDate, 'MMMM yyyy')}
+                                        </Typography>
+                                    )}
+                                </Box>
+
+                                <Box display="flex" alignItems="center" bgcolor="#F7F7F5" borderRadius={1} px={0.5}>
+                                    <IconButton size="small" onClick={handlePrev}><ChevronLeftIcon fontSize="small" /></IconButton>
+                                    <Button onClick={handleToday} sx={{ color: '#37352F', textTransform: 'none', fontWeight: 500, minWidth: 'auto', px: 1.5 }}>
+                                        {isMobile ? 'T' : 'Today'}
+                                    </Button>
+                                    <IconButton size="small" onClick={handleNext}><ChevronRightIcon fontSize="small" /></IconButton>
+                                </Box>
                             </Box>
 
-                            <Box display="flex" alignItems="center" bgcolor="#F7F7F5" borderRadius={1} px={0.5}>
-                                <IconButton size="small" onClick={handlePrev}><ChevronLeftIcon fontSize="small" /></IconButton>
-                                <Button onClick={handleToday} sx={{ color: '#37352F', textTransform: 'none', fontWeight: 500, minWidth: 'auto', px: 1.5 }}>
-                                    {isMobile ? 'T' : 'Today'}
-                                </Button>
-                                <IconButton size="small" onClick={handleNext}><ChevronRightIcon fontSize="small" /></IconButton>
+                            {/* Bottom Row (Mobile) or Right Side (Desktop): Controls */}
+                            <Box display="flex" alignItems="center" gap={1} justifyContent={isMobile ? 'space-between' : 'flex-end'} width={isMobile ? '100%' : 'auto'}>
+                                {/* View Switcher */}
+                                <Box sx={{ border: '1px solid #E0E0E0', borderRadius: 1, display: 'flex', overflow: 'hidden' }}>
+                                    {(isMobile ? ['list', 'day', 'month'] : ['month', 'week', 'day']).map((mode, i) => (
+                                        <React.Fragment key={mode}>
+                                            {i > 0 && <Box sx={{ width: '1px', bgcolor: '#E0E0E0' }} />}
+                                            <Button
+                                                size="small"
+                                                onClick={() => setViewMode(mode as ViewMode | 'list')}
+                                                sx={{
+                                                    bgcolor: viewMode === mode ? '#F7F7F5' : 'transparent',
+                                                    color: '#37352F',
+                                                    textTransform: 'capitalize',
+                                                    borderRadius: 0,
+                                                    py: 0.5,
+                                                    px: isMobile ? 2 : 1.5,
+                                                    fontSize: isMobile ? '0.75rem' : '0.875rem'
+                                                }}
+                                            >
+                                                {mode}
+                                            </Button>
+                                        </React.Fragment>
+                                    ))}
+                                </Box>
+
+                                <Box display="flex" gap={0.5}>
+                                    <Button
+                                        size={isMobile ? "small" : "medium"}
+                                        startIcon={<FilterListIcon fontSize="small" sx={{ color: activeFilters.length ? '#2196f3' : 'inherit' }} />}
+                                        onClick={(e) => setFilterAnchorEl(e.currentTarget)}
+                                        sx={{
+                                            color: activeFilters.length ? '#2196f3' : '#37352F',
+                                            textTransform: 'none',
+                                            fontWeight: 400,
+                                            '&:hover': { bgcolor: '#F7F7F5' },
+                                            minWidth: isMobile ? 'auto' : 64
+                                        }}
+                                    >
+                                        {!isMobile && 'Filter'}
+                                        {activeFilters.length > 0 && ` (${activeFilters.length})`}
+                                    </Button>
+
+                                    {!isMobile && (
+                                        <IconButton size="small" onClick={handleExportICal}><DownloadIcon fontSize="small" sx={{ color: '#9CA3AF' }} /></IconButton>
+                                    )}
+
+                                    <IconButton size="small" onClick={() => handleQuickAdd(new Date(), 9)} sx={{ bgcolor: '#37352F', color: 'white', '&:hover': { bgcolor: '#121212' } }}>
+                                        <AddIcon fontSize="small" />
+                                    </IconButton>
+                                </Box>
                             </Box>
                         </Box>
-
-                        {/* Bottom Row (Mobile) or Right Side (Desktop): Controls */}
-                        <Box display="flex" alignItems="center" gap={1} justifyContent={isMobile ? 'space-between' : 'flex-end'} width={isMobile ? '100%' : 'auto'}>
-                            {/* View Switcher */}
-                            <Box sx={{ border: '1px solid #E0E0E0', borderRadius: 1, display: 'flex', overflow: 'hidden' }}>
-                                {(isMobile ? ['list', 'day', 'month'] : ['month', 'week', 'day']).map((mode, i) => (
-                                    <React.Fragment key={mode}>
-                                        {i > 0 && <Box sx={{ width: '1px', bgcolor: '#E0E0E0' }} />}
-                                        <Button
-                                            size="small"
-                                            onClick={() => setViewMode(mode as ViewMode | 'list')}
-                                            sx={{
-                                                bgcolor: viewMode === mode ? '#F7F7F5' : 'transparent',
-                                                color: '#37352F',
-                                                textTransform: 'capitalize',
-                                                borderRadius: 0,
-                                                py: 0.5,
-                                                px: isMobile ? 2 : 1.5,
-                                                fontSize: isMobile ? '0.75rem' : '0.875rem'
-                                            }}
-                                        >
-                                            {mode}
-                                        </Button>
-                                    </React.Fragment>
-                                ))}
-                            </Box>
-
-                            <Box display="flex" gap={0.5}>
-                                <Button
-                                    size={isMobile ? "small" : "medium"}
-                                    startIcon={<FilterListIcon fontSize="small" sx={{ color: activeFilters.length ? '#2196f3' : 'inherit' }} />}
-                                    onClick={(e) => setFilterAnchorEl(e.currentTarget)}
-                                    sx={{
-                                        color: activeFilters.length ? '#2196f3' : '#37352F',
-                                        textTransform: 'none',
-                                        fontWeight: 400,
-                                        '&:hover': { bgcolor: '#F7F7F5' },
-                                        minWidth: isMobile ? 'auto' : 64
-                                    }}
-                                >
-                                    {!isMobile && 'Filter'}
-                                    {activeFilters.length > 0 && ` (${activeFilters.length})`}
-                                </Button>
-
-                                {!isMobile && (
-                                    <IconButton size="small" onClick={handleExportICal}><DownloadIcon fontSize="small" sx={{ color: '#9CA3AF' }} /></IconButton>
-                                )}
-
-                                <IconButton size="small" onClick={() => handleQuickAdd(new Date(), 9)} sx={{ bgcolor: '#37352F', color: 'white', '&:hover': { bgcolor: '#121212' } }}>
-                                    <AddIcon fontSize="small" />
-                                </IconButton>
-                            </Box>
-                        </Box>
-                    </Box>
+                    )}
 
                     {/* --- CONTENT --- */}
                     {viewMode === 'list' ? renderListView() : viewMode === 'day' ? renderDayView() : (

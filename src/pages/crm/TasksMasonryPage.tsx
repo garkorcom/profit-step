@@ -411,7 +411,7 @@ const QuickAddDialog: React.FC<QuickAddProps> = ({ open, onClose, onAdd }) => {
 // MAIN PAGE
 // ═══════════════════════════════════════
 
-const TasksMasonryPage: React.FC = () => {
+const TasksMasonryPage: React.FC<{ hideHeader?: boolean }> = ({ hideHeader }) => {
     const navigate = useNavigate();
     const {
         groups,
@@ -513,18 +513,20 @@ const TasksMasonryPage: React.FC = () => {
             fontFamily: SF_FONT,
         }}>
             {/* ── Header ── */}
-            <TasksMasonryHeader
-                groupMode={groupMode}
-                onGroupModeChange={setGroupMode}
-                stats={stats}
-                selectMode={selectMode}
-                selectedCount={selectedIds.size}
-                onBulkDone={bulkMarkDone}
-                onBulkDelete={bulkDelete}
-                onClearSelection={clearSelection}
-                searchQuery={searchQuery}
-                onSearchChange={setSearchQuery}
-            />
+            {!hideHeader && (
+                <TasksMasonryHeader
+                    groupMode={groupMode}
+                    onGroupModeChange={setGroupMode}
+                    stats={stats}
+                    selectMode={selectMode}
+                    selectedCount={selectedIds.size}
+                    onBulkDone={bulkMarkDone}
+                    onBulkDelete={bulkDelete}
+                    onClearSelection={clearSelection}
+                    searchQuery={searchQuery}
+                    onSearchChange={setSearchQuery}
+                />
+            )}
 
             {/* ── Content: Sectioned Grid with DnD ── */}
             <DragDropContext onDragEnd={handleDragEnd}>

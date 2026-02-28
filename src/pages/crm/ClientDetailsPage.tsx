@@ -34,6 +34,7 @@ import { Client } from '../../types/crm.types';
 import { Estimate } from '../../types/estimate.types';
 import { useAuth } from '../../auth/AuthContext';
 import ProjectFinanceTab from '../../components/crm/ProjectFinanceTab';
+import ClientEditDialog from '../../components/crm/ClientEditDialog';
 
 interface TabPanelProps {
     children?: React.ReactNode;
@@ -76,6 +77,9 @@ const ClientDetailsPage: React.FC = () => {
     // Services State
     const [newService, setNewService] = useState('');
     const [addingService, setAddingService] = useState(false);
+
+    // Edit Dialog State
+    const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
 
     useEffect(() => {
         const fetchData = async () => {
@@ -180,9 +184,14 @@ const ClientDetailsPage: React.FC = () => {
             </Button>
 
             <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
-                <Typography variant="h4">
-                    {client.name}
-                </Typography>
+                <Box display="flex" alignItems="center" gap={2}>
+                    <Typography variant="h4">
+                        {client.name}
+                    </Typography>
+                    <IconButton size="small" onClick={() => setIsEditDialogOpen(true)}>
+                        <EditIcon fontSize="small" />
+                    </IconButton>
+                </Box>
                 <Chip label={client.status} color={client.status === 'customer' ? 'success' : 'default'} />
             </Box>
 
@@ -202,7 +211,13 @@ const ClientDetailsPage: React.FC = () => {
                     <Typography><strong>Email:</strong> {client.email || 'N/A'}</Typography>
                     <Typography><strong>Phone:</strong> {client.phone || 'N/A'}</Typography>
                     <Typography><strong>Address:</strong> {client.address || 'N/A'}</Typography>
-                    <Typography><strong>Address:</strong> {client.address || 'N/A'}</Typography>
+                    <Typography>
+                        <strong>Website:</strong> {client.website ? (
+                            <a href={client.website} target="_blank" rel="noopener noreferrer" style={{ color: '#90caf9' }}>
+                                {client.website}
+                            </a>
+                        ) : 'N/A'}
+                    </Typography>
 
                     <Divider sx={{ my: 3 }} />
 
@@ -302,6 +317,13 @@ const ClientDetailsPage: React.FC = () => {
             <TabPanel value={tabValue} index={2}>
                 <ProjectFinanceTab clientId={client.id} clientName={client.name} />
             </TabPanel>
+
+            <ClientEditDialog
+                open={isEditDialogOpen}
+                onClose={() => setIsEditDialogOpen(false)}
+                client={client}
+                onSave={(updatedClient) => setClient(updatedClient)}
+            />
         </Container>
     );
 };

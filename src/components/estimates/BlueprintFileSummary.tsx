@@ -12,12 +12,14 @@ import { FilePages } from './BlueprintPagesGrid';
 interface BlueprintFileSummaryProps {
     approvedFiles: Map<number, { filePages: FilePages; selectedPages: Set<string> }>;
     allFileNames: string[];  // All original file names (to show skipped ones too)
+    selectedAgents: string[];
+    onToggleAgent: (agent: string) => void;
     onStartAnalysis: () => void;
     onGoBackToFile: (fileIndex: number) => void;
 }
 
 const BlueprintFileSummary: React.FC<BlueprintFileSummaryProps> = ({
-    approvedFiles, allFileNames, onStartAnalysis, onGoBackToFile,
+    approvedFiles, allFileNames, selectedAgents, onToggleAgent, onStartAnalysis, onGoBackToFile,
 }) => {
     const totalApproved = approvedFiles.size;
     const totalSelectedPages = Array.from(approvedFiles.values())
@@ -87,6 +89,30 @@ const BlueprintFileSummary: React.FC<BlueprintFileSummaryProps> = ({
                 </List>
             </Paper>
 
+            {/* AI Agent Selection */}
+            <Box mb={2} p={2} bgcolor="background.paper" borderRadius={2} border="1px solid" borderColor="divider">
+                <Typography variant="subtitle2" fontWeight={600} mb={1}>
+                    🤖 Выберите AI Агентов для анализа:
+                </Typography>
+                <Box display="flex" gap={1} flexWrap="wrap">
+                    {['gemini', 'claude', 'openai'].map(agent => (
+                        <Chip
+                            key={agent}
+                            label={agent === 'gemini' ? '✨ Gemini 2.0' : agent === 'claude' ? '🧠 Claude 3.5' : '💬 OpenAI GPT-4o'}
+                            onClick={() => onToggleAgent(agent)}
+                            color={selectedAgents.includes(agent) ? 'primary' : 'default'}
+                            variant={selectedAgents.includes(agent) ? 'filled' : 'outlined'}
+                            sx={{ fontWeight: 600, px: 1 }}
+                        />
+                    ))}
+                </Box>
+                {selectedAgents.length < 2 && (
+                    <Typography variant="caption" color="error" display="block" mt={1}>
+                        ⚠️ Рекомендуется выбрать минимум 2 агентов для перекрестной сверки.
+                    </Typography>
+                )}
+            </Box>
+
             {/* Actions */}
             <Box display="flex" justifyContent="space-between" mt={2} flexWrap="wrap" gap={1}>
                 <Button
@@ -107,7 +133,7 @@ const BlueprintFileSummary: React.FC<BlueprintFileSummaryProps> = ({
                     color="primary"
                     startIcon={<BoltIcon />}
                     onClick={onStartAnalysis}
-                    disabled={totalSelectedPages === 0}
+                    disabled={totalSelectedPages === 0 || selectedAgents.length === 0}
                     sx={{ fontWeight: 600 }}
                 >
                     🔍 Отправить на AI анализ ({totalSelectedPages} стр.)

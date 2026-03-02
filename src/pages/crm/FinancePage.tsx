@@ -3,8 +3,10 @@ import {
     Container, Typography, Box, Paper, Table, TableBody, TableCell, TableContainer, TableHead,
     TableRow, Chip, CircularProgress, Card, CardContent, Button, TextField,
     Dialog, DialogTitle, DialogContent, DialogActions, FormControl, InputLabel, Select, MenuItem,
-    Tooltip, IconButton, Checkbox, FormControlLabel, TablePagination
+    Tooltip, IconButton, Checkbox, FormControlLabel, TablePagination, Tabs, Tab
 } from '@mui/material';
+import { InvoicesTab } from '../../components/finance/invoices/InvoicesTab';
+import { ExpensesTab } from '../../components/finance/expenses/ExpensesTab';
 import { collection, query, orderBy, getDocs, where, Timestamp, addDoc, doc, updateDoc } from 'firebase/firestore';
 import { db } from '../../firebase/firebase';
 import { startOfDay, endOfDay, subDays, format, isValid } from 'date-fns';
@@ -44,6 +46,8 @@ interface CostEntry {
 }
 
 const FinancePage: React.FC = () => {
+    const [tabIndex, setTabIndex] = useState(0);
+
     // Ledger now consists of WorkSessions (regular, correction, manual_adjustment)
     const [entries, setEntries] = useState<WorkSession[]>([]);
     const [costs, setCosts] = useState<CostEntry[]>([]);
@@ -597,298 +601,313 @@ const FinancePage: React.FC = () => {
                 </Box>
             </Box>
 
-            {/* Stats */}
-            <Box sx={{ display: 'flex', gap: 3, mb: 4, flexWrap: 'wrap' }}>
-                <Box sx={{ flex: 1, minWidth: 200 }}>
-                    <Card sx={{ bgcolor: '#2196f3', color: 'white', height: '100%' }}>
-                        <CardContent>
-                            <Tooltip title="Начисления за период (с учётом коррекций)" arrow>
-                                <Typography variant="body2" sx={{ opacity: 0.8 }}>Salary (Period)</Typography>
-                            </Tooltip>
-                            <Typography variant="h4" fontWeight="bold">${stats.salary.toFixed(2)}</Typography>
-                        </CardContent>
-                    </Card>
-                </Box>
-                <Box sx={{ flex: 1, minWidth: 200 }}>
-                    <Card sx={{ bgcolor: '#9e9e9e', color: 'white', height: '100%' }}>
-                        <CardContent>
-                            <Typography variant="body2" sx={{ opacity: 0.8 }}>Payments</Typography>
-                            <Typography variant="h4" fontWeight="bold">${stats.payments.toFixed(2)}</Typography>
-                        </CardContent>
-                    </Card>
-                </Box>
-                <Box sx={{ flex: 1, minWidth: 200 }}>
-                    <Card sx={{ bgcolor: '#ff9800', color: 'white', height: '100%' }}>
-                        <CardContent>
-                            <Typography variant="body2" sx={{ opacity: 0.8 }}>Expenses ({stats.costsCount})</Typography>
-                            <Typography variant="h4" fontWeight="bold">${stats.expenses.toFixed(2)}</Typography>
-                        </CardContent>
-                    </Card>
-                </Box>
-                <Box sx={{ flex: 1, minWidth: 200 }}>
-                    <Card sx={{ bgcolor: stats.balance >= 0 ? '#4caf50' : '#f44336', color: 'white', height: '100%' }}>
-                        <CardContent>
-                            <Tooltip title="Salary − Payments − Expenses" arrow>
-                                <Typography variant="body2" sx={{ opacity: 0.8 }}>Balance</Typography>
-                            </Tooltip>
-                            <Typography variant="h4" fontWeight="bold">${stats.balance.toFixed(2)}</Typography>
-                        </CardContent>
-                    </Card>
-                </Box>
-                <Box sx={{ flex: 1, minWidth: 200 }}>
-                    <Card sx={{ height: '100%' }}>
-                        <CardContent>
-                            <Typography color="textSecondary" variant="body2">Total Hours</Typography>
-                            <Typography variant="h4" fontWeight="bold">{stats.hours.toFixed(1)} h</Typography>
-                        </CardContent>
-                    </Card>
-                </Box>
+            <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 3 }}>
+                <Tabs value={tabIndex} onChange={(e, v) => setTabIndex(v)} aria-label="finance tabs">
+                    <Tab label="Overview (Payroll)" />
+                    <Tab label="Invoices (Billing)" />
+                    <Tab label="Expenses" />
+                </Tabs>
             </Box>
 
-            {/* Filters & Breakdowns */}
-            <Box display="flex" flexWrap="wrap" gap={3} mb={3}>
-                {/* Left: Filters */}
-                <Box sx={{ flex: { xs: '1 1 100%', md: '0 0 40%' } }}>
-                    <Paper sx={{ p: 2 }}>
-                        <Typography variant="subtitle2" gutterBottom fontWeight="bold">Filters</Typography>
-                        <Box display="flex" flexDirection="column" gap={2}>
-                            <Box display="flex" gap={2}>
-                                <FormControl fullWidth size="small">
-                                    <InputLabel>Client</InputLabel>
-                                    <Select
-                                        value={filterClient}
-                                        label="Client"
-                                        onChange={(e) => setFilterClient(e.target.value)}
-                                    >
-                                        <MenuItem value="all">All Clients</MenuItem>
-                                        {uniqueClients.map(c => <MenuItem key={c} value={c}>{c}</MenuItem>)}
-                                    </Select>
-                                </FormControl>
-                                <FormControl fullWidth size="small">
-                                    <InputLabel>Employee</InputLabel>
-                                    <Select
-                                        value={filterEmployee}
-                                        label="Employee"
-                                        onChange={(e) => setFilterEmployee(e.target.value)}
-                                    >
-                                        <MenuItem value="all">All Employees</MenuItem>
-                                        {uniqueEmployees.map(e => <MenuItem key={e.id} value={e.id}>{e.name}</MenuItem>)}
-                                    </Select>
-                                </FormControl>
-                            </Box>
-                            <Box display="flex" gap={2} alignItems="center">
-                                <FormControlLabel
-                                    control={<Checkbox checked={hideVoided} onChange={(e) => setHideVoided(e.target.checked)} size="small" />}
-                                    label={<Typography variant="body2">Hide Voided & Deleted</Typography>}
-                                />
-                                {/* Date inputs were here before, moving them inline or keeping them separate? 
+            {tabIndex === 0 && (
+                <Box>
+                    {/* Stats */}
+                    <Box sx={{ display: 'flex', gap: 3, mb: 4, flexWrap: 'wrap' }}>
+                        <Box sx={{ flex: 1, minWidth: 200 }}>
+                            <Card sx={{ bgcolor: '#2196f3', color: 'white', height: '100%' }}>
+                                <CardContent>
+                                    <Tooltip title="Начисления за период (с учётом коррекций)" arrow>
+                                        <Typography variant="body2" sx={{ opacity: 0.8 }}>Salary (Period)</Typography>
+                                    </Tooltip>
+                                    <Typography variant="h4" fontWeight="bold">${stats.salary.toFixed(2)}</Typography>
+                                </CardContent>
+                            </Card>
+                        </Box>
+                        <Box sx={{ flex: 1, minWidth: 200 }}>
+                            <Card sx={{ bgcolor: '#9e9e9e', color: 'white', height: '100%' }}>
+                                <CardContent>
+                                    <Typography variant="body2" sx={{ opacity: 0.8 }}>Payments</Typography>
+                                    <Typography variant="h4" fontWeight="bold">${stats.payments.toFixed(2)}</Typography>
+                                </CardContent>
+                            </Card>
+                        </Box>
+                        <Box sx={{ flex: 1, minWidth: 200 }}>
+                            <Card sx={{ bgcolor: '#ff9800', color: 'white', height: '100%' }}>
+                                <CardContent>
+                                    <Typography variant="body2" sx={{ opacity: 0.8 }}>Expenses ({stats.costsCount})</Typography>
+                                    <Typography variant="h4" fontWeight="bold">${stats.expenses.toFixed(2)}</Typography>
+                                </CardContent>
+                            </Card>
+                        </Box>
+                        <Box sx={{ flex: 1, minWidth: 200 }}>
+                            <Card sx={{ bgcolor: stats.balance >= 0 ? '#4caf50' : '#f44336', color: 'white', height: '100%' }}>
+                                <CardContent>
+                                    <Tooltip title="Salary − Payments − Expenses" arrow>
+                                        <Typography variant="body2" sx={{ opacity: 0.8 }}>Balance</Typography>
+                                    </Tooltip>
+                                    <Typography variant="h4" fontWeight="bold">${stats.balance.toFixed(2)}</Typography>
+                                </CardContent>
+                            </Card>
+                        </Box>
+                        <Box sx={{ flex: 1, minWidth: 200 }}>
+                            <Card sx={{ height: '100%' }}>
+                                <CardContent>
+                                    <Typography color="textSecondary" variant="body2">Total Hours</Typography>
+                                    <Typography variant="h4" fontWeight="bold">{stats.hours.toFixed(1)} h</Typography>
+                                </CardContent>
+                            </Card>
+                        </Box>
+                    </Box>
+
+                    {/* Filters & Breakdowns */}
+                    <Box display="flex" flexWrap="wrap" gap={3} mb={3}>
+                        {/* Left: Filters */}
+                        <Box sx={{ flex: { xs: '1 1 100%', md: '0 0 40%' } }}>
+                            <Paper sx={{ p: 2 }}>
+                                <Typography variant="subtitle2" gutterBottom fontWeight="bold">Filters</Typography>
+                                <Box display="flex" flexDirection="column" gap={2}>
+                                    <Box display="flex" gap={2}>
+                                        <FormControl fullWidth size="small">
+                                            <InputLabel>Client</InputLabel>
+                                            <Select
+                                                value={filterClient}
+                                                label="Client"
+                                                onChange={(e) => setFilterClient(e.target.value)}
+                                            >
+                                                <MenuItem value="all">All Clients</MenuItem>
+                                                {uniqueClients.map(c => <MenuItem key={c} value={c}>{c}</MenuItem>)}
+                                            </Select>
+                                        </FormControl>
+                                        <FormControl fullWidth size="small">
+                                            <InputLabel>Employee</InputLabel>
+                                            <Select
+                                                value={filterEmployee}
+                                                label="Employee"
+                                                onChange={(e) => setFilterEmployee(e.target.value)}
+                                            >
+                                                <MenuItem value="all">All Employees</MenuItem>
+                                                {uniqueEmployees.map(e => <MenuItem key={e.id} value={e.id}>{e.name}</MenuItem>)}
+                                            </Select>
+                                        </FormControl>
+                                    </Box>
+                                    <Box display="flex" gap={2} alignItems="center">
+                                        <FormControlLabel
+                                            control={<Checkbox checked={hideVoided} onChange={(e) => setHideVoided(e.target.checked)} size="small" />}
+                                            label={<Typography variant="body2">Hide Voided & Deleted</Typography>}
+                                        />
+                                        {/* Date inputs were here before, moving them inline or keeping them separate? 
                                     The previous design had date filters in a separate Paper. 
                                     I will keep them separate or merge them? 
                                     Let's keep the dedicated Date Paper below for "Period Control" 
                                     and this Paper for "Data Filtering". 
                                 */}
+                                    </Box>
+                                </Box>
+                            </Paper>
+                        </Box>
+
+                        {/* Right: Breakdowns */}
+                        <Box sx={{ flex: 1, minWidth: 300 }}>
+                            <Paper sx={{ p: 2, height: '100%', overflow: 'hidden' }}>
+                                <Typography variant="subtitle2" gutterBottom fontWeight="bold">Breakdown (Filtered)</Typography>
+                                <Box display="flex" gap={3} sx={{ overflowX: 'auto' }}>
+                                    {/* Employee Breakdown */}
+                                    <Box flex={1} minWidth={200}>
+                                        <Table size="small">
+                                            <TableHead><TableRow><TableCell>Employee</TableCell><TableCell align="right">Hours</TableCell><TableCell align="right">Salary</TableCell></TableRow></TableHead>
+                                            <TableBody>
+                                                {breakdowns.employee.slice(0, 5).map(b => (
+                                                    <TableRow key={b.name}>
+                                                        <TableCell variant="head" sx={{ py: 0.5 }}>{b.name}</TableCell>
+                                                        <TableCell align="right" sx={{ py: 0.5 }}>{b.hours.toFixed(1)}</TableCell>
+                                                        <TableCell align="right" sx={{ py: 0.5 }}>${b.money.toFixed(0)}</TableCell>
+                                                    </TableRow>
+                                                ))}
+                                            </TableBody>
+                                        </Table>
+                                    </Box>
+
+                                    {/* Client Breakdown */}
+                                    <Box flex={1} minWidth={200}>
+                                        <Table size="small">
+                                            <TableHead><TableRow><TableCell>Client</TableCell><TableCell align="right">Hours</TableCell><TableCell align="right">Cost</TableCell></TableRow></TableHead>
+                                            <TableBody>
+                                                {breakdowns.client.slice(0, 5).map(b => (
+                                                    <TableRow key={b.name}>
+                                                        <TableCell variant="head" sx={{ py: 0.5 }}>{b.name}</TableCell>
+                                                        <TableCell align="right" sx={{ py: 0.5 }}>{b.hours.toFixed(1)}</TableCell>
+                                                        <TableCell align="right" sx={{ py: 0.5 }}>${b.money.toFixed(0)}</TableCell>
+                                                    </TableRow>
+                                                ))}
+                                            </TableBody>
+                                        </Table>
+                                    </Box>
+                                </Box>
+                            </Paper>
+                        </Box>
+                    </Box>
+
+                    {/* Date Filters (Existing) */}
+                    <Paper sx={{ p: 2, mb: 3 }}>
+                        <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center' }}>
+                            <Box sx={{ width: { xs: '100%', md: '25%' } }}>
+                                <TextField
+                                    label="Start Date"
+                                    type="date"
+                                    fullWidth
+                                    size="small"
+                                    value={format(startDate, 'yyyy-MM-dd')}
+                                    onChange={(e) => {
+                                        const d = new Date(e.target.value);
+                                        if (isValid(d)) setStartDate(d);
+                                    }}
+                                    InputLabelProps={{ shrink: true }}
+                                />
+                            </Box>
+                            <Box sx={{ width: { xs: '100%', md: '25%' } }}>
+                                <TextField
+                                    label="End Date"
+                                    type="date"
+                                    fullWidth
+                                    size="small"
+                                    value={format(endDate, 'yyyy-MM-dd')}
+                                    onChange={(e) => {
+                                        const d = new Date(e.target.value);
+                                        if (isValid(d)) setEndDate(d);
+                                    }}
+                                    InputLabelProps={{ shrink: true }}
+                                />
                             </Box>
                         </Box>
                     </Paper>
-                </Box>
 
-                {/* Right: Breakdowns */}
-                <Box sx={{ flex: 1, minWidth: 300 }}>
-                    <Paper sx={{ p: 2, height: '100%', overflow: 'hidden' }}>
-                        <Typography variant="subtitle2" gutterBottom fontWeight="bold">Breakdown (Filtered)</Typography>
-                        <Box display="flex" gap={3} sx={{ overflowX: 'auto' }}>
-                            {/* Employee Breakdown */}
-                            <Box flex={1} minWidth={200}>
-                                <Table size="small">
-                                    <TableHead><TableRow><TableCell>Employee</TableCell><TableCell align="right">Hours</TableCell><TableCell align="right">Salary</TableCell></TableRow></TableHead>
-                                    <TableBody>
-                                        {breakdowns.employee.slice(0, 5).map(b => (
-                                            <TableRow key={b.name}>
-                                                <TableCell variant="head" sx={{ py: 0.5 }}>{b.name}</TableCell>
-                                                <TableCell align="right" sx={{ py: 0.5 }}>{b.hours.toFixed(1)}</TableCell>
-                                                <TableCell align="right" sx={{ py: 0.5 }}>${b.money.toFixed(0)}</TableCell>
-                                            </TableRow>
-                                        ))}
-                                    </TableBody>
-                                </Table>
-                            </Box>
+                    {/* Ledger Table */}
+                    <TableContainer component={Paper}>
+                        <Table>
+                            <TableHead>
+                                <TableRow>
+                                    <TableCell>Date</TableCell>
+                                    <TableCell>Type</TableCell>
+                                    <TableCell>Employee</TableCell>
+                                    <TableCell>Client / Context</TableCell>
+                                    <TableCell>Description / Notes</TableCell>
+                                    <TableCell align="right">Duration</TableCell>
+                                    <TableCell align="right">Rate</TableCell>
+                                    <TableCell align="right">Amount</TableCell>
+                                    <TableCell align="right">Actions</TableCell>
+                                </TableRow>
+                            </TableHead>
+                            <TableBody>
+                                {loading ? (
+                                    <TableRow>
+                                        <TableCell colSpan={9} align="center"><CircularProgress /></TableCell>
+                                    </TableRow>
+                                ) : filteredEntries.length === 0 ? (
+                                    <TableRow>
+                                        <TableCell colSpan={9} align="center">No records found (Check filters)</TableCell>
+                                    </TableRow>
+                                ) : (
+                                    filteredEntries
+                                        .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
+                                        .map((entry) => {
+                                            const isCorrection = entry.type === 'correction';
+                                            const isAdjustment = entry.type === 'manual_adjustment';
+                                            const isPayment = entry.type === 'payment';
+                                            const date = entry.startTime ? new Date(entry.startTime.seconds * 1000) : new Date();
+                                            const isVoided = entry.isVoided;
 
-                            {/* Client Breakdown */}
-                            <Box flex={1} minWidth={200}>
-                                <Table size="small">
-                                    <TableHead><TableRow><TableCell>Client</TableCell><TableCell align="right">Hours</TableCell><TableCell align="right">Cost</TableCell></TableRow></TableHead>
-                                    <TableBody>
-                                        {breakdowns.client.slice(0, 5).map(b => (
-                                            <TableRow key={b.name}>
-                                                <TableCell variant="head" sx={{ py: 0.5 }}>{b.name}</TableCell>
-                                                <TableCell align="right" sx={{ py: 0.5 }}>{b.hours.toFixed(1)}</TableCell>
-                                                <TableCell align="right" sx={{ py: 0.5 }}>${b.money.toFixed(0)}</TableCell>
-                                            </TableRow>
-                                        ))}
-                                    </TableBody>
-                                </Table>
-                            </Box>
-                        </Box>
-                    </Paper>
-                </Box>
-            </Box>
-
-            {/* Date Filters (Existing) */}
-            <Paper sx={{ p: 2, mb: 3 }}>
-                <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center' }}>
-                    <Box sx={{ width: { xs: '100%', md: '25%' } }}>
-                        <TextField
-                            label="Start Date"
-                            type="date"
-                            fullWidth
-                            size="small"
-                            value={format(startDate, 'yyyy-MM-dd')}
-                            onChange={(e) => {
-                                const d = new Date(e.target.value);
-                                if (isValid(d)) setStartDate(d);
-                            }}
-                            InputLabelProps={{ shrink: true }}
-                        />
-                    </Box>
-                    <Box sx={{ width: { xs: '100%', md: '25%' } }}>
-                        <TextField
-                            label="End Date"
-                            type="date"
-                            fullWidth
-                            size="small"
-                            value={format(endDate, 'yyyy-MM-dd')}
-                            onChange={(e) => {
-                                const d = new Date(e.target.value);
-                                if (isValid(d)) setEndDate(d);
-                            }}
-                            InputLabelProps={{ shrink: true }}
-                        />
-                    </Box>
-                </Box>
-            </Paper>
-
-            {/* Ledger Table */}
-            <TableContainer component={Paper}>
-                <Table>
-                    <TableHead>
-                        <TableRow>
-                            <TableCell>Date</TableCell>
-                            <TableCell>Type</TableCell>
-                            <TableCell>Employee</TableCell>
-                            <TableCell>Client / Context</TableCell>
-                            <TableCell>Description / Notes</TableCell>
-                            <TableCell align="right">Duration</TableCell>
-                            <TableCell align="right">Rate</TableCell>
-                            <TableCell align="right">Amount</TableCell>
-                            <TableCell align="right">Actions</TableCell>
-                        </TableRow>
-                    </TableHead>
-                    <TableBody>
-                        {loading ? (
-                            <TableRow>
-                                <TableCell colSpan={9} align="center"><CircularProgress /></TableCell>
-                            </TableRow>
-                        ) : filteredEntries.length === 0 ? (
-                            <TableRow>
-                                <TableCell colSpan={9} align="center">No records found (Check filters)</TableCell>
-                            </TableRow>
-                        ) : (
-                            filteredEntries
-                                .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
-                                .map((entry) => {
-                                    const isCorrection = entry.type === 'correction';
-                                    const isAdjustment = entry.type === 'manual_adjustment';
-                                    const isPayment = entry.type === 'payment';
-                                    const date = entry.startTime ? new Date(entry.startTime.seconds * 1000) : new Date();
-                                    const isVoided = entry.isVoided;
-
-                                    return (
-                                        <TableRow
-                                            key={entry.id}
-                                            hover
-                                            sx={{
-                                                bgcolor: getRowColor(entry),
-                                                textDecoration: isVoided ? 'line-through' : 'none',
-                                                opacity: isVoided ? 0.6 : 1
-                                            }}
-                                        >
-                                            <TableCell>
-                                                <Typography variant="body2" fontWeight="bold">
-                                                    {date.toLocaleDateString()}
-                                                </Typography>
-                                                <Typography variant="caption" color="textSecondary">
-                                                    {date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                                </Typography>
-                                                {isVoided && <Typography variant="caption" color="error" display="block">DELETED</Typography>}
-                                            </TableCell>
-                                            <TableCell>
-                                                <Chip
-                                                    label={isPayment ? 'Payment' : isCorrection ? 'Correction' : isAdjustment ? 'Adj.' : 'Session'}
-                                                    color={isPayment ? 'success' : isCorrection ? 'warning' : isAdjustment ? 'info' : 'default'}
-                                                    size="small"
-                                                    variant={isPayment || isCorrection || isAdjustment ? 'filled' : 'outlined'}
-                                                />
-                                            </TableCell>
-                                            <TableCell>
-                                                <Typography
-                                                    variant="body2"
+                                            return (
+                                                <TableRow
+                                                    key={entry.id}
+                                                    hover
                                                     sx={{
-                                                        cursor: 'pointer',
-                                                        color: 'primary.main',
-                                                        '&:hover': { textDecoration: 'underline' }
+                                                        bgcolor: getRowColor(entry),
+                                                        textDecoration: isVoided ? 'line-through' : 'none',
+                                                        opacity: isVoided ? 0.6 : 1
                                                     }}
-                                                    onClick={() => setHistoryEmployee({
-                                                        id: String(entry.employeeId),
-                                                        name: entry.employeeName
-                                                    })}
                                                 >
-                                                    {entry.employeeName}
-                                                </Typography>
-                                            </TableCell>
-                                            <TableCell>{entry.clientName}</TableCell>
-                                            <TableCell>
-                                                <Tooltip title={isVoided ? `REASON: ${entry.voidReason}` : (entry.description || '')}>
-                                                    <Typography variant="body2" noWrap sx={{ maxWidth: 200 }}>
-                                                        {isCorrection ? (entry.correctionNote || entry.description) : entry.description}
-                                                    </Typography>
-                                                </Tooltip>
-                                            </TableCell>
-                                            <TableCell align="right">
-                                                {entry.durationMinutes ? `${(entry.durationMinutes / 60).toFixed(2)}h` : '-'}
-                                            </TableCell>
-                                            <TableCell align="right">
-                                                {entry.hourlyRate ? `$${entry.hourlyRate}` : '-'}
-                                            </TableCell>
-                                            <TableCell align="right" sx={{ fontWeight: 'bold', color: (entry.sessionEarnings || 0) >= 0 ? 'green' : 'red' }}>
-                                                ${(entry.sessionEarnings || 0).toFixed(2)}
-                                            </TableCell>
-                                            <TableCell align="right">
-                                                {!isVoided && (
-                                                    <IconButton size="small" color="error" onClick={() => {
-                                                        setVoidTarget(entry);
-                                                        setVoidReason('');
-                                                    }}>
-                                                        <DeleteIcon fontSize="small" />
-                                                    </IconButton>
-                                                )}
-                                            </TableCell>
-                                        </TableRow>
-                                    );
-                                })
-                        )}
-                    </TableBody>
-                </Table>
-                <TablePagination
-                    component="div"
-                    count={filteredEntries.length}
-                    page={page}
-                    onPageChange={(_, newPage) => setPage(newPage)}
-                    rowsPerPage={rowsPerPage}
-                    onRowsPerPageChange={(e) => { setRowsPerPage(parseInt(e.target.value, 10)); setPage(0); }}
-                    rowsPerPageOptions={[10, 25, 50, 100]}
-                    labelRowsPerPage="Записей:"
-                />
-            </TableContainer>
+                                                    <TableCell>
+                                                        <Typography variant="body2" fontWeight="bold">
+                                                            {date.toLocaleDateString()}
+                                                        </Typography>
+                                                        <Typography variant="caption" color="textSecondary">
+                                                            {date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                        </Typography>
+                                                        {isVoided && <Typography variant="caption" color="error" display="block">DELETED</Typography>}
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        <Chip
+                                                            label={isPayment ? 'Payment' : isCorrection ? 'Correction' : isAdjustment ? 'Adj.' : 'Session'}
+                                                            color={isPayment ? 'success' : isCorrection ? 'warning' : isAdjustment ? 'info' : 'default'}
+                                                            size="small"
+                                                            variant={isPayment || isCorrection || isAdjustment ? 'filled' : 'outlined'}
+                                                        />
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        <Typography
+                                                            variant="body2"
+                                                            sx={{
+                                                                cursor: 'pointer',
+                                                                color: 'primary.main',
+                                                                '&:hover': { textDecoration: 'underline' }
+                                                            }}
+                                                            onClick={() => setHistoryEmployee({
+                                                                id: String(entry.employeeId),
+                                                                name: entry.employeeName
+                                                            })}
+                                                        >
+                                                            {entry.employeeName}
+                                                        </Typography>
+                                                    </TableCell>
+                                                    <TableCell>{entry.clientName}</TableCell>
+                                                    <TableCell>
+                                                        <Tooltip title={isVoided ? `REASON: ${entry.voidReason}` : (entry.description || '')}>
+                                                            <Typography variant="body2" noWrap sx={{ maxWidth: 200 }}>
+                                                                {isCorrection ? (entry.correctionNote || entry.description) : entry.description}
+                                                            </Typography>
+                                                        </Tooltip>
+                                                    </TableCell>
+                                                    <TableCell align="right">
+                                                        {entry.durationMinutes ? `${(entry.durationMinutes / 60).toFixed(2)}h` : '-'}
+                                                    </TableCell>
+                                                    <TableCell align="right">
+                                                        {entry.hourlyRate ? `$${entry.hourlyRate}` : '-'}
+                                                    </TableCell>
+                                                    <TableCell align="right" sx={{ fontWeight: 'bold', color: (entry.sessionEarnings || 0) >= 0 ? 'green' : 'red' }}>
+                                                        ${(entry.sessionEarnings || 0).toFixed(2)}
+                                                    </TableCell>
+                                                    <TableCell align="right">
+                                                        {!isVoided && (
+                                                            <IconButton size="small" color="error" onClick={() => {
+                                                                setVoidTarget(entry);
+                                                                setVoidReason('');
+                                                            }}>
+                                                                <DeleteIcon fontSize="small" />
+                                                            </IconButton>
+                                                        )}
+                                                    </TableCell>
+                                                </TableRow>
+                                            );
+                                        })
+                                )}
+                            </TableBody>
+                        </Table>
+                        <TablePagination
+                            component="div"
+                            count={filteredEntries.length}
+                            page={page}
+                            onPageChange={(_, newPage) => setPage(newPage)}
+                            rowsPerPage={rowsPerPage}
+                            onRowsPerPageChange={(e) => { setRowsPerPage(parseInt(e.target.value, 10)); setPage(0); }}
+                            rowsPerPageOptions={[10, 25, 50, 100]}
+                            labelRowsPerPage="Записей:"
+                        />
+                    </TableContainer>
+                </Box>
+            )}
+
+            {tabIndex === 1 && <InvoicesTab />}
+            {tabIndex === 2 && <ExpensesTab />}
 
             {/* Confirmation Dialog */}
             <Dialog open={!!confirmAction} onClose={() => setConfirmAction(null)} maxWidth="xs" fullWidth>

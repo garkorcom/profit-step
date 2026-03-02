@@ -12,6 +12,7 @@ interface PageResult {
     fileName: string;
     geminiResult?: BlueprintAgentResult;
     claudeResult?: BlueprintAgentResult;
+    openAiResult?: BlueprintAgentResult;
     mergedResult: BlueprintAgentResult;
 }
 
@@ -38,6 +39,7 @@ const PageResultsView: React.FC<PageResultsViewProps> = ({ pageResults, onMerged
         result: BlueprintAgentResult,
         gemini?: BlueprintAgentResult,
         claude?: BlueprintAgentResult,
+        openai?: BlueprintAgentResult,
         showAgents: boolean = true
     ) => {
         const items = Object.entries(result).filter(([, qty]) => qty > 0);
@@ -54,6 +56,7 @@ const PageResultsView: React.FC<PageResultsViewProps> = ({ pageResults, onMerged
                             <TableCell align="center">Кол-во</TableCell>
                             {showAgents && <TableCell align="center">Gemini</TableCell>}
                             {showAgents && <TableCell align="center">Claude</TableCell>}
+                            {showAgents && <TableCell align="center">OpenAI</TableCell>}
                             {showAgents && <TableCell align="center">Статус</TableCell>}
                         </TableRow>
                     </TableHead>
@@ -61,8 +64,11 @@ const PageResultsView: React.FC<PageResultsViewProps> = ({ pageResults, onMerged
                         {items.sort((a, b) => b[1] - a[1]).map(([key, qty]) => {
                             const gQty = gemini?.[key] ?? null;
                             const cQty = claude?.[key] ?? null;
-                            const match = gQty !== null && cQty !== null && gQty === cQty;
-                            const hasDiscrepancy = gQty !== null && cQty !== null && gQty !== cQty;
+                            const oQty = openai?.[key] ?? null;
+
+                            const validCounts = [gQty, cQty, oQty].filter(v => v !== null) as number[];
+                            const match = validCounts.length > 0 && validCounts.every(v => v === validCounts[0]);
+                            const hasDiscrepancy = validCounts.length > 0 && !match;
 
                             return (
                                 <TableRow
@@ -88,6 +94,13 @@ const PageResultsView: React.FC<PageResultsViewProps> = ({ pageResults, onMerged
                                         <TableCell align="center">
                                             <Typography variant="body2" color={cQty !== null ? 'text.primary' : 'text.disabled'}>
                                                 {cQty ?? '—'}
+                                            </Typography>
+                                        </TableCell>
+                                    )}
+                                    {showAgents && (
+                                        <TableCell align="center">
+                                            <Typography variant="body2" color={oQty !== null ? 'text.primary' : 'text.disabled'}>
+                                                {oQty ?? '—'}
                                             </Typography>
                                         </TableCell>
                                     )}
@@ -119,7 +132,9 @@ const PageResultsView: React.FC<PageResultsViewProps> = ({ pageResults, onMerged
                     const discrepancyCount = Object.keys(pr.mergedResult).filter(key => {
                         const g = pr.geminiResult?.[key] ?? null;
                         const c = pr.claudeResult?.[key] ?? null;
-                        return g !== null && c !== null && g !== c;
+                        const o = pr.openAiResult?.[key] ?? null;
+                        const validCounts = [g, c, o].filter(v => v !== null) as number[];
+                        return validCounts.length > 0 && !validCounts.every(v => v === validCounts[0]);
                     }).length;
 
                     return (
@@ -148,6 +163,7 @@ const PageResultsView: React.FC<PageResultsViewProps> = ({ pageResults, onMerged
                         pageResults[activeTab].mergedResult,
                         pageResults[activeTab].geminiResult,
                         pageResults[activeTab].claudeResult,
+                        pageResults[activeTab].openAiResult,
                         true
                     )}
                 </Box>
@@ -156,7 +172,7 @@ const PageResultsView: React.FC<PageResultsViewProps> = ({ pageResults, onMerged
                     <Typography variant="caption" color="text.secondary" mb={1} display="block">
                         Суммарный результат по всем {pageResults.length} страницам
                     </Typography>
-                    {renderTable(globalMerged, undefined, undefined, false)}
+                    {renderTable(globalMerged, undefined, undefined, undefined, false)}
                 </Box>
             )}
         </Box>

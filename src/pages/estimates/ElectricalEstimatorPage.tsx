@@ -272,7 +272,7 @@ export default function ElectricalEstimatorPage() {
 
     const [projectName, setProjectName] = useState('New Project');
     const [projectType, setProjectType] = useState('residential');
-    const [sqft, setSqft] = useState(2500);
+    const [sqft, setSqft] = useState(0);
     const [stories, setStories] = useState(1);
     const [typeMult, setTypeMult] = useState(1);
 
@@ -418,12 +418,21 @@ export default function ElectricalEstimatorPage() {
             return next;
         });
 
+        // Extract potential sqft area fields natively
+        const areaKeys = ['sqft', 'sq_ft', 'area', 'square_feet', 'area_sqft'];
+        for (const [key, val] of Object.entries(unmapped)) {
+            if (areaKeys.includes(key.toLowerCase()) && typeof val === 'number' && val > 0) {
+                setSqft(val);
+                break;
+            }
+        }
+
         setPendingMappingData(null);
     };
 
     const clearAll = () => {
         setQuantities({}); setGearQty({}); setPoolQty({}); setGenQty({}); setLandQty({}); setWireQty({}); setEquipmentPrices({});
-        setProjectName('New Project'); setSqft(2500); setStories(1); setTypeMult(1);
+        setProjectName('New Project'); setSqft(0); setStories(1); setTypeMult(1);
     };
 
     const storyMult = stories === 1 ? 1.0 : stories === 2 ? 1.15 : 1.30;

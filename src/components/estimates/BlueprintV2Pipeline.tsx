@@ -13,6 +13,7 @@ import {
     Alert, CircularProgress
 } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdf';
 import { ref, uploadBytes } from 'firebase/storage';
 import { httpsCallable } from 'firebase/functions';
 import { storage, functions } from '../../firebase/firebase';
@@ -22,6 +23,7 @@ import BlueprintFileSummary from './BlueprintFileSummary';
 import PageResultsView from './PageResultsView';
 import CrossVerification, { PageVerificationEntry } from './CrossVerification';
 import { BlueprintAgentResult } from '../../types/blueprint.types';
+import { exportBlueprintPdf } from '../../utils/exportBlueprintPdf';
 import { useAuth } from '../../auth/AuthContext';
 
 interface PageAnalysisResult {
@@ -83,6 +85,9 @@ const BlueprintV2Pipeline: React.FC<BlueprintV2PipelineProps> = ({ files, onComp
     // Analysis results
     const [pageResults, setPageResults] = useState<PageAnalysisResult[]>([]);
     const [analysisProgress, setAnalysisProgress] = useState({ done: 0, total: 0 });
+
+    // Selected AI Agents
+    const [selectedAgents, setSelectedAgents] = useState<string[]>(['gemini', 'claude']);
 
     // Editable result (user can modify quantities after analysis)
     const [editedResult, setEditedResult] = useState<BlueprintAgentResult>({});
@@ -279,6 +284,7 @@ const BlueprintV2Pipeline: React.FC<BlueprintV2PipelineProps> = ({ files, onComp
                     storagePath,
                     fileName: page.fileName,
                     pageIndex: page.pageIndex,
+                    agents: selectedAgents,
                 });
 
                 const data = response.data as any;
@@ -347,8 +353,28 @@ const BlueprintV2Pipeline: React.FC<BlueprintV2PipelineProps> = ({ files, onComp
         return merged;
     }, [pageResults]);
 
-    const totalItems = Object.keys(globalMerged).length;
-    const totalQty = Object.values(globalMerged).reduce((a, b) => a + b, 0);
+    const totalItems = Object.keys(editedResult).length;
+    const totalQty = Object.values(editedResult).reduce((sum, q) => sum + (q || 0), 0);
+
+    const handleExportPdf = () => {
+        // Compute globalMerged
+        const globalMerged: BlueprintAgentResult = {};
+        pageResults.forEach(pr => {
+            for (const [key, qty] of Object.entries(pr.mergedResult)) {
+                globalMerged[key] = (globalMerged[key] || 0) + (qty || 0);
+            }
+        });
+
+        let safeProjectName = 'Project';
+        // You might consider passing down actual project name if available in Context, but for now we fallback.
+
+        exportBlueprintPdf(
+            safeProjectName,
+            pageResults,
+            globalMerged,
+            selectedAgents
+        );
+    };
 
     // Sync editedResult when globalMerged changes (after analysis / refinement)
     useEffect(() => {
@@ -502,6 +528,12 @@ const BlueprintV2Pipeline: React.FC<BlueprintV2PipelineProps> = ({ files, onComp
                 <BlueprintFileSummary
                     approvedFiles={approvedFiles}
                     allFileNames={files.map(f => f.name)}
+                    selectedAgents={selectedAgents}
+                    onToggleAgent={(agent) => {
+                        setSelectedAgents(prev =>
+                            prev.includes(agent) ? prev.filter(a => a !== agent) : [...prev, agent]
+                        );
+                    }}
                     onStartAnalysis={startAnalysis}
                     onGoBackToFile={handleGoBackToFile}
                 />
@@ -541,14 +573,25 @@ const BlueprintV2Pipeline: React.FC<BlueprintV2PipelineProps> = ({ files, onComp
                         }))}
                     />
                     <Box display="flex" justifyContent="space-between" mt={2}>
-                        <Button
-                            startIcon={<ArrowBackIcon />}
-                            size="small"
-                            color="inherit"
-                            onClick={() => setPhase('summary')}
-                        >
-                            ← К сводке
-                        </Button>
+                        <Box display="flex" gap={1}>
+                            <Button
+                                startIcon={<ArrowBackIcon />}
+                                size="small"
+                                color="inherit"
+                                onClick={() => setPhase('summary')}
+                            >
+                                ← К сводке
+                            </Button>
+                            <Button
+                                startIcon={<PictureAsPdfIcon />}
+                                size="small"
+                                color="secondary"
+                                variant="outlined"
+                                onClick={handleExportPdf}
+                            >
+                                Скачать PDF
+                            </Button>
+                        </Box>
                         <Box display="flex" gap={1}>
                             <Button
                                 variant="outlined"

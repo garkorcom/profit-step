@@ -304,8 +304,33 @@ export default function ElectricalEstimatorPage() {
     const [pendingMappingData, setPendingMappingData] = useState<Record<string, number> | null>(null);
 
     const [currentEstimateId, setCurrentEstimateId] = useState<string | null>(null);
+    const [currentEstimateData, setCurrentEstimateData] = useState<any>(null);
     const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
     const [autosaveStatus, setAutosaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
+
+    // Load project on mount if ID is in URL
+    useEffect(() => {
+        const id = new URLSearchParams(window.location.search).get('id');
+        if (id && userProfile) {
+            savedEstimateApi.getById(id).then((data: any) => {
+                if (data) {
+                    setCurrentEstimateId(id);
+                    setCurrentEstimateData(data);
+                    setProjectName(data.projectName || 'Loaded Project');
+                    if (data.areaSqft) setSqft(data.areaSqft);
+                    // Load quantities
+                    if (data.quantities) {
+                        setQuantities(data.quantities);
+                        setGearQty(data.quantities);
+                        setPoolQty(data.quantities);
+                        setGenQty(data.quantities);
+                        setLandQty(data.quantities);
+                        setWireQty(data.quantities);
+                    }
+                }
+            }).catch(console.error);
+        }
+    }, [userProfile]);
 
     const updateQty = (setter: any) => (id: string, value: string) => {
         setter((prev: any) => ({ ...prev, [id]: Math.max(0, parseInt(value) || 0) }));
@@ -529,34 +554,38 @@ export default function ElectricalEstimatorPage() {
     ];
 
     // ===== PDF Export =====
-    const generateEstimatePDF = () => {
+    const generateEstimatePDF = (label?: string, aiQtyMap?: Record<string, number>) => {
         setIsGeneratingPDF(true);
         setTimeout(() => {
             try {
                 const pdf = new jsPDF();
                 // Header
                 pdf.setFontSize(18);
-                pdf.text('ELECTRICAL ESTIMATE', 14, 20);
+                const title = label ? `ELECTRICAL ESTIMATE - ${label}` : 'ELECTRICAL ESTIMATE';
+                pdf.text(title, 14, 20);
                 pdf.setFontSize(10);
                 pdf.setTextColor(100);
                 pdf.text(`Project: ${projectName} | ${projectType} | ${sqft} sq ft | ${stories} story`, 14, 28);
                 pdf.text(`Date: ${new Date().toLocaleDateString()} | Overhead: ${overheadPct}% | Profit: ${profitPct}%`, 14, 34);
 
+                // Use either custom AI map or the state maps
+                const getCustomQty = aiQtyMap ? (id: string) => aiQtyMap[id] || 0 : null;
+
                 // Gather all items with qty > 0
                 const sections: { name: string; items: any[]; qtyMap: any }[] = [
-                    ...Object.entries(DEVICES).map(([key, items]) => ({ name: key.charAt(0).toUpperCase() + key.slice(1), items, qtyMap: quantities })),
-                    { name: 'Wire & Conduit', items: WIRE, qtyMap: wireQty },
-                    { name: 'Panels & Gear', items: gearData, qtyMap: gearQty },
-                    { name: 'Pool & Spa', items: poolData, qtyMap: poolQty },
-                    { name: 'Generator', items: genData, qtyMap: genQty },
-                    { name: 'Landscape', items: landData, qtyMap: landQty },
+                    ...Object.entries(DEVICES).map(([key, items]) => ({ name: key.charAt(0).toUpperCase() + key.slice(1), items, qtyMap: getCustomQty ? aiQtyMap : quantities })),
+                    { name: 'Wire & Conduit', items: WIRE, qtyMap: getCustomQty ? aiQtyMap : wireQty },
+                    { name: 'Panels & Gear', items: gearData, qtyMap: getCustomQty ? aiQtyMap : gearQty },
+                    { name: 'Pool & Spa', items: poolData, qtyMap: getCustomQty ? aiQtyMap : poolQty },
+                    { name: 'Generator', items: genData, qtyMap: getCustomQty ? aiQtyMap : genQty },
+                    { name: 'Landscape', items: landData, qtyMap: getCustomQty ? aiQtyMap : landQty },
                 ];
 
                 let startY = 42;
                 sections.forEach(sec => {
-                    const rows = sec.items.filter(item => (sec.qtyMap[item.id] || 0) > 0)
+                    const rows = sec.items.filter(item => (getCustomQty ? getCustomQty(item.id) : (sec.qtyMap[item.id] || 0)) > 0)
                         .map(item => {
-                            const qty = sec.qtyMap[item.id] || 0;
+                            const qty = getCustomQty ? getCustomQty(item.id) : (sec.qtyMap[item.id] || 0);
                             return [
                                 item.name,
                                 `$${item.matRate}`,
@@ -647,7 +676,9 @@ export default function ElectricalEstimatorPage() {
 
                 const pdfBlobUrl = pdf.output('bloburl');
                 window.open(pdfBlobUrl, '_blank');
-                pdf.save(`${projectName.replace(/\s+/g, '_')}_Estimate.pdf`);
+                const safeName = projectName.replace(/\s+/g, '_');
+                const suffix = label ? `_${label.replace(/\s+/g, '_')}` : '';
+                pdf.save(`${safeName}_Estimate${suffix}.pdf`);
                 setSaveSnackbar('PDF готов, скачивание началось');
             } catch (err: any) {
                 console.error('PDF generation error', err);
@@ -1014,6 +1045,24 @@ Notes: ${notes || 'N/A'}
                                         <MenuItem onClick={() => { generateEstimatePDF(); setExportAnchorEl(null); }}>
                                             <PdfIcon sx={{ mr: 1 }} fontSize="small" /> Смета (PDF)
                                         </MenuItem>
+
+                                        {currentEstimateData?.aiResults?.gemini && (
+                                            <MenuItem onClick={() => { generateEstimatePDF('Gemini AI Output', currentEstimateData.aiResults.gemini); setExportAnchorEl(null); }}>
+                                                <PdfIcon sx={{ mr: 1, color: 'info.main' }} fontSize="small" /> Gemini AI Смета
+                                            </MenuItem>
+                                        )}
+                                        {currentEstimateData?.aiResults?.claude && (
+                                            <MenuItem onClick={() => { generateEstimatePDF('Claude AI Output', currentEstimateData.aiResults.claude); setExportAnchorEl(null); }}>
+                                                <PdfIcon sx={{ mr: 1, color: 'warning.main' }} fontSize="small" /> Claude AI Смета
+                                            </MenuItem>
+                                        )}
+                                        {currentEstimateData?.aiResults?.openai && (
+                                            <MenuItem onClick={() => { generateEstimatePDF('OpenAI Output', currentEstimateData.aiResults.openai); setExportAnchorEl(null); }}>
+                                                <PdfIcon sx={{ mr: 1, color: 'success.main' }} fontSize="small" /> OpenAI Смета
+                                            </MenuItem>
+                                        )}
+                                        <Divider />
+
                                         <MenuItem onClick={() => { generateExcelExport(); setExportAnchorEl(null); }}>
                                             <ExcelIcon sx={{ mr: 1 }} fontSize="small" /> Excel (.xlsx)
                                         </MenuItem>

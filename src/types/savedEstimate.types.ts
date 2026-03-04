@@ -9,10 +9,14 @@ export interface SavedEstimate {
     address?: string;
     description?: string;
     areaSqft?: number;
-    // AI batch reference
     batchId: string;
     quantities: Record<string, number>;
     originalQuantities: Record<string, number>;
+    aiResults?: {
+        gemini?: Record<string, number>;
+        claude?: Record<string, number>;
+        openai?: Record<string, number>;
+    };
     // Cost snapshot
     laborRate: number;
     wirePrice: number;

@@ -20,17 +20,26 @@ import {
     IconButton,
     TextField,
     Stack,
-    Divider
+    Divider,
+    List,
+    ListItem,
+    ListItemAvatar,
+    ListItemText,
+    Avatar
 } from '@mui/material';
-import DeleteIcon from '@mui/icons-material/Delete';
+
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import AddIcon from '@mui/icons-material/Add';
 import EditIcon from '@mui/icons-material/Edit';
 import VisibilityIcon from '@mui/icons-material/Visibility';
+import PersonIcon from '@mui/icons-material/Person';
 
+import { collection, query, where, getDocs } from 'firebase/firestore';
+import { db } from '../../firebase/firebase';
 import { crmApi } from '../../api/crmApi';
 import { estimatesApi } from '../../api/estimatesApi';
 import { Client } from '../../types/crm.types';
+import { Contact } from '../../types/contact.types';
 import { Estimate } from '../../types/estimate.types';
 import { useAuth } from '../../auth/AuthContext';
 import ProjectFinanceTab from '../../components/crm/ProjectFinanceTab';
@@ -70,6 +79,7 @@ const ClientDetailsPage: React.FC = () => {
 
     const [client, setClient] = useState<Client | null>(null);
     const [estimates, setEstimates] = useState<Estimate[]>([]);
+    const [linkedContacts, setLinkedContacts] = useState<Contact[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [tabValue, setTabValue] = useState(0);
@@ -111,6 +121,15 @@ const ClientDetailsPage: React.FC = () => {
                         console.warn('Missing index for estimates query. Check console for link.');
                         alert('Missing Firestore Index. Open console to get the creation link.');
                     }
+                }
+
+                // Fetch Linked Global Contacts
+                try {
+                    const contactsQ = query(collection(db, 'contacts'), where('linkedProjects', 'array-contains', id));
+                    const contactsSnap = await getDocs(contactsQ);
+                    setLinkedContacts(contactsSnap.docs.map(d => ({ id: d.id, ...d.data() } as Contact)));
+                } catch (cErr) {
+                    console.error('Error loading linked contacts:', cErr);
                 }
 
             } catch (err: any) {
@@ -219,6 +238,32 @@ const ClientDetailsPage: React.FC = () => {
                         ) : 'N/A'}
                     </Typography>
 
+                    {client.contacts && client.contacts.length > 0 && (
+                        <Box mt={2}>
+                            <Typography variant="subtitle2" color="text.secondary" gutterBottom>Additional Contacts</Typography>
+                            <List disablePadding>
+                                {client.contacts.map(c => (
+                                    <ListItem key={c.id} sx={{ bgcolor: 'rgba(0,0,0,0.02)', mb: 1, borderRadius: 1 }}>
+                                        <ListItemAvatar>
+                                            <Avatar sx={{ width: 32, height: 32, bgcolor: 'primary.light' }}>
+                                                {c.name.charAt(0)}
+                                            </Avatar>
+                                        </ListItemAvatar>
+                                        <ListItemText
+                                            primary={<Typography variant="body2" fontWeight="bold">{c.name} {c.position ? `(${c.position})` : ''}</Typography>}
+                                            secondary={
+                                                <Box display="flex" gap={2} mt={0.5}>
+                                                    {c.phone && <Typography variant="caption">📞 <a href={`tel:${c.phone}`} style={{ textDecoration: 'none', color: 'inherit' }}>{c.phone}</a></Typography>}
+                                                    {c.email && <Typography variant="caption">✉️ <a href={`mailto:${c.email}`} style={{ textDecoration: 'none', color: 'inherit' }}>{c.email}</a></Typography>}
+                                                </Box>
+                                            }
+                                        />
+                                    </ListItem>
+                                ))}
+                            </List>
+                        </Box>
+                    )}
+
                     <Divider sx={{ my: 3 }} />
 
                     <Typography variant="h6" gutterBottom>Services / Job Types</Typography>
@@ -239,6 +284,35 @@ const ClientDetailsPage: React.FC = () => {
                             <Typography color="textSecondary" variant="body2">No services configured.</Typography>
                         )}
                     </Box>
+
+                    <Divider sx={{ my: 3 }} />
+                    <Typography variant="h6" gutterBottom>Связанные контакты (Справочник)</Typography>
+                    {linkedContacts.length > 0 ? (
+                        <List disablePadding>
+                            {linkedContacts.map(c => (
+                                <ListItem key={c.id} sx={{ bgcolor: 'background.default', mb: 1, borderRadius: 1, border: '1px solid', borderColor: 'divider' }}>
+                                    <ListItemAvatar>
+                                        <Avatar sx={{ bgcolor: 'secondary.main', width: 32, height: 32 }}>
+                                            <PersonIcon fontSize="small" />
+                                        </Avatar>
+                                    </ListItemAvatar>
+                                    <ListItemText
+                                        primary={<Typography variant="body2" fontWeight="bold">{c.name}</Typography>}
+                                        secondary={
+                                            <React.Fragment>
+                                                {c.roles && c.roles.length > 0 && <Typography variant="caption" color="text.secondary" display="block">{c.roles.join(', ')}</Typography>}
+                                                {c.phones && c.phones.length > 0 && <Typography variant="caption" color="text.secondary" display="block">{c.phones.map(p => p.number).join(', ')}</Typography>}
+                                            </React.Fragment>
+                                        }
+                                    />
+                                </ListItem>
+                            ))}
+                        </List>
+                    ) : (
+                        <Typography color="textSecondary" variant="body2">Нет связанных контактов.</Typography>
+                    )}
+
+                    <Divider sx={{ my: 3 }} />
 
                     <Box display="flex" gap={1} alignItems="flex-start" maxWidth="400px">
                         <TextField

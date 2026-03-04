@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { Box, Typography, Button, Dialog, DialogTitle, DialogContent, DialogActions, Chip, IconButton } from '@mui/material';
+import { Box, Typography, Button, Dialog, DialogTitle, DialogContent, DialogActions } from '@mui/material';
 import StopIcon from '@mui/icons-material/Stop';
-import PauseIcon from '@mui/icons-material/Pause';
-import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import { WorkSessionData } from '../../hooks/useActiveSession';
 import { doc, updateDoc, Timestamp } from 'firebase/firestore';
 import { db } from '../../firebase/firebase';
 import toast from 'react-hot-toast';
+import { useNavigate } from 'react-router-dom';
+import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 
 interface ActiveSessionIndicatorProps {
     session: WorkSessionData;
@@ -16,6 +16,7 @@ interface ActiveSessionIndicatorProps {
 const ActiveSessionIndicator: React.FC<ActiveSessionIndicatorProps> = ({ session }) => {
     const [elapsed, setElapsed] = useState<string>('00:00');
     const [open, setOpen] = useState(false);
+    const navigate = useNavigate();
 
     // Timer Logic
     useEffect(() => {
@@ -86,7 +87,17 @@ const ActiveSessionIndicator: React.FC<ActiveSessionIndicatorProps> = ({ session
                     transition: 'all 0.2s',
                     '&:hover': { bgcolor: 'primary.main', transform: 'scale(1.02)' }
                 }}
-                onClick={() => setOpen(true)}
+                onClick={() => {
+                    if (session.relatedTaskId) {
+                        navigate(`/crm/gtd/${session.relatedTaskId}`);
+                    } else {
+                        setOpen(true);
+                    }
+                }}
+                onContextMenu={(e) => {
+                    e.preventDefault();
+                    setOpen(true);
+                }}
             >
                 <AccessTimeIcon sx={{ fontSize: 16, mr: 1, animation: 'pulse 2s infinite' }} />
                 <Typography variant="caption" fontWeight="bold" sx={{ mr: 1 }}>
@@ -122,16 +133,32 @@ const ActiveSessionIndicator: React.FC<ActiveSessionIndicatorProps> = ({ session
                         {/* Future: Add Pause button here if needed */}
                     </Box>
                 </DialogContent>
-                <DialogActions>
-                    <Button onClick={() => setOpen(false)}>Close</Button>
-                    <Button
-                        onClick={handleStop}
-                        variant="contained"
-                        color="error"
-                        startIcon={<StopIcon />}
-                    >
-                        Stop Work
-                    </Button>
+                <DialogActions sx={{ justifyContent: 'space-between', px: 3, pb: 2 }}>
+                    <Box>
+                        {session.relatedTaskId && (
+                            <Button
+                                color="info"
+                                startIcon={<OpenInNewIcon />}
+                                onClick={() => {
+                                    setOpen(false);
+                                    navigate(`/crm/gtd/${session.relatedTaskId}`);
+                                }}
+                            >
+                                К Задаче
+                            </Button>
+                        )}
+                    </Box>
+                    <Box display="flex" gap={1}>
+                        <Button onClick={() => setOpen(false)}>Close</Button>
+                        <Button
+                            onClick={handleStop}
+                            variant="contained"
+                            color="error"
+                            startIcon={<StopIcon />}
+                        >
+                            Stop Work
+                        </Button>
+                    </Box>
                 </DialogActions>
             </Dialog>
         </>

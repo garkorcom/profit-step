@@ -19,7 +19,9 @@ import {
     Breadcrumbs, Link, Chip, Select, MenuItem, FormControl,
     Autocomplete, Avatar, Divider, Checkbox,
     Alert, List, ListItem, ListItemIcon, Tab, Tabs, Stack, Snackbar,
-    CircularProgress, Tooltip, InputAdornment, FormControlLabel
+    CircularProgress, Tooltip, InputAdornment, FormControlLabel,
+    Accordion, AccordionSummary, AccordionDetails,
+    useMediaQuery, useTheme
 } from '@mui/material';
 import {
     ArrowBack as BackIcon,
@@ -35,7 +37,8 @@ import {
     Inventory as InventoryIcon,
     Contacts as ContactsIcon,
     WhatsApp as WhatsAppIcon,
-    Telegram as TelegramIcon
+    Telegram as TelegramIcon,
+    ExpandMore as ExpandMoreIcon
 } from '@mui/icons-material';
 import { doc, updateDoc, onSnapshot, Timestamp, collection, getDocs, query, where, deleteDoc, orderBy } from 'firebase/firestore';
 import { db, functions } from '../../firebase/firebase';
@@ -236,6 +239,8 @@ const WorkSessionsList: React.FC<{ taskId: string }> = ({ taskId }) => {
 // ═══════════════════════════════════════════════════════════
 
 const UnifiedCockpitPage: React.FC = () => {
+    const theme = useTheme();
+    const isMobile = useMediaQuery(theme.breakpoints.down('md'));
     const { taskId } = useParams<{ taskId: string }>();
     const navigate = useNavigate();
     const location = useLocation();
@@ -805,7 +810,7 @@ const UnifiedCockpitPage: React.FC = () => {
             <Box sx={{ flex: 1, overflow: 'auto', p: 3 }}>
                 <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, gap: 3 }}>
                     {/* LEFT COLUMN: Content (65%) */}
-                    <Box sx={{ flex: { xs: '1 1 100%', md: '1 1 65%' }, minWidth: 0 }}>
+                    <Box sx={{ flex: { xs: '1 1 100%', md: '1 1 55%' }, minWidth: 0 }}>
                         <SmartCockpitInput
                             onCommandSubmit={handleAiModification}
                             isLoading={isAiModifying}
@@ -839,6 +844,42 @@ const UnifiedCockpitPage: React.FC = () => {
 
                             <Divider sx={{ my: 2 }} />
 
+                            {/* Block A: Client */}
+                            <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                                🏢 Client
+                            </Typography>
+
+                            <Autocomplete
+                                value={clients.find(c => c.id === clientId) || null}
+                                options={clients}
+                                getOptionLabel={(opt) => opt.name}
+                                onChange={(_, newVal) => {
+                                    setClientId(newVal?.id || null);
+                                    setClientName(newVal?.name || null);
+                                    setHasChanges(true);
+                                }}
+                                renderInput={(params) => (
+                                    <TextField
+                                        {...params}
+                                        label="Client"
+                                        size="small"
+                                    />
+                                )}
+                                sx={{ mb: 2 }}
+                            />
+
+                            {/* Linked Contacts (v3 handled in Main Tab) */}
+
+                            <Divider sx={{ my: 2 }} />
+
+                            <Divider sx={{ my: 2 }} />
+
+                        </Paper>
+                    </Box>
+
+                    {/* RIGHT COLUMN: Control Panel (45%) */}
+                    <Box sx={{ flex: { xs: '1 1 100%', md: '1 1 45%' }, minWidth: 0 }}>
+                        <Paper sx={{ p: 3 }}>
                             {/* Checklist */}
                             <Typography variant="h6" gutterBottom>
                                 Checklist ({checklist.filter(i => i.completed).length}/{checklist.length})
@@ -890,7 +931,7 @@ const UnifiedCockpitPage: React.FC = () => {
                             <Divider sx={{ my: 3 }} />
 
                             {/* Activity Tabs */}
-                            <Tabs value={activeTab} onChange={(_, v) => setActiveTab(v)}>
+                            <Tabs value={activeTab} onChange={(_, v) => setActiveTab(v)} variant="scrollable" scrollButtons="auto" allowScrollButtonsMobile>
                                 <Tab icon={<TimeIcon />} label="Журнал работ" />
                                 <Tab icon={<PersonIcon />} label="История" />
                                 <Tab icon={<InventoryIcon />} label="Материалы" />
@@ -907,7 +948,7 @@ const UnifiedCockpitPage: React.FC = () => {
                                     {task.totalTimeSpentMinutes && task.totalTimeSpentMinutes > 0 ? (
                                         <Typography variant="body2" sx={{ mb: 2 }}>
                                             Общее время: <strong>{Math.floor(task.totalTimeSpentMinutes / 60)}ч {task.totalTimeSpentMinutes % 60}м</strong>
-                                            {task.totalEarnings ? ` · $${task.totalEarnings.toFixed(2)}` : ''}
+                                            {task.totalEarnings ? ` · ${task.totalEarnings.toFixed(2)}` : ''}
                                         </Typography>
                                     ) : (
                                         !isTimerRunningForThisTask && (
@@ -1032,37 +1073,6 @@ const UnifiedCockpitPage: React.FC = () => {
                                     />
                                 </Box>
                             )}
-                        </Paper>
-                    </Box>
-
-                    {/* RIGHT COLUMN: Control Panel (35%) */}
-                    <Box sx={{ flex: { xs: '1 1 100%', md: '1 1 35%' }, minWidth: 0 }}>
-                        <Paper sx={{ p: 3 }}>
-                            {/* Block A: Client */}
-                            <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                                🏢 Client
-                            </Typography>
-
-                            <Autocomplete
-                                value={clients.find(c => c.id === clientId) || null}
-                                options={clients}
-                                getOptionLabel={(opt) => opt.name}
-                                onChange={(_, newVal) => {
-                                    setClientId(newVal?.id || null);
-                                    setClientName(newVal?.name || null);
-                                    setHasChanges(true);
-                                }}
-                                renderInput={(params) => (
-                                    <TextField
-                                        {...params}
-                                        label="Client"
-                                        size="small"
-                                    />
-                                )}
-                                sx={{ mb: 2 }}
-                            />
-
-                            {/* Linked Contacts (v3 handled in Main Tab) */}
 
                             <Divider sx={{ my: 2 }} />
 
@@ -1172,189 +1182,221 @@ const UnifiedCockpitPage: React.FC = () => {
 
                             <Divider sx={{ my: 2 }} />
 
+
                             {/* Block B2: Metadata — Creator, Time */}
-                            <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                                📋 Информация
-                            </Typography>
+                            <Accordion disableGutters variant="outlined" sx={{ mb: 2, '&:before': { display: 'none' }, borderRadius: 1 }}>
+                                <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                                    <Typography variant="subtitle2" color="text.secondary">
+                                        📋 Информация
+                                    </Typography>
+                                </AccordionSummary>
+                                <AccordionDetails>
 
-                            <Stack spacing={1} sx={{ mb: 3 }}>
-                                {/* Creator */}
-                                {task.ownerName && (
-                                    <Box display="flex" justifyContent="space-between" alignItems="center">
-                                        <Typography variant="body2" color="text.secondary">Создал</Typography>
-                                        <Typography variant="body2" fontWeight={500}>{task.ownerName}</Typography>
-                                    </Box>
-                                )}
 
-                                {/* Created At */}
-                                {task.createdAt && (
-                                    <Box display="flex" justifyContent="space-between" alignItems="center">
-                                        <Typography variant="body2" color="text.secondary">Дата создания</Typography>
-                                        <Typography variant="body2" fontWeight={500}>
-                                            {formatDate(
-                                                (task.createdAt as any)?.toDate ? (task.createdAt as any).toDate() : new Date(task.createdAt as any),
-                                                'dd MMM yyyy, HH:mm',
-                                                { locale: ru }
-                                            )}
-                                        </Typography>
-                                    </Box>
-                                )}
 
-                                {/* Updated At */}
-                                {task.updatedAt && (
-                                    <Box display="flex" justifyContent="space-between" alignItems="center">
-                                        <Typography variant="body2" color="text.secondary">Обновлено</Typography>
-                                        <Typography variant="body2">
-                                            {formatDate(
-                                                (task.updatedAt as any)?.toDate ? (task.updatedAt as any).toDate() : new Date(task.updatedAt as any),
-                                                'dd MMM yyyy, HH:mm',
-                                                { locale: ru }
-                                            )}
-                                        </Typography>
-                                    </Box>
-                                )}
-                            </Stack>
+                                    <Stack spacing={1} sx={{ mb: 3 }}>
+                                        {/* Creator */}
+                                        {task.ownerName && (
+                                            <Box display="flex" justifyContent="space-between" alignItems="center">
+                                                <Typography variant="body2" color="text.secondary">Создал</Typography>
+                                                <Typography variant="body2" fontWeight={500}>{task.ownerName}</Typography>
+                                            </Box>
+                                        )}
 
+                                        {/* Created At */}
+                                        {task.createdAt && (
+                                            <Box display="flex" justifyContent="space-between" alignItems="center">
+                                                <Typography variant="body2" color="text.secondary">Дата создания</Typography>
+                                                <Typography variant="body2" fontWeight={500}>
+                                                    {formatDate(
+                                                        (task.createdAt as any)?.toDate ? (task.createdAt as any).toDate() : new Date(task.createdAt as any),
+                                                        'dd MMM yyyy, HH:mm',
+                                                        { locale: ru }
+                                                    )}
+                                                </Typography>
+                                            </Box>
+                                        )}
+
+                                        {/* Updated At */}
+                                        {task.updatedAt && (
+                                            <Box display="flex" justifyContent="space-between" alignItems="center">
+                                                <Typography variant="body2" color="text.secondary">Обновлено</Typography>
+                                                <Typography variant="body2">
+                                                    {formatDate(
+                                                        (task.updatedAt as any)?.toDate ? (task.updatedAt as any).toDate() : new Date(task.updatedAt as any),
+                                                        'dd MMM yyyy, HH:mm',
+                                                        { locale: ru }
+                                                    )}
+                                                </Typography>
+                                            </Box>
+                                        )}
+                                    </Stack>
+
+
+                                </AccordionDetails>
+                            </Accordion>
                             <Divider sx={{ my: 2 }} />
+
 
                             {/* Block B3: Planning — Duration, Start, End */}
-                            <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                                📅 Планирование
-                            </Typography>
+                            <Accordion defaultExpanded={!isMobile} disableGutters variant="outlined" sx={{ mb: 2, '&:before': { display: 'none' }, borderRadius: 1 }}>
+                                <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                                    <Typography variant="subtitle2" color="text.secondary">
+                                        📅 Планирование
+                                    </Typography>
+                                </AccordionSummary>
+                                <AccordionDetails>
 
-                            {/* Estimated Duration */}
-                            <TextField
-                                fullWidth
-                                size="small"
-                                label="Планируемое время (мин)"
-                                type="number"
-                                value={estimatedDurationMinutes}
-                                onChange={(e) => {
-                                    const val = e.target.value ? Math.max(0, Number(e.target.value)) : '';
-                                    setEstimatedDurationMinutes(val);
-                                    setHasChanges(true);
-                                }}
-                                InputProps={{
-                                    inputProps: { min: 0 },
-                                    startAdornment: <InputAdornment position="start"><ScheduleIcon fontSize="small" /></InputAdornment>,
-                                    endAdornment: estimatedDurationMinutes ? (
-                                        <InputAdornment position="end">
-                                            <Typography variant="caption" color="text.secondary">
-                                                {Math.floor(Number(estimatedDurationMinutes) / 60)}ч {Number(estimatedDurationMinutes) % 60}м
-                                            </Typography>
-                                        </InputAdornment>
-                                    ) : null
-                                }}
-                                sx={{ mb: 2 }}
-                            />
 
-                            {/* Plan Start Date */}
-                            <TextField
-                                fullWidth
-                                size="small"
-                                label="План старта"
-                                type="date"
-                                value={startDate}
-                                onChange={(e) => { setStartDate(e.target.value); setHasChanges(true); }}
-                                InputLabelProps={{ shrink: true }}
-                                InputProps={{
-                                    startAdornment: <InputAdornment position="start"><CalendarIcon fontSize="small" /></InputAdornment>
-                                }}
-                                sx={{ mb: 2 }}
-                            />
 
-                            {/* Due Date / Plan End */}
-                            <TextField
-                                fullWidth
-                                size="small"
-                                label={!dueDateManual && startDate && estimatedDurationMinutes ? 'План окончания (авто)' : 'План окончания'}
-                                type="date"
-                                value={dueDate}
-                                onChange={(e) => { setDueDate(e.target.value); setDueDateManual(true); setHasChanges(true); }}
-                                InputLabelProps={{ shrink: true }}
-                                InputProps={{
-                                    startAdornment: <InputAdornment position="start"><CalendarIcon fontSize="small" /></InputAdornment>,
-                                    endAdornment: dueDateManual && startDate && estimatedDurationMinutes ? (
-                                        <InputAdornment position="end">
-                                            <Tooltip title="Сбросить на авто-расчёт">
-                                                <IconButton size="small" onClick={() => { setDueDateManual(false); setHasChanges(true); }}>
-                                                    <ScheduleIcon fontSize="small" />
-                                                </IconButton>
-                                            </Tooltip>
-                                        </InputAdornment>
-                                    ) : null
-                                }}
-                                sx={{
-                                    mb: 3,
-                                    '& .MuiOutlinedInput-root': !dueDateManual && startDate && estimatedDurationMinutes ? {
-                                        bgcolor: 'action.hover'
-                                    } : {}
-                                }}
-                                helperText={!dueDateManual && startDate && estimatedDurationMinutes ? 'Авто-расчёт от старта + длительность' : undefined}
-                            />
-
-                            {/* Show in Calendar Button */}
-                            {(startDate || dueDate) && (
-                                <Button
-                                    fullWidth
-                                    size="small"
-                                    startIcon={<CalendarIcon />}
-                                    onClick={() => {
-                                        const targetDate = dueDate || startDate;
-                                        navigate(`/crm/calendar?date=${targetDate}`);
-                                    }}
-                                    sx={{
-                                        mb: 1,
-                                        textTransform: 'none',
-                                        justifyContent: 'flex-start',
-                                        color: 'primary.main',
-                                        fontWeight: 500,
-                                    }}
-                                >
-                                    Показать в календаре
-                                </Button>
-                            )}
-
-                            <Divider sx={{ my: 2 }} />
-
-                            {/* Block C: Priority */}
-                            <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                                🎯 Priority
-                            </Typography>
-
-                            <Box display="flex" gap={1} flexWrap="wrap" mb={3}>
-                                {PRIORITY_OPTIONS.map(opt => (
-                                    <Chip
-                                        key={opt.value}
-                                        label={opt.label}
-                                        onClick={() => { setPriority(opt.value); setHasChanges(true); }}
-                                        sx={{
-                                            bgcolor: priority === opt.value ? opt.color : 'transparent',
-                                            color: priority === opt.value ? 'white' : opt.color,
-                                            border: `1px solid ${opt.color}`,
-                                            cursor: 'pointer'
+                                    {/* Estimated Duration */}
+                                    <TextField
+                                        fullWidth
+                                        size="small"
+                                        label="Планируемое время (мин)"
+                                        type="number"
+                                        value={estimatedDurationMinutes}
+                                        onChange={(e) => {
+                                            const val = e.target.value ? Math.max(0, Number(e.target.value)) : '';
+                                            setEstimatedDurationMinutes(val);
+                                            setHasChanges(true);
                                         }}
+                                        InputProps={{
+                                            inputProps: { min: 0 },
+                                            startAdornment: <InputAdornment position="start"><ScheduleIcon fontSize="small" /></InputAdornment>,
+                                            endAdornment: estimatedDurationMinutes ? (
+                                                <InputAdornment position="end">
+                                                    <Typography variant="caption" color="text.secondary">
+                                                        {Math.floor(Number(estimatedDurationMinutes) / 60)}ч {Number(estimatedDurationMinutes) % 60}м
+                                                    </Typography>
+                                                </InputAdornment>
+                                            ) : null
+                                        }}
+                                        sx={{ mb: 2 }}
                                     />
-                                ))}
-                            </Box>
 
+                                    {/* Plan Start Date */}
+                                    <TextField
+                                        fullWidth
+                                        size="small"
+                                        label="План старта"
+                                        type="date"
+                                        value={startDate}
+                                        onChange={(e) => { setStartDate(e.target.value); setHasChanges(true); }}
+                                        InputLabelProps={{ shrink: true }}
+                                        InputProps={{
+                                            startAdornment: <InputAdornment position="start"><CalendarIcon fontSize="small" /></InputAdornment>
+                                        }}
+                                        sx={{ mb: 2 }}
+                                    />
+
+                                    {/* Due Date / Plan End */}
+                                    <TextField
+                                        fullWidth
+                                        size="small"
+                                        label={!dueDateManual && startDate && estimatedDurationMinutes ? 'План окончания (авто)' : 'План окончания'}
+                                        type="date"
+                                        value={dueDate}
+                                        onChange={(e) => { setDueDate(e.target.value); setDueDateManual(true); setHasChanges(true); }}
+                                        InputLabelProps={{ shrink: true }}
+                                        InputProps={{
+                                            startAdornment: <InputAdornment position="start"><CalendarIcon fontSize="small" /></InputAdornment>,
+                                            endAdornment: dueDateManual && startDate && estimatedDurationMinutes ? (
+                                                <InputAdornment position="end">
+                                                    <Tooltip title="Сбросить на авто-расчёт">
+                                                        <IconButton size="small" onClick={() => { setDueDateManual(false); setHasChanges(true); }}>
+                                                            <ScheduleIcon fontSize="small" />
+                                                        </IconButton>
+                                                    </Tooltip>
+                                                </InputAdornment>
+                                            ) : null
+                                        }}
+                                        sx={{
+                                            mb: 3,
+                                            '& .MuiOutlinedInput-root': !dueDateManual && startDate && estimatedDurationMinutes ? {
+                                                bgcolor: 'action.hover'
+                                            } : {}
+                                        }}
+                                        helperText={!dueDateManual && startDate && estimatedDurationMinutes ? 'Авто-расчёт от старта + длительность' : undefined}
+                                    />
+
+                                    {/* Show in Calendar Button */}
+                                    {(startDate || dueDate) && (
+                                        <Button
+                                            fullWidth
+                                            size="small"
+                                            startIcon={<CalendarIcon />}
+                                            onClick={() => {
+                                                const targetDate = dueDate || startDate;
+                                                navigate(`/crm/calendar?date=${targetDate}`);
+                                            }}
+                                            sx={{
+                                                mb: 1,
+                                                textTransform: 'none',
+                                                justifyContent: 'flex-start',
+                                                color: 'primary.main',
+                                                fontWeight: 500,
+                                            }}
+                                        >
+                                            Показать в календаре
+                                        </Button>
+                                    )}
+
+
+                                </AccordionDetails>
+                            </Accordion>
                             <Divider sx={{ my: 2 }} />
 
-                            {/* Block D: Finance */}
-                            <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                                💰 Finance
-                            </Typography>
 
-                            <FormControlLabel
-                                control={
-                                    <Checkbox
-                                        checked={needsEstimate}
-                                        onChange={(e) => { setNeedsEstimate(e.target.checked); setHasChanges(true); }}
+                            {/* Block C & D: Settings */}
+                            <Accordion disableGutters variant="outlined" sx={{ mb: 2, '&:before': { display: 'none' }, borderRadius: 1 }}>
+                                <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                                    <Typography variant="subtitle2" color="text.secondary">
+                                        ⚙️ Приоритет и Финансы
+                                    </Typography>
+                                </AccordionSummary>
+                                <AccordionDetails>
+                                    {/* Block C: Priority */}
+                                    <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                                        🎯 Priority
+                                    </Typography>
+
+                                    <Box display="flex" gap={1} flexWrap="wrap" mb={3}>
+                                        {PRIORITY_OPTIONS.map(opt => (
+                                            <Chip
+                                                key={opt.value}
+                                                label={opt.label}
+                                                onClick={() => { setPriority(opt.value); setHasChanges(true); }}
+                                                sx={{
+                                                    bgcolor: priority === opt.value ? opt.color : 'transparent',
+                                                    color: priority === opt.value ? 'white' : opt.color,
+                                                    border: `1px solid ${opt.color}`,
+                                                    cursor: 'pointer'
+                                                }}
+                                            />
+                                        ))}
+                                    </Box>
+
+
+
+                                    {/* Block D: Finance */}
+                                    <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                                        💰 Finance
+                                    </Typography>
+
+                                    <FormControlLabel
+                                        control={
+                                            <Checkbox
+                                                checked={needsEstimate}
+                                                onChange={(e) => { setNeedsEstimate(e.target.checked); setHasChanges(true); }}
+                                            />
+                                        }
+                                        label="Needs estimate"
+                                        sx={{ mb: 2 }}
                                     />
-                                }
-                                label="Needs estimate"
-                                sx={{ mb: 2 }}
-                            />
+
+                                </AccordionDetails>
+                            </Accordion>
                         </Paper>
                     </Box>
                 </Box>
@@ -1371,6 +1413,40 @@ const UnifiedCockpitPage: React.FC = () => {
                     {saveError}
                 </Alert>
             </Snackbar>
+
+            {/* ═══════════════════════════════════════════════════════════ */}
+            {/* MOBILE: STICKY BOTTOM ACTION BAR */}
+            {/* ═══════════════════════════════════════════════════════════ */}
+            {isMobile && (
+                <Paper
+                    elevation={8}
+                    sx={{
+                        position: 'sticky',
+                        bottom: 0,
+                        zIndex: 100,
+                        p: 2,
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        bgcolor: 'background.paper',
+                        paddingBottom: 'env(safe-area-inset-bottom)'
+                    }}
+                >
+                    <Button
+                        variant={isTimerRunningForThisTask ? 'contained' : 'outlined'}
+                        color={isTimerRunningForThisTask ? 'error' : 'success'}
+                        startIcon={isTimerRunningForThisTask ? <StopIcon /> : <PlayIcon />}
+                        onClick={handleTimerToggle}
+                        fullWidth
+                        size="large"
+                        sx={{
+                            animation: isTimerRunningForThisTask ? 'pulse 1.5s infinite' : 'none',
+                        }}
+                    >
+                        {isTimerRunningForThisTask ? formatTime(timerSeconds) : 'Start Work'}
+                    </Button>
+                </Paper>
+            )}
         </Box>
     );
 };

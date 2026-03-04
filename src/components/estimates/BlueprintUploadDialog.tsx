@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
     Dialog, DialogTitle, DialogContent, DialogActions,
     Button, Box, Typography, CircularProgress,
-    Chip, LinearProgress, Tooltip,
+    Chip, LinearProgress, Tooltip, Menu, MenuItem,
     IconButton, Table, TableBody, TableCell, TableHead, TableRow, TableContainer, Paper
 } from '@mui/material';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
@@ -113,6 +113,7 @@ export const BlueprintUploadDialog = ({ open, onClose, onApply }: { open: boolea
     const [processStartTime, setProcessStartTime] = useState<number | null>(null);
     const [elapsedSeconds, setElapsedSeconds] = useState(0);
     const [localResult, setLocalResult] = useState<BlueprintAgentResult>({});
+    const [v2AiResults, setV2AiResults] = useState<{ gemini?: Record<string, number>, claude?: Record<string, number>, openai?: Record<string, number> }>({});
 
     // History
     const [showHistory, setShowHistory] = useState(false);
@@ -126,6 +127,7 @@ export const BlueprintUploadDialog = ({ open, onClose, onApply }: { open: boolea
     const [v2ProjectName, setV2ProjectName] = useState('');
     const [v2Address, setV2Address] = useState('');
     const [v2AreaSqft, setV2AreaSqft] = useState<number | ''>('');
+    const [pdfMenuAnchorEl, setPdfMenuAnchorEl] = useState<null | HTMLElement>(null);
     const dragCounter = useRef(0);
 
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -188,6 +190,8 @@ export const BlueprintUploadDialog = ({ open, onClose, onApply }: { open: boolea
         setV2ProjectName('');
         setV2Address('');
         setV2AreaSqft('');
+        setV2AiResults({});
+        setPdfMenuAnchorEl(null);
         soundPlayedRef.current = false;
         dragCounter.current = 0;
     };
@@ -745,6 +749,45 @@ export const BlueprintUploadDialog = ({ open, onClose, onApply }: { open: boolea
     );
 
     // ===== MAIN RENDER =====
+    const exportV2Pdf = (quantities: Record<string, number>, label: string) => {
+        const pdf = new jsPDF();
+        pdf.setFontSize(16);
+        pdf.text(`AI Blueprint V2 Analysis Report - ${label}`, 14, 22);
+        pdf.setFontSize(10);
+        pdf.setTextColor(100);
+        pdf.text(`Project: ${v2ProjectName} | Files: ${selectedFiles.length} | Date: ${new Date().toLocaleDateString()}`, 14, 30);
+        if (v2Address) pdf.text(`Address: ${v2Address}`, 14, 36);
+
+        const allKeys = Object.keys(quantities);
+        const grouped: Record<string, any[]> = {};
+        allKeys.forEach(key => {
+            const cat = getCategory(key);
+            if (!grouped[cat]) grouped[cat] = [];
+            grouped[cat].push({ name: key.replace(/_/g, ' '), qty: quantities[key]?.toString() || '0' });
+        });
+
+        let startY = v2Address ? 44 : 38;
+        Object.entries(grouped).forEach(([category, items]) => {
+            pdf.setFontSize(11);
+            pdf.setTextColor(33, 33, 33);
+            pdf.text(category.toUpperCase(), 14, startY);
+            startY += 4;
+            autoTable(pdf, {
+                startY,
+                head: [['Item', 'Qty']],
+                body: items.map(r => [r.name, r.qty]),
+                styles: { fontSize: 8 },
+                headStyles: { fillColor: [46, 125, 50] },
+                margin: { left: 14 },
+                theme: 'grid'
+            });
+            startY = (pdf as any).lastAutoTable.finalY + 10;
+        });
+
+        const safeProjectName = v2ProjectName.replace(/\s+/g, '_');
+        const safeLabel = label.replace(/\s+/g, '_');
+        pdf.save(`AI_V2_${safeLabel}_Report_${safeProjectName}_${new Date().toISOString().slice(0, 10)}.pdf`);
+    };
     const isProcessing = uploading || (batchId && batch && batch.status !== 'completed' && batch.status !== 'failed');
 
     return (
@@ -778,8 +821,9 @@ export const BlueprintUploadDialog = ({ open, onClose, onApply }: { open: boolea
                 {useV2Pipeline && selectedFiles.length > 0 && !batchId && !v2Completed && (
                     <BlueprintV2Pipeline
                         files={selectedFiles}
-                        onComplete={(result) => {
+                        onComplete={(result, aiResults) => {
                             setLocalResult(result);
+                            setV2AiResults(aiResults);
                             setV2Completed(true);
                             setV2ProjectName(selectedFiles[0]?.name?.replace(/\.pdf$/i, '') || `Estimate ${new Date().toLocaleDateString()}`);
                             playCompletionSound();
@@ -924,7 +968,7 @@ export const BlueprintUploadDialog = ({ open, onClose, onApply }: { open: boolea
             <DialogActions>
                 <Button onClick={handleClose}>Отмена</Button>
                 {/* V1 actions */}
-                {batch && batch.status === 'completed' && (
+                {batch && batch.status === 'completed' && !useV2Pipeline && !v2Completed && (
                     <Button onClick={exportAiReportPDF} color="secondary" variant="outlined" size="small" startIcon={<PictureAsPdfIcon />}>
                         PDF Report
                     </Button>
@@ -934,84 +978,94 @@ export const BlueprintUploadDialog = ({ open, onClose, onApply }: { open: boolea
                     variant="outlined"
                     color="success"
                     disabled={!batch || batch.status !== 'completed' || savingProject}
+                    style={{ display: (useV2Pipeline || v2Completed) ? 'none' : 'inline-flex' }}
                     startIcon={savingProject ? <CircularProgress size={16} /> : <SaveIcon />}
                     size="small"
                 >
                     {saveSnackbar || 'Сохранить проект'}
                 </Button>
-                <Button onClick={handleApply} variant="contained" disabled={!batch || batch.status !== 'completed'} startIcon={<AutoAwesomeIcon />}>
+                <Button
+                    onClick={handleApply}
+                    variant="contained"
+                    disabled={!batch || batch.status !== 'completed'}
+                    style={{ display: (useV2Pipeline || v2Completed) ? 'none' : 'inline-flex' }}
+                    startIcon={<AutoAwesomeIcon />}
+                >
                     Apply to Estimate
                 </Button>
+
                 {/* V2 actions */}
                 {v2Completed && (
                     <>
                         <Button
-                            onClick={() => {
-                                // Export V2 PDF
-                                const pdf = new jsPDF();
-                                pdf.setFontSize(16);
-                                pdf.text('AI Blueprint V2 Analysis Report', 14, 22);
-                                pdf.setFontSize(10);
-                                pdf.setTextColor(100);
-                                pdf.text(`Project: ${v2ProjectName} | Files: ${selectedFiles.length} | Date: ${new Date().toLocaleDateString()}`, 14, 30);
-                                if (v2Address) pdf.text(`Address: ${v2Address}`, 14, 36);
-
-                                const allKeys = Object.keys(localResult);
-                                const grouped: Record<string, any[]> = {};
-                                allKeys.forEach(key => {
-                                    const cat = getCategory(key);
-                                    if (!grouped[cat]) grouped[cat] = [];
-                                    grouped[cat].push({ name: key.replace(/_/g, ' '), qty: localResult[key]?.toString() || '0' });
-                                });
-
-                                let startY = v2Address ? 44 : 38;
-                                Object.entries(grouped).forEach(([category, items]) => {
-                                    pdf.setFontSize(11);
-                                    pdf.setTextColor(33, 33, 33);
-                                    pdf.text(category.toUpperCase(), 14, startY);
-                                    startY += 4;
-                                    autoTable(pdf, {
-                                        startY,
-                                        head: [['Item', 'Qty']],
-                                        body: items.map(r => [r.name, r.qty]),
-                                        styles: { fontSize: 8 },
-                                        headStyles: { fillColor: [46, 125, 50] },
-                                        margin: { left: 14 },
-                                        theme: 'grid'
-                                    });
-                                    startY = (pdf as any).lastAutoTable.finalY + 10;
-                                });
-
-                                pdf.save(`AI_V2_Report_${v2ProjectName.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0, 10)}.pdf`);
-                            }}
+                            onClick={(e) => setPdfMenuAnchorEl(e.currentTarget)}
                             color="secondary"
                             variant="outlined"
                             size="small"
                             startIcon={<PictureAsPdfIcon />}
                         >
-                            PDF Report
+                            PDF Reports ▾
                         </Button>
+                        <Menu
+                            anchorEl={pdfMenuAnchorEl}
+                            open={Boolean(pdfMenuAnchorEl)}
+                            onClose={() => setPdfMenuAnchorEl(null)}
+                        >
+                            <MenuItem onClick={() => {
+                                setPdfMenuAnchorEl(null);
+                                exportV2Pdf(localResult, 'Final (Merged)');
+                            }}>
+                                <PictureAsPdfIcon fontSize="small" sx={{ mr: 1, color: 'text.secondary' }} /> Final (Merged)
+                            </MenuItem>
+                            {v2AiResults.gemini && Object.keys(v2AiResults.gemini).length > 0 && (
+                                <MenuItem onClick={() => {
+                                    setPdfMenuAnchorEl(null);
+                                    exportV2Pdf(v2AiResults.gemini!, 'Gemini');
+                                }}>
+                                    <PictureAsPdfIcon fontSize="small" sx={{ mr: 1, color: 'info.main' }} /> Gemini
+                                </MenuItem>
+                            )}
+                            {v2AiResults.claude && Object.keys(v2AiResults.claude).length > 0 && (
+                                <MenuItem onClick={() => {
+                                    setPdfMenuAnchorEl(null);
+                                    exportV2Pdf(v2AiResults.claude!, 'Claude');
+                                }}>
+                                    <PictureAsPdfIcon fontSize="small" sx={{ mr: 1, color: 'warning.main' }} /> Claude
+                                </MenuItem>
+                            )}
+                            {v2AiResults.openai && Object.keys(v2AiResults.openai).length > 0 && (
+                                <MenuItem onClick={() => {
+                                    setPdfMenuAnchorEl(null);
+                                    exportV2Pdf(v2AiResults.openai!, 'OpenAI');
+                                }}>
+                                    <PictureAsPdfIcon fontSize="small" sx={{ mr: 1, color: 'success.main' }} /> OpenAI
+                                </MenuItem>
+                            )}
+                        </Menu>
                         <Button
                             onClick={async () => {
                                 if (!userProfile?.companyId || !userProfile?.id) return;
                                 setSavingProject(true);
                                 try {
-                                    await savedEstimateApi.save({
+                                    const payload: any = {
                                         companyId: userProfile.companyId,
                                         createdBy: userProfile.id,
                                         projectName: v2ProjectName || `V2 Estimate ${new Date().toLocaleDateString()}`,
-                                        address: v2Address || undefined,
-                                        areaSqft: v2AreaSqft || undefined,
                                         batchId: `v2_${Date.now()}`,
                                         quantities: { ...localResult },
                                         originalQuantities: { ...localResult },
+                                        aiResults: v2AiResults,
                                         laborRate: 65,
                                         wirePrice: 0.45,
                                         totalMaterials: 0, totalLabor: 0, totalWire: 0, grandTotal: 0,
                                         filesCount: selectedFiles.length,
                                         electricalCount: selectedFiles.length,
                                         status: 'draft',
-                                    });
+                                    };
+                                    if (v2Address) payload.address = v2Address;
+                                    if (v2AreaSqft) payload.areaSqft = v2AreaSqft;
+
+                                    await savedEstimateApi.save(payload);
                                     setSaveSnackbar('Проект сохранён ✅');
                                 } catch (err) {
                                     console.error('V2 save failed:', err);

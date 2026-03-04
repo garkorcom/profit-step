@@ -4,9 +4,9 @@ import {
     Dialog, DialogTitle, DialogContent, DialogActions,
     TextField, Button, FormControl, InputLabel, Select, MenuItem,
     Box, Chip, Typography, Grid, Accordion, AccordionSummary, AccordionDetails,
-    useTheme, alpha, IconButton,
-    Avatar, Autocomplete
+    Avatar, Autocomplete, Tooltip, InputAdornment, Link, IconButton, useTheme, alpha
 } from '@mui/material';
+import { format as formatDate } from 'date-fns';
 import FlagIcon from '@mui/icons-material/Flag';
 import PersonIcon from '@mui/icons-material/Person';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
@@ -19,6 +19,7 @@ import CheckBoxIcon from '@mui/icons-material/CheckBox';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import InboxIcon from '@mui/icons-material/Inbox';
 import AddIcon from '@mui/icons-material/Add';
+import WhatsAppIcon from '@mui/icons-material/WhatsApp';
 import { useForm, Controller } from 'react-hook-form';
 import { GTDTask, GTDStatus, GTDPriority, PRIORITY_COLORS, ChecklistItem } from '../../types/gtd.types';
 import { Client } from '../../types/crm.types';
@@ -81,6 +82,7 @@ const GTDEditDialog: React.FC<GTDEditDialogProps> = ({ open, onClose, task, onSa
 
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const currentContext = watch('context'); // Kept for logic if needed
+    const currentClientId = watch('clientId');
 
     const [users, setUsers] = useState<UserProfile[]>(propUsers || []);
     const [clients, setClients] = useState<Client[]>(propClients || []);
@@ -190,7 +192,19 @@ const GTDEditDialog: React.FC<GTDEditDialogProps> = ({ open, onClose, task, onSa
         }
     }, [task, reset, userProfile]);
 
+    // Auto-sync contacts based on clientId
+    useEffect(() => {
+        if (currentClientId && contacts.length > 0) {
+            const clientContactIds = contacts
+                .filter(c => c.linkedProjects && c.linkedProjects.includes(currentClientId))
+                .map(c => c.id);
 
+            const newIds = clientContactIds.filter(id => !linkedContactIds.includes(id));
+            if (newIds.length > 0) {
+                setLinkedContactIds(prev => [...prev, ...newIds]);
+            }
+        }
+    }, [currentClientId, contacts, linkedContactIds]);
 
     const onSubmit = async (data: FormData) => {
         if (!task) return;
@@ -656,7 +670,23 @@ const GTDEditDialog: React.FC<GTDEditDialogProps> = ({ open, onClose, task, onSa
                                                 fullWidth
                                                 size="small"
                                                 InputLabelProps={{ shrink: true }}
-                                                InputProps={{ startAdornment: <PlayArrowIcon fontSize="small" sx={{ mr: 1, color: 'text.secondary' }} /> }}
+                                                InputProps={{
+                                                    startAdornment: <PlayArrowIcon fontSize="small" sx={{ mr: 1, color: 'text.secondary' }} />,
+                                                    endAdornment: (
+                                                        <InputAdornment position="end">
+                                                            <Tooltip title="Установить на сегодня">
+                                                                <IconButton
+                                                                    size="small"
+                                                                    onClick={() => {
+                                                                        setValue('startDate', formatDate(new Date(), 'yyyy-MM-dd'), { shouldDirty: true });
+                                                                    }}
+                                                                >
+                                                                    <Typography variant="caption" color="primary" fontWeight="bold">СЕГ</Typography>
+                                                                </IconButton>
+                                                            </Tooltip>
+                                                        </InputAdornment>
+                                                    )
+                                                }}
                                             />
                                         )}
                                     />
@@ -799,6 +829,68 @@ const GTDEditDialog: React.FC<GTDEditDialogProps> = ({ open, onClose, task, onSa
                                                 />
                                             ))}
                                         </Box>
+                                        {/* Display Selected Client's Contact Info if available */}
+                                        {(() => {
+                                            const selectedClient = clients.find(c => c.id === currentClientId);
+                                            if (!selectedClient) return null;
+                                            return (
+                                                <Accordion
+                                                    variant="outlined"
+                                                    sx={{
+                                                        bgcolor: 'rgba(25, 118, 210, 0.04)',
+                                                        borderColor: 'primary.light',
+                                                        '&:before': { display: 'none' }
+                                                    }}
+                                                >
+                                                    <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                                                        <Box display="flex" alignItems="center" gap={2}>
+                                                            <Avatar sx={{ width: 32, height: 32, bgcolor: 'primary.main', fontSize: '1rem' }}>
+                                                                {selectedClient.name?.charAt(0)}
+                                                            </Avatar>
+                                                            <Box>
+                                                                <Typography variant="caption" color="primary" sx={{ textTransform: 'uppercase', letterSpacing: 1, fontWeight: 'bold', display: 'block', lineHeight: 1 }}>Клиент Задачи</Typography>
+                                                                <Typography variant="subtitle2" fontWeight={600}>{selectedClient.name}</Typography>
+                                                            </Box>
+                                                        </Box>
+                                                    </AccordionSummary>
+                                                    <AccordionDetails sx={{ pt: 0 }}>
+                                                        <Box display="flex" flexDirection="column" gap={0.5}>
+                                                            {selectedClient.phone && (
+                                                                <Box display="flex" alignItems="center" gap={1} mb={0.5}>
+                                                                    <Typography variant="body2" sx={{ display: 'flex', alignItems: 'center' }}>
+                                                                        <Link href={`tel:${selectedClient.phone}`} underline="hover" color="primary.main" fontWeight={500}>📞 {selectedClient.phone}</Link>
+                                                                    </Typography>
+                                                                    <IconButton component="a" size="small" href={`https://wa.me/${selectedClient.phone.replace(/\\D/g, '')}`} target="_blank" rel="noopener noreferrer" color="success" sx={{ padding: '2px' }} title="WhatsApp">
+                                                                        <WhatsAppIcon fontSize="small" sx={{ fontSize: 18 }} />
+                                                                    </IconButton>
+                                                                </Box>
+                                                            )}
+                                                            {selectedClient.email && (
+                                                                <Typography variant="body2">
+                                                                    <Link href={`mailto:${selectedClient.email}`} underline="hover" color="info.main">✉️ {selectedClient.email}</Link>
+                                                                </Typography>
+                                                            )}
+                                                            {selectedClient.contacts && selectedClient.contacts.length > 0 && (
+                                                                <Box mt={1}>
+                                                                    <Typography variant="caption" color="text.secondary">Доп. контакты клиента:</Typography>
+                                                                    {selectedClient.contacts.map((cc: any, i: number) => (
+                                                                        <Box key={i} display="flex" alignItems="center" gap={1} mt={0.5}>
+                                                                            <Typography variant="body2">
+                                                                                {cc.name} {cc.position ? `(${cc.position})` : ''}: <Link href={`tel:${cc.phone}`} underline="hover" color="primary.main">📞 {cc.phone}</Link>
+                                                                            </Typography>
+                                                                        </Box>
+                                                                    ))}
+                                                                </Box>
+                                                            )}
+                                                            {(!selectedClient.phone && !selectedClient.email && (!selectedClient.contacts || selectedClient.contacts.length === 0)) && (
+                                                                <Typography variant="body2" color="text.secondary">Нет контактных данных уровня клиента</Typography>
+                                                            )}
+                                                        </Box>
+                                                    </AccordionDetails>
+                                                </Accordion>
+                                            );
+                                        })()}
+
                                     </Box>
 
                                     <Controller
@@ -855,6 +947,7 @@ const GTDEditDialog: React.FC<GTDEditDialogProps> = ({ open, onClose, task, onSa
             <GlobalContactQuickAdd
                 open={globalContactOpen}
                 onClose={() => setGlobalContactOpen(false)}
+                currentProjectId={currentClientId || undefined}
                 onContactAdded={(newContact) => {
                     setContacts(prev => [...prev, newContact].sort((a: any, b: any) => (a.name || '').localeCompare(b.name || '')));
                     if (newContact.id) setLinkedContactIds(prev => [...prev, newContact.id!]);

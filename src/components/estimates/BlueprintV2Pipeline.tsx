@@ -64,7 +64,7 @@ function getStepIndex(phase: PipelinePhase): number {
 
 interface BlueprintV2PipelineProps {
     files: File[];
-    onComplete: (finalResult: BlueprintAgentResult) => void;
+    onComplete: (finalResult: BlueprintAgentResult, aiResults: { gemini: Record<string, number>, claude: Record<string, number>, openai: Record<string, number> }) => void;
     onCancel: () => void;
 }
 
@@ -356,6 +356,37 @@ const BlueprintV2Pipeline: React.FC<BlueprintV2PipelineProps> = ({ files, onComp
     const totalItems = Object.keys(editedResult).length;
     const totalQty = Object.values(editedResult).reduce((sum, q) => sum + (q || 0), 0);
 
+    // Compute and dispatch global results
+    const handleComplete = () => {
+        const gemini: Record<string, number> = {};
+        const claude: Record<string, number> = {};
+        const openai: Record<string, number> = {};
+
+        pageResults.forEach(pr => {
+            if (pr.geminiResult) {
+                Object.entries(pr.geminiResult).forEach(([k, val]) => {
+                    const v = val as number;
+                    if (v > 0) gemini[k] = (gemini[k] || 0) + v;
+                });
+            }
+            if (pr.claudeResult) {
+                Object.entries(pr.claudeResult).forEach(([k, val]) => {
+                    const v = val as number;
+                    if (v > 0) claude[k] = (claude[k] || 0) + v;
+                });
+            }
+            // For future openai
+            if ((pr as any).openaiResult) {
+                Object.entries((pr as any).openaiResult).forEach(([k, val]) => {
+                    const v = val as number;
+                    if (v > 0) openai[k] = (openai[k] || 0) + v;
+                });
+            }
+        });
+
+        onComplete(editedResult, { gemini, claude, openai });
+    };
+
     const handleExportPdf = () => {
         // Compute globalMerged
         const globalMerged: BlueprintAgentResult = {};
@@ -601,7 +632,7 @@ const BlueprintV2Pipeline: React.FC<BlueprintV2PipelineProps> = ({ files, onComp
                             </Button>
                             <Button
                                 variant="contained"
-                                onClick={() => onComplete(editedResult)}
+                                onClick={handleComplete}
                             >
                                 ✅ Применить ({totalItems} поз.)
                             </Button>
@@ -630,7 +661,7 @@ const BlueprintV2Pipeline: React.FC<BlueprintV2PipelineProps> = ({ files, onComp
                         </Button>
                         <Button
                             variant="contained"
-                            onClick={() => onComplete(editedResult)}
+                            onClick={handleComplete}
                         >
                             ✅ Применить финальный результат ({totalItems} поз.)
                         </Button>

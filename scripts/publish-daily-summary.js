@@ -38,107 +38,90 @@ const Timestamp = admin.firestore.Timestamp;
 // =====================================================
 
 const DAILY_SUMMARY = {
-    date: '2026-02-27',
-    title: '⚡ Electrical Estimator: Wire Tab, PDF Export, V2 Pipeline Save & Edit',
-    emoji: '⚡',
+    date: '2026-03-01',
+    title: '🤖 AI Estimator V2: OpenAI Integration & PDF Analytics Export',
+    emoji: '🤖',
     featureId: 'electrical-estimator',
     featureTitle: 'Electrical Estimator Pro',
-    type: 'feature', // 'feature' | 'bugfix' | 'refactor' | 'infrastructure'
-    timeSpentMinutes: 240,
+    type: 'feature',
+    timeSpentMinutes: 180,
 
-    tldr: 'Добавили Wire & Conduit tab (17 позиций), PDF-экспорт сметы через jsPDF, V2 pipeline review screen с inline editing, metadata, save to Firestore и PDF export. Build ✅.',
+    tldr: 'Внедрён OpenAI (GPT-4o) для кросс-сверки чертежей (вместе с Gemini и Claude). Добавлен выбор ИИ агентов через чекбоксы (Gemini, Claude, OpenAI). Разработан продвинутый PDF экспорт аналитики чертежей с разбивкой по страницам и общей сводкой на базе jsPDF.',
 
     // Подробное описание (RU + EN, markdown)
     storyMarkdown: `## 🇷🇺 Что сделали сегодня
 
-### Сессия 1: V2 Blueprint Pipeline — Save & Edit
+### Сессия 1: Интеграция OpenAI (GPT-4o) в пайплайн V2
+Ранее для анализа чертежей использовались только Gemini и Claude. Теперь:
+1. **Поддержка трех ИИ**: Интегрирован OpenAI (GPT-4o) как третий независимый источник для перекрестной сверки распознавания оборудования на проектах.
+2. **Адаптация Backend**: Облачная функция \`analyzePageCallable\` переписана на использование \`Promise.allSettled\` с динамическим массивом агентов. 
+3. **Безопасная обработка PDF**: Так как GPT-4o не умеет напрямую анализировать PDF-документы (только изображения), реализована строгая типизация (strict null checks), позволяющая безопасно передавать пустые результаты для API OpenAI без падения алгоритма \`compareResults\`.
 
-V2 pipeline раньше закрывал диалог при нажатии «Применить». Теперь:
+### Сессия 2: Выбор Агентов & Результаты Сверки
+- В компоненте \`BlueprintFileSummary\` добавлены **интерактивные чекбоксы** для включения/отключения конкретных ИИ (✨ Gemini 2.0, 🧠 Claude 3.5, 💬 OpenAI GPT-4o) перед началом сканирования.
+- Компонент **PageResultsView** существенно обновлен: статусы сверки (✅ Match / ⚠️ Discrepancy) теперь вычисляются динамически на основе $N$-агентов (вместо жесткой проверки \`A === B\`).
 
-1. **Review Screen** — после анализа показывает итоговый экран с результатами
-2. **Inline Editing** — количества можно редактировать прямо в таблице
-3. **Metadata** — поля Project Name, Address, Area перед сохранением
-4. **Save to Firestore** — кнопка «Сохранить проект» через \`savedEstimateApi\`
-5. **PDF Export** — экспорт V2 результатов в PDF с group'ированной таблицей
-6. **Memory Optimization** — blob'ы невыбранных страниц освобождаются при approve
-
-### Сессия 2: Wire Tab + PDF Export + Диагностика
-
-#### 🔌 Block 5: Wire & Conduit Tab
-Новая вкладка **Wire** между Devices и Gear. 17 позиций:
-- NM-B Romex: 14/2, 14/3, 12/2, 12/3, 10/2, 10/3
-- SER Cable: 6/3, 4/3, 2/0
-- EMT Conduit: 1/2", 3/4", 1", 2"
-- PVC Conduit: 1", 2"
-- MC Cable 12/2, THHN #10
-
-#### 📄 Block 4: PDF Export
-Кнопка Export заменена на **Export ▾ dropdown**:
-- 📄 Смета (PDF) — jsPDF + autoTable с категориями и summary
-- 📥 Download .txt
-- 📋 Copy to Clipboard
-- 🖨 Print
-
-#### 🔍 Block 3.1: Диагностика
-Валидация размера файлов (50MB) уже была реализована в \`addFiles()\`.
+### Сессия 3: Экспорт AI Сводки в PDF 
+- Разработана новая утилита \`exportBlueprintPdf.ts\` (на базе \`jsPDF\` + \`jspdf-autotable\`).
+- **Глобальная сводка (Global Summary)**: агрегирует суммарные подсчеты со всех обработанных страниц в единую смету.
+- **Постраничная разбивка (Drill-down)**: генерирует отдельные таблицы для каждой страницы чертежа с колонками для каждого из используемых ИИ, показывая расхождения мнений моделей до участия человека.
+- **Оптимизация шрифтов**: Для избежания огромных бандлов с кириллическими шрифтами Base64, весь каркас PDF (колонки, статусы, метаданные) рендерится на английском, а названия позиций парсятся из локального словаря (\`ITEM_NAMES\`).
 
 ---
 
 ## 🇬🇧 What We Built Today
 
-### Session 1: V2 Pipeline Save & Edit
-- Review screen after analysis (no auto-close)
-- Inline quantity editing in results table
-- Project metadata fields (name, address, area)
-- Save to Firestore via \`savedEstimateApi\`
-- PDF export for V2 results
-- Memory optimization: release unused page blobs
+### Session 1: OpenAI (GPT-4o) Integration
+- Integrated OpenAI into the V2 Estimator Pipeline alongside Gemini and Claude.
+- Rewrote the \`analyzePageCallable\` Firebase Function to accept a dynamic \`agents\` array and process them asynchronously via \`Promise.allSettled\`.
+- Implemented rigorous TypeScript strict null checks to safely handle OpenAI's inability to natively process PDF payloads, allowing the \`compareResults\` matching algorithm to adapt safely based on actual agent participation.
 
-### Session 2: Wire Tab + PDF Export
-- **17 wire/conduit items** in new Wire tab
-- **PDF Estimate Export** via jsPDF with categorized tables
-- **Export dropdown menu** replacing old txt-only export
-- File size validation (50MB) confirmed working`,
+### Session 2: Dynamic Agent Selection & Cross-Verification
+- Added AI Agent selection checkboxes to the blueprint summary UI prior to analysis.
+- Updated the Multi-Agent Cross Verification Table (\`PageResultsView\`) to render dynamic columns for $N$ agents and output consensus badges (Match vs. Discrepancy) using array filtering.
+
+### Session 3: Professional PDF Analytics Export
+- Developed \`exportBlueprintPdf.ts\` using \`jsPDF\` & \`jspdf-autotable\`.
+- Generates a "Global Summary" roll-up table across all files and pages.
+- Appends per-page drill-down tables revealing what each individual AI discovered before human refinement.
+- Utilizes English scaffolding strings to bypass native Base64 Cyrillic font weight requirements, maintaining a highly lightweight client-side export footprint.`,
 
     technicalMarkdown: `### Изменённые файлы
 
 | Файл | Изменения |
 |------|-----------|
-| \`electricalDevices.ts\` | +20 строк: WIRE array (17 items), ITEM_NAMES update |
-| \`ElectricalEstimatorPage.tsx\` | Wire tab, wireQty state, PDF export, Export menu |
-| \`BlueprintV2Pipeline.tsx\` | editedResult state, memory opt in handleApproveFile |
-| \`BlueprintUploadDialog.tsx\` | v2Completed review screen, metadata, save, PDF |
+| \`analyzePage.ts\` | \`Promise.allSettled\`, dynamic array mapping, \`safeOpenAi\` casting |
+| \`BlueprintFileSummary.tsx\` | Checkboxes state & UI validation for Agent Selection |
+| \`PageResultsView.tsx\` | $N$-agent dynamic columns rendering, disparity logic rework |
+| \`BlueprintV2Pipeline.tsx\` | Export PDF button injected, \`globalMerged\` aggregation |
+| \`exportBlueprintPdf.ts\` | **NEW**: jsPDF multi-table iterative generator utility |
 
-### Архитектура Wire Tab
-\`\`\`
-WIRE[] (electricalDevices.ts)
-  → wireQty state (ElectricalEstimatorPage)
-  → processItems(WIRE, wireQty, false) in calc useMemo
-  → sectionsData.wire_manual { mat, labor }
-  → Summary section + PDF export
+### Архитектура динамической сверки
+\`\`\`typescript
+const validCounts = [geminiQty, claudeQty, openaiQty].filter(v => v !== null)
+const match = validCounts.length > 0 && validCounts.every(v => v === validCounts[0]);
+// -> if all match -> ✅
+// -> if diverge -> ⚠️
 \`\`\`
 
 ### PDF Export Stack
-\`\`\`
+\`\`\`text
 jsPDF + jspdf-autotable
-  → generateEstimatePDF()
-  → Header: project info
-  → Sections: only items with qty > 0
-  → autoTable per category
-  → Summary table
-  → pdf.save()
+  -> Project Metadata Header (Agents Used, Date, Page count)
+  -> Global Summary AutoTable (Aggregated sums)
+  -> loop(pageResults) 
+      -> Per-Page AutoTable (Raw Agent inputs)
+  -> Column count scales based on the selectedAgents array
 \`\`\``,
 
     keyTakeaways: [
-        'V2 pipeline review screen enables save/edit/export before closing — much better UX than auto-close.',
-        'Wire costs in estimator are now split: wire_auto (calculated from device wireType/wireLen) and wire_manual (user-entered wire quantities).',
-        'jsPDF + autoTable provides professional PDF estimates without any backend dependency.',
-        'Export dropdown (MUI Menu) is cleaner than toggle-based export panel.',
-        'Memory optimization: filtering page blobs on approve prevents OOM in browsers with many large blueprint files.',
+        'Dynamically handling N number of AI agents (1, 2, or 3) required shifting the frontend discrepancy logic from strict `a === b` to array filtering, proving much more scalable.',
+        'jsPDFs lack of native Cyrillic support is easily bypassed by keeping the document scaffolding (headers/labels) in English, saving us from injecting a 1MB+ base64 font file into the React bundle.',
+        'The `Promise.allSettled` approach in the cloud function ensures that if one specific AI agent API fails (e.g., Anthropic is down), the other agents still return their blueprint estimates flawlessly without crashing the entire run.',
     ],
 
-    seoKeywords: ['Electrical Estimator', 'Wire Tab', 'PDF Export', 'Blueprint V2', 'jsPDF', 'Profit Step', 'React', 'Firebase'],
-    seoDescription: 'Added Wire & Conduit tab (17 items), PDF estimate export, and V2 pipeline review screen with inline editing, Firestore save, and memory optimization.',
+    seoKeywords: ['Electrical Estimator', 'OpenAI Integration', 'GPT-4o', 'PDF Export', 'Blueprint V2', 'Cross Verification', 'Firebase Cloud Functions'],
+    seoDescription: 'Integrated OpenAI GPT-4o into the Electrical Estimator V2 pipeline for triple cross-verification, added dynamic AI agent selection, and built a comprehensive PDF report exporter.',
 };
 
 // =====================================================

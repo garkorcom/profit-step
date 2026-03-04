@@ -30,13 +30,13 @@ export const analyzePageCallable = functions
             throw new functions.https.HttpsError('unauthenticated', 'Auth required');
         }
 
-        const { storagePath, fileName, pageIndex, agents } = data;
+        const { storagePath, fileName, pageIndex, agents, customPrompt } = data;
         if (!storagePath) {
             throw new functions.https.HttpsError('invalid-argument', 'storagePath required');
         }
 
         const selectedAgents = agents || ['gemini', 'claude'];
-        logger.info(`📄 Analyzing page: ${fileName} (page ${pageIndex}) with agents: ${selectedAgents.join(', ')}`, { storagePath });
+        logger.info(`📄 Analyzing page: ${fileName} (page ${pageIndex}) with agents: ${selectedAgents.join(', ')}`, { storagePath, hasCustomPrompt: !!customPrompt });
 
         try {
             // 1. Download the image from Storage
@@ -52,6 +52,7 @@ export const analyzePageCallable = functions
                 fileName: fileName || `page_${pageIndex}.png`,
                 base64,
                 isPdf: mimeType === 'application/pdf',
+                customPrompt,
             };
 
             // 2. Run selected agents in parallel

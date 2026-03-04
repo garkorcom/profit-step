@@ -89,6 +89,21 @@ const BlueprintV2Pipeline: React.FC<BlueprintV2PipelineProps> = ({ files, onComp
     // Selected AI Agents
     const [selectedAgents, setSelectedAgents] = useState<string[]>(['gemini', 'claude']);
 
+    // Prompt Configuration
+    const [projectType, setProjectType] = useState<string>('residential');
+    const [squareFootage, setSquareFootage] = useState<string>('2500');
+    const [customPrompt, setCustomPrompt] = useState<string>(
+        'Sanity check: Для жилого дома на 2500 кв. футов физически не может быть больше 1-2 главных щитов (panel_200). Обратите внимание на масштаб (розеток не может быть 200+ для одного дома). Сверь свой ответ с логикой.'
+    );
+
+    const handleProjectTypeChange = (type: string) => {
+        setProjectType(type);
+        const sq = squareFootage || 'X';
+        if (type === 'residential') setCustomPrompt(`Sanity check: Для жилого дома на ${sq} кв. футов физически не может быть больше 1-2 главных щитов (panel_200). Обратите внимание на масштаб (розеток не может быть 200+ для одного дома). Сверь свой ответ с логикой.`);
+        else if (type === 'commercial') setCustomPrompt(`Sanity check: Это коммерческое помещение на ${sq} кв. футов. Ожидается большое количество освещения и розеток (например, 100+).`);
+        else if (type === 'multifamily') setCustomPrompt(`Sanity check: Это многоквартирный дом на ${sq} кв. футов. Ожидается множество subpanel_100 (по одной на квартиру).`);
+    };
+
     // Editable result (user can modify quantities after analysis)
     const [editedResult, setEditedResult] = useState<BlueprintAgentResult>({});
 
@@ -285,6 +300,7 @@ const BlueprintV2Pipeline: React.FC<BlueprintV2PipelineProps> = ({ files, onComp
                     fileName: page.fileName,
                     pageIndex: page.pageIndex,
                     agents: selectedAgents,
+                    customPrompt: customPrompt.trim() !== '' ? customPrompt : undefined,
                 });
 
                 const data = response.data as any;
@@ -565,6 +581,12 @@ const BlueprintV2Pipeline: React.FC<BlueprintV2PipelineProps> = ({ files, onComp
                             prev.includes(agent) ? prev.filter(a => a !== agent) : [...prev, agent]
                         );
                     }}
+                    projectType={projectType}
+                    setProjectType={handleProjectTypeChange}
+                    squareFootage={squareFootage}
+                    setSquareFootage={setSquareFootage}
+                    customPrompt={customPrompt}
+                    setCustomPrompt={setCustomPrompt}
                     onStartAnalysis={startAnalysis}
                     onGoBackToFile={handleGoBackToFile}
                 />

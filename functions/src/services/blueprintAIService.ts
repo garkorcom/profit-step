@@ -81,6 +81,7 @@ export interface BlueprintInput {
     fileName: string;
     base64: string; // Pre-computed once to avoid 3x encoding in memory
     isPdf: boolean;
+    customPrompt?: string;
 }
 
 /**
@@ -198,7 +199,7 @@ export async function analyzeWithGemini(input: BlueprintInput): Promise<Blueprin
         contents: [{
             role: 'user',
             parts: [
-                { text: TAKEOFF_PROMPT },
+                { text: input.customPrompt || TAKEOFF_PROMPT },
                 { inlineData: { mimeType: input.mimeType, data: input.base64 } }
             ]
         }]
@@ -233,7 +234,7 @@ export async function analyzeWithClaude(input: BlueprintInput): Promise<Blueprin
             role: 'user',
             content: [
                 fileContent,
-                { type: 'text', text: TAKEOFF_PROMPT }
+                { type: 'text', text: input.customPrompt || TAKEOFF_PROMPT }
             ]
         }]
     });
@@ -271,7 +272,7 @@ export async function analyzeWithOpenAI(input: BlueprintInput): Promise<Blueprin
         messages: [{
             role: 'user',
             content: [
-                { type: 'text', text: TAKEOFF_PROMPT },
+                { type: 'text', text: input.customPrompt || TAKEOFF_PROMPT },
                 {
                     type: 'image_url',
                     image_url: {

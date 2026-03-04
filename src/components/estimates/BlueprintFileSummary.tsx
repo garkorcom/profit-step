@@ -14,12 +14,23 @@ interface BlueprintFileSummaryProps {
     allFileNames: string[];  // All original file names (to show skipped ones too)
     selectedAgents: string[];
     onToggleAgent: (agent: string) => void;
+
+    // Custom Prompt Props
+    projectType: string;
+    setProjectType: (p: string) => void;
+    squareFootage: string;
+    setSquareFootage: (sq: string) => void;
+    customPrompt: string;
+    setCustomPrompt: (p: string) => void;
+
     onStartAnalysis: () => void;
     onGoBackToFile: (fileIndex: number) => void;
 }
 
 const BlueprintFileSummary: React.FC<BlueprintFileSummaryProps> = ({
-    approvedFiles, allFileNames, selectedAgents, onToggleAgent, onStartAnalysis, onGoBackToFile,
+    approvedFiles, allFileNames, selectedAgents, onToggleAgent,
+    projectType, setProjectType, squareFootage, setSquareFootage, customPrompt, setCustomPrompt,
+    onStartAnalysis, onGoBackToFile,
 }) => {
     const totalApproved = approvedFiles.size;
     const totalSelectedPages = Array.from(approvedFiles.values())
@@ -111,6 +122,58 @@ const BlueprintFileSummary: React.FC<BlueprintFileSummaryProps> = ({
                         ⚠️ Рекомендуется выбрать минимум 2 агентов для перекрестной сверки.
                     </Typography>
                 )}
+            </Box>
+
+            {/* AI Configuration / Custom Prompt */}
+            <Box mb={2} p={2} bgcolor="background.paper" borderRadius={2} border="1px solid" borderColor="divider">
+                <Typography variant="subtitle2" fontWeight={600} mb={2}>
+                    🔧 Опции Анализа (Защита от галлюцинаций):
+                </Typography>
+                <Box display="flex" gap={2} mb={2} flexWrap="wrap">
+                    <Box flex={1} minWidth={200}>
+                        <Typography variant="body2" color="text.secondary" mb={0.5}>Тип проекта</Typography>
+                        <Box display="flex" gap={1} flexWrap="wrap">
+                            {['residential', 'commercial', 'multifamily'].map(type => (
+                                <Chip
+                                    key={type}
+                                    label={type === 'residential' ? '🏠 Жилой Дом' : type === 'commercial' ? '🏢 Коммерция' : '🏙 Многоквартирный'}
+                                    onClick={() => setProjectType(type)}
+                                    color={projectType === type ? 'primary' : 'default'}
+                                    variant={projectType === type ? 'filled' : 'outlined'}
+                                    sx={{ fontWeight: 600 }}
+                                />
+                            ))}
+                        </Box>
+                    </Box>
+                    <Box flex={1} minWidth={150}>
+                        <Typography variant="body2" color="text.secondary" mb={0.5}>Прим. площадь (кв.футы)</Typography>
+                        <input
+                            type="number"
+                            value={squareFootage}
+                            onChange={(e) => setSquareFootage(e.target.value)}
+                            style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc', width: '100%', boxSizing: 'border-box' }}
+                            placeholder="Например, 2500"
+                        />
+                    </Box>
+                </Box>
+
+                <Typography variant="body2" color="text.secondary" mb={0.5}>Дополнительные инструкции для AI (Промпт)</Typography>
+                <textarea
+                    value={customPrompt}
+                    onChange={(e) => setCustomPrompt(e.target.value)}
+                    style={{
+                        width: '100%',
+                        padding: '12px',
+                        borderRadius: '6px',
+                        border: '1px solid #ccc',
+                        minHeight: '80px',
+                        fontFamily: 'inherit',
+                        fontSize: '14px',
+                        resize: 'vertical',
+                        boxSizing: 'border-box'
+                    }}
+                    placeholder="Пример: Убедись, что считаешь только розетки, а не выключатели..."
+                />
             </Box>
 
             {/* Actions */}

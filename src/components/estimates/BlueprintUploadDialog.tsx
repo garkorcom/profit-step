@@ -1058,6 +1058,18 @@ export const BlueprintUploadDialog = ({ open, onClose, onApply, projectId }: { o
                                     let savedProjectId = projectId;
                                     let projTitle = v2ProjectName || `Project ${new Date().toLocaleDateString()}`;
 
+                                    const cleanPayload = (obj: any): any => {
+                                        if (Array.isArray(obj)) return obj.map(cleanPayload).filter(v => v !== undefined);
+                                        if (obj !== null && typeof obj === 'object') {
+                                            return Object.fromEntries(
+                                                Object.entries(obj)
+                                                    .filter(([_, v]) => v !== undefined)
+                                                    .map(([k, v]) => [k, cleanPayload(v)])
+                                            );
+                                        }
+                                        return obj;
+                                    };
+
                                     if (!savedProjectId) {
                                         // 1. Create Project
                                         const projectData: any = {
@@ -1068,8 +1080,9 @@ export const BlueprintUploadDialog = ({ open, onClose, onApply, projectId }: { o
                                             files: []
                                         };
                                         if (v2AreaSqft) projectData.areaSqft = Number(v2AreaSqft);
+                                        if (v2Address) projectData.address = v2Address;
 
-                                        savedProjectId = await projectApi.create(projectData);
+                                        savedProjectId = await projectApi.create(cleanPayload(projectData));
                                     } else {
                                         const proj = await projectApi.getById(savedProjectId);
                                         if (proj) projTitle = proj.name;
@@ -1097,8 +1110,9 @@ export const BlueprintUploadDialog = ({ open, onClose, onApply, projectId }: { o
                                     if (v2Address) payload.address = v2Address;
                                     if (v2AreaSqft) payload.areaSqft = v2AreaSqft;
 
-                                    await savedEstimateApi.save(payload);
-                                    setSaveSnackbar('Проект сохранён ✅');
+                                    await savedEstimateApi.save(cleanPayload(payload));
+
+                                    setSaveSnackbar('Проект успешно сохранен!');
                                 } catch (err) {
                                     console.error('V2 save failed:', err);
                                     setSaveSnackbar('Ошибка сохранения');

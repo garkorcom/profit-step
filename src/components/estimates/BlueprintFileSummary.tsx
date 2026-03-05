@@ -20,6 +20,8 @@ interface BlueprintFileSummaryProps {
     setProjectType: (p: string) => void;
     squareFootage: string;
     setSquareFootage: (sq: string) => void;
+    facilityUse: string;
+    setFacilityUse: (fu: string) => void;
     customPrompt: string;
     setCustomPrompt: (p: string) => void;
 
@@ -29,7 +31,7 @@ interface BlueprintFileSummaryProps {
 
 const BlueprintFileSummary: React.FC<BlueprintFileSummaryProps> = ({
     approvedFiles, allFileNames, selectedAgents, onToggleAgent,
-    projectType, setProjectType, squareFootage, setSquareFootage, customPrompt, setCustomPrompt,
+    projectType, setProjectType, squareFootage, setSquareFootage, facilityUse, setFacilityUse, customPrompt, setCustomPrompt,
     onStartAnalysis, onGoBackToFile,
 }) => {
     const totalApproved = approvedFiles.size;
@@ -153,6 +155,16 @@ const BlueprintFileSummary: React.FC<BlueprintFileSummaryProps> = ({
                             onChange={(e) => setSquareFootage(e.target.value)}
                             style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc', width: '100%', boxSizing: 'border-box' }}
                             placeholder="Например, 2500"
+                        />
+                    </Box>
+                    <Box flex={1} minWidth={150}>
+                        <Typography variant="body2" color="text.secondary" mb={0.5}>Тип Использования (Опц.)</Typography>
+                        <input
+                            type="text"
+                            value={facilityUse}
+                            onChange={(e) => setFacilityUse(e.target.value)}
+                            style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc', width: '100%', boxSizing: 'border-box' }}
+                            placeholder="Напр. Склад, Дата-центр..."
                         />
                     </Box>
                 </Box>

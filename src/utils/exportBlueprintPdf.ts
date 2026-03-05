@@ -33,7 +33,11 @@ export const exportBlueprintPdf = (
     pdf.text(`Analyzed Pages: ${pageResults.length} | Date: ${dateStr}`, 14, 36);
     pdf.text(`AI Agents Used: ${selectedAgents.map(a => a.charAt(0).toUpperCase() + a.slice(1)).join(', ')}`, 14, 42);
 
-    let currentY = 50;
+    pdf.setFontSize(9);
+    pdf.setTextColor(211, 47, 47); // Warning red color
+    pdf.text('* Note: This report reflects RAW visual data prior to the Master Electrician Smart Auditor review.', 14, 48);
+
+    let currentY = 56;
 
     // Helper to render a table
     const renderTable = (result: BlueprintAgentResult, title: string, pageRes?: PageResult) => {

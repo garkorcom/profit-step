@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import {
     Container, Grid, Paper, Typography, Box, TextField, Select, MenuItem,
     FormControl, InputLabel, Tabs, Tab, Button, Card, CardContent, Divider,
@@ -266,6 +267,15 @@ export default function ElectricalEstimatorPage() {
     const theme = useTheme();
     const isMobile = useMediaQuery(theme.breakpoints.down('md'));
     const { userProfile } = useAuth();
+    const location = useLocation();
+
+    /**
+     * PROJECT VERSIONING CONTEXT:
+     * If navigating from a Project Workspace to "re-run" an analysis, the `projectId` is passed in the URL.
+     * We capture this and pass it down to `BlueprintUploadDialog` so the resulting estimate
+     * is saved as a new version (e.g., v2) under the same project instead of creating a duplicate project.
+     */
+    const projectIdMatch = new URLSearchParams(location.search).get('projectId');
 
     const [savingProject, setSavingProject] = useState(false);
     const [saveSnackbar, setSaveSnackbar] = useState('');
@@ -1362,6 +1372,7 @@ Notes: ${notes || 'N/A'}
                 open={showAiDialog}
                 onClose={() => setShowAiDialog(false)}
                 onApply={handleAiApply}
+                projectId={projectIdMatch}
             />
 
             {pendingMappingData && (

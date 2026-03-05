@@ -24,6 +24,7 @@ import { db } from '../../firebase/firebase';
 import { doc, onSnapshot, updateDoc, collection, query, where, orderBy, limit, getDocs } from 'firebase/firestore';
 import { blueprintApi } from '../../api/blueprintApi';
 import { savedEstimateApi } from '../../api/savedEstimateApi';
+import { projectApi } from '../../api/projectApi';
 import { BlueprintBatchJob, BlueprintAgentResult, BlueprintFileEntry } from '../../types/blueprint.types';
 import { DEVICES, GEAR, POOL, GENERATOR, LANDSCAPE } from '../../constants/electricalDevices';
 import jsPDF from 'jspdf';
@@ -98,8 +99,15 @@ const fileStatusIcon = (status: string) => {
     }
 };
 
-// ===== COMPONENT =====
-export const BlueprintUploadDialog = ({ open, onClose, onApply }: { open: boolean, onClose: () => void, onApply: (data: any) => void }) => {
+/**
+ * BLUEPRINT UPLOAD DIALOG (V1 & V2)
+ * 
+ * Modified to support the "Estimate Versioning" architecture.
+ * If a `projectId` is passed as a prop (e.g. from an existing Project Workspace), the save logic
+ * will skip creating a new Project and instead append the AI analysis results as a NEW version
+ * under the existing project. This enables A/B testing of AI prompts (v1 vs v2).
+ */
+export const BlueprintUploadDialog = ({ open, onClose, onApply, projectId }: { open: boolean, onClose: () => void, onApply: (data: any) => void, projectId?: string | null }) => {
     const { userProfile } = useAuth();
 
     // Multi-file selection (before upload)
@@ -1047,10 +1055,32 @@ export const BlueprintUploadDialog = ({ open, onClose, onApply }: { open: boolea
                                 if (!userProfile?.companyId || !userProfile?.id) return;
                                 setSavingProject(true);
                                 try {
+                                    let savedProjectId = projectId;
+                                    let projTitle = v2ProjectName || `Project ${new Date().toLocaleDateString()}`;
+
+                                    if (!savedProjectId) {
+                                        // 1. Create Project
+                                        savedProjectId = await projectApi.create({
+                                            companyId: userProfile.companyId,
+                                            createdBy: userProfile.id,
+                                            name: projTitle,
+                                            status: 'active',
+                                            areaSqft: v2AreaSqft || undefined,
+                                            files: []
+                                        });
+                                    } else {
+                                        const proj = await projectApi.getById(savedProjectId);
+                                        if (proj) projTitle = proj.name;
+                                    }
+
+                                    // 2. Save Estimate Version
                                     const payload: any = {
                                         companyId: userProfile.companyId,
                                         createdBy: userProfile.id,
-                                        projectName: v2ProjectName || `V2 Estimate ${new Date().toLocaleDateString()}`,
+                                        projectName: projTitle,
+                                        projectId: savedProjectId,
+                                        versionName: projectId ? `v${new Date().toLocaleTimeString()} (Re-run)` : 'v1.0 (Initial)',
+                                        isBaseline: false,
                                         batchId: `v2_${Date.now()}`,
                                         quantities: { ...localResult },
                                         originalQuantities: { ...localResult },

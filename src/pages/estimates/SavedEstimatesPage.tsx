@@ -10,28 +10,26 @@ import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import FolderIcon from '@mui/icons-material/Folder';
-import PlaceIcon from '@mui/icons-material/Place';
-import SquareFootIcon from '@mui/icons-material/SquareFoot';
 import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile';
 import { useAuth } from '../../auth/AuthContext';
-import { savedEstimateApi } from '../../api/savedEstimateApi';
-import { SavedEstimate } from '../../types/savedEstimate.types';
+import { projectApi } from '../../api/projectApi';
+import { Project } from '../../types/project.types';
 
 const SavedEstimatesPage: React.FC = () => {
     const navigate = useNavigate();
     const { userProfile } = useAuth();
-    const [estimates, setEstimates] = useState<SavedEstimate[]>([]);
+    const [projects, setProjects] = useState<Project[]>([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
-    const [statusFilter, setStatusFilter] = useState<'all' | 'draft' | 'final'>('all');
-    const [deleteDialog, setDeleteDialog] = useState<SavedEstimate | null>(null);
+    const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'completed'>('all');
+    const [deleteDialog, setDeleteDialog] = useState<Project | null>(null);
 
     const load = async () => {
         if (!userProfile?.companyId) { setLoading(false); return; }
         try {
             setLoading(true);
-            const data = await savedEstimateApi.getAll(userProfile.companyId);
-            setEstimates(data);
+            const data = await projectApi.getAll(userProfile.companyId);
+            setProjects(data);
         } catch (err) {
             console.error('Failed to load estimates', err);
         } finally {
@@ -41,12 +39,11 @@ const SavedEstimatesPage: React.FC = () => {
 
     useEffect(() => { load(); }, [userProfile?.companyId]); // eslint-disable-line
 
-    const filtered = estimates.filter(e => {
+    const filtered = projects.filter(e => {
         if (statusFilter !== 'all' && e.status !== statusFilter) return false;
         if (search) {
             const s = search.toLowerCase();
-            return e.projectName.toLowerCase().includes(s) ||
-                (e.address || '').toLowerCase().includes(s);
+            return e.name.toLowerCase().includes(s);
         }
         return true;
     });
@@ -54,8 +51,8 @@ const SavedEstimatesPage: React.FC = () => {
     const handleDelete = async () => {
         if (!deleteDialog) return;
         try {
-            await savedEstimateApi.remove(deleteDialog.id);
-            setEstimates(prev => prev.filter(e => e.id !== deleteDialog.id));
+            await projectApi.remove(deleteDialog.id);
+            setProjects(prev => prev.filter(e => e.id !== deleteDialog.id));
         } catch (err) { console.error('Delete failed', err); }
         setDeleteDialog(null);
     };
@@ -81,7 +78,7 @@ const SavedEstimatesPage: React.FC = () => {
                 <Box display="flex" alignItems="center" gap={1}>
                     <FolderIcon sx={{ fontSize: 32, color: 'primary.main' }} />
                     <Typography variant="h4" fontWeight={700}>Проекты</Typography>
-                    <Chip label={estimates.length} size="small" sx={{ ml: 1 }} />
+                    <Chip label={projects.length} size="small" sx={{ ml: 1 }} />
                 </Box>
                 <Button
                     variant="contained"
@@ -106,10 +103,10 @@ const SavedEstimatesPage: React.FC = () => {
                     }}
                 />
                 <Box display="flex" gap={0.5}>
-                    {(['all', 'draft', 'final'] as const).map(s => (
+                    {(['all', 'active', 'completed'] as const).map(s => (
                         <Chip
                             key={s}
-                            label={s === 'all' ? 'Все' : s === 'draft' ? 'Черновик' : 'Финал'}
+                            label={s === 'all' ? 'Все' : s === 'active' ? 'В работе' : 'Завершен'}
                             variant={statusFilter === s ? 'filled' : 'outlined'}
                             color={statusFilter === s ? 'primary' : 'default'}
                             onClick={() => setStatusFilter(s)}
@@ -151,60 +148,37 @@ const SavedEstimatesPage: React.FC = () => {
                                     '&::before': {
                                         content: '""', position: 'absolute',
                                         top: 0, left: 0, right: 0, height: 3,
-                                        background: est.status === 'final'
+                                        background: est.status === 'completed'
                                             ? 'linear-gradient(90deg, #4caf50, #81c784)'
                                             : 'linear-gradient(90deg, #1976d2, #64b5f6)',
                                     }
                                 }}
                                 onClick={() => navigate(`/estimates/projects/${est.id}`)}
                             >
-                                {/* Name + Status */}
                                 <Box display="flex" justifyContent="space-between" alignItems="flex-start" mb={1.5}>
                                     <Typography variant="subtitle1" fontWeight={700} noWrap sx={{ flex: 1, mr: 1 }}>
-                                        {est.projectName}
+                                        {est.name}
                                     </Typography>
-                                    <Chip
-                                        label={est.status === 'final' ? 'Финал' : 'Черновик'}
-                                        size="small"
-                                        color={est.status === 'final' ? 'success' : 'default'}
-                                        sx={{ fontSize: '0.65rem', height: 20 }}
-                                    />
-                                </Box>
-
-                                {/* Address */}
-                                {est.address && (
-                                    <Box display="flex" alignItems="center" gap={0.5} mb={0.5}>
-                                        <PlaceIcon sx={{ fontSize: 14, color: 'text.disabled' }} />
-                                        <Typography variant="caption" color="text.secondary" noWrap>
-                                            {est.address}
-                                        </Typography>
-                                    </Box>
-                                )}
-
-                                {/* Meta row */}
-                                <Box display="flex" gap={2} mb={2} flexWrap="wrap">
-                                    {est.areaSqft && (
-                                        <Box display="flex" alignItems="center" gap={0.5}>
-                                            <SquareFootIcon sx={{ fontSize: 14, color: 'text.disabled' }} />
-                                            <Typography variant="caption" color="text.secondary">
-                                                {est.areaSqft.toLocaleString()} sf
-                                            </Typography>
-                                        </Box>
+                                    {est.status && (
+                                        <Chip
+                                            label={est.status === 'completed' ? 'Завершен' : 'В работе'}
+                                            size="small"
+                                            color={est.status === 'completed' ? 'success' : 'default'}
+                                            sx={{ fontSize: '0.65rem', height: 20 }}
+                                        />
                                     )}
-                                    <Box display="flex" alignItems="center" gap={0.5}>
-                                        <InsertDriveFileIcon sx={{ fontSize: 14, color: 'text.disabled' }} />
-                                        <Typography variant="caption" color="text.secondary">
-                                            {est.filesCount} файлов
-                                        </Typography>
-                                    </Box>
                                 </Box>
 
-                                {/* Total */}
-                                <Typography variant="h5" fontWeight={800} color="primary.main" mb={0.5}>
-                                    ${est.grandTotal?.toLocaleString() || '0'}
-                                </Typography>
+                                {/* Files Count */}
+                                <Box display="flex" alignItems="center" gap={0.5} mb={2}>
+                                    <InsertDriveFileIcon sx={{ fontSize: 14, color: 'text.disabled' }} />
+                                    <Typography variant="caption" color="text.secondary">
+                                        {est.files?.length || 0} файлов
+                                    </Typography>
+                                </Box>
+
                                 <Typography variant="caption" color="text.disabled">
-                                    {formatDate(est.createdAt)}
+                                    Создан: {formatDate(est.createdAt)}
                                 </Typography>
 
                                 {/* Actions */}
@@ -226,12 +200,11 @@ const SavedEstimatesPage: React.FC = () => {
                 </Grid>
             )}
 
-            {/* Delete confirmation */}
             <Dialog open={!!deleteDialog} onClose={() => setDeleteDialog(null)} maxWidth="xs">
                 <DialogTitle>Удалить проект?</DialogTitle>
                 <DialogContent>
                     <Typography>
-                        Проект <strong>"{deleteDialog?.projectName}"</strong> будет удалён навсегда.
+                        Проект <strong>"{deleteDialog?.name}"</strong> будет удалён навсегда.
                     </Typography>
                 </DialogContent>
                 <DialogActions>

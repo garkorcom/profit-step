@@ -10,7 +10,7 @@
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import {
     Box, Typography, LinearProgress, Button, Stepper, Step, StepLabel,
-    Alert, CircularProgress
+    Alert, CircularProgress, Paper
 } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdf';
@@ -92,6 +92,7 @@ const BlueprintV2Pipeline: React.FC<BlueprintV2PipelineProps> = ({ files, onComp
     // Prompt Configuration
     const [projectType, setProjectType] = useState<string>('residential');
     const [squareFootage, setSquareFootage] = useState<string>('2500');
+    const [facilityUse, setFacilityUse] = useState<string>(''); // Optional commercial context
     const [customPrompt, setCustomPrompt] = useState<string>(
         'Sanity check: Для жилого дома на 2500 кв. футов физически не может быть больше 1-2 главных щитов (panel_200). Обратите внимание на масштаб (розеток не может быть 200+ для одного дома). Сверь свой ответ с логикой.'
     );
@@ -110,6 +111,10 @@ const BlueprintV2Pipeline: React.FC<BlueprintV2PipelineProps> = ({ files, onComp
     // Refinement
     const [refining, setRefining] = useState(false);
     const [refinementRound, setRefinementRound] = useState(0);
+
+    // Auditing (Stage 2)
+    const [isAuditing, setIsAuditing] = useState(false);
+    const [auditNotes, setAuditNotes] = useState<string[]>([]);
 
     // Timer
     const [startTime, setStartTime] = useState<number | null>(null);
@@ -373,34 +378,78 @@ const BlueprintV2Pipeline: React.FC<BlueprintV2PipelineProps> = ({ files, onComp
     const totalQty = Object.values(editedResult).reduce((sum, q) => sum + (q || 0), 0);
 
     // Compute and dispatch global results
-    const handleComplete = () => {
-        const gemini: Record<string, number> = {};
-        const claude: Record<string, number> = {};
-        const openai: Record<string, number> = {};
+    const handleComplete = async () => {
+        setIsAuditing(true);
+        setProgress('🧠 Выполняется умный аудит (AI Smart Auditor)... сверка со строительными нормами.');
 
-        pageResults.forEach(pr => {
-            if (pr.geminiResult) {
-                Object.entries(pr.geminiResult).forEach(([k, val]) => {
-                    const v = val as number;
-                    if (v > 0) gemini[k] = (gemini[k] || 0) + v;
-                });
-            }
-            if (pr.claudeResult) {
-                Object.entries(pr.claudeResult).forEach(([k, val]) => {
-                    const v = val as number;
-                    if (v > 0) claude[k] = (claude[k] || 0) + v;
-                });
-            }
-            // For future openai
-            if ((pr as any).openaiResult) {
-                Object.entries((pr as any).openaiResult).forEach(([k, val]) => {
-                    const v = val as number;
-                    if (v > 0) openai[k] = (openai[k] || 0) + v;
-                });
-            }
-        });
+        try {
+            // First run the raw text-based audit on the edited result
+            const auditFn = httpsCallable(functions, 'auditBlueprintTakeoff');
+            const response = await auditFn({
+                rawQuantities: editedResult,
+                squareFootage,
+                projectType,
+                facilityUse,
+                pageCount: pageResults.length || 1,
+            });
+            const data = response.data as { auditedResult: BlueprintAgentResult, auditNotes?: string[] };
+            const finalAuditedResult = data.auditedResult || editedResult;
 
-        onComplete(editedResult, { gemini, claude, openai });
+            // Set the notes for the UI display
+            setAuditNotes(data.auditNotes || []);
+
+            // Prepare AI split for PDF export reference
+            const gemini: Record<string, number> = {};
+            const claude: Record<string, number> = {};
+            const openai: Record<string, number> = {};
+
+            pageResults.forEach(pr => {
+                if (pr.geminiResult) {
+                    Object.entries(pr.geminiResult).forEach(([k, val]) => {
+                        const v = val as number;
+                        if (v > 0) gemini[k] = (gemini[k] || 0) + v;
+                    });
+                }
+                if (pr.claudeResult) {
+                    Object.entries(pr.claudeResult).forEach(([k, val]) => {
+                        const v = val as number;
+                        if (v > 0) claude[k] = (claude[k] || 0) + v;
+                    });
+                }
+                if ((pr as any).openaiResult) {
+                    Object.entries((pr as any).openaiResult).forEach(([k, val]) => {
+                        const v = val as number;
+                        if (v > 0) openai[k] = (openai[k] || 0) + v;
+                    });
+                }
+            });
+
+            onComplete(finalAuditedResult, { gemini, claude, openai });
+        } catch (err: any) {
+            console.error('Audit failed, passing raw results', err);
+            // Fallback: pass raw results if audit somehow fails
+            const gemini: Record<string, number> = {};
+            const claude: Record<string, number> = {};
+            const openai: Record<string, number> = {};
+            pageResults.forEach(pr => {
+                if (pr.geminiResult) {
+                    Object.entries(pr.geminiResult).forEach(([k, val]) => {
+                        const v = val as number;
+                        if (v > 0) gemini[k] = (gemini[k] || 0) + v;
+                    });
+                }
+                if (pr.claudeResult) {
+                    Object.entries(pr.claudeResult).forEach(([k, val]) => {
+                        const v = val as number;
+                        if (v > 0) claude[k] = (claude[k] || 0) + v;
+                    });
+                }
+            });
+            onComplete(editedResult, { gemini, claude, openai });
+        } finally {
+            setIsAuditing(false);
+            setProgress('');
+        }
     };
 
     const handleExportPdf = () => {
@@ -585,6 +634,8 @@ const BlueprintV2Pipeline: React.FC<BlueprintV2PipelineProps> = ({ files, onComp
                     setProjectType={handleProjectTypeChange}
                     squareFootage={squareFootage}
                     setSquareFootage={setSquareFootage}
+                    facilityUse={facilityUse}
+                    setFacilityUse={setFacilityUse}
                     customPrompt={customPrompt}
                     setCustomPrompt={setCustomPrompt}
                     onStartAnalysis={startAnalysis}
@@ -654,12 +705,36 @@ const BlueprintV2Pipeline: React.FC<BlueprintV2PipelineProps> = ({ files, onComp
                             </Button>
                             <Button
                                 variant="contained"
+                                color="primary"
                                 onClick={handleComplete}
+                                disabled={isAuditing}
+                                startIcon={isAuditing ? <CircularProgress size={20} color="inherit" /> : undefined}
                             >
-                                ✅ Применить ({totalItems} поз.)
+                                {isAuditing ? 'Аудит...' : 'Завершить Анализ'}
                             </Button>
                         </Box>
                     </Box>
+
+                    {/* AI Auditor Notes Rendering */}
+                    {auditNotes.length > 0 && (
+                        <Box mt={4}>
+                            <Paper variant="outlined" sx={{ p: 2, borderColor: 'primary.main', bgcolor: 'primary.50' }}>
+                                <Typography variant="subtitle2" color="primary.main" fontWeight={700} gutterBottom>
+                                    🧠 Заметки AI Аудитора (Smart Auditor Notes)
+                                </Typography>
+                                <Typography variant="body2" color="text.secondary" mb={1}>
+                                    Следующие позиции были автоматически откорректированы на основе строительных норм и контекста проекта:
+                                </Typography>
+                                <ul>
+                                    {auditNotes.map((note, idx) => (
+                                        <li key={idx}>
+                                            <Typography variant="body2" color="text.primary">{note}</Typography>
+                                        </li>
+                                    ))}
+                                </ul>
+                            </Paper>
+                        </Box>
+                    )}
                 </Box>
             )}
 

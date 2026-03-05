@@ -4,8 +4,12 @@ export interface SavedEstimate {
     id: string;
     companyId: string;
     createdBy: string;
-    // Project info
+    // Project info & Versioning
     projectName: string;
+    projectId?: string; // Links to Project entity
+    versionName?: string; // e.g., "v1.0", "Manual Approved"
+    isBaseline?: boolean; // Whether this is the ground-truth benchmark
+
     address?: string;
     description?: string;
     areaSqft?: number;

@@ -64,7 +64,7 @@ function calcTotals(quantities: Record<string, number>, laborRate: number, wireP
 }
 
 const EstimateDetailPage: React.FC = () => {
-    const { id } = useParams<{ id: string }>();
+    const { id, projectId } = useParams<{ id: string; projectId: string }>();
     const navigate = useNavigate();
     const [estimate, setEstimate] = useState<SavedEstimate | null>(null);
     const [loading, setLoading] = useState(true);
@@ -222,7 +222,7 @@ const EstimateDetailPage: React.FC = () => {
         <Container maxWidth="xl" sx={{ mt: 3, mb: 4 }}>
             {/* Header */}
             <Box display="flex" alignItems="center" gap={1} mb={2}>
-                <IconButton onClick={() => navigate('/estimates/projects')}>
+                <IconButton onClick={() => navigate(projectId ? `/estimates/projects/${projectId}` : '/estimates/projects')}>
                     <ArrowBackIcon />
                 </IconButton>
                 {editingName ? (

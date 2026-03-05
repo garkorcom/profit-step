@@ -23,6 +23,7 @@ const EstimatesPage = React.lazy(() => import('../pages/estimates/EstimatesPage'
 const EstimateBuilderPage = React.lazy(() => import('../pages/estimates/EstimateBuilderPage'));
 const ElectricalEstimatorPage = React.lazy(() => import('../pages/estimates/ElectricalEstimatorPage'));
 const SavedEstimatesPage = React.lazy(() => import('../pages/estimates/SavedEstimatesPage'));
+const ProjectWorkspacePage = React.lazy(() => import('../pages/estimates/ProjectWorkspacePage'));
 const EstimateDetailPage = React.lazy(() => import('../pages/estimates/EstimateDetailPage'));
 const SettingsCalculatorPage = React.lazy(() => import('../pages/estimates/SettingsCalculatorPage'));
 const SuperAdminDashboard = React.lazy(() => import('../pages/superadmin/SuperAdminDashboard'));
@@ -180,7 +181,8 @@ const AppRouter: React.FC = () => {
           <Route path="/estimates/:id" element={<EstimateBuilderPage />} />
           <Route path="/estimates/electrical" element={<ElectricalEstimatorPage />} />
           <Route path="/estimates/projects" element={<SavedEstimatesPage />} />
-          <Route path="/estimates/projects/:id" element={<EstimateDetailPage />} />
+          <Route path="/estimates/projects/:id" element={<ProjectWorkspacePage />} />
+          <Route path="/estimates/projects/:projectId/versions/:id" element={<EstimateDetailPage />} />
 
           {/* CRM Routes */}
           <Route path="/crm/clients" element={<ClientsPage />} />

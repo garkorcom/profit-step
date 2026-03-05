@@ -8,7 +8,8 @@ import {
     analyzeWithClaude,
     analyzeWithOpenAI,
     compareResults,
-    performTargetedReconciliation
+    performTargetedReconciliation,
+    performSmartAudit
 } from '../../services/blueprintAIService';
 import { BlueprintAgentResult, BlueprintDiscrepancy } from '../../types/blueprint.types';
 
@@ -149,5 +150,39 @@ export const refineAnalysisCallable = functions
         } catch (error: any) {
             logger.error(`❌ Refinement failed:`, error);
             throw new functions.https.HttpsError('internal', error.message || 'Refinement failed');
+        }
+    });
+
+/**
+ * Callable function: Perform a Smart Audit (LLM text-only reasoning) on raw quantities.
+ * Used by V2 pipeline to filter out hallucinations based on building codes.
+ */
+export const auditBlueprintTakeoff = functions
+    .region('us-central1')
+    .runWith({ timeoutSeconds: 60, memory: '256MB' })
+    .https.onCall(async (data, context) => {
+        if (!context.auth) {
+            throw new functions.https.HttpsError('unauthenticated', 'Auth required');
+        }
+
+        const { rawQuantities, squareFootage, projectType, pageCount, facilityUse } = data;
+        if (!rawQuantities) {
+            throw new functions.https.HttpsError('invalid-argument', 'rawQuantities required');
+        }
+
+        logger.info(`🧠 Auditing takeoff for ${projectType} (${squareFootage} sqft, ${pageCount || 1} pages)`);
+
+        try {
+            const { auditedQuantities, auditNotes } = await performSmartAudit(
+                rawQuantities,
+                squareFootage,
+                projectType,
+                pageCount || 1,
+                facilityUse || ''
+            );
+            return { auditedResult: auditedQuantities, auditNotes };
+        } catch (error: any) {
+            logger.error(`❌ Audit failed:`, error);
+            throw new functions.https.HttpsError('internal', error.message || 'Audit failed');
         }
     });

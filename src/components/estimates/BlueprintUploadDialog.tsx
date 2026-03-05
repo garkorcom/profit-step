@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
     Dialog, DialogTitle, DialogContent, DialogActions,
     Button, Box, Typography, CircularProgress,
@@ -107,8 +108,16 @@ const fileStatusIcon = (status: string) => {
  * will skip creating a new Project and instead append the AI analysis results as a NEW version
  * under the existing project. This enables A/B testing of AI prompts (v1 vs v2).
  */
-export const BlueprintUploadDialog = ({ open, onClose, onApply, projectId }: { open: boolean, onClose: () => void, onApply: (data: any) => void, projectId?: string | null }) => {
+interface BlueprintUploadDialogProps {
+    open: boolean;
+    onClose: () => void;
+    onApply: (data: any) => void;
+    projectId?: string | null;
+}
+
+export const BlueprintUploadDialog: React.FC<BlueprintUploadDialogProps> = ({ open, onClose, onApply, projectId }) => {
     const { userProfile } = useAuth();
+    const navigate = useNavigate();
 
     // Multi-file selection (before upload)
     const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
@@ -1112,7 +1121,11 @@ export const BlueprintUploadDialog = ({ open, onClose, onApply, projectId }: { o
 
                                     await savedEstimateApi.save(cleanPayload(payload));
 
-                                    setSaveSnackbar('Проект успешно сохранен!');
+                                    setSaveSnackbar('Проект успешно сохранен! Открываем проект...');
+                                    setTimeout(() => {
+                                        navigate(`/estimates/projects/${savedProjectId}`);
+                                        onClose();
+                                    }, 800);
                                 } catch (err) {
                                     console.error('V2 save failed:', err);
                                     setSaveSnackbar('Ошибка сохранения');

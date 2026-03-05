@@ -10,6 +10,7 @@ import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import FolderIcon from '@mui/icons-material/Folder';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile';
+import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
 import { projectApi } from '../../api/projectApi';
 import { savedEstimateApi } from '../../api/savedEstimateApi';
 import { Project } from '../../types/project.types';
@@ -197,36 +198,77 @@ const ProjectWorkspacePage: React.FC = () => {
                     </Grid>
 
                     {baseVersion && compareVersion && (
-                        <TableContainer component={Paper} variant="outlined">
-                            <Table size="small">
-                                <TableHead sx={{ bgcolor: 'grey.50' }}>
-                                    <TableRow>
-                                        <TableCell sx={{ fontWeight: 600 }}>Позиция</TableCell>
-                                        <TableCell align="center" sx={{ fontWeight: 600 }}>{baseVersion.versionName} (Эталон)</TableCell>
-                                        <TableCell align="center" sx={{ fontWeight: 600 }}>{compareVersion.versionName} (Новый)</TableCell>
-                                        <TableCell align="right" sx={{ fontWeight: 600 }}>Разница (Δ)</TableCell>
-                                    </TableRow>
-                                </TableHead>
-                                <TableBody>
-                                    {getComparisonRows().map((row, i) => (
-                                        <TableRow key={i} sx={{ '&:last-child td, &:last-child th': { border: 0 }, bgcolor: row.diff !== 0 ? (row.diff > 0 ? 'error.50' : 'success.50') : 'inherit' }}>
-                                            <TableCell component="th" scope="row">{row.name}</TableCell>
-                                            <TableCell align="center">{row.baseQty}</TableCell>
-                                            <TableCell align="center" sx={{ fontWeight: row.diff !== 0 ? 'bold' : 'normal' }}>{row.compQty}</TableCell>
-                                            <TableCell align="right">
-                                                <Chip
-                                                    size="small"
-                                                    label={row.diff > 0 ? `+${row.diff}` : row.diff}
-                                                    color={row.diff === 0 ? 'default' : (row.diff > 0 ? 'error' : 'success')}
-                                                    variant={row.diff === 0 ? 'outlined' : 'filled'}
-                                                    sx={{ minWidth: 50, fontWeight: 700 }}
-                                                />
-                                            </TableCell>
+                        <Box>
+                            {/* Financial Delta Summary Cards */}
+                            <Grid container spacing={2} mb={3}>
+                                {[
+                                    { label: 'Total Estimate Price', key: 'grandTotal' as const },
+                                    { label: 'Labor Cost', key: 'totalLabor' as const },
+                                    { label: 'Materials Cost', key: 'totalMaterials' as const },
+                                ].map(stat => {
+                                    const baseVal = baseVersion[stat.key] || 0;
+                                    const compVal = compareVersion[stat.key] || 0;
+                                    const diff = compVal - baseVal;
+                                    const isIncrease = diff > 0;
+                                    const isDecrease = diff < 0;
+                                    const color = isIncrease ? 'success.main' : (isDecrease ? 'error.main' : 'text.secondary');
+
+                                    // Handle cases where totalLabor or totalMaterials might be missing in older version payloads
+                                    if (baseVal === 0 && compVal === 0) return null;
+
+                                    return (
+                                        <Grid size={{ xs: 12, md: 4 }} key={stat.key}>
+                                            <Paper variant="outlined" sx={{ p: 2, textAlign: 'center', bgcolor: 'grey.50' }}>
+                                                <Typography variant="caption" color="text.secondary" fontWeight={600} textTransform="uppercase">
+                                                    {stat.label}
+                                                </Typography>
+                                                <Box display="flex" justifyContent="center" alignItems="center" gap={2} mt={1}>
+                                                    <Typography variant="h6">${baseVal.toLocaleString()}</Typography>
+                                                    <ArrowForwardIcon color="action" fontSize="small" />
+                                                    <Typography variant="h6" color={diff !== 0 ? color : 'inherit'}>
+                                                        ${compVal.toLocaleString()}
+                                                    </Typography>
+                                                </Box>
+                                                <Typography variant="subtitle2" color={color} mt={0.5} fontWeight={700}>
+                                                    Δ {isIncrease ? '+' : ''}{diff.toLocaleString()}
+                                                </Typography>
+                                            </Paper>
+                                        </Grid>
+                                    );
+                                })}
+                            </Grid>
+
+                            <TableContainer component={Paper} variant="outlined">
+                                <Table size="small">
+                                    <TableHead sx={{ bgcolor: 'grey.50' }}>
+                                        <TableRow>
+                                            <TableCell sx={{ fontWeight: 600 }}>Позиция (Device)</TableCell>
+                                            <TableCell align="center" sx={{ fontWeight: 600 }}>{baseVersion.versionName} (Эталон)</TableCell>
+                                            <TableCell align="center" sx={{ fontWeight: 600 }}>{compareVersion.versionName} (Новый)</TableCell>
+                                            <TableCell align="right" sx={{ fontWeight: 600 }}>Разница (Δ) Кол-во</TableCell>
                                         </TableRow>
-                                    ))}
-                                </TableBody>
-                            </Table>
-                        </TableContainer>
+                                    </TableHead>
+                                    <TableBody>
+                                        {getComparisonRows().map((row, i) => (
+                                            <TableRow key={i} sx={{ '&:last-child td, &:last-child th': { border: 0 }, bgcolor: row.diff !== 0 ? (row.diff > 0 ? 'success.50' : 'error.50') : 'inherit' }}>
+                                                <TableCell component="th" scope="row">{row.name}</TableCell>
+                                                <TableCell align="center">{row.baseQty}</TableCell>
+                                                <TableCell align="center" sx={{ fontWeight: row.diff !== 0 ? 'bold' : 'normal' }}>{row.compQty}</TableCell>
+                                                <TableCell align="right">
+                                                    <Chip
+                                                        size="small"
+                                                        label={row.diff > 0 ? `+${row.diff}` : row.diff}
+                                                        color={row.diff === 0 ? 'default' : (row.diff > 0 ? 'success' : 'error')}
+                                                        variant={row.diff === 0 ? 'outlined' : 'filled'}
+                                                        sx={{ minWidth: 50, fontWeight: 700 }}
+                                                    />
+                                                </TableCell>
+                                            </TableRow>
+                                        ))}
+                                    </TableBody>
+                                </Table>
+                            </TableContainer>
+                        </Box>
                     )}
                 </Box>
             )}

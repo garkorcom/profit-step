@@ -1060,14 +1060,16 @@ export const BlueprintUploadDialog = ({ open, onClose, onApply, projectId }: { o
 
                                     if (!savedProjectId) {
                                         // 1. Create Project
-                                        savedProjectId = await projectApi.create({
+                                        const projectData: any = {
                                             companyId: userProfile.companyId,
                                             createdBy: userProfile.id,
                                             name: projTitle,
                                             status: 'active',
-                                            areaSqft: v2AreaSqft || undefined,
                                             files: []
-                                        });
+                                        };
+                                        if (v2AreaSqft) projectData.areaSqft = Number(v2AreaSqft);
+
+                                        savedProjectId = await projectApi.create(projectData);
                                     } else {
                                         const proj = await projectApi.getById(savedProjectId);
                                         if (proj) projTitle = proj.name;

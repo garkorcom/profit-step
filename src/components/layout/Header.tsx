@@ -67,6 +67,7 @@ const Header: React.FC = () => {
   const [anchorElUser, setAnchorElUser] = useState<null | HTMLElement>(null);
 
   // Nav Menus State
+  const [anchorElProjects, setAnchorElProjects] = useState<null | HTMLElement>(null);
   const [anchorElTime, setAnchorElTime] = useState<null | HTMLElement>(null);
   const [anchorElMarketing, setAnchorElMarketing] = useState<null | HTMLElement>(null);
   const [anchorElSettings, setAnchorElSettings] = useState<null | HTMLElement>(null);
@@ -74,6 +75,7 @@ const Header: React.FC = () => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   // Mobile Collapse States
+  const [mobileOpenProjects, setMobileOpenProjects] = useState(false);
   const [mobileOpenTime, setMobileOpenTime] = useState(false);
   const [mobileOpenMarketing, setMobileOpenMarketing] = useState(false);
   const [mobileOpenSettings, setMobileOpenSettings] = useState(false);
@@ -115,6 +117,9 @@ const Header: React.FC = () => {
   };
 
   // --- Handlers for Desktop Dropdowns ---
+  const handleOpenProjects = (event: React.MouseEvent<HTMLElement>) => setAnchorElProjects(event.currentTarget);
+  const handleCloseProjects = () => setAnchorElProjects(null);
+
   const handleOpenTime = (event: React.MouseEvent<HTMLElement>) => setAnchorElTime(event.currentTarget);
   const handleCloseTime = () => setAnchorElTime(null);
 
@@ -126,7 +131,7 @@ const Header: React.FC = () => {
 
   // --- Navigation Structure ---
   const getNavStructure = () => {
-    if (!userProfile) return { dashboard: [], time: [], marketing: [], settings: [] };
+    if (!userProfile) return { dashboard: [], projects: [], time: [], marketing: [], settings: [] };
 
     const isAdmin = userProfile.role === 'admin';
     // const isManager = userProfile.role === 'manager';
@@ -152,12 +157,14 @@ const Header: React.FC = () => {
       { path: '/crm/deals', label: 'Сделки', icon: <KanbanIcon sx={{ mr: 0.5 }} /> },
     ];
 
+    const projectLinks = [
+      { path: '/estimates/projects', label: 'Библиотека Проектов', icon: <FolderIcon sx={{ mr: 0.5 }} /> },
+      { path: '/estimates/electrical', label: 'Калькулятор', icon: <CalculateIcon sx={{ mr: 0.5 }} /> },
+    ];
+
     // "Settings" group as requested (Team, Companies, Tasks, Calculator)
     const settingsGroupLinks = [
       { path: '/crm/tasks', label: 'Задачи', icon: <TaskIcon sx={{ mr: 0.5 }} /> },
-      // { path: '/crm/gtd', label: 'Cockpit', icon: <TaskIcon sx={{ mr: 0.5 }} /> }, // Moved
-      { path: '/estimates/electrical', label: 'Калькулятор', icon: <CalculateIcon sx={{ mr: 0.5 }} /> },
-      { path: '/estimates/projects', label: 'Проекты', icon: <FolderIcon sx={{ mr: 0.5 }} /> },
       { path: '/about', label: 'О проекте', icon: <InfoIcon sx={{ mr: 0.5 }} /> },
     ];
 
@@ -170,6 +177,7 @@ const Header: React.FC = () => {
 
     return {
       dashboard: [dashboardLink],
+      projects: projectLinks,
       time: timeMgmtLinks,
       marketing: marketingLinks,
       settings: settingsGroupLinks // Named "settings" in code, label will be "Настройки"
@@ -295,6 +303,7 @@ const Header: React.FC = () => {
             ))}
 
             {/* Groups */}
+            {renderDesktopMenu("Проекты", <FolderIcon sx={{ mr: 0.5 }} />, navStruct.projects, anchorElProjects, handleOpenProjects, handleCloseProjects)}
             {renderDesktopMenu("Управление временем", <TimeManagementIcon sx={{ mr: 0.5 }} />, navStruct.time, anchorElTime, handleOpenTime, handleCloseTime)}
             {renderDesktopMenu("Маркетинг", <MarketingIcon sx={{ mr: 0.5 }} />, navStruct.marketing, anchorElMarketing, handleOpenMarketing, handleCloseMarketing)}
             {renderDesktopMenu("Настройки", <SettingsIcon sx={{ mr: 0.5 }} />, navStruct.settings, anchorElSettings, handleOpenSettings, handleCloseSettings)}
@@ -369,6 +378,23 @@ const Header: React.FC = () => {
               </ListItemButton>
             </ListItem>
           ))}
+
+          {/* Projects */}
+          <ListItemButton onClick={() => setMobileOpenProjects(!mobileOpenProjects)}>
+            <ListItemIcon><FolderIcon /></ListItemIcon>
+            <ListItemText primary="Проекты" />
+            {mobileOpenProjects ? <ExpandLess /> : <ExpandMore />}
+          </ListItemButton>
+          <Collapse in={mobileOpenProjects} timeout="auto" unmountOnExit>
+            <List component="div" disablePadding>
+              {navStruct.projects.map(link => (
+                <ListItemButton key={link.path} sx={{ pl: 4 }} component={Link} to={link.path} onClick={handleMobileMenuClose} selected={isActive(link.path)}>
+                  <ListItemIcon>{link.icon}</ListItemIcon>
+                  <ListItemText primary={link.label} />
+                </ListItemButton>
+              ))}
+            </List>
+          </Collapse>
 
           {/* Time Management */}
           <ListItemButton onClick={() => setMobileOpenTime(!mobileOpenTime)}>

@@ -24,6 +24,12 @@ const SavedEstimatesPage: React.FC = () => {
     const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'completed'>('all');
     const [deleteDialog, setDeleteDialog] = useState<Project | null>(null);
 
+    // Create modal state
+    const [createDialog, setCreateDialog] = useState(false);
+    const [newProjectName, setNewProjectName] = useState('');
+    const [newProjectAddress, setNewProjectAddress] = useState('');
+    const [newProjectSqft, setNewProjectSqft] = useState<number | ''>('');
+
     const load = async () => {
         if (!userProfile?.companyId) { setLoading(false); return; }
         try {
@@ -57,6 +63,26 @@ const SavedEstimatesPage: React.FC = () => {
         setDeleteDialog(null);
     };
 
+    const handleCreateProject = async () => {
+        if (!userProfile?.companyId || !newProjectName.trim()) return;
+        try {
+            const newId = await projectApi.create({
+                companyId: userProfile.companyId,
+                createdBy: userProfile.id,
+                name: newProjectName.trim(),
+                address: newProjectAddress.trim() || undefined,
+                areaSqft: newProjectSqft ? Number(newProjectSqft) : undefined,
+                status: 'active',
+                files: [],
+            });
+            setCreateDialog(false);
+            // After creating, redirect to the estimator passing the projectId
+            navigate(`/estimates/electrical?projectId=${newId}`);
+        } catch (err) {
+            console.error('Failed to create project', err);
+        }
+    };
+
     const formatDate = (ts: any) => {
         if (!ts) return '—';
         const d = ts.toDate ? ts.toDate() : new Date(ts);
@@ -83,10 +109,10 @@ const SavedEstimatesPage: React.FC = () => {
                 <Button
                     variant="contained"
                     startIcon={<AddIcon />}
-                    onClick={() => navigate('/estimates/electrical')}
+                    onClick={() => setCreateDialog(true)}
                     sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 600 }}
                 >
-                    Новый просчёт
+                    Новый проект
                 </Button>
             </Box>
 
@@ -210,6 +236,51 @@ const SavedEstimatesPage: React.FC = () => {
                 <DialogActions>
                     <Button onClick={() => setDeleteDialog(null)}>Отмена</Button>
                     <Button onClick={handleDelete} color="error" variant="contained">Удалить</Button>
+                </DialogActions>
+            </Dialog>
+
+            <Dialog open={createDialog} onClose={() => setCreateDialog(false)} maxWidth="sm" fullWidth>
+                <DialogTitle>Создать новый проект</DialogTitle>
+                <DialogContent>
+                    <Grid container spacing={2} sx={{ mt: 1 }}>
+                        <Grid size={{ xs: 12 }}>
+                            <TextField
+                                fullWidth
+                                label="Название проекта *"
+                                value={newProjectName}
+                                onChange={(e) => setNewProjectName(e.target.value)}
+                                autoFocus
+                            />
+                        </Grid>
+                        <Grid size={{ xs: 12 }}>
+                            <TextField
+                                fullWidth
+                                label="Адрес объекта (опционально)"
+                                value={newProjectAddress}
+                                onChange={(e) => setNewProjectAddress(e.target.value)}
+                            />
+                        </Grid>
+                        <Grid size={{ xs: 12 }}>
+                            <TextField
+                                fullWidth
+                                label="Площадь (Sq Ft - опционально)"
+                                type="number"
+                                value={newProjectSqft}
+                                onChange={(e) => setNewProjectSqft(e.target.value ? Number(e.target.value) : '')}
+                            />
+                        </Grid>
+                    </Grid>
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setCreateDialog(false)}>Отмена</Button>
+                    <Button
+                        onClick={handleCreateProject}
+                        color="primary"
+                        variant="contained"
+                        disabled={!newProjectName.trim()}
+                    >
+                        Создать и начать расчёт
+                    </Button>
                 </DialogActions>
             </Dialog>
         </Container>

@@ -852,6 +852,10 @@ Notes: ${notes || 'N/A'}
             setSaveSnackbar('Войдите в систему для сохранения');
             return;
         }
+        if (!projectIdMatch) {
+            setSaveSnackbar('Ошибка: Отсутствует привязка к Проекту. Начните расчет из Библиотеки Проектов.');
+            return;
+        }
         setSavingProject(true);
         try {
             // Merge all quantity maps
@@ -866,6 +870,7 @@ Notes: ${notes || 'N/A'}
             const dataToSave = {
                 companyId: userProfile.companyId,
                 createdBy: userProfile.id,
+                projectId: projectIdMatch,
                 projectName,
                 areaSqft: sqft,
                 batchId: `manual_${Date.now()}`,
@@ -902,7 +907,7 @@ Notes: ${notes || 'N/A'}
 
     // ===== Auto Save Project (every 30s) =====
     useEffect(() => {
-        if (!currentEstimateId || savingProject || !userProfile?.companyId) return;
+        if (!currentEstimateId || savingProject || !userProfile?.companyId || !projectIdMatch) return;
 
         const timer = setTimeout(() => {
             setAutosaveStatus('saving');
@@ -934,7 +939,7 @@ Notes: ${notes || 'N/A'}
         }, 30000);
 
         return () => clearTimeout(timer);
-    }, [quantities, gearQty, poolQty, genQty, landQty, wireQty, projectName, laborRate, calc, notes, currentEstimateId, savingProject, userProfile]);
+    }, [quantities, gearQty, poolQty, genQty, landQty, wireQty, projectName, laborRate, calc, notes, currentEstimateId, savingProject, userProfile, projectIdMatch]);
 
     return (
         <Box sx={{ minHeight: '100vh', bgcolor: 'background.default', pb: 8 }}>
@@ -945,13 +950,12 @@ Notes: ${notes || 'N/A'}
                     </Typography>
                     <Button
                         color="inherit"
+                        sx={{ mr: 1 }}
                         startIcon={<ProjectsIcon />}
                         onClick={() => window.location.href = '/estimates/projects'}
-                        sx={{ mr: 1 }}
                     >
                         Проекты
                     </Button>
-                    <Button color="inherit" onClick={() => window.location.href = '/dashboard'}>Dashboard</Button>
                 </Toolbar>
             </AppBar>
 
@@ -985,13 +989,13 @@ Notes: ${notes || 'N/A'}
                                 </Stack>
                                 <Grid container spacing={2} alignItems="center">
                                     <Grid size={{ xs: 12, sm: 4 }}>
-                                        <TextField fullWidth label="Project Name" value={projectName} onChange={(e) => setProjectName(e.target.value)} size="small" />
+                                        <TextField fullWidth label="Project Name" value={projectName} onChange={(e) => setProjectName(e.target.value)} onFocus={(e) => e.target.select()} size="small" />
                                     </Grid>
                                     <Grid size={{ xs: 6, sm: 2 }}>
-                                        <TextField fullWidth label="Sq. Ft." type="number" value={sqft} onChange={(e) => setSqft(Number(e.target.value))} size="small" />
+                                        <TextField fullWidth label="Sq. Ft." type="number" value={sqft} onChange={(e) => setSqft(Number(e.target.value))} onFocus={(e) => e.target.select()} size="small" />
                                     </Grid>
                                     <Grid size={{ xs: 6, sm: 2 }}>
-                                        <TextField fullWidth label="Stories" type="number" value={stories} onChange={(e) => setStories(Number(e.target.value))} size="small" />
+                                        <TextField fullWidth label="Stories" type="number" value={stories} onChange={(e) => setStories(Number(e.target.value))} onFocus={(e) => e.target.select()} size="small" />
                                     </Grid>
                                     <Grid size={{ xs: 12, sm: 4 }}>
                                         <FormControl fullWidth size="small">
@@ -1375,46 +1379,50 @@ Notes: ${notes || 'N/A'}
                 projectId={projectIdMatch}
             />
 
-            {pendingMappingData && (
-                <AiMappingDialog
-                    open={!!pendingMappingData}
-                    onClose={() => setPendingMappingData(null)}
-                    aiResults={pendingMappingData}
-                    onApply={handleFinalMapping}
-                    DEVICES={DEVICES}
-                    GEAR={GEAR}
-                    POOL={POOL}
-                    GENERATOR={GENERATOR}
-                    LANDSCAPE={LANDSCAPE}
-                />
-            )}
+            {
+                pendingMappingData && (
+                    <AiMappingDialog
+                        open={!!pendingMappingData}
+                        onClose={() => setPendingMappingData(null)}
+                        aiResults={pendingMappingData!}
+                        onApply={handleFinalMapping}
+                        DEVICES={DEVICES}
+                        GEAR={GEAR}
+                        POOL={POOL}
+                        GENERATOR={GENERATOR}
+                        LANDSCAPE={LANDSCAPE}
+                    />
+                )
+            }
 
             {/* Sticky Footer for Mobile */}
-            {isMobile && (
-                <Paper
-                    elevation={3}
-                    sx={{
-                        position: 'fixed',
-                        bottom: 0,
-                        left: 0,
-                        right: 0,
-                        p: 2,
-                        bgcolor: 'primary.main',
-                        color: 'primary.contrastText',
-                        zIndex: 1000
-                    }}
-                >
-                    <Box display="flex" justifyContent="space-between" alignItems="center">
-                        <Box>
-                            <Typography variant="caption">Total Estimate</Typography>
-                            <Typography variant="h6" fontWeight="bold">{fmt(calc.totalPrice)}</Typography>
+            {
+                isMobile && (
+                    <Paper
+                        elevation={3}
+                        sx={{
+                            position: 'fixed',
+                            bottom: 0,
+                            left: 0,
+                            right: 0,
+                            p: 2,
+                            bgcolor: 'primary.main',
+                            color: 'primary.contrastText',
+                            zIndex: 1000
+                        }}
+                    >
+                        <Box display="flex" justifyContent="space-between" alignItems="center">
+                            <Box>
+                                <Typography variant="caption">Total Estimate</Typography>
+                                <Typography variant="h6" fontWeight="bold">{fmt(calc.totalPrice)}</Typography>
+                            </Box>
+                            <Button variant="contained" color="secondary" onClick={() => setActiveTab(7)}>
+                                View Summary
+                            </Button>
                         </Box>
-                        <Button variant="contained" color="secondary" onClick={() => setActiveTab(7)}>
-                            View Summary
-                        </Button>
-                    </Box>
-                </Paper>
-            )}
+                    </Paper>
+                )
+            }
 
             {/* Save Snackbar */}
             <Snackbar
@@ -1431,6 +1439,6 @@ Notes: ${notes || 'N/A'}
                     {saveSnackbar}
                 </Alert>
             </Snackbar>
-        </Box>
+        </Box >
     );
 }

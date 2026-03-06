@@ -6,6 +6,7 @@ export interface ProjectFile {
     id: string;
     name: string;
     path: string; // Firebase Storage path
+    url?: string; // Firebase Download URL (optional)
     size: number;
     type: string; // Mime type e.g. 'application/pdf'
     uploadedAt: Timestamp;

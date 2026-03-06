@@ -66,6 +66,14 @@ service firebase.storage {
       allow read, write: if isSignedIn();
     }
 
+    // ==================== PROJECT FILES ====================
+
+    // Файлы проектов (PDF, сгенерированные изображения и т.д.)
+    match /companies/{companyId}/projects/{projectId}/files/{allPaths=**} {
+      // Любой авторизованный сотрудник может иметь доступ к файлам проекта
+      allow read, write: if isSignedIn();
+    }
+
     // ==================== DEFAULT DENY ====================
 
     // Запретить доступ ко всем остальным файлам

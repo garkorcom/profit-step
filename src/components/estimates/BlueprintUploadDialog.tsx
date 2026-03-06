@@ -22,14 +22,16 @@ import BoltIcon from '@mui/icons-material/Bolt';
 
 import { useAuth } from '../../auth/AuthContext';
 import { db } from '../../firebase/firebase';
-import { doc, onSnapshot, updateDoc, collection, query, where, orderBy, limit, getDocs } from 'firebase/firestore';
+import { Timestamp, doc, onSnapshot, updateDoc, collection, query, where, orderBy, limit, getDocs } from 'firebase/firestore';
+import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { blueprintApi } from '../../api/blueprintApi';
 import { savedEstimateApi } from '../../api/savedEstimateApi';
 import { projectApi } from '../../api/projectApi';
 import { BlueprintBatchJob, BlueprintAgentResult, BlueprintFileEntry } from '../../types/blueprint.types';
+import { ProjectFile } from '../../types/project.types';
 import { DEVICES, GEAR, POOL, GENERATOR, LANDSCAPE } from '../../constants/electricalDevices';
 import jsPDF from 'jspdf';
-import BlueprintV2Pipeline from './BlueprintV2Pipeline';
+import BlueprintV2Pipeline, { PageAnalysisResult } from './BlueprintV2Pipeline';
 import autoTable from 'jspdf-autotable';
 
 
@@ -108,10 +110,10 @@ const fileStatusIcon = (status: string) => {
  * will skip creating a new Project and instead append the AI analysis results as a NEW version
  * under the existing project. This enables A/B testing of AI prompts (v1 vs v2).
  */
-interface BlueprintUploadDialogProps {
+export interface BlueprintUploadDialogProps {
     open: boolean;
     onClose: () => void;
-    onApply: (data: any) => void;
+    onApply: (data: any, areaSqft?: number) => void;
     projectId?: string | null;
 }
 
@@ -131,6 +133,7 @@ export const BlueprintUploadDialog: React.FC<BlueprintUploadDialogProps> = ({ op
     const [elapsedSeconds, setElapsedSeconds] = useState(0);
     const [localResult, setLocalResult] = useState<BlueprintAgentResult>({});
     const [v2AiResults, setV2AiResults] = useState<{ gemini?: Record<string, number>, claude?: Record<string, number>, openai?: Record<string, number> }>({});
+    const [v2PageResults, setV2PageResults] = useState<PageAnalysisResult[]>([]);
 
     // History
     const [showHistory, setShowHistory] = useState(false);
@@ -208,6 +211,7 @@ export const BlueprintUploadDialog: React.FC<BlueprintUploadDialogProps> = ({ op
         setV2Address('');
         setV2AreaSqft('');
         setV2AiResults({});
+        setV2PageResults([]);
         setPdfMenuAnchorEl(null);
         soundPlayedRef.current = false;
         dragCounter.current = 0;
@@ -349,9 +353,8 @@ export const BlueprintUploadDialog: React.FC<BlueprintUploadDialogProps> = ({ op
     };
 
 
-    const handleApply = async () => {
-        if (!localResult || !batchId) return;
-        onApply(localResult);
+    const handleApply = () => {
+        onApply(localResult, v2AreaSqft ? Number(v2AreaSqft) : undefined);
         handleClose();
     };
 
@@ -838,9 +841,10 @@ export const BlueprintUploadDialog: React.FC<BlueprintUploadDialogProps> = ({ op
                 {useV2Pipeline && selectedFiles.length > 0 && !batchId && !v2Completed && (
                     <BlueprintV2Pipeline
                         files={selectedFiles}
-                        onComplete={(result, aiResults) => {
+                        onComplete={(result, aiResults, pageResults) => {
                             setLocalResult(result);
                             setV2AiResults(aiResults);
+                            setV2PageResults(pageResults);
                             setV2Completed(true);
                             setV2ProjectName(selectedFiles[0]?.name?.replace(/\.pdf$/i, '') || `Estimate ${new Date().toLocaleDateString()}`);
                             playCompletionSound();
@@ -1097,6 +1101,60 @@ export const BlueprintUploadDialog: React.FC<BlueprintUploadDialogProps> = ({ op
                                         if (proj) projTitle = proj.name;
                                     }
 
+                                    // 1.5. Upload Original PDFs and AI PNGs to Storage
+                                    const storage = getStorage();
+                                    const newFiles: ProjectFile[] = [];
+
+                                    // Original PDFs
+                                    for (let i = 0; i < selectedFiles.length; i++) {
+                                        const file = selectedFiles[i];
+                                        const sPath = `companies/${userProfile.companyId}/projects/${savedProjectId}/files/${Date.now()}_original_${file.name.replace(/\s+/g, '_')}`;
+                                        const sRef = ref(storage, sPath);
+                                        await uploadBytes(sRef, file);
+                                        const dUrl = await getDownloadURL(sRef);
+                                        newFiles.push({
+                                            id: `file_orig_${Date.now()}_${i}`,
+                                            name: file.name,
+                                            path: sPath,
+                                            url: dUrl,
+                                            size: file.size,
+                                            type: file.type || 'application/pdf',
+                                            uploadedAt: Timestamp.now(),
+                                            uploadedBy: userProfile.id,
+                                        });
+                                    }
+
+                                    // AI PNGs from pageResults
+                                    if (v2PageResults && v2PageResults.length > 0) {
+                                        for (let i = 0; i < v2PageResults.length; i++) {
+                                            const page = v2PageResults[i];
+                                            if (page.storagePath) {
+                                                try {
+                                                    const sRef = ref(storage, page.storagePath);
+                                                    const dUrl = await getDownloadURL(sRef);
+                                                    newFiles.push({
+                                                        id: `file_png_${Date.now()}_${i}`,
+                                                        name: `AI_Scan_${page.fileName}_p${page.pageIndex + 1}.png`,
+                                                        path: page.storagePath,
+                                                        url: dUrl,
+                                                        size: 0,
+                                                        type: 'image/png',
+                                                        uploadedAt: Timestamp.now(),
+                                                        uploadedBy: userProfile.id,
+                                                    });
+                                                } catch (err) {
+                                                    console.warn('Failed to get download URL for', page.storagePath, err);
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    if (newFiles.length > 0) {
+                                        for (const nf of newFiles) {
+                                            await projectApi.addFile(savedProjectId, nf);
+                                        }
+                                    }
+
                                     // 2. Save Estimate Version
                                     const payload: any = {
                                         companyId: userProfile.companyId,
@@ -1141,7 +1199,7 @@ export const BlueprintUploadDialog: React.FC<BlueprintUploadDialogProps> = ({ op
                             {saveSnackbar || 'Сохранить проект'}
                         </Button>
                         <Button
-                            onClick={() => { onApply(localResult); handleClose(); }}
+                            onClick={() => { onApply(localResult, v2AreaSqft ? Number(v2AreaSqft) : undefined); handleClose(); }}
                             variant="contained"
                             startIcon={<AutoAwesomeIcon />}
                         >

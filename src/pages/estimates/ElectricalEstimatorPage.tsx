@@ -25,6 +25,7 @@ import { BlueprintUploadDialog } from '../../components/estimates/BlueprintUploa
 import { AiMappingDialog } from '../../components/estimates/AiMappingDialog';
 import { useAuth } from '../../auth/AuthContext';
 import { savedEstimateApi } from '../../api/savedEstimateApi';
+import { projectApi } from '../../api/projectApi';
 
 // ============== DATA ==============
 import { DEVICES, GEAR, POOL, GENERATOR, LANDSCAPE, WIRE } from '../../constants/electricalDevices';
@@ -321,27 +322,57 @@ export default function ElectricalEstimatorPage() {
     // Load project on mount if ID is in URL
     useEffect(() => {
         const params = new URLSearchParams(window.location.search);
-        const id = params.get('id') || params.get('projectId');
-        if (id && userProfile) {
-            savedEstimateApi.getById(id).then((data: any) => {
-                if (data) {
-                    setCurrentEstimateId(id);
-                    setCurrentEstimateData(data);
-                    setProjectName(data.projectName || 'Loaded Project');
-                    if (data.areaSqft) setSqft(data.areaSqft);
-                    // Load quantities
-                    if (data.quantities) {
-                        setQuantities(data.quantities);
-                        setGearQty(data.quantities);
-                        setPoolQty(data.quantities);
-                        setGenQty(data.quantities);
-                        setLandQty(data.quantities);
-                        setWireQty(data.quantities);
+        const estId = params.get('id') || params.get('estimateId');
+
+        if (userProfile) {
+            if (projectIdMatch) {
+                // Load root project metadata
+                projectApi.getById(projectIdMatch).then((projectData) => {
+                    if (projectData) {
+                        setProjectName(projectData.name);
+                        if (projectData.areaSqft) setSqft(projectData.areaSqft);
+
+                        // Try to load the estimate quantities if ID was passed
+                        if (estId) {
+                            savedEstimateApi.getById(estId).then((estData: any) => {
+                                if (estData) {
+                                    setCurrentEstimateId(estId);
+                                    setCurrentEstimateData(estData);
+                                    if (estData.quantities) {
+                                        setQuantities(estData.quantities);
+                                        setGearQty(estData.quantities);
+                                        setPoolQty(estData.quantities);
+                                        setGenQty(estData.quantities);
+                                        setLandQty(estData.quantities);
+                                        setWireQty(estData.quantities);
+                                    }
+                                }
+                            }).catch(console.error);
+                        }
                     }
-                }
-            }).catch(console.error);
+                }).catch(console.error);
+            } else if (estId) {
+                // Legacy: load standalone estimate
+                savedEstimateApi.getById(estId).then((data: any) => {
+                    if (data) {
+                        setCurrentEstimateId(estId);
+                        setCurrentEstimateData(data);
+                        setProjectName(data.projectName || 'Loaded Project');
+                        if (data.areaSqft) setSqft(data.areaSqft);
+                        // Load quantities
+                        if (data.quantities) {
+                            setQuantities(data.quantities);
+                            setGearQty(data.quantities);
+                            setPoolQty(data.quantities);
+                            setGenQty(data.quantities);
+                            setLandQty(data.quantities);
+                            setWireQty(data.quantities);
+                        }
+                    }
+                }).catch(console.error);
+            }
         }
-    }, [userProfile]);
+    }, [userProfile, projectIdMatch]);
 
     const updateQty = (setter: any) => (id: string, value: string) => {
         setter((prev: any) => ({ ...prev, [id]: Math.max(0, parseInt(value) || 0) }));
@@ -390,8 +421,11 @@ export default function ElectricalEstimatorPage() {
         setEquipmentPrices(t.equipment || {});
     };
 
-    const handleAiApply = (detected: any) => {
+    const handleAiApply = (detected: any, newSqft?: number) => {
         setPendingMappingData(detected);
+        if (newSqft) {
+            setSqft(newSqft);
+        }
         setShowAiDialog(false);
     };
 
@@ -894,6 +928,11 @@ Notes: ${notes || 'N/A'}
             } else {
                 const newId = await savedEstimateApi.save(dataToSave);
                 setCurrentEstimateId(newId);
+            }
+
+            // Also update the root project's square footage
+            if (sqft > 0 && projectIdMatch) {
+                await projectApi.update(projectIdMatch, { areaSqft: sqft });
             }
 
             setSaveSnackbar('Проект сохранён ✅');

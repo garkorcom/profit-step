@@ -26,7 +26,7 @@ import { BlueprintAgentResult } from '../../types/blueprint.types';
 import { exportBlueprintPdf } from '../../utils/exportBlueprintPdf';
 import { useAuth } from '../../auth/AuthContext';
 
-interface PageAnalysisResult {
+export interface PageAnalysisResult {
     fileIndex: number;
     pageIndex: number;
     fileName: string;
@@ -65,7 +65,11 @@ function getStepIndex(phase: PipelinePhase): number {
 
 interface BlueprintV2PipelineProps {
     files: File[];
-    onComplete: (finalResult: BlueprintAgentResult, aiResults: { gemini: Record<string, number>, claude: Record<string, number>, openai: Record<string, number> }) => void;
+    onComplete: (
+        finalResult: BlueprintAgentResult,
+        aiResults: { gemini: Record<string, number>, claude: Record<string, number>, openai: Record<string, number> },
+        pageResults: PageAnalysisResult[]
+    ) => void;
     onCancel: () => void;
 }
 
@@ -427,7 +431,7 @@ const BlueprintV2Pipeline: React.FC<BlueprintV2PipelineProps> = ({ files, onComp
                 }
             });
 
-            onComplete(finalAuditedResult, { gemini, claude, openai });
+            onComplete(finalAuditedResult, { gemini, claude, openai }, pageResults);
         } catch (err: any) {
             console.error('Audit failed, passing raw results', err);
             // Fallback: pass raw results if audit somehow fails
@@ -454,7 +458,7 @@ const BlueprintV2Pipeline: React.FC<BlueprintV2PipelineProps> = ({ files, onComp
                     });
                 }
             });
-            onComplete(editedResult, { gemini, claude, openai });
+            onComplete(editedResult, { gemini, claude, openai }, pageResults);
         } finally {
             setIsAuditing(false);
             setProgress('');
@@ -658,7 +662,7 @@ const BlueprintV2Pipeline: React.FC<BlueprintV2PipelineProps> = ({ files, onComp
                     <CircularProgress size={48} sx={{ mb: 2 }} />
                     <Typography variant="h6" mb={1}>🔍 Анализ страниц...</Typography>
                     <Typography variant="body2" color="text.secondary" mb={1}>
-                        {analysisProgress.done}/{analysisProgress.total} страниц • Gemini + Claude
+                        {analysisProgress.done}/{analysisProgress.total} страниц • {selectedAgents.join(' + ')}
                     </Typography>
                     <Button variant="text" color="error" onClick={handleCancel} size="small">
                         Остановить

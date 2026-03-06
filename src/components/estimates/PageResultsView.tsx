@@ -54,9 +54,30 @@ const PageResultsView: React.FC<PageResultsViewProps> = ({ pageResults, onMerged
                         <TableRow>
                             <TableCell>Позиция</TableCell>
                             <TableCell align="center">Кол-во</TableCell>
-                            {showAgents && <TableCell align="center">Gemini</TableCell>}
-                            {showAgents && <TableCell align="center">Claude</TableCell>}
-                            {showAgents && <TableCell align="center">OpenAI</TableCell>}
+                            {showAgents && (
+                                <TableCell align="center" sx={{ minWidth: 100 }}>
+                                    Gemini
+                                    {gemini && Object.keys(gemini).length === 0 && (
+                                        <Typography variant="caption" display="block" color="error" lineHeight={1}>Тайм-аут</Typography>
+                                    )}
+                                </TableCell>
+                            )}
+                            {showAgents && (
+                                <TableCell align="center" sx={{ minWidth: 100 }}>
+                                    Claude
+                                    {claude && Object.keys(claude).length === 0 && (
+                                        <Typography variant="caption" display="block" color="error" lineHeight={1}>Тайм-аут</Typography>
+                                    )}
+                                </TableCell>
+                            )}
+                            {showAgents && (
+                                <TableCell align="center" sx={{ minWidth: 120 }}>
+                                    OpenAI
+                                    {openai && Object.keys(openai).length === 0 && (
+                                        <Typography variant="caption" display="block" color="error" lineHeight={1}>Нет данных / Тайм-аут</Typography>
+                                    )}
+                                </TableCell>
+                            )}
                             {showAgents && <TableCell align="center">Статус</TableCell>}
                         </TableRow>
                     </TableHead>

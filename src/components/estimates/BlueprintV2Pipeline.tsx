@@ -33,6 +33,7 @@ interface PageAnalysisResult {
     storagePath: string;
     geminiResult: BlueprintAgentResult;
     claudeResult: BlueprintAgentResult;
+    openAiResult?: BlueprintAgentResult;
     mergedResult: BlueprintAgentResult;
 }
 
@@ -316,6 +317,7 @@ const BlueprintV2Pipeline: React.FC<BlueprintV2PipelineProps> = ({ files, onComp
                     storagePath,
                     geminiResult: data.geminiResult || {},
                     claudeResult: data.claudeResult || {},
+                    openAiResult: data.openAiResult || {},
                     mergedResult: data.mergedResult || {},
                 });
             } catch (err: any) {
@@ -328,6 +330,7 @@ const BlueprintV2Pipeline: React.FC<BlueprintV2PipelineProps> = ({ files, onComp
                     storagePath: '',
                     geminiResult: {},
                     claudeResult: {},
+                    openAiResult: {},
                     mergedResult: {},
                 });
                 setError(prev => prev
@@ -416,8 +419,8 @@ const BlueprintV2Pipeline: React.FC<BlueprintV2PipelineProps> = ({ files, onComp
                         if (v > 0) claude[k] = (claude[k] || 0) + v;
                     });
                 }
-                if ((pr as any).openaiResult) {
-                    Object.entries((pr as any).openaiResult).forEach(([k, val]) => {
+                if (pr.openAiResult) {
+                    Object.entries(pr.openAiResult).forEach(([k, val]) => {
                         const v = val as number;
                         if (v > 0) openai[k] = (openai[k] || 0) + v;
                     });
@@ -442,6 +445,12 @@ const BlueprintV2Pipeline: React.FC<BlueprintV2PipelineProps> = ({ files, onComp
                     Object.entries(pr.claudeResult).forEach(([k, val]) => {
                         const v = val as number;
                         if (v > 0) claude[k] = (claude[k] || 0) + v;
+                    });
+                }
+                if (pr.openAiResult) {
+                    Object.entries(pr.openAiResult).forEach(([k, val]) => {
+                        const v = val as number;
+                        if (v > 0) openai[k] = (openai[k] || 0) + v;
                     });
                 }
             });
@@ -673,6 +682,7 @@ const BlueprintV2Pipeline: React.FC<BlueprintV2PipelineProps> = ({ files, onComp
                             fileName: pr.fileName,
                             geminiResult: pr.geminiResult,
                             claudeResult: pr.claudeResult,
+                            openAiResult: pr.openAiResult,
                             mergedResult: pr.mergedResult,
                         }))}
                     />

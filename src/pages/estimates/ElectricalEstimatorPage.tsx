@@ -320,7 +320,8 @@ export default function ElectricalEstimatorPage() {
 
     // Load project on mount if ID is in URL
     useEffect(() => {
-        const id = new URLSearchParams(window.location.search).get('id');
+        const params = new URLSearchParams(window.location.search);
+        const id = params.get('id') || params.get('projectId');
         if (id && userProfile) {
             savedEstimateApi.getById(id).then((data: any) => {
                 if (data) {

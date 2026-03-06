@@ -576,7 +576,7 @@ export { onNoteCreated } from './triggers/firestore/onNoteCreated';
 // Blueprints: AI Takeoff processing
 export { onBlueprintJobCreated } from './triggers/firestore/onBlueprintJobCreated';
 export { onBlueprintBatchCreated } from './triggers/firestore/onBlueprintBatchCreated';
-export { analyzePageCallable, refineAnalysisCallable } from './callable/ai/analyzePage';
+export { analyzePageCallable, refineAnalysisCallable, auditBlueprintTakeoff } from './callable/ai/analyzePage';
 
 // Notes: Split & Merge operations
 export { splitChecklistItem } from './callable/notes/splitChecklistItem';

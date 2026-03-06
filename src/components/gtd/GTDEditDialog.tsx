@@ -640,7 +640,9 @@ const GTDEditDialog: React.FC<GTDEditDialogProps> = ({ open, onClose, task, onSa
                                     />
                                 </Box>
                             </AccordionDetails>
-                        </Accordion>                                    {/* 6. Estimate Button */}
+                        </Accordion>
+
+                        {/* 6. Estimate Button */}
                         <Button
                             variant={currentStatus === 'estimate' ? "contained" : "outlined"}
                             color="secondary"

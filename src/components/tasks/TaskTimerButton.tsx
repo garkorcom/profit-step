@@ -69,6 +69,10 @@ const TaskTimerButton: React.FC<TaskTimerButtonProps> = ({
     }, [currentUser?.uid, task.id]);
 
     const handleStartClick = async (selectedMode: 'work' | 'travel') => {
+        if (!navigator.onLine) {
+            setGeoError('🔌 Нет интернета. Невозможно начать работу.');
+            return;
+        }
         setMode(selectedMode);
         setProcessing(true);
         setGeoError(null);

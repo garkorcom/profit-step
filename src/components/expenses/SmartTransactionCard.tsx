@@ -228,35 +228,41 @@ const SmartTransactionCard: React.FC<SmartTransactionCardProps> = ({
                     alignItems: 'center',
                 }}>
                     {isUncategorized ? (
-                        <Select
-                            size="small"
-                            value={tx.category}
-                            onChange={handleCategoryChange}
-                            displayEmpty
-                            onClick={(e) => e.stopPropagation()}
-                            sx={{
-                                minWidth: 160,
-                                height: 28,
-                                fontSize: '11px',
-                                fontFamily: SF_FONT,
-                                borderRadius: '8px',
-                                bgcolor: '#FFF3E0',
-                                border: '1px solid #FF9800',
-                                '& .MuiSelect-select': {
-                                    py: 0.5,
-                                    px: 1,
-                                },
-                            }}
-                        >
-                            <MenuItem value="uncategorized" sx={{ fontSize: '12px' }}>
-                                ❓ Select Category...
-                            </MenuItem>
-                            {DROPDOWN_CATEGORIES.map(cat => (
-                                <MenuItem key={cat} value={cat} sx={{ fontSize: '12px' }}>
-                                    {CATEGORY_LABELS[cat]}
-                                </MenuItem>
-                            ))}
-                        </Select>
+                        <Tooltip title={isLocked ? `🔒 Tax year ${tx.year} is locked — category cannot be changed` : ''} arrow>
+                            <span>
+                                <Select
+                                    size="small"
+                                    value={tx.category}
+                                    onChange={handleCategoryChange}
+                                    displayEmpty
+                                    disabled={isLocked}
+                                    onClick={(e) => e.stopPropagation()}
+                                    sx={{
+                                        minWidth: 160,
+                                        height: 28,
+                                        fontSize: '11px',
+                                        fontFamily: SF_FONT,
+                                        borderRadius: '8px',
+                                        bgcolor: isLocked ? '#F5F5F5' : '#FFF3E0',
+                                        border: `1px solid ${isLocked ? '#BDBDBD' : '#FF9800'}`,
+                                        opacity: isLocked ? 0.6 : 1,
+                                        '& .MuiSelect-select': {
+                                            py: 0.5,
+                                            px: 1,
+                                        },
+                                    }}
+                                >
+                                    <MenuItem value="uncategorized" sx={{ fontSize: '12px' }}>
+                                        ❓ Select Category...
+                                    </MenuItem>
+                                    {DROPDOWN_CATEGORIES.map(cat => (
+                                        <MenuItem key={cat} value={cat} sx={{ fontSize: '12px' }}>
+                                            {CATEGORY_LABELS[cat]}
+                                        </MenuItem>
+                                    ))}
+                                </Select>
+                            </span>
+                        </Tooltip>
                     ) : (
                         <Chip
                             label={tx.categoryLabel}

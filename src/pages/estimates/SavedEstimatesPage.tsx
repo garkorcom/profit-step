@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import {
     Container, Box, Typography, Button, Paper, Chip, IconButton, TextField,
     CircularProgress, InputAdornment, Dialog, DialogTitle, DialogContent,
-    DialogActions, Grid, Tooltip
+    DialogActions, Grid, Tooltip, Autocomplete
 } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
 import AddIcon from '@mui/icons-material/Add';
@@ -12,8 +12,10 @@ import VisibilityIcon from '@mui/icons-material/Visibility';
 import FolderIcon from '@mui/icons-material/Folder';
 import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile';
 import { useAuth } from '../../auth/AuthContext';
-import { projectApi } from '../../api/projectApi';
+import { projectsApi } from '../../api/projectsApi';
+import { crmApi } from '../../api/crmApi';
 import { Project } from '../../types/project.types';
+import { Client } from '../../types/crm.types';
 
 const SavedEstimatesPage: React.FC = () => {
     const navigate = useNavigate();
@@ -29,12 +31,15 @@ const SavedEstimatesPage: React.FC = () => {
     const [newProjectName, setNewProjectName] = useState('');
     const [newProjectAddress, setNewProjectAddress] = useState('');
     const [newProjectSqft, setNewProjectSqft] = useState<number | ''>('');
+    const [selectedClient, setSelectedClient] = useState<Client | null>(null);
+    const [clients, setClients] = useState<Client[]>([]);
+    const [loadingClients, setLoadingClients] = useState(false);
 
     const load = async () => {
         if (!userProfile?.companyId) { setLoading(false); return; }
         try {
             setLoading(true);
-            const data = await projectApi.getAll(userProfile.companyId);
+            const data = await projectsApi.getAll(userProfile.companyId);
             setProjects(data);
         } catch (err) {
             console.error('Failed to load estimates', err);
@@ -49,7 +54,7 @@ const SavedEstimatesPage: React.FC = () => {
         if (statusFilter !== 'all' && e.status !== statusFilter) return false;
         if (search) {
             const s = search.toLowerCase();
-            return e.name.toLowerCase().includes(s);
+            return e.name.toLowerCase().includes(s) || (e.clientName || '').toLowerCase().includes(s);
         }
         return true;
     });
@@ -57,18 +62,41 @@ const SavedEstimatesPage: React.FC = () => {
     const handleDelete = async () => {
         if (!deleteDialog) return;
         try {
-            await projectApi.remove(deleteDialog.id);
+            await projectsApi.remove(deleteDialog.id);
             setProjects(prev => prev.filter(e => e.id !== deleteDialog.id));
         } catch (err) { console.error('Delete failed', err); }
         setDeleteDialog(null);
     };
 
+    const handleOpenCreate = async () => {
+        setCreateDialog(true);
+        setNewProjectName('');
+        setNewProjectAddress('');
+        setNewProjectSqft('');
+        setSelectedClient(null);
+        // Load clients for the selector
+        if (userProfile?.companyId && clients.length === 0) {
+            setLoadingClients(true);
+            try {
+                const loadedClients = await crmApi.getClients(userProfile.companyId);
+                setClients(loadedClients);
+            } catch (err) {
+                console.error('Failed to load clients', err);
+            } finally {
+                setLoadingClients(false);
+            }
+        }
+    };
+
     const handleCreateProject = async () => {
         if (!userProfile?.companyId || !newProjectName.trim()) return;
         try {
-            const newId = await projectApi.create({
+            const newId = await projectsApi.create({
                 companyId: userProfile.companyId,
                 createdBy: userProfile.id,
+                clientId: selectedClient?.id || '',
+                clientName: selectedClient?.name || '',
+                type: 'estimate',
                 name: newProjectName.trim(),
                 address: newProjectAddress.trim() || undefined,
                 areaSqft: newProjectSqft ? Number(newProjectSqft) : undefined,
@@ -76,7 +104,6 @@ const SavedEstimatesPage: React.FC = () => {
                 files: [],
             });
             setCreateDialog(false);
-            // After creating, redirect to the estimator passing the projectId
             navigate(`/estimates/electrical?projectId=${newId}`);
         } catch (err) {
             console.error('Failed to create project', err);
@@ -109,7 +136,7 @@ const SavedEstimatesPage: React.FC = () => {
                 <Button
                     variant="contained"
                     startIcon={<AddIcon />}
-                    onClick={() => setCreateDialog(true)}
+                    onClick={handleOpenCreate}
                     sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 600 }}
                 >
                     Новый проект
@@ -203,6 +230,22 @@ const SavedEstimatesPage: React.FC = () => {
                                     </Typography>
                                 </Box>
 
+                                {est.clientName && (
+                                    <Typography
+                                        variant="caption"
+                                        color="primary.main"
+                                        display="block"
+                                        mb={0.5}
+                                        sx={{ cursor: 'pointer', '&:hover': { textDecoration: 'underline' } }}
+                                        onClick={(e: React.MouseEvent) => {
+                                            e.stopPropagation();
+                                            if (est.clientId) navigate(`/crm/clients/${est.clientId}`);
+                                        }}
+                                    >
+                                        👤 {est.clientName}
+                                    </Typography>
+                                )}
+
                                 <Typography variant="caption" color="text.disabled">
                                     Создан: {formatDate(est.createdAt)}
                                 </Typography>
@@ -243,6 +286,34 @@ const SavedEstimatesPage: React.FC = () => {
                 <DialogTitle>Создать новый проект</DialogTitle>
                 <DialogContent>
                     <Grid container spacing={2} sx={{ mt: 1 }}>
+                        <Grid size={{ xs: 12 }}>
+                            <Autocomplete
+                                options={clients}
+                                getOptionLabel={(option) => option.name || ''}
+                                value={selectedClient}
+                                onChange={(_, value) => setSelectedClient(value)}
+                                loading={loadingClients}
+                                renderInput={(params) => (
+                                    <TextField
+                                        {...params}
+                                        label="Клиент (опционально)"
+                                        placeholder="Выберите клиента..."
+                                    />
+                                )}
+                                renderOption={(props, option) => (
+                                    <li {...props} key={option.id}>
+                                        <Box>
+                                            <Typography variant="body2">{option.name}</Typography>
+                                            {option.email && (
+                                                <Typography variant="caption" color="text.secondary">{option.email}</Typography>
+                                            )}
+                                        </Box>
+                                    </li>
+                                )}
+                                isOptionEqualToValue={(option, value) => option.id === value.id}
+                                noOptionsText="Нет клиентов"
+                            />
+                        </Grid>
                         <Grid size={{ xs: 12 }}>
                             <TextField
                                 fullWidth

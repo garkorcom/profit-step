@@ -144,11 +144,20 @@ export async function saveProjectLocation(
 
 /**
  * Update lastUsed timestamp when a location is matched.
+ * Will silently ignore if the document doesn't exist (e.g., when falling back to Client doc directly).
  */
 export async function updateLocationLastUsed(locationId: string): Promise<void> {
-    await db.collection('project_locations').doc(locationId).update({
-        lastUsed: admin.firestore.Timestamp.now()
-    });
+    try {
+        const docRef = db.collection('project_locations').doc(locationId);
+        const docSnap = await docRef.get();
+        if (docSnap.exists) {
+            await docRef.update({
+                lastUsed: admin.firestore.Timestamp.now()
+            });
+        }
+    } catch (e) {
+        console.warn(`Could not update lastUsed for location ${locationId}:`, e);
+    }
 }
 
 /**

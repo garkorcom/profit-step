@@ -22,6 +22,9 @@ export interface BlueprintItemResult {
 // A dictionary where key is the item id, and value is the quantity or detailed object
 export type BlueprintAgentResult = Record<string, number>;
 
+// Bounding boxes format: { box: [ymin, xmin, ymax, xmax], confidence: number } normalized 0-1000
+export type BlueprintAgentV3Result = Record<string, { box: [number, number, number, number]; confidence: number }[]>;
+
 export interface BlueprintDiscrepancy {
     itemId: string;
     geminiQty: number | null;
@@ -141,6 +144,37 @@ export interface BlueprintBatchJob {
     verificationFlags?: { itemId: string; flags: string[]; confidence: string }[];
     refinementRound?: number;
     error?: string;
+    createdAt: Timestamp | Date;
+    updatedAt: Timestamp | Date;
+}
+
+// ===== V3 Session (Pausable Pipeline) =====
+export interface BlueprintV3Session {
+    id: string; // The same as projectId or batchId
+    companyId: string;
+    createdBy: string;
+    status: 'uploading' | 'previewing' | 'configuring' | 'analyzing' | 'completed' | 'failed';
+    currentStep: number;
+    
+    // Core state
+    images: {
+        id: string;
+        originalFileName: string;
+        pageNumber: number;
+        storageUrl: string; // Remote URL (Base64 is dropped to save memory)
+        selected: boolean;
+        dimensions?: { width: number; height: number };
+    }[];
+    promptConfig?: {
+        templateId: string;
+        customInstructions: string;
+    };
+    
+    // Results
+    v3Results?: Record<string, BlueprintAgentV3Result>; // Raw bounding boxes and confidence
+    aggregatedResult?: BlueprintAgentResult;
+    anomalies?: { itemKey: string; reason: string }[];
+
     createdAt: Timestamp | Date;
     updatedAt: Timestamp | Date;
 }

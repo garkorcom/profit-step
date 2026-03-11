@@ -81,6 +81,9 @@ export interface UserProfile {
    * Used by Smart Dispatcher to match voice mentions to user IDs
    */
   aliases?: string[];
+
+  // --- Face Recognition ---
+  referenceFacePhotoUrl?: string; // Эталонное фото для сверки ИИ
 }
 
 /**

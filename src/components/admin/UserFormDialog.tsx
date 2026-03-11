@@ -43,7 +43,7 @@ import {
     Department,
     DEPARTMENT_LABELS,
 } from '../../types/user.types';
-import { uploadUserAvatar, updateUserExtendedProfile } from '../../api/userManagementApi';
+import { uploadUserAvatar, updateUserExtendedProfile, uploadReferenceFacePhoto } from '../../api/userManagementApi';
 import { adminChangeEmail, adminResetPassword } from '../../api/userDetailApi';
 
 /**
@@ -105,7 +105,9 @@ const UserFormDialog: React.FC<UserFormDialogProps> = ({
     const [loading, setLoading] = useState(false);
     const [showPassword, setShowPassword] = useState(false);
     const [photoURL, setPhotoURL] = useState('');
+    const [referencePhotoURL, setReferencePhotoURL] = useState('');
     const [uploading, setUploading] = useState(false);
+    const [uploadingRefFace, setUploadingRefFace] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
     // Managers list for "Reports To" field
@@ -262,6 +264,30 @@ const UserFormDialog: React.FC<UserFormDialogProps> = ({
             setError('Не удалось загрузить аватар: ' + err.message);
         } finally {
             setUploading(false);
+        }
+    };
+
+    const handleReferencePhotoUpload = async (
+        event: React.ChangeEvent<HTMLInputElement>
+    ) => {
+        const file = event.target.files?.[0];
+        if (!file || !user) return;
+
+        if (!file.type.startsWith('image/')) {
+            setError('Пожалуйста, выберите изображение');
+            return;
+        }
+
+        try {
+            setUploadingRefFace(true);
+            setError(null);
+            const downloadURL = await uploadReferenceFacePhoto(user.id, file);
+            setReferencePhotoURL(downloadURL);
+            toast.success('Эталонное фото обновлено');
+        } catch (err: any) {
+            setError('Не удалось загрузить фото: ' + err.message);
+        } finally {
+            setUploadingRefFace(false);
         }
     };
 
@@ -596,6 +622,41 @@ const UserFormDialog: React.FC<UserFormDialogProps> = ({
                                     </FormControl>
                                 )}
                             />
+
+                            {/* Reference Face Photo (edit mode only) */}
+                            {isEditMode && (
+                                <Box sx={{ mt: 3, mb: 2, p: 2, border: '1px dashed', borderColor: 'divider', borderRadius: 1 }}>
+                                    <Typography variant="subtitle2" gutterBottom>
+                                        Эталонное фото (Face Verification)
+                                    </Typography>
+                                    <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                                        Загрузите четкое фото лица сотрудника для автоматической ИИ-проверки при старте смены.
+                                    </Typography>
+                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                                        <Avatar
+                                            src={referencePhotoURL || user?.referenceFacePhotoUrl || ''}
+                                            variant="rounded"
+                                            sx={{ width: 80, height: 80 }}
+                                        >
+                                            <PhotoCameraIcon />
+                                        </Avatar>
+                                        <Button
+                                            component="label"
+                                            variant="outlined"
+                                            disabled={uploadingRefFace}
+                                            startIcon={uploadingRefFace ? <CircularProgress size={20} /> : <PhotoCameraIcon />}
+                                        >
+                                            {uploadingRefFace ? 'Загрузка...' : 'Загрузить фото'}
+                                            <input
+                                                accept="image/*"
+                                                type="file"
+                                                hidden
+                                                onChange={handleReferencePhotoUpload}
+                                            />
+                                        </Button>
+                                    </Box>
+                                </Box>
+                            )}
 
                             {/* Role Description */}
                             {watchRole && (

@@ -98,8 +98,8 @@ const GTDTaskCard: React.FC<GTDTaskCardProps> = ({
         const dx = e.touches[0].clientX - touchStartX.current;
         const dy = e.touches[0].clientY - touchStartY.current;
 
-        if (isHorizontalSwipe.current === null && (Math.abs(dx) > 5 || Math.abs(dy) > 5)) {
-            isHorizontalSwipe.current = Math.abs(dx) > Math.abs(dy);
+        if (isHorizontalSwipe.current === null && (Math.abs(dx) > 8 || Math.abs(dy) > 8)) {
+            isHorizontalSwipe.current = Math.abs(dx) > Math.abs(dy) * 1.5; // Require 1.5x horizontal bias
         }
 
         if (!isHorizontalSwipe.current) return;
@@ -110,7 +110,7 @@ const GTDTaskCard: React.FC<GTDTaskCardProps> = ({
 
     const handleTouchEnd = () => {
         if (isHorizontalSwipe.current === false) return;
-        if (swipeOffset < -50) {
+        if (swipeOffset < -75) {
             setSwipeOffset(-100);
             setIsSwiped(true);
         } else {
@@ -285,8 +285,8 @@ const GTDTaskCard: React.FC<GTDTaskCardProps> = ({
                                     alignItems: 'center',
                                     gap: 0.75,
                                     mt: 0.5,
-                                    flexWrap: 'nowrap',
-                                    overflow: 'hidden',
+                                    flexWrap: 'wrap',
+                                    rowGap: 0.25,
                                 }}
                             >
                                 {/* Client/Project */}

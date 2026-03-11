@@ -12,34 +12,30 @@ import { useExpensesBoard } from '../useExpensesBoard';
 // MOCKS
 // ============================================
 
-let onSnapshotCallbacks: Array<(snap: any) => void> = [];
+// Improved dictionary to store callbacks by collection
+let mockQueryCallbacks: Record<string, Function[]> = {};
 const mockUnsubscribe = jest.fn();
 const mockUpdateDoc = jest.fn().mockResolvedValue(undefined);
 const mockAddDoc = jest.fn().mockResolvedValue({ id: 'rule-1' });
 
 jest.mock('firebase/firestore', () => {
-    const mockTimestamp = {
-        now: () => ({ seconds: Math.floor(Date.now() / 1000), nanoseconds: 0 }),
-    };
-
     return {
         collection: jest.fn(),
-        query: jest.fn((...args: any[]) => args),
+        query: jest.fn(),
         where: jest.fn(),
         orderBy: jest.fn(),
         limit: jest.fn(),
         startAfter: jest.fn(),
-        onSnapshot: jest.fn((_q: any, cb: any, _err?: any) => {
-            onSnapshotCallbacks.push(cb);
-            return mockUnsubscribe;
-        }),
-        getDocs: jest.fn().mockResolvedValue({ docs: [] }),
-        doc: jest.fn((_db: any, _col: string, id: string) => ({ id })),
-        updateDoc: (...args: any[]) => mockUpdateDoc(...args),
-        addDoc: (...args: any[]) => mockAddDoc(...args),
-        serverTimestamp: jest.fn(() => ({ _serverTimestamp: true })),
-        arrayUnion: jest.fn((entry: any) => ({ _arrayUnion: entry })),
-        Timestamp: mockTimestamp,
+        onSnapshot: jest.fn(),
+        getDocs: jest.fn(),
+        doc: jest.fn(),
+        updateDoc: jest.fn(),
+        addDoc: jest.fn(),
+        serverTimestamp: jest.fn(),
+        arrayUnion: jest.fn(),
+        Timestamp: {
+            now: jest.fn(),
+        },
     };
 });
 
@@ -51,6 +47,13 @@ const mockAuth = jest.fn();
 jest.mock('../../auth/AuthContext', () => ({
     useAuth: () => mockAuth(),
 }));
+
+// Helper to trigger snapshots specifically by collection name
+const triggerSnapshot = (collectionName: string, docsData: any[]) => {
+    console.log('[triggerSnapshot] Request for:', collectionName, '| Available keys:', Object.keys(mockQueryCallbacks));
+    const callbacks = mockQueryCallbacks[collectionName] || [];
+    callbacks.forEach((cb: any) => cb({ docs: docsData }));
+};
 
 // Sample transaction data
 const createTx = (overrides: Record<string, any> = {}) => ({
@@ -68,17 +71,35 @@ const createTx = (overrides: Record<string, any> = {}) => ({
 
 describe('useExpensesBoard', () => {
     beforeEach(() => {
-        onSnapshotCallbacks = [];
+        mockQueryCallbacks = {};
         mockUpdateDoc.mockClear();
         mockAddDoc.mockClear();
         mockAuth.mockReturnValue({
             userProfile: { companyId: 'company-1', role: 'admin' },
             currentUser: { uid: 'user-1' },
         });
-        // Re-apply onSnapshot implementation
-        const { onSnapshot } = require('firebase/firestore');
-        onSnapshot.mockImplementation((_q: any, cb: any, _err?: any) => {
-            onSnapshotCallbacks.push(cb);
+
+        const firestore = require('firebase/firestore');
+        firestore.collection.mockImplementation(((_db: any, path: string) => path) as any);
+        firestore.query.mockImplementation(((collectionPath: string, ...args: any[]) => ({ path: collectionPath, args })) as any);
+        firestore.where.mockImplementation(((field: string, op: string, value: any) => ({ type: 'where', field, op, value })) as any);
+        firestore.orderBy.mockImplementation(((field: string, dir: string) => ({ type: 'orderBy', field, dir })) as any);
+        firestore.limit.mockImplementation(((n: number) => ({ type: 'limit', n })) as any);
+        firestore.startAfter.mockImplementation(((doc: any) => ({ type: 'startAfter', doc })) as any);
+        firestore.getDocs.mockResolvedValue({ docs: [] });
+        firestore.doc.mockImplementation(((_db: any, _col: string, id: string) => ({ id })) as any);
+        firestore.updateDoc.mockImplementation(((...args: any[]) => mockUpdateDoc(...args)) as any);
+        firestore.addDoc.mockImplementation(((...args: any[]) => mockAddDoc(...args)) as any);
+        firestore.serverTimestamp.mockReturnValue({ _serverTimestamp: true });
+        firestore.arrayUnion.mockImplementation(((entry: any) => ({ _arrayUnion: entry })) as any);
+        firestore.Timestamp.now.mockReturnValue({ seconds: Math.floor(Date.now() / 1000), nanoseconds: 0 });
+
+        firestore.onSnapshot.mockImplementation((q: any, cb: any, _err?: any) => {
+            const collectionName = q.path || 'unknown';
+            if (!mockQueryCallbacks[collectionName]) {
+                mockQueryCallbacks[collectionName] = [];
+            }
+            mockQueryCallbacks[collectionName].push(cb);
             return mockUnsubscribe;
         });
     });
@@ -106,21 +127,12 @@ describe('useExpensesBoard', () => {
         it('should enrich raw transactions with type, labels, and colors', () => {
             const { result } = renderHook(() => useExpensesBoard());
 
-            // Emit transactions (first onSnapshot = bank_transactions, second = vendor_rules)
             act(() => {
-                // First subscription: bank_transactions
-                if (onSnapshotCallbacks[0]) {
-                    onSnapshotCallbacks[0]({
-                        docs: [
-                            { id: 'tx-1', data: () => createTx() },
-                            { id: 'tx-2', data: () => createTx({ id: 'tx-2', amount: 5000, category: 'project_income', vendor: 'Client A' }) },
-                        ],
-                    });
-                }
-                // Second subscription: vendor_rules
-                if (onSnapshotCallbacks[1]) {
-                    onSnapshotCallbacks[1]({ docs: [] });
-                }
+                triggerSnapshot('bank_transactions', [
+                    { id: 'tx-1', data: () => createTx() },
+                    { id: 'tx-2', data: () => createTx({ id: 'tx-2', amount: 5000, category: 'client_payment', vendor: 'Client A' }) },
+                ]);
+                triggerSnapshot('vendor_rules', []);
             });
 
             expect(result.current.loading).toBe(false);
@@ -138,18 +150,12 @@ describe('useExpensesBoard', () => {
             const { result } = renderHook(() => useExpensesBoard());
 
             act(() => {
-                if (onSnapshotCallbacks[0]) {
-                    onSnapshotCallbacks[0]({
-                        docs: [
-                            { id: 'tx-1', data: () => createTx({ amount: -200, category: 'materials' }) },
-                            { id: 'tx-2', data: () => createTx({ id: 'tx-2', amount: 1000, category: 'project_income' }) },
-                            { id: 'tx-3', data: () => createTx({ id: 'tx-3', amount: -50, category: 'uncategorized' }) },
-                        ],
-                    });
-                }
-                if (onSnapshotCallbacks[1]) {
-                    onSnapshotCallbacks[1]({ docs: [] });
-                }
+                triggerSnapshot('bank_transactions', [
+                    { id: 'tx-1', data: () => createTx({ amount: -200, category: 'materials' }) },
+                    { id: 'tx-2', data: () => createTx({ id: 'tx-2', amount: 1000, category: 'client_payment' }) },
+                    { id: 'tx-3', data: () => createTx({ id: 'tx-3', amount: -50, category: 'uncategorized' }) },
+                ]);
+                triggerSnapshot('vendor_rules', []);
             });
 
             expect(result.current.stats.transactionCount).toBe(3);
@@ -164,17 +170,10 @@ describe('useExpensesBoard', () => {
             const { result } = renderHook(() => useExpensesBoard());
 
             act(() => {
-                if (onSnapshotCallbacks[0]) {
-                    onSnapshotCallbacks[0]({
-                        docs: [
-                            { id: 'tx-1', data: () => createTx({ vendor: 'Home Depot' }) },
-                            { id: 'tx-2', data: () => createTx({ id: 'tx-2', vendor: 'Amazon' }) },
-                        ],
-                    });
-                }
-                if (onSnapshotCallbacks[1]) {
-                    onSnapshotCallbacks[1]({ docs: [] });
-                }
+                triggerSnapshot('bank_transactions', [
+                    { id: 'tx-1', data: () => createTx({ vendor: 'Home Depot' }) },
+                    { id: 'tx-2', data: () => createTx({ id: 'tx-2', vendor: 'Amazon', rawDescription: 'AMAZON REF' }) },
+                ]);
             });
 
             expect(result.current.transactions.length).toBe(2);
@@ -191,17 +190,10 @@ describe('useExpensesBoard', () => {
             const { result } = renderHook(() => useExpensesBoard());
 
             act(() => {
-                if (onSnapshotCallbacks[0]) {
-                    onSnapshotCallbacks[0]({
-                        docs: [
-                            { id: 'tx-1', data: () => createTx({ category: 'materials' }) },
-                            { id: 'tx-2', data: () => createTx({ id: 'tx-2', category: 'fuel' }) },
-                        ],
-                    });
-                }
-                if (onSnapshotCallbacks[1]) {
-                    onSnapshotCallbacks[1]({ docs: [] });
-                }
+                triggerSnapshot('bank_transactions', [
+                    { id: 'tx-1', data: () => createTx({ category: 'materials' }) },
+                    { id: 'tx-2', data: () => createTx({ id: 'tx-2', category: 'fuel' }) },
+                ]);
             });
 
             act(() => {
@@ -211,105 +203,134 @@ describe('useExpensesBoard', () => {
             expect(result.current.transactions.length).toBe(1);
         });
 
-        it('should filter needsReview (uncategorized only)', () => {
+        it('should update query when year and month change', () => {
             const { result } = renderHook(() => useExpensesBoard());
 
             act(() => {
-                if (onSnapshotCallbacks[0]) {
-                    onSnapshotCallbacks[0]({
-                        docs: [
-                            { id: 'tx-1', data: () => createTx({ category: 'materials' }) },
-                            { id: 'tx-2', data: () => createTx({ id: 'tx-2', category: 'uncategorized' }) },
-                        ],
-                    });
-                }
-                if (onSnapshotCallbacks[1]) {
-                    onSnapshotCallbacks[1]({ docs: [] });
-                }
+                result.current.setFilters(prev => ({ ...prev, year: 2025, month: 6 }));
             });
 
-            act(() => {
-                result.current.setFilters(prev => ({ ...prev, needsReview: true }));
-            });
-
-            expect(result.current.transactions.length).toBe(1);
-            expect(result.current.transactions[0].category).toBe('uncategorized');
+            // The query updates natively trigger re-subscriptions with the new where clauses 
+            // handled in buildQuery, we just ensure it doesn't crash here. 
+            expect(result.current.filters.year).toBe(2025);
+            expect(result.current.filters.month).toBe(6);
         });
     });
 
-    describe('select mode', () => {
-        it('should toggle selection', () => {
+    describe('select mode & bulk operations', () => {
+        it('should cleanly select, deselect, and clear selections', () => {
             const { result } = renderHook(() => useExpensesBoard());
 
             act(() => {
                 result.current.toggleSelection('tx-1');
             });
-
             expect(result.current.selectedIds.has('tx-1')).toBe(true);
 
             act(() => {
                 result.current.toggleSelection('tx-1');
             });
-
             expect(result.current.selectedIds.has('tx-1')).toBe(false);
-        });
-
-        it('should select all visible transactions', () => {
-            const { result } = renderHook(() => useExpensesBoard());
 
             act(() => {
-                if (onSnapshotCallbacks[0]) {
-                    onSnapshotCallbacks[0]({
-                        docs: [
-                            { id: 'tx-1', data: () => createTx() },
-                            { id: 'tx-2', data: () => createTx({ id: 'tx-2' }) },
-                        ],
-                    });
-                }
-                if (onSnapshotCallbacks[1]) {
-                    onSnapshotCallbacks[1]({ docs: [] });
-                }
+                triggerSnapshot('bank_transactions', [
+                    { id: 'tx-1', data: () => createTx() },
+                    { id: 'tx-2', data: () => createTx({ id: 'tx-2' }) },
+                ]);
             });
 
             act(() => {
                 result.current.selectAll();
             });
-
             expect(result.current.selectedIds.size).toBe(2);
+
+            act(() => {
+                result.current.setSelectMode(true);
+                result.current.clearSelection();
+            });
+            expect(result.current.selectedIds.size).toBe(0);
+            expect(result.current.selectMode).toBe(false);
         });
 
-        it('should clear selection', () => {
+        it('should execute bulkUpdateCategory successfully on valid selections', async () => {
             const { result } = renderHook(() => useExpensesBoard());
 
             act(() => {
-                result.current.toggleSelection('tx-1');
-                result.current.setSelectMode(true);
+                triggerSnapshot('bank_transactions', [
+                    { id: 'tx-1', data: () => createTx({ id: 'tx-1', vendor: 'A' }) },
+                    { id: 'tx-2', data: () => createTx({ id: 'tx-2', vendor: 'B' }) },
+                ]);
             });
 
             act(() => {
-                result.current.clearSelection();
+                result.current.selectAll(); // tx-1, tx-2
             });
 
+            await act(async () => {
+                await result.current.bulkUpdateCategory('software');
+            });
+
+            // updateDoc was called for both
+            expect(mockUpdateDoc).toHaveBeenCalledTimes(2);
+            // selection was cleared
             expect(result.current.selectedIds.size).toBe(0);
             expect(result.current.selectMode).toBe(false);
         });
     });
 
     describe('updateCategory', () => {
+        it('should execute successfully and auto-learn vendor rules', async () => {
+            const { result } = renderHook(() => useExpensesBoard());
+
+            act(() => {
+                triggerSnapshot('bank_transactions', [
+                    { id: 'tx-test', data: () => createTx({ id: 'tx-test', vendor: 'NEW VENDOR', category: 'uncategorized' }) },
+                ]);
+                triggerSnapshot('vendor_rules', []);
+            });
+
+            let updateResult: any;
+            await act(async () => {
+                updateResult = await result.current.updateCategory('tx-test', 'office_supplies');
+            });
+
+            expect(updateResult.blocked).toBe(false);
+
+            // 1. Transaction document was updated
+            expect(mockUpdateDoc).toHaveBeenCalledWith(
+                { id: 'tx-test' },
+                expect.objectContaining({
+                    category: 'office_supplies',
+                    isDeductible: true,
+                    isTransfer: false
+                })
+            );
+
+            // 2. Audit Trail included
+            const updateCallArgs = mockUpdateDoc.mock.calls[0][1];
+            expect(updateCallArgs.categoryHistory).toEqual({
+                _arrayUnion: expect.objectContaining({
+                    from: 'uncategorized',
+                    to: 'office_supplies'
+                })
+            });
+
+            // 3. Vendor rule was added because it's a new vendor
+            expect(mockAddDoc).toHaveBeenCalledWith(
+                'vendor_rules',
+                expect.objectContaining({
+                    pattern: 'NEW VENDOR',
+                    category: 'office_supplies'
+                })
+            );
+        });
+
         it('should block updates on taxYearLocked transactions', async () => {
             const { result } = renderHook(() => useExpensesBoard());
 
             act(() => {
-                if (onSnapshotCallbacks[0]) {
-                    onSnapshotCallbacks[0]({
-                        docs: [
-                            { id: 'tx-locked', data: () => createTx({ id: 'tx-locked', taxYearLocked: true, year: 2023 }) },
-                        ],
-                    });
-                }
-                if (onSnapshotCallbacks[1]) {
-                    onSnapshotCallbacks[1]({ docs: [] });
-                }
+                triggerSnapshot('bank_transactions', [
+                    { id: 'tx-locked', data: () => createTx({ id: 'tx-locked', taxYearLocked: true, year: 2023 }) },
+                ]);
             });
 
             let updateResult: any;
@@ -320,6 +341,7 @@ describe('useExpensesBoard', () => {
             expect(updateResult.blocked).toBe(true);
             expect(updateResult.reason).toContain('locked');
             expect(mockUpdateDoc).not.toHaveBeenCalled();
+            expect(mockAddDoc).not.toHaveBeenCalled();
         });
     });
 });

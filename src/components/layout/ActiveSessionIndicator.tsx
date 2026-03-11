@@ -25,11 +25,22 @@ const ActiveSessionIndicator: React.FC<ActiveSessionIndicatorProps> = ({ session
         const updateTimer = () => {
             const now = new Date().getTime();
             const start = session.startTime.toMillis();
-            const diff = now - start;
+            let diff = now - start;
+
+            // Subtract completed breaks
+            if (session.totalBreakMinutes) {
+                diff -= session.totalBreakMinutes * 60 * 1000;
+            }
+
+            // Subtract ongoing break if paused
+            if (session.status === 'paused' && session.lastBreakStart) {
+                diff -= (now - session.lastBreakStart.toMillis());
+            }
+
+            if (diff < 0) diff = 0;
 
             const hours = Math.floor(diff / (1000 * 60 * 60));
             const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-            // const seconds = Math.floor((diff % (1000 * 60)) / 1000); // Optional seconds
 
             setElapsed(`${hours}h ${minutes}m`);
         };
@@ -38,7 +49,7 @@ const ActiveSessionIndicator: React.FC<ActiveSessionIndicatorProps> = ({ session
         updateTimer(); // Initial call
 
         return () => clearInterval(interval);
-    }, [session.startTime]);
+    }, [session.startTime, session.totalBreakMinutes, session.status, session.lastBreakStart]);
 
     const handleStop = async () => {
         try {
@@ -99,9 +110,9 @@ const ActiveSessionIndicator: React.FC<ActiveSessionIndicatorProps> = ({ session
                     setOpen(true);
                 }}
             >
-                <AccessTimeIcon sx={{ fontSize: 16, mr: 1, animation: 'pulse 2s infinite' }} />
-                <Typography variant="caption" fontWeight="bold" sx={{ mr: 1 }}>
-                    {elapsed}
+                <AccessTimeIcon sx={{ fontSize: 16, mr: 1, animation: session.status === 'active' ? 'pulse 2s infinite' : 'none', color: session.status === 'paused' ? 'warning.main' : 'inherit' }} />
+                <Typography variant="caption" fontWeight="bold" sx={{ mr: 1, color: session.status === 'paused' ? 'warning.main' : 'inherit' }}>
+                    {session.status === 'paused' ? '⏸ ' : ''}{elapsed}
                 </Typography>
                 <Typography variant="caption" sx={{ maxWidth: 150, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {session.description || session.clientName || 'Working...'}

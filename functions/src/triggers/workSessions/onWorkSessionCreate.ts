@@ -2,6 +2,7 @@ import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
 import axios from 'axios';
 import { safeConfig } from '../../utils/safeConfig';
+import { sendMainMenu } from '../telegram/telegramUtils';
 
 const db = admin.firestore();
 
@@ -28,6 +29,7 @@ export const onWorkSessionCreate = functions.firestore
 
             const userData = userDoc.data();
             const telegramChatId = userData?.telegramChatId || userData?.telegramId; // Handle both field names
+            const telegramId = userData?.telegramId;
 
             if (!telegramChatId) {
                 console.log(`User ${employeeId} has no telegramChatId, skipping notification.`);
@@ -51,6 +53,9 @@ export const onWorkSessionCreate = functions.firestore
             });
 
             console.log(`✅ Notification sent to Telegram ID ${telegramChatId} for session ${context.params.sessionId}`);
+
+            // 4. Force Update Telegram Keyboard for this User to "Pause/Stop"
+            await sendMainMenu(telegramChatId, telegramId);
 
         } catch (error) {
             console.error("Error sending Telegram notification:", error);

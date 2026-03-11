@@ -13,6 +13,7 @@ import * as admin from 'firebase-admin';
 import { AIAccuracyLog, ACCURACY_CONFIG } from '../../types/aiAccuracy';
 import { normalizeDescription } from '../../utils/aiCacheUtils';
 import { logAuditEvent } from '../../utils/auditLogger';
+import { sendMainMenu, sendMessage } from '../telegram/telegramUtils';
 
 const db = admin.firestore();
 
@@ -56,6 +57,34 @@ export const onWorkSessionUpdate = functions.firestore
             financialImpact: after.sessionEarnings || (actualMinutes / 60 * (after.hourlyRate || 0)),
             timeImpact: actualMinutes,
         });
+
+        // ═══════════════════════════════════════════════════
+        // Notify user via Telegram about session closure
+        // ═══════════════════════════════════════════════════
+        try {
+            const userDoc = await db.collection('users').doc(after.employeeId).get();
+            if (userDoc.exists) {
+                const userData = userDoc.data();
+                const telegramChatId = userData?.telegramChatId || userData?.telegramId;
+                const telegramId = userData?.telegramId;
+
+                if (telegramChatId) {
+                    const earnedStr = after.sessionEarnings ? `$${after.sessionEarnings}` : 'N/A';
+                    let msg = `⏹️ *Рабочая смена завершена*\n\n⏱ Продолжительность: ${actualMinutes} мин\n💰 Заработано: ${earnedStr}`;
+
+                    if (after.autoClosed) {
+                        msg = `⚠️ *Ваша смена длилась слишком долго и была автоматически закрыта*\n\n⏱ Учтено: ${actualMinutes} мин\n💰 Заработано: ${earnedStr}\n\nПожалуйста, свяжитесь с администратором для корректировки времени.`;
+                    }
+
+                    // Send text and force update keyboard to default
+                    await sendMessage(telegramChatId, msg);
+                    await sendMainMenu(telegramChatId, telegramId);
+                    console.log(`✅ Session close notification sent to Telegram ID ${telegramChatId}`);
+                }
+            }
+        } catch (error) {
+            console.error("Error sending close notification:", error);
+        }
 
         // Skip very short sessions (likely noise/mistakes)
         if (actualMinutes < ACCURACY_CONFIG.MIN_SESSION_MINUTES) {

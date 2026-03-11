@@ -6,8 +6,8 @@
  * responsive 1→4 columns, sticky header.
  */
 
-import React, { useRef, useCallback, useEffect } from 'react';
-import { Box, Typography, CircularProgress, Button } from '@mui/material';
+import React, { useRef, useCallback, useEffect, useState } from 'react';
+import { Box, Typography, CircularProgress, Button, Snackbar, Alert } from '@mui/material';
 import { useExpensesBoard } from '../../hooks/useExpensesBoard';
 import SmartTransactionCard from '../../components/expenses/SmartTransactionCard';
 import ExpensesBoardHeader from '../../components/expenses/ExpensesBoardHeader';
@@ -55,6 +55,15 @@ const ExpensesBoardPage: React.FC = () => {
         }
         return () => observer.disconnect();
     }, [handleObserver]);
+
+    // ── Bulk action toast ──
+    const [bulkToast, setBulkToast] = useState<{ open: boolean; count: number }>({ open: false, count: 0 });
+
+    const handleBulkCategorize = useCallback(async (category: any) => {
+        const count = selectedIds.size;
+        await bulkUpdateCategory(category);
+        setBulkToast({ open: true, count });
+    }, [bulkUpdateCategory, selectedIds.size]);
 
     if (loading) {
         return (
@@ -104,7 +113,7 @@ const ExpensesBoardPage: React.FC = () => {
                 onToggleSelectMode={() => setSelectMode(true)}
                 onSelectAll={selectAll}
                 onClearSelection={clearSelection}
-                onBulkCategorize={bulkUpdateCategory}
+                onBulkCategorize={handleBulkCategorize}
             />
 
             {/* ── Masonry Grid via CSS Columns ── */}
@@ -182,6 +191,22 @@ const ExpensesBoardPage: React.FC = () => {
                     </Typography>
                 </Box>
             )}
+
+            {/* \u2500\u2500 Bulk Action Toast \u2500\u2500 */}
+            <Snackbar
+                open={bulkToast.open}
+                autoHideDuration={3000}
+                onClose={() => setBulkToast({ open: false, count: 0 })}
+                anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+            >
+                <Alert
+                    severity="success"
+                    onClose={() => setBulkToast({ open: false, count: 0 })}
+                    sx={{ fontFamily: SF_FONT, fontWeight: 600 }}
+                >
+                    ✅ Updated {bulkToast.count} transaction{bulkToast.count !== 1 ? 's' : ''} successfully
+                </Alert>
+            </Snackbar>
         </Box>
     );
 };

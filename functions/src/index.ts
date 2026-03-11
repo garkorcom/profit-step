@@ -547,6 +547,7 @@ export { onTelegramMessage } from './triggers/telegram/onTelegramMessage';
 
 // Messaging
 export { sendMessage } from './callable/messaging/sendMessage';
+export { sendWorkerMessage } from './callable/messaging/sendWorkerMessage';
 
 // AI
 export { generateLeadSummary } from './callable/ai/generateLeadSummary';
@@ -558,6 +559,7 @@ export { onCostsBotMessage } from './triggers/telegram/onCostsBotMessage';
 
 // Scheduled: Session Management
 export { finalizeExpiredSessions } from './scheduled/finalizeExpiredSessions';
+export { autoCloseStaleSessions } from './triggers/crons/autoCloseStaleSessions';
 // export { sendSessionReminders } from './scheduled/sendSessionReminders'; // DISABLED: Session reminders turned off
 export { sendDeadlineReminders } from './scheduled/deadlineReminders'; // GTD task deadline notifications
 
@@ -576,7 +578,9 @@ export { onNoteCreated } from './triggers/firestore/onNoteCreated';
 // Blueprints: AI Takeoff processing
 export { onBlueprintJobCreated } from './triggers/firestore/onBlueprintJobCreated';
 export { onBlueprintBatchCreated } from './triggers/firestore/onBlueprintBatchCreated';
-export { analyzePageCallable, refineAnalysisCallable, auditBlueprintTakeoff } from './callable/ai/analyzePage';
+export { analyzePageCallable, refineAnalysisCallable, auditBlueprintTakeoff, extractBuildingContextCallable } from './callable/ai/analyzePage';
+export { analyzeBlueprintV3Callable } from './callable/ai/analyzeBlueprintV3';
+export { verifyEstimatePlausibilityCallable } from './callable/ai/verifyEstimatePlausibility';
 
 // Notes: Split & Merge operations
 export { splitChecklistItem } from './callable/notes/splitChecklistItem';
@@ -606,6 +610,7 @@ export { scheduledDayPlan } from './scheduled/scheduledDayPlan';
 
 // Task event triggers
 export { onTaskUpdate } from './triggers/firestore/onTaskUpdate';
+export { onTaskCreate } from './triggers/firestore/onTaskCreate';
 
 // Cost event triggers
 export { onCostCreated, onCostUpdate } from './triggers/firestore/onCostCreated';

@@ -9,7 +9,9 @@ import {
     analyzeWithOpenAI,
     compareResults,
     performTargetedReconciliation,
-    performSmartAudit
+    performSmartAudit,
+    extractBuildingContext,
+    BuildingContext
 } from '../../services/blueprintAIService';
 import { BlueprintAgentResult, BlueprintDiscrepancy } from '../../types/blueprint.types';
 
@@ -156,6 +158,7 @@ export const refineAnalysisCallable = functions
 /**
  * Callable function: Perform a Smart Audit (LLM text-only reasoning) on raw quantities.
  * Used by V2 pipeline to filter out hallucinations based on building codes.
+ * Now accepts buildingContext for building-type-aware validation.
  */
 export const auditBlueprintTakeoff = functions
     .region('us-central1')
@@ -165,12 +168,23 @@ export const auditBlueprintTakeoff = functions
             throw new functions.https.HttpsError('unauthenticated', 'Auth required');
         }
 
-        const { rawQuantities, squareFootage, projectType, pageCount, facilityUse } = data;
+        const { rawQuantities, squareFootage, projectType, pageCount, facilityUse, buildingContext } = data;
         if (!rawQuantities) {
             throw new functions.https.HttpsError('invalid-argument', 'rawQuantities required');
         }
 
-        logger.info(`🧠 Auditing takeoff for ${projectType} (${squareFootage} sqft, ${pageCount || 1} pages)`);
+        // Parse buildingContext if provided
+        const ctx: BuildingContext | undefined = buildingContext ? {
+            buildingType: buildingContext.buildingType || 'unknown',
+            unitCount: Number(buildingContext.unitCount) || 0,
+            stories: Number(buildingContext.stories) || 0,
+            mainServiceAmps: Number(buildingContext.mainServiceAmps) || 0,
+            hasCommonLaundry: !!buildingContext.hasCommonLaundry,
+            hasParking: !!buildingContext.hasParking,
+            hasRetail: !!buildingContext.hasRetail,
+        } : undefined;
+
+        logger.info(`🧠 Auditing takeoff for ${projectType} (${squareFootage} sqft, ${pageCount || 1} pages${ctx ? `, ${ctx.buildingType}, ${ctx.unitCount} units` : ''})`);
 
         try {
             const { auditedQuantities, auditNotes } = await performSmartAudit(
@@ -178,11 +192,64 @@ export const auditBlueprintTakeoff = functions
                 squareFootage,
                 projectType,
                 pageCount || 1,
-                facilityUse || ''
+                facilityUse || '',
+                ctx
             );
             return { auditedResult: auditedQuantities, auditNotes };
         } catch (error: any) {
             logger.error(`❌ Audit failed:`, error);
             throw new functions.https.HttpsError('internal', error.message || 'Audit failed');
+        }
+    });
+
+/**
+ * Callable function: Extract building context from a blueprint page.
+ * Returns building type, unit count, stories, and main service amps.
+ * Should be called on the first page (cover/panel schedule) before analysis.
+ */
+export const extractBuildingContextCallable = functions
+    .region('us-central1')
+    .runWith({ timeoutSeconds: 30, memory: '256MB' })
+    .https.onCall(async (data, context) => {
+        if (!context.auth) {
+            throw new functions.https.HttpsError('unauthenticated', 'Auth required');
+        }
+
+        const { storagePath, fileName } = data;
+        if (!storagePath) {
+            throw new functions.https.HttpsError('invalid-argument', 'storagePath required');
+        }
+
+        logger.info(`🏗 Extracting building context from: ${fileName || storagePath}`);
+
+        try {
+            const bucket = storage.bucket();
+            const file = bucket.file(storagePath);
+            const [buffer] = await file.download();
+            const base64 = buffer.toString('base64');
+            const mimeType = detectMimeType(buffer, fileName || 'page.png');
+
+            const input: BlueprintInput = {
+                buffer, mimeType,
+                fileName: fileName || 'page.png',
+                base64,
+                isPdf: mimeType === 'application/pdf',
+            };
+
+            const buildingContext = await extractBuildingContext(input);
+            logger.info(`🏗 Context: ${buildingContext.buildingType}, ${buildingContext.unitCount} units`);
+            return buildingContext;
+        } catch (error: any) {
+            logger.error('Building context extraction failed:', error);
+            // Return safe defaults instead of throwing — analysis can proceed without context
+            return {
+                buildingType: 'unknown',
+                unitCount: 0,
+                stories: 0,
+                mainServiceAmps: 0,
+                hasCommonLaundry: false,
+                hasParking: false,
+                hasRetail: false,
+            };
         }
     });

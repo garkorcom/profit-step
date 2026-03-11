@@ -29,6 +29,8 @@ export interface BlueprintItemResult {
 
 export type BlueprintAgentResult = Record<string, number>;
 
+export type BlueprintAgentV3Result = Record<string, { box: [number, number, number, number]; confidence: number }[]>;
+
 export interface BlueprintDiscrepancy {
     itemId: string;
     geminiQty: number | null;

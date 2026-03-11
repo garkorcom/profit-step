@@ -10,12 +10,6 @@ import {
     Tabs,
     Tab,
     Paper,
-    Table,
-    TableBody,
-    TableCell,
-    TableContainer,
-    TableHead,
-    TableRow,
     Chip,
     IconButton,
     TextField,
@@ -25,25 +19,28 @@ import {
     ListItem,
     ListItemAvatar,
     ListItemText,
-    Avatar
+    Avatar,
+    Grid,
 } from '@mui/material';
 
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import AddIcon from '@mui/icons-material/Add';
 import EditIcon from '@mui/icons-material/Edit';
-import VisibilityIcon from '@mui/icons-material/Visibility';
 import PersonIcon from '@mui/icons-material/Person';
+import FolderIcon from '@mui/icons-material/Folder';
+import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile';
 
 import { collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../../firebase/firebase';
 import { crmApi } from '../../api/crmApi';
-import { estimatesApi } from '../../api/estimatesApi';
+import { projectsApi } from '../../api/projectsApi';
 import { Client } from '../../types/crm.types';
 import { Contact } from '../../types/contact.types';
-import { Estimate } from '../../types/estimate.types';
+import { Project } from '../../types/project.types';
 import { useAuth } from '../../auth/AuthContext';
 import ProjectFinanceTab from '../../components/crm/ProjectFinanceTab';
 import ClientEditDialog from '../../components/crm/ClientEditDialog';
+import ClientTasksTab from '../../components/crm/ClientTasksTab';
 
 interface TabPanelProps {
     children?: React.ReactNode;
@@ -78,7 +75,7 @@ const ClientDetailsPage: React.FC = () => {
     const { userProfile } = useAuth();
 
     const [client, setClient] = useState<Client | null>(null);
-    const [estimates, setEstimates] = useState<Estimate[]>([]);
+    const [projects, setProjects] = useState<Project[]>([]);
     const [linkedContacts, setLinkedContacts] = useState<Contact[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -110,17 +107,12 @@ const ClientDetailsPage: React.FC = () => {
                     return;
                 }
 
-                // Fetch Estimates (separately to not block client loading)
+                // Fetch Projects (unified — estimates + work)
                 try {
-                    const estimatesData = await estimatesApi.getClientEstimates(userProfile.companyId, id);
-                    setEstimates(estimatesData);
-                } catch (estErr: any) {
-                    console.error('Error loading estimates:', estErr);
-                    // Check for index error
-                    if (estErr.code === 'failed-precondition' && estErr.message?.includes('index')) {
-                        console.warn('Missing index for estimates query. Check console for link.');
-                        alert('Missing Firestore Index. Open console to get the creation link.');
-                    }
+                    const projectsData = await projectsApi.getProjectsByClient(id);
+                    setProjects(projectsData);
+                } catch (projErr: any) {
+                    console.error('Error loading projects:', projErr);
                 }
 
                 // Fetch Linked Global Contacts
@@ -217,9 +209,9 @@ const ClientDetailsPage: React.FC = () => {
             <Paper sx={{ width: '100%', mb: 2 }}>
                 <Tabs value={tabValue} onChange={handleTabChange} aria-label="client tabs">
                     <Tab label="Details" />
-                    <Tab label={`Estimates (${estimates.length})`} />
+                    <Tab label={`Проекты (${projects.length})`} />
                     <Tab label="💰 Finance" />
-                    <Tab label="Tasks" disabled />
+                    <Tab label="Tasks" />
                 </Tabs>
             </Paper>
 
@@ -344,52 +336,88 @@ const ClientDetailsPage: React.FC = () => {
                     <Button
                         variant="contained"
                         startIcon={<AddIcon />}
-                        onClick={() => navigate('/estimates/new')}
+                        onClick={() => navigate('/estimates/projects')}
+                        sx={{ borderRadius: 2, textTransform: 'none' }}
                     >
-                        Create Estimate
+                        Новый проект
                     </Button>
                 </Box>
 
-                <TableContainer component={Paper}>
-                    <Table>
-                        <TableHead>
-                            <TableRow>
-                                <TableCell>Number</TableCell>
-                                <TableCell>Date</TableCell>
-                                <TableCell align="right">Total</TableCell>
-                                <TableCell align="center">Status</TableCell>
-                                <TableCell align="right">Actions</TableCell>
-                            </TableRow>
-                        </TableHead>
-                        <TableBody>
-                            {estimates.length === 0 ? (
-                                <TableRow>
-                                    <TableCell colSpan={5} align="center">No estimates found</TableCell>
-                                </TableRow>
-                            ) : (
-                                estimates.map((est) => (
-                                    <TableRow key={est.id} hover>
-                                        <TableCell>{est.number}</TableCell>
-                                        <TableCell>{est.createdAt?.toDate().toLocaleDateString()}</TableCell>
-                                        <TableCell align="right">${est.total.toFixed(2)}</TableCell>
-                                        <TableCell align="center">
-                                            <Chip label={est.status} size="small" />
-                                        </TableCell>
-                                        <TableCell align="right">
-                                            <IconButton size="small" onClick={() => navigate(`/estimates/${est.id}`)}>
-                                                <VisibilityIcon />
-                                            </IconButton>
-                                        </TableCell>
-                                    </TableRow>
-                                ))
-                            )}
-                        </TableBody>
-                    </Table>
-                </TableContainer>
+                {projects.length === 0 ? (
+                    <Paper sx={{ p: 4, textAlign: 'center', borderRadius: 2 }}>
+                        <FolderIcon sx={{ fontSize: 48, color: 'text.disabled', mb: 1 }} />
+                        <Typography color="text.secondary">Нет проектов для этого клиента</Typography>
+                    </Paper>
+                ) : (
+                    <Grid container spacing={2}>
+                        {projects.map(proj => (
+                            <Grid size={{ xs: 12, sm: 6, md: 4 }} key={proj.id}>
+                                <Paper
+                                    elevation={0}
+                                    sx={{
+                                        p: 2.5, borderRadius: 3,
+                                        border: '1px solid', borderColor: 'divider',
+                                        cursor: 'pointer',
+                                        transition: 'all 0.2s ease',
+                                        '&:hover': {
+                                            transform: 'translateY(-2px)',
+                                            boxShadow: '0 8px 24px rgba(0,0,0,0.1)',
+                                            borderColor: 'primary.light',
+                                        },
+                                        position: 'relative',
+                                        overflow: 'hidden',
+                                        '&::before': {
+                                            content: '""', position: 'absolute',
+                                            top: 0, left: 0, right: 0, height: 3,
+                                            background: proj.type === 'estimate'
+                                                ? 'linear-gradient(90deg, #1976d2, #64b5f6)'
+                                                : 'linear-gradient(90deg, #4caf50, #81c784)',
+                                        }
+                                    }}
+                                    onClick={() => navigate(`/estimates/projects/${proj.id}`)}
+                                >
+                                    <Box display="flex" justifyContent="space-between" alignItems="flex-start" mb={1}>
+                                        <Typography variant="subtitle2" fontWeight={700} noWrap sx={{ flex: 1, mr: 1 }}>
+                                            {proj.name}
+                                        </Typography>
+                                        <Chip
+                                            label={proj.type === 'estimate' ? '📐 Estimate' : '🔧 Work'}
+                                            size="small"
+                                            sx={{ fontSize: '0.65rem', height: 20 }}
+                                        />
+                                    </Box>
+                                    {proj.address && (
+                                        <Typography variant="caption" color="text.secondary" display="block" mb={0.5}>
+                                            📍 {proj.address}
+                                        </Typography>
+                                    )}
+                                    <Box display="flex" alignItems="center" gap={0.5}>
+                                        <InsertDriveFileIcon sx={{ fontSize: 14, color: 'text.disabled' }} />
+                                        <Typography variant="caption" color="text.secondary">
+                                            {proj.files?.length || 0} файлов
+                                        </Typography>
+                                        {proj.status && (
+                                            <Chip
+                                                label={proj.status === 'completed' ? 'Завершен' : 'В работе'}
+                                                size="small"
+                                                color={proj.status === 'completed' ? 'success' : 'default'}
+                                                sx={{ fontSize: '0.6rem', height: 18, ml: 1 }}
+                                            />
+                                        )}
+                                    </Box>
+                                </Paper>
+                            </Grid>
+                        ))}
+                    </Grid>
+                )}
             </TabPanel>
 
             <TabPanel value={tabValue} index={2}>
                 <ProjectFinanceTab clientId={client.id} clientName={client.name} />
+            </TabPanel>
+
+            <TabPanel value={tabValue} index={3}>
+                <ClientTasksTab clientId={client.id} clientName={client.name} />
             </TabPanel>
 
             <ClientEditDialog

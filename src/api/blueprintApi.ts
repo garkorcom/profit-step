@@ -1,7 +1,7 @@
-import { doc, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, setDoc, updateDoc, serverTimestamp, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../firebase/firebase';
-import { BlueprintJob, BlueprintAgentResult, BlueprintFileEntry } from '../types/blueprint.types';
+import { BlueprintJob, BlueprintAgentResult, BlueprintFileEntry, BlueprintV3Session } from '../types/blueprint.types';
 import { v4 as uuidv4 } from 'uuid';
 
 export const blueprintApi = {
@@ -127,5 +127,118 @@ export const blueprintApi = {
             finalResult,
             updatedAt: serverTimestamp()
         });
+    },
+
+    /**
+     * Uploads rasterized PNGs to Firebase Storage for V3 State Resumption.
+     */
+    async uploadV3Images(
+        companyId: string,
+        projectId: string | null,
+        images: any[], // RasterizedImage[]
+        onProgress?: (uploaded: number, total: number) => void
+    ): Promise<any[]> {
+        const uploadedImages = [];
+        let completed = 0;
+        const subFolder = projectId || uuidv4();
+
+        for (const img of images) {
+            // Only upload selected images to save space/time
+            if (!img.selected) {
+                uploadedImages.push(img);
+                continue;
+            }
+
+            // If it already has a storageUrl, skip
+            if (img.storageUrl) {
+                uploadedImages.push(img);
+                completed++;
+                onProgress?.(completed, images.length);
+                continue;
+            }
+
+            try {
+                // Convert base64 dataUrl to Blob
+                const res = await fetch(img.dataUrl);
+                const blob = await res.blob();
+
+                const referencePath = `blueprints/${companyId}/v3_sessions/${subFolder}/${img.id}.png`;
+                const storageRef = ref(storage, referencePath);
+
+                await uploadBytes(storageRef, blob);
+                const downloadUrl = await getDownloadURL(storageRef);
+
+                // Return a new object that drops the massive dataUrl to save memory,
+                // and instead relies on storageUrl for rendering.
+                uploadedImages.push({
+                    ...img,
+                    dataUrl: downloadUrl, // Replace base64 with remote URL to prevent OOM
+                    storageUrl: downloadUrl
+                });
+            } catch (error) {
+                console.error(`Failed to upload image ${img.id}`, error);
+                // Keep the local dataUrl as fallback
+                uploadedImages.push(img);
+            }
+            
+            completed++;
+            onProgress?.(completed, images.length);
+        }
+
+        return uploadedImages;
+    },
+
+    /**
+     * Saves or updates a V3 Session in Firestore.
+     */
+    async saveV3Session(session: BlueprintV3Session): Promise<void> {
+        // Firebase setDoc rejects undefined values. Recursively strip them.
+        const stripUndefined = (obj: any): any => {
+            if (Array.isArray(obj)) return obj.map(stripUndefined);
+            if (obj instanceof Date) return obj;
+            if (obj && typeof obj.toDate === 'function') return obj; // Keep Firestore Timestamps intact
+            if (obj !== null && typeof obj === 'object') {
+                return Object.fromEntries(
+                    Object.entries(obj)
+                        .filter(([_, v]) => v !== undefined)
+                        .map(([k, v]) => [k, stripUndefined(v)])
+                );
+            }
+            return obj;
+        };
+
+        const cleanSession = stripUndefined(session);
+        const docRef = doc(db, 'blueprint_v3_sessions', session.id);
+        await setDoc(docRef, {
+            ...cleanSession,
+            updatedAt: serverTimestamp()
+        }, { merge: true });
+    },
+
+    /**
+     * Retrieves an existing V3 Session from Firestore.
+     */
+    async getV3Session(sessionId: string): Promise<BlueprintV3Session | null> {
+        const docRef = doc(db, 'blueprint_v3_sessions', sessionId);
+        const snapshot = await getDoc(docRef);
+        if (snapshot.exists()) {
+            return snapshot.data() as BlueprintV3Session;
+        }
+        return null;
+    },
+
+    /**
+     * Lists active (non-completed) V3 Sessions for a user
+     */
+    async listActiveV3Sessions(companyId: string, userId: string): Promise<BlueprintV3Session[]> {
+        const q = query(
+            collection(db, 'blueprint_v3_sessions'),
+            where('companyId', '==', companyId),
+            where('createdBy', '==', userId),
+            where('status', '!=', 'completed')
+        );
+        const snapshot = await getDocs(q);
+        return snapshot.docs.map(doc => doc.data() as BlueprintV3Session);
     }
 };
+

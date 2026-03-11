@@ -39,77 +39,68 @@ const Timestamp = admin.firestore.Timestamp;
 
 const DAILY_SUMMARY = {
     date: '2026-03-05',
-    title: '🏗️ Project Library & AI Versioning: Architecture & UX Polish',
-    emoji: '🏗️',
-    featureId: 'project-library',
-    featureTitle: 'Project Library & AI Versioning',
-    type: 'feature',
-    timeSpentMinutes: 300,
+    title: '🛠️ AI Estimator Stabilization: File Saving & Data Sync Fixes',
+    emoji: '🛠️',
+    featureId: 'ai-estimator-fixes',
+    featureTitle: 'AI Estimator Data Flow',
+    type: 'bugfix',
+    timeSpentMinutes: 120,
 
-    tldr: 'Завершили огромный блок работ по "Библиотеке Проектов". Теперь сметы объединяются в Проекты, поддерживают версионирование (QA сравнение v1 и v2 от ИИ). Проведена масштабная работа над ошибками сохранения (чистка payload от undefined) и глубокая полировка UX (роутинг, модалки создания).',
+    tldr: 'Исправлены критические ошибки в V2 пайплайне ИИ Сметчика. Восстановлена двусторонняя синхронизация Square Footage (Площадь) между калькулятором и окном анализа ИИ. Исправлено сохранение PDF чертежей и сканов от ИИ в облако. Исправлен UI-баг, из-за которого прятался индикатор работы модели OpenAI GPT-4o.',
 
     // Подробное описание (RU + EN, markdown)
-    storyMarkdown: `![Project Library Architecture](https://images.unsplash.com/photo-1541888081622-38666c1f1742?q=80&w=2000&auto=format&fit=crop)
+    storyMarkdown: `![Code Stabilization](https://images.unsplash.com/photo-1555066931-4365d14bab8c?q=80&w=2000&auto=format&fit=crop)
 
 ## 🇷🇺 Что сделали сегодня
 
-Сегодня мы полностью завершили интеграцию **Библиотеки Проектов (Project Library)** и **Версионирования ИИ (Estimate Versioning)**. Это важнейший шаг для перехода приложения от "одноразовых калькуляторов" к полноценной CRM-системе для работы со сметами.
+Сегодня мы сфокусировались на стабилизации V2 пайплайна **AI Estimator** (Фазы 11 и 12), устранив досадные ошибки потери данных и проблемы с загрузкой файлов проектов в облако. 
 
-### Сессия 1: Архитектура Проектов и Версионирование
-- Реализована иерархия данных: \`Projects\` -> \`Estimates (Versions)\`. Теперь один проект может содержать множество вариантов расчета (например, базовый план v1 и измененный план v2).
-- Разработана вкладка **"Сравнение (QA)"**, позволяющая визуально сравнивать версии смет бок о бок. Были добавлены наглядные информационные карточки с расчетом финансовой разницы (Delta Δ) по трем главным метрикам: Total Price, Labor Cost, Materials Cost (с цветовой индикацией).
+### 1. Двусторонняя синхронизация Square Footage (Sqft)
+**Проблема:** Ввод метража (Sqft) в базовом калькуляторе часто сбрасывался или не передавался в диалог ИИ анализа, что приводило к потере данных после применения результатов сканирования.
+**Решение:** Внедрен строгий двусторонний мост данных. Если проект уже имеет метраж, он предзаполняет диалог ИИ. Если пользователь меняет метраж во время ИИ пайплайна, новое значение безопасно передается обратно в калькулятор при нажатии кнопки "Apply", ничего не перезатирая.
 
-### Сессия 2: Укрощение Firebase и Багов ИИ
-- **Индексы Firestore:** Решена критическая ошибка загрузки списков из-за отсутствующего композитного индекса (\`companyId ASC\`, \`updatedAt DESC\`).
-- **Защита от "Галлюцинаций" ИИ:** Была найдена хитрая проблема — при неудачном парсинге сложных чертежей ИИ возвращал \`undefined\` значения для некоторых полей (например, пустой адрес или площадь). При попытке сохранить это в Firestore приложение "падало". Мы внедрили рекурсивную утилиту \`cleanPayload\`, которая жестко санирует любые данные перед отправкой в БД, делая процесс загрузки чертежей пуленепробиваемым.
+### 2. Сохранение Чертежей (PDF) и Изображений ИИ (PNG)
+**Проблема:** При сохранении проекта (Save Project) в V2 загрузчике, файлы таинственным образом исчезали и не появлялись в Библиотеке Проектов.
+**Решение:** Исправлены правила безопасности Firebase Storage (\`storage.rules\`). Теперь оригинальные PDF-файлы и конвертированные ИИ PNG-страницы корректно привязываются к ID проекта и успешно загружаются в облако.
 
-### Сессия 3: Глубокая Полировка UX (UX Polish)
-Мы запустили автоматизированного браузерного агента для прохождения полного E2E (End-to-End) пути пользователя. Он выявил ряд проблем, которые мы немедленно устранили:
-1. **Явная Навигация**: Вынесли "Библиотеку проектов" из скрытого меню "Настройки" в главную верхнюю панель (\`AppRouter\`).
-2. **Smooth SPA Routing**: Избавились от "моргания" и жесткой перезагрузки страницы при сохранении проекта, перейдя на плавный внутренний роутинг (\`react-router-dom navigate\`).
-3. **Modal Создания Проекта**: Теперь при нажатии "Новый проект" сначала всплывает аккуратное модальное окно для ввода названия и адреса, а уже потом открывается калькулятор.
-4. **Защита от сиротских смет (Orphaned Saves)**: Стандартное сохранение из калькулятора без привязки к Проекту теперь заблокировано.
+### 3. Восстановление логики OpenAI
+**Проблема:** При выборе агента OpenAI GPT-4o система не отображала его в статус-баре, а в финальной таблице рисовалась пустая колонка.
+**Решение:** Починили логику динамического вывода агентов в UI (\`gemini + claude + openai\`). В саму таблицу добавлен явный лейбл **"Нет данных / Тайм-аут"**, который корректно высвечивается при ошибках генерации вместо пустых брешей в интерфейсе.
 
 ---
 
 ## 🇬🇧 What We Built Today
 
-Today we successfully completed the integration of the **Project Library** and **AI Estimate Versioning**. This marks a massive transition from a "sandbox calculator" to a robust CRM ecosystem for electrical estimates.
+Today\'s focus was stabilizing the **V2 AI Estimator Pipeline** (Phases 11 & 12) by resolving silent data loss issues and diagnosing file upload roadblocks to Google Cloud Storage.
 
-### Session 1: Project Architecture & Versioning
-- Implemented a hierarchical data model: \`Projects\` -> \`Estimates (Versions)\`. A single project can now house multiple iterations of an estimate.
-- Built a deeply interactive **"Compare (QA)"** tab allowing side-by-side verification of versions. We implemented visual financial delta cards that instantly calculate the mathematical differences (Total Price, Materials, Labor) and color-code increases/decreases.
+### 1. Bidirectional Square Footage (Sqft) Syncing
+**The Bug:** Setting the Square Footage in the main estimator and then launching the AI analysis flow often resulted in the data being dropped or overridden.
+**The Fix:** Engineered a strict bidirectional data flow. The main estimator now passes its initial state into the AI modal, and the modal safely passes the validated \`sqft\` metric back out explicitly upon "Apply", preserving the user's manual inputs.
 
-### Session 2: Taming Firebase & AI Parsing Bugs
-- **Firestore Indexing:** Resolved a critical query failure by deploying the necessary composite index (\`companyId ASC\`, \`updatedAt DESC\`).
-- **Bulletproof DB Writes:** Discovered a silent crash where AI-generated structures occasionally assigned \`undefined\` to missing fields (like an unparsed address). Since Firebase rejects explicit undefines, we engineered a recursive \`cleanPayload\` utility inside the Blueprint Upload dialog. It aggressively sanitizes the entire deeply-nested object before writing to Firestore.
+### 2. Original PDF & AI PNG Persistence
+**The Bug:** Saving a project straight from the V2 Analysis modal resulted in missing blueprint libraries in the Project Workspace.
+**The Fix:** Fixed a blocking Firebase Storage security \`storage.rules\` bug. The system now flawlessly chains the upload of original user PDFs and the processed AI PNG scans, assigning them all to the correct \`projectId\` directory for future auditing.
 
-### Session 3: Deep UX Polish (Phase 5)
-Following a comprehensive E2E simulation by an autonomous browser agent, we patched several friction points:
-1. **Prominent Navigation**: Moved the Project Library entry point out of a nested Settings dropdown directly onto the primary Top-Bar.
-2. **Smooth SPA Nav**: Replaced hard page reloads with seamless React Router transitions upon project save.
-3. **Creation Flow Modal**: Introduced a "Create Project" modal interceptor before entering the raw estimator workspace, ensuring metadata is captured upfront.
-4. **Orphan Prevention**: Blocked standalone saves if an estimate isn't explicitly linked to a \`projectId\`.`,
+### 3. OpenAI GPT-4o UI Visibility
+**The Bug:** Selecting the OpenAI agent did not update the progress text and returned empty, confusing table columns.
+**The Fix:** Overhauled the UI text mapping. The progress label now dynamically parses the selected models (\`gemini + claude + openai\`), and any dropped payloads proactively render an explicit **"No Data / Timeout"** warning rather than an empty void.`,
 
     technicalMarkdown: `### Architectural Decisions
-| Component | Change |
-|------|-----------|
-| \`BlueprintUploadDialog.tsx\` | Implemented recursive \`cleanPayload\` traversal to strip \`undefined\` from V1/V2 generated JSON structures before \`setDoc\`. Fixed SPA redirection using \`useNavigate\`. |
-| \`ProjectWorkspacePage.tsx\` | Mapped QA Comparison Logic, parsing financial deltas. Corrected MUI Grid v6 syntax. |
-| \`SavedEstimatesPage.tsx\` | Migrated from direct estimators to a \`CreateDialog\` interrupter. |
-| \`firestore.indexes.json\` | Added composite index for \`projects\` collection. |
-
-### The \`cleanPayload\` Utility
-Firebase Admin SDK / Client SDK explicitly fails on \`undefined\` properties within an object. Rather than manually checking every single field returned by the volatile AI parsing pipeline, a unified utility recursively walks the object map and deletes \`undefined\` keys, ensuring 100% stable database writes.`,
+| Stage | Component | Change |
+|------|-----------|-----------|
+| **Data Sync** | \`ElectricalEstimatorPage.tsx\` | Decoupled \`sqft\` handling so manual adjustments persist alongside AI responses. |
+| **Storage Security** | \`storage.rules\` | Patched restrictive rules to explicitly allow RW auth requests against \`companies/{companyId}/projects/{projectId}/files\`. |
+| **Progress State** | \`BlueprintV2Pipeline.tsx\` | Re-wired the UI arrays to display explicit runtime agents dynamically instead of hard-coded defaults. |
+`,
 
     keyTakeaways: [
-        'AI structured output is inherently volatile. Implementing aggressive data sanitization (like dropping undefined keys recursively) immediately prior to database writes is a mandatory defense-in-depth practice.',
-        'Exploratory UX testing via an automated browser agent proved highly effective at discovering hidden behavioral bugs (e.g., orphaned estimate saves that technically succeed but lack relational keys).',
-        'Shifting from full-page reloads (window.location.href) to specialized internal routing (useNavigate) dramatically elevates the perceived performance of the Single Page Application.'
+        'Bidirectional data sharing across modal forms requires robust and explicitly typed callbacks to avoid accidental state overwriting.',
+        'Silent failures in cloud architecture are often due to overly restrictive default security rules (Firebase rules). Always cross-reference client payload errors with backend logs.',
+        'Intelligent empty states ("No Data / Timeout") dramatically improve UX compared to silent failures or blank inputs, specifically when managing multi-agent AI ecosystems.'
     ],
 
-    seoKeywords: ['Project Library', 'Estimate Versioning', 'Firebase strict nulls', 'React Router SPA', 'UX Polish', 'Automated E2E Testing', 'Firestore Composite Indexes'],
-    seoDescription: 'Completed the Project Library and Estimate Versioning ecosystem for Profit Step. Addressed critical Firebase undefined data crashes and polished the SPA user experience via automated agent testing.',
+    seoKeywords: ['AI Estimator', 'React state sync', 'Firebase Storage rules', 'GPT-4o logging', 'Data Persistence', 'Typescript Callbacks'],
+    seoDescription: 'Diagnosed and resolved critical architecture bugs in the AI Estimator V2 pipeline including bidirectional data sync, storage rule blockages, and explicit AI model logging.',
 };
 
 // =====================================================
@@ -159,14 +150,14 @@ async function publishDailySummary() {
     };
 
     console.log(`\n📝 Publishing: "${s.title}"`);
-    console.log(`   Slug: ${slug}`);
-    console.log(`   Feature: ${s.featureTitle}`);
-    console.log(`   Type: ${s.type}`);
+    console.log(`   Slug: ${slug} `);
+    console.log(`   Feature: ${s.featureTitle} `);
+    console.log(`   Type: ${s.type} `);
     console.log(`   Time: ${s.timeSpentMinutes} min\n`);
 
     try {
         const docRef = await db.collection('dev_logs').add(article);
-        console.log(`✅ Published to dev_logs/${docRef.id}`);
+        console.log(`✅ Published to dev_logs / ${docRef.id} `);
         console.log(`🌐 View at: https://profit-step.web.app/blog`);
     } catch (e) {
         console.error('❌ Failed:', e.message);

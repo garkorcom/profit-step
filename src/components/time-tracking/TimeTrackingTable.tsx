@@ -11,6 +11,9 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import LockIcon from '@mui/icons-material/Lock';
 import StopIcon from '@mui/icons-material/Stop';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
+import BugReportIcon from '@mui/icons-material/BugReport';
+import PersonOffIcon from '@mui/icons-material/PersonOff';
+import LocationOffIcon from '@mui/icons-material/LocationOff';
 import { WorkSession } from '../../types/timeTracking.types';
 import { formatDuration, formatDate, formatTime, getStatusColor } from '../../utils/dateFormatters';
 
@@ -22,6 +25,7 @@ interface TimeTrackingTableProps {
     isAdmin?: boolean;
     onAdminStopSession?: (session: WorkSession) => void;
     onAdminStartSession?: (session: WorkSession) => void;
+    onViewBotLogs?: (employeeId: string, employeeName: string) => void;
 }
 
 /**
@@ -82,7 +86,8 @@ const TimeTrackingTable: React.FC<TimeTrackingTableProps> = ({
     onEmployeeClick,
     isAdmin,
     onAdminStopSession,
-    onAdminStartSession
+    onAdminStartSession,
+    onViewBotLogs
 }) => {
     return (
         <TableContainer component={Paper} sx={{ overflowX: 'auto' }}>
@@ -136,7 +141,27 @@ const TimeTrackingTable: React.FC<TimeTrackingTableProps> = ({
                                             <Tooltip title={session.employeeName}>
                                                 <Typography variant="body2" noWrap>{session.employeeName}</Typography>
                                             </Tooltip>
+                                            {session.faceMatch === false && (
+                                                <Tooltip title={`Лицо не подтверждено: ${session.faceMismatchReason || 'Сбой ИИ'}`}>
+                                                    <PersonOffIcon color="error" fontSize="small" />
+                                                </Tooltip>
+                                            )}
                                         </Box>
+                                        {isAdmin && onViewBotLogs && (
+                                            <Tooltip title="Сырые логи Бота">
+                                                <IconButton
+                                                    size="small"
+                                                    color="primary"
+                                                    sx={{ mt: 0.5, p: 0.5 }}
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        onViewBotLogs(String(session.employeeId), session.employeeName);
+                                                    }}
+                                                >
+                                                    <BugReportIcon fontSize="small" />
+                                                </IconButton>
+                                            </Tooltip>
+                                        )}
                                     </TableCell>
 
                                     {/* Client */}
@@ -144,6 +169,11 @@ const TimeTrackingTable: React.FC<TimeTrackingTableProps> = ({
                                         <Tooltip title={session.clientName}>
                                             <Typography variant="body2" fontWeight="medium" noWrap sx={{ maxWidth: 200 }}>
                                                 {session.clientName}
+                                                {session.locationMismatch && (
+                                                    <Tooltip title={`Отклонение: ${session.locationDistanceMeters}м`}>
+                                                        <LocationOffIcon color="error" fontSize="inherit" sx={{ ml: 0.5, verticalAlign: 'middle' }} />
+                                                    </Tooltip>
+                                                )}
                                             </Typography>
                                         </Tooltip>
                                         {session.startLocation && (

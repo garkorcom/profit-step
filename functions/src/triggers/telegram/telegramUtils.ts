@@ -74,6 +74,12 @@ export async function sendMessage(chatId: number, text: string, options: any = {
 
         await axios.post(`https://api.telegram.org/bot${WORKER_BOT_TOKEN}/sendMessage`, body);
     } catch (error: any) {
+        // Fix 10 (Deep Testing): Handle 403 "bot blocked by user" gracefully
+        const status = error?.response?.status;
+        if (status === 403) {
+            console.warn(`⚠️ Bot blocked by user (chatId: ${chatId}). Message not delivered.`);
+            return; // Silent return — don't log as error
+        }
         console.error('Error sending message:', error?.response?.data || error.message);
     }
 }
@@ -151,12 +157,16 @@ export async function sendMainMenu(chatId: number, userId: number = chatId) {
         ];
     } else {
         keyboard = [
-            [{ text: "▶️ Start Work" }, { text: "🛒 Shopping" }],
-            [{ text: "📥 Inbox" }, { text: "📋 Tasks" }]
+            [{ text: "🛒 Shopping" }, { text: "📥 Inbox" }],
+            [{ text: "📋 Tasks" }]
         ];
     }
 
-    await sendMessage(chatId, "👷‍♂️ *Worker Panel*\nSelect an action:", {
+    const hintMsg = (activeSession)
+        ? "👷‍♂️ *Worker Panel*\nSelect an action:"
+        : "👷‍♂️ *Worker Panel*\n📎 *To start a shift, tap the attachment icon and send your Live Location.*";
+
+    await sendMessage(chatId, hintMsg, {
         keyboard: keyboard,
         resize_keyboard: true,
         one_time_keyboard: false
@@ -183,4 +193,43 @@ export async function editMessage(chatId: number, messageId: number, text: strin
         console.error('Error editing message:', error?.response?.data || error.message);
         return false;
     }
+}
+
+/**
+ * Global Bot Logger
+ * Writes to 'bot_logs' to provide a unified history of bot interactions per user.
+ */
+export async function logBotAction(telegramId: number, userId: string | number, action: string, details?: any) {
+    try {
+        await db.collection('bot_logs').add({
+            telegramId,
+            workerId: userId, // May be platform UID or Telegram ID
+            action,
+            details: details || null,
+            timestamp: admin.firestore.FieldValue.serverTimestamp()
+        });
+    } catch (e) {
+        console.error('Failed to write bot_log', e);
+    }
+}
+
+/**
+ * Calculates the great-circle distance between two points on the Earth's surface using the Haversine formula.
+ * @returns Distance in meters
+ */
+export function calculateDistanceMeters(lat1: number, lon1: number, lat2: number, lon2: number): number {
+    const R = 6371e3; // Earth radius in meters
+    const toRadians = (deg: number) => deg * (Math.PI / 180);
+
+    const φ1 = toRadians(lat1);
+    const φ2 = toRadians(lat2);
+    const Δφ = toRadians(lat2 - lat1);
+    const Δλ = toRadians(lon2 - lon1);
+
+    const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+        Math.cos(φ1) * Math.cos(φ2) *
+        Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+    return Math.round(R * c);
 }

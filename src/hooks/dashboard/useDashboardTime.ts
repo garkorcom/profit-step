@@ -69,10 +69,19 @@ export const useDashboardTime = (companyId: string | undefined): DashboardTimeDa
                 const start = session.startTime.toDate();
                 let durationHrs = (session.durationMinutes || 0) / 60;
 
-                // If active, calculate elapsed time up to now
-                if (session.status === 'active') {
+                // If active or paused, calculate elapsed time up to now minus breaks
+                if (session.status === 'active' || session.status === 'paused') {
                     const elapsedMs = now.getTime() - start.getTime();
-                    durationHrs = elapsedMs / (1000 * 60 * 60);
+                    let breakMs = (session.totalBreakMinutes || 0) * 60 * 1000;
+                    
+                    if (session.status === 'paused' && session.lastBreakStart) {
+                        breakMs += now.getTime() - session.lastBreakStart.toMillis();
+                    }
+                    
+                    let diffMs = elapsedMs - breakMs;
+                    if (diffMs < 0) diffMs = 0;
+
+                    durationHrs = diffMs / (1000 * 60 * 60);
                     activeSessions++;
                 }
 

@@ -10,7 +10,12 @@ import {
   Divider,
   CircularProgress,
   Alert,
+  Card,
+  CardContent,
+  CardActions,
+  Grid
 } from '@mui/material';
+import TelegramIcon from '@mui/icons-material/Telegram';
 import { useAuth } from '../auth/AuthContext';
 import AvatarUpload from '../components/admin/AvatarUpload';
 import { updateUserExtendedProfile } from '../api/userManagementApi';
@@ -63,99 +68,139 @@ const ProfilePage: React.FC = () => {
 
   if (!userProfile) {
     return (
-      <Container maxWidth="md" sx={{ mt: 4, textAlign: 'center' }}>
+      <Container maxWidth="lg" sx={{ mt: 4, textAlign: 'center' }}>
         <CircularProgress />
       </Container>
     );
   }
 
   return (
-    <Container maxWidth="md" sx={{ mt: 4, mb: 4 }}>
-      <Typography variant="h4" gutterBottom>
+    <Container maxWidth="lg" sx={{ mt: 4, mb: 8 }}>
+      <Typography variant="h4" gutterBottom fontWeight="bold" color="text.primary">
         Мой профиль
       </Typography>
 
-      <Paper sx={{ p: 3, mt: 3 }}>
-        {/* Аватар */}
-        <Box sx={{ mb: 4 }}>
-          <Typography variant="h6" gutterBottom>
-            Фото профиля
-          </Typography>
-          <AvatarUpload />
-        </Box>
+      <Grid container spacing={4} sx={{ mt: 1 }}>
+        {/* Left Column: Avatar & Quick Actions */}
+        <Grid size={{ xs: 12, md: 4 }}>
+          <Card elevation={0} sx={{ borderRadius: 4, border: '1px solid', borderColor: 'divider', textAlign: 'center', p: 2 }}>
+            <CardContent>
+              <Typography variant="h6" gutterBottom fontWeight="600" color="text.secondary" sx={{ mb: 3 }}>
+                Фото профиля
+              </Typography>
+              <Box display="flex" justifyContent="center" mb={2}>
+                <AvatarUpload />
+              </Box>
+              <Typography variant="h6" fontWeight="bold">
+                {userProfile.displayName || userProfile.email}
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                {userProfile.role && userProfile.role.toUpperCase()}
+              </Typography>
+            </CardContent>
 
-        <Divider sx={{ my: 3 }} />
+            <Divider sx={{ my: 1, mx: 2 }} />
 
-        {/* Форма профиля */}
-        <Box>
-          <Typography variant="h6" gutterBottom>
-            Основная информация
-          </Typography>
+            <CardActions sx={{ flexDirection: 'column', gap: 1.5, p: 3 }}>
+              <Typography variant="subtitle2" fontWeight="600" align="left" width="100%">
+                Интеграции
+              </Typography>
+              <Button
+                variant="outlined"
+                color="info"
+                startIcon={<TelegramIcon />}
+                href={`https://t.me/gcostsbot`}
+                target="_blank"
+                fullWidth
+                sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 600, py: 1 }}
+              >
+                Profit Step Bot
+              </Button>
+              <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.4 }}>
+                Подключите Telegram бота для быстрого управления задачами, отчетами и расходами прямо с телефона.
+              </Typography>
+            </CardActions>
+          </Card>
+        </Grid>
 
-          {error && (
-            <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
-              {error}
-            </Alert>
-          )}
+        {/* Right Column: Settings Form */}
+        <Grid size={{ xs: 12, md: 8 }}>
+          <Paper elevation={0} sx={{ p: 4, borderRadius: 4, border: '1px solid', borderColor: 'divider' }}>
+            <Typography variant="h6" gutterBottom fontWeight="bold">
+              Основная информация
+            </Typography>
+            <Divider sx={{ mb: 4, mt: 2 }} />
 
-          {success && (
-            <Alert severity="success" sx={{ mb: 2 }} onClose={() => setSuccess(null)}>
-              {success}
-            </Alert>
-          )}
+            {error && (
+              <Alert severity="error" sx={{ mb: 3, borderRadius: 2 }} onClose={() => setError(null)}>
+                {error}
+              </Alert>
+            )}
 
-          <Stack spacing={2} sx={{ mt: 2 }}>
-            <TextField
-              label="Полное имя"
-              fullWidth
-              required
-              value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
-            />
+            {success && (
+              <Alert severity="success" sx={{ mb: 3, borderRadius: 2 }} onClose={() => setSuccess(null)}>
+                {success}
+              </Alert>
+            )}
 
-            <TextField
-              label="Должность"
-              fullWidth
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="Например: Ведущий сметчик"
-            />
+            <Stack spacing={3}>
+              <TextField
+                label="Полное имя"
+                fullWidth
+                required
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+                InputProps={{ sx: { borderRadius: 2 } }}
+              />
 
-            <TextField
-              label="Телефон"
-              fullWidth
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              placeholder="+7 (999) 123-45-67"
-            />
+              <TextField
+                label="Должность"
+                fullWidth
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="Например: Ведущий сметчик"
+                InputProps={{ sx: { borderRadius: 2 } }}
+              />
 
-            <TextField
-              label="Email"
-              fullWidth
-              value={userProfile.email}
-              disabled
-              helperText="Email нельзя изменить"
-            />
+              <TextField
+                label="Телефон"
+                fullWidth
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder="+7 (999) 123-45-67"
+                InputProps={{ sx: { borderRadius: 2 } }}
+              />
 
-            <TextField
-              label="Роль"
-              fullWidth
-              value={userProfile.role}
-              disabled
-              helperText="Роль может изменить только администратор"
-            />
+              <TextField
+                label="Email"
+                fullWidth
+                value={userProfile.email}
+                disabled
+                helperText="Email привязан к аккаунту и не может быть изменен"
+                InputProps={{ sx: { borderRadius: 2, bgcolor: 'action.hover' } }}
+              />
 
-            <Button
-              variant="contained"
-              onClick={handleSave}
-              disabled={saving || !displayName.trim()}
-              fullWidth
-            >
-              {saving ? <CircularProgress size={24} /> : 'Сохранить изменения'}
-            </Button>
-          </Stack>
-        </Box>
-      </Paper>
+              <Box pt={2}>
+                <Button
+                  variant="contained"
+                  onClick={handleSave}
+                  disabled={saving || !displayName.trim()}
+                  sx={{
+                    borderRadius: 2,
+                    px: 4,
+                    py: 1.5,
+                    textTransform: 'none',
+                    fontWeight: 600,
+                    boxShadow: 2
+                  }}
+                >
+                  {saving ? <CircularProgress size={24} color="inherit" /> : 'Сохранить изменения'}
+                </Button>
+              </Box>
+            </Stack>
+          </Paper>
+        </Grid>
+      </Grid>
     </Container>
   );
 };

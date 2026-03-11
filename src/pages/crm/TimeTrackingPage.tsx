@@ -32,6 +32,7 @@ import CreateSessionDialog from '../../components/crm/CreateSessionDialog';
 import EmployeeDetailsDialog from '../../components/crm/EmployeeDetailsDialog';
 import AdminStopSessionDialog from '../../components/time-tracking/AdminStopSessionDialog';
 import AdminStartSessionDialog from '../../components/time-tracking/AdminStartSessionDialog';
+import { BotLogsViewer } from '../../components/crm/BotLogsViewer';
 
 /**
  * Time Tracking Page
@@ -60,6 +61,7 @@ const TimeTrackingPage: React.FC = () => {
     const [editSession, setEditSession] = useState<WorkSession | null>(null);
     const [adminStopSession, setAdminStopSession] = useState<WorkSession | null>(null);
     const [adminStartSession, setAdminStartSession] = useState<WorkSession | null>(null);
+    const [botLogsWorker, setBotLogsWorker] = useState<{ id: string, name: string } | null>(null);
 
     // Auth
     const { currentUser, userProfile } = useAuth();
@@ -556,6 +558,7 @@ const TimeTrackingPage: React.FC = () => {
                     isAdmin={isAdmin}
                     onAdminStopSession={(session) => setAdminStopSession(session)}
                     onAdminStartSession={(session) => setAdminStartSession(session)}
+                    onViewBotLogs={(id, name) => setBotLogsWorker({ id, name })}
                 />
             )}
 
@@ -596,6 +599,13 @@ const TimeTrackingPage: React.FC = () => {
                 } : undefined}
                 onClose={() => setAdminStartSession(null)}
                 onConfirm={handleAdminStartSession}
+            />
+
+            <BotLogsViewer
+                open={!!botLogsWorker}
+                onClose={() => setBotLogsWorker(null)}
+                workerId={botLogsWorker?.id || ''}
+                workerName={botLogsWorker?.name || ''}
             />
         </Container>
     );

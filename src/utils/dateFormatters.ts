@@ -1,6 +1,4 @@
 import { Timestamp } from 'firebase/firestore';
-import { format } from 'date-fns';
-
 /**
  * Formats duration in minutes to human-readable string (Xh Ym)
  */
@@ -12,20 +10,31 @@ export function formatDuration(minutes?: number): string {
     return `${hours}h ${mins}m`;
 }
 
+const TIMEZONE = 'America/New_York';
+
 /**
- * Formats Firestore Timestamp to date string (Jan 10, 2026)
+ * Formats Firestore Timestamp to date string (Jan 10, 2026) in Miami Time
  */
 export function formatDate(timestamp?: Timestamp): string {
     if (!timestamp) return '-';
-    return format(timestamp.toDate(), 'MMM dd, yyyy');
+    return new Intl.DateTimeFormat('en-US', {
+        timeZone: TIMEZONE,
+        month: 'short',
+        day: '2-digit',
+        year: 'numeric'
+    }).format(timestamp.toDate());
 }
 
 /**
- * Formats Firestore Timestamp to time string (14:30)
+ * Formats Firestore Timestamp to time string (14:30) in Miami Time
  */
 export function formatTime(timestamp?: Timestamp): string {
     if (!timestamp) return '-';
-    return format(timestamp.toDate(), 'HH:mm');
+    return new Intl.DateTimeFormat('en-GB', {
+        timeZone: TIMEZONE,
+        hour: '2-digit',
+        minute: '2-digit'
+    }).format(timestamp.toDate());
 }
 
 /**

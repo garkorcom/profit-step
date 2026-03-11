@@ -4,7 +4,7 @@ import {
     Container, Grid, Paper, Typography, Box, TextField, Select, MenuItem,
     FormControl, InputLabel, Tabs, Tab, Button, Card, CardContent, Divider,
     Stack, IconButton, Tooltip, AppBar, Toolbar, useTheme, useMediaQuery,
-    InputAdornment, Chip, Menu, Snackbar, Alert, CircularProgress
+    InputAdornment, Chip, Menu, Snackbar, Alert, CircularProgress, Dialog, Popover
 } from '@mui/material';
 import {
     Lightbulb as LightIcon, Power as PowerIcon, ToggleOn as SwitchIcon,
@@ -15,17 +15,20 @@ import {
     SaveAlt as ExportIcon, FlashOn as FlashOnIcon, Add as AddIcon,
     Remove as RemoveIcon, AutoAwesome as AutoAwesomeIcon,
     Cable as CableIcon, PictureAsPdf as PdfIcon,
-    Save as SaveIcon, FolderOpen as ProjectsIcon, TableChart as ExcelIcon
+    Save as SaveIcon, FolderOpen as ProjectsIcon, TableChart as ExcelIcon, Warning as WarningIcon
 } from '@mui/icons-material';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 
-import { BlueprintUploadDialog } from '../../components/estimates/BlueprintUploadDialog';
 import { AiMappingDialog } from '../../components/estimates/AiMappingDialog';
+import { V3PipelineContainer } from '../../components/estimates/pipeline/V3PipelineContainer';
+import { V3VisualProofStep } from '../../components/estimates/pipeline/V3VisualProofStep';
 import { useAuth } from '../../auth/AuthContext';
 import { savedEstimateApi } from '../../api/savedEstimateApi';
-import { projectApi } from '../../api/projectApi';
+import { projectsApi } from '../../api/projectsApi';
+import { blueprintApi } from '../../api/blueprintApi';
+import { BlueprintV3Session, BlueprintAgentV3Result } from '../../types/blueprint.types';
 
 // ============== DATA ==============
 import { DEVICES, GEAR, POOL, GENERATOR, LANDSCAPE, WIRE } from '../../constants/electricalDevices';
@@ -101,7 +104,7 @@ const WIRE_RATES: any = {
     'rg6': { name: 'RG6 Coax', rate: 0.35, laborPer100: 0.50 },
 };
 
-const ItemRow = React.memo(({ item, qty, onChange, category, isMobile, isEditingRates, onRateChange }: any) => {
+const ItemRow = React.memo(({ item, qty, onChange, category, isMobile, isEditingRates, onRateChange, confidence, anomaly, onShowLineage }: any) => {
     const hasQty = qty > 0;
     const bg = hasQty ? 'primary.50' : 'background.paper';
 
@@ -112,7 +115,19 @@ const ItemRow = React.memo(({ item, qty, onChange, category, isMobile, isEditing
         return (
             <Paper variant="outlined" sx={{ p: 1, mb: 1, bgcolor: bg, borderColor: hasQty ? 'primary.main' : undefined }}>
                 <Box display="flex" justifyContent="space-between" alignItems="center" mb={1}>
-                    <Typography variant="body2" fontWeight="medium">{item.name}</Typography>
+                    <Box display="flex" alignItems="center" gap={1}>
+                        {anomaly && (
+                            <Tooltip title={anomaly}>
+                                <IconButton color="error" size="small" sx={{ p: 0 }} onClick={onShowLineage}>
+                                    <WarningIcon fontSize="small" />
+                                </IconButton>
+                            </Tooltip>
+                        )}
+                        <Typography variant="body2" fontWeight="medium">{item.name}</Typography>
+                        {!!confidence && confidence > 0 && hasQty && (
+                            <Chip size="small" label={`${confidence}%`} color={confidence > 85 ? 'success' : confidence > 60 ? 'warning' : 'error'} sx={{ height: 16, fontSize: '0.65rem' }} onClick={onShowLineage} />
+                        )}
+                    </Box>
                     {hasQty && <Chip label={qty} size="small" color="primary" />}
                 </Box>
 
@@ -174,8 +189,18 @@ const ItemRow = React.memo(({ item, qty, onChange, category, isMobile, isEditing
                 '&:hover': { bgcolor: hasQty ? 'primary.100' : 'action.hover' }
             }}
         >
-            <Box flex={1} mr={2}>
+            <Box flex={1} mr={2} display="flex" alignItems="center" gap={1}>
+                {anomaly && (
+                    <Tooltip title={anomaly}>
+                        <IconButton color="error" size="small" sx={{ p: 0 }} onClick={onShowLineage}>
+                            <WarningIcon fontSize="small" />
+                        </IconButton>
+                    </Tooltip>
+                )}
                 <Typography variant="body2" fontWeight={hasQty ? "bold" : "medium"}>{item.name}</Typography>
+                {!!confidence && confidence > 0 && hasQty && (
+                    <Chip size="small" label={`${confidence}%`} color={confidence > 85 ? 'success' : confidence > 60 ? 'warning' : 'error'} sx={{ height: 16, fontSize: '0.65rem', cursor: 'pointer' }} onClick={onShowLineage} />
+                )}
             </Box>
 
             {isEditingRates ? (
@@ -231,7 +256,7 @@ const ItemRow = React.memo(({ item, qty, onChange, category, isMobile, isEditing
     );
 });
 
-const Section = React.memo(({ items, qtyMap, onChange, title, icon, category, isMobile, isEditingRates, onRateChange }: any) => (
+const Section = React.memo(({ items, qtyMap, onChange, title, icon, category, isMobile, isEditingRates, onRateChange, getConfidence, getAnomaly, onShowLineage }: any) => (
     <Box mb={4}>
         <Box display="flex" alignItems="center" gap={1} mb={2}>
             {icon}
@@ -256,6 +281,9 @@ const Section = React.memo(({ items, qtyMap, onChange, title, icon, category, is
                         isMobile={isMobile}
                         isEditingRates={isEditingRates}
                         onRateChange={onRateChange}
+                        confidence={getConfidence ? getConfidence(item.id) : 0}
+                        anomaly={getAnomaly ? getAnomaly(item.id) : null}
+                        onShowLineage={(e: any) => onShowLineage && onShowLineage(e, item.id)}
                     />
                 </Grid>
             ))}
@@ -309,15 +337,34 @@ export default function ElectricalEstimatorPage() {
     const [notes, setNotes] = useState('');
     const [isEditingRates, setIsEditingRates] = useState(false);
     const [showAiDialog, setShowAiDialog] = useState(false);
+    const [showVisualProof, setShowVisualProof] = useState(false);
+    const [activeV3Sessions, setActiveV3Sessions] = useState<BlueprintV3Session[]>([]);
+    const [resumeSessionId, setResumeSessionId] = useState<string | undefined>(undefined);
     const [exportAnchorEl, setExportAnchorEl] = useState<null | HTMLElement>(null);
 
     const [unmappedItems, setUnmappedItems] = useState<Record<string, number>>({});
     const [pendingMappingData, setPendingMappingData] = useState<Record<string, number> | null>(null);
 
+    const [v3Results, setV3Results] = useState<Record<string, BlueprintAgentV3Result>>({});
+    const [v3Images, setV3Images] = useState<any[]>([]);
+    const [anomalies, setAnomalies] = useState<{itemKey: string, reason: string}[]>([]);
+    
+    const [lineageAnchorEl, setLineageAnchorEl] = useState<HTMLElement | null>(null);
+    const [lineageItem, setLineageItem] = useState<string | null>(null);
+
     const [currentEstimateId, setCurrentEstimateId] = useState<string | null>(null);
     const [currentEstimateData, setCurrentEstimateData] = useState<any>(null);
     const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
     const [autosaveStatus, setAutosaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
+
+    // Fetch active V3 sessions on component load
+    useEffect(() => {
+        if (!userProfile?.companyId || !userProfile?.id) return;
+        
+        blueprintApi.listActiveV3Sessions(userProfile.companyId, userProfile.id)
+            .then(setActiveV3Sessions)
+            .catch(console.error);
+    }, [userProfile?.companyId, userProfile?.id, showAiDialog]);
 
     // Load project on mount if ID is in URL
     useEffect(() => {
@@ -327,7 +374,7 @@ export default function ElectricalEstimatorPage() {
         if (userProfile) {
             if (projectIdMatch) {
                 // Load root project metadata
-                projectApi.getById(projectIdMatch).then((projectData) => {
+                projectsApi.getById(projectIdMatch).then((projectData) => {
                     if (projectData) {
                         setProjectName(projectData.name);
                         if (projectData.areaSqft) setSqft(projectData.areaSqft);
@@ -427,6 +474,33 @@ export default function ElectricalEstimatorPage() {
             setSqft(newSqft);
         }
         setShowAiDialog(false);
+    };
+
+    const getConfidence = (itemKey: string) => {
+        let totalConf = 0;
+        let count = 0;
+        Object.values(v3Results).forEach(pageData => {
+            const boxes = pageData[itemKey];
+            if (boxes && Array.isArray(boxes)) {
+                boxes.forEach((b: any) => {
+                    if (b.confidence) {
+                        totalConf += b.confidence;
+                        count++;
+                    }
+                });
+            }
+        });
+        return count > 0 ? Math.round(totalConf / count) : 0;
+    };
+
+    const getAnomaly = (itemKey: string) => {
+        const found = anomalies.find(a => a.itemKey === itemKey);
+        return found ? found.reason : null;
+    };
+
+    const handleShowLineage = (e: React.MouseEvent<HTMLElement>, itemId: string) => {
+        setLineageAnchorEl(e.currentTarget);
+        setLineageItem(itemId);
     };
 
     const handleFinalMapping = (mapped: Record<string, number>, unmapped: Record<string, number>) => {
@@ -599,10 +673,28 @@ export default function ElectricalEstimatorPage() {
     ];
 
     // ===== PDF Export =====
-    const generateEstimatePDF = (label?: string, aiQtyMap?: Record<string, number>) => {
+    const stringToColor = (str: string) => {
+        let hash = 0;
+        for (let i = 0; i < str.length; i++) {
+            hash = str.charCodeAt(i) + ((hash << 5) - hash);
+        }
+        const c = (hash & 0x00FFFFFF).toString(16).toUpperCase();
+        return '#' + '00000'.substring(0, 6 - c.length) + c;
+    };
+
+    const hexToRgb = (hex: string) => {
+        const r = parseInt(hex.slice(1, 3), 16);
+        const g = parseInt(hex.slice(3, 5), 16);
+        const b = parseInt(hex.slice(5, 7), 16);
+        return [r, g, b] as [number, number, number];
+    };
+
+    const generateEstimatePDF = async (label?: string, aiQtyMap?: Record<string, number>) => {
         setIsGeneratingPDF(true);
-        setTimeout(() => {
-            try {
+        // Small delay to allow react to render the spinner
+        await new Promise(r => setTimeout(r, 100));
+        
+        try {
                 const pdf = new jsPDF();
                 // Header
                 pdf.setFontSize(18);
@@ -719,6 +811,83 @@ export default function ElectricalEstimatorPage() {
                     pdf.text(`Notes: ${notes}`, 14, notesY);
                 }
 
+                // --- V3 Visual Proof Appendix ---
+                // Only append if it's the main AI output or an active V3 session is present
+                const sessionToPrint = activeV3Sessions[0];
+                if (sessionToPrint && sessionToPrint.v3Results && sessionToPrint.images) {
+                    const selectedImages = sessionToPrint.images.filter(i => i.selected);
+                    if (selectedImages.length > 0) {
+                        pdf.addPage();
+                        pdf.setFontSize(16);
+                        pdf.setTextColor(33, 33, 33);
+                        pdf.text('APPENDIX: AI VISUAL PROOF', 14, 20);
+                        pdf.setFontSize(10);
+                        pdf.text('The following floor plans indicate the exact locations of detected items.', 14, 28);
+
+                        for (const imgData of selectedImages) {
+                            if (!imgData.storageUrl) continue;
+                            const pageResults = sessionToPrint.v3Results[imgData.id];
+                            if (!pageResults) continue;
+
+                            pdf.addPage();
+                            pdf.setFontSize(12);
+                            pdf.text(`Page: ${imgData.originalFileName || imgData.pageNumber}`, 14, 15);
+
+                            try {
+                                // Load image via proxy or direct fetch to avoid CORS canvas taint if possible
+                                const imgBlob = await fetch(imgData.storageUrl).then(r => r.blob());
+                                const imgDataUrl = await new Promise<string>(res => {
+                                    const reader = new FileReader();
+                                    reader.onload = e => res(e.target!.result as string);
+                                    reader.readAsDataURL(imgBlob);
+                                });
+
+                                const imgWidth = imgData.dimensions?.width || 1000;
+                                const imgHeight = imgData.dimensions?.height || 1000;
+
+                                // Fit onto A4 (210x297mm). Let's use max w: 190, max h: 260
+                                const pdfW = 190;
+                                const pdfH = 260;
+                                const ratio = Math.min(pdfW / imgWidth, pdfH / imgHeight);
+                                    
+                                const printW = imgWidth * ratio;
+                                const printH = imgHeight * ratio;
+                                const printX = (210 - printW) / 2; // Center horizontally
+                                const printY = 25;
+
+                                pdf.addImage(imgDataUrl, 'PNG', printX, printY, printW, printH);
+
+                                // Draw bounding boxes
+                                pdf.setLineWidth(0.5);
+                                Object.entries(pageResults).forEach(([itemType, boxes]) => {
+                                    const colorHex = stringToColor(itemType);
+                                    const [r, g, b] = hexToRgb(colorHex);
+                                    pdf.setDrawColor(r, g, b);
+                                    
+                                    boxes.forEach((item: any) => {
+                                        // box is [ymin, xmin, ymax, xmax] normalized 0-1000
+                                        const boxArr = Array.isArray(item) ? item : item?.box;
+                                        if (!boxArr) return;
+                                        const [ymin, xmin, ymax, xmax] = boxArr;
+                                        const bx = printX + (xmin / 1000) * printW;
+                                        const by = printY + (ymin / 1000) * printH;
+                                        const bw = ((xmax - xmin) / 1000) * printW;
+                                        const bh = ((ymax - ymin) / 1000) * printH;
+
+                                        pdf.rect(bx, by, bw, bh);
+                                    });
+                                });
+
+                            } catch (e) {
+                                console.error('Failed to append visual proof page:', e);
+                                pdf.setFontSize(10);
+                                pdf.setTextColor(255, 0, 0);
+                                pdf.text(`Failed to load image for visual proof`, 14, 30);
+                            }
+                        }
+                    }
+                }
+
                 const pdfBlobUrl = pdf.output('bloburl');
                 window.open(pdfBlobUrl, '_blank');
                 const safeName = projectName.replace(/\s+/g, '_');
@@ -731,7 +900,6 @@ export default function ElectricalEstimatorPage() {
             } finally {
                 setIsGeneratingPDF(false);
             }
-        }, 100);
     };
 
     // ===== Excel Export =====
@@ -932,7 +1100,7 @@ Notes: ${notes || 'N/A'}
 
             // Also update the root project's square footage
             if (sqft > 0 && projectIdMatch) {
-                await projectApi.update(projectIdMatch, { areaSqft: sqft });
+                await projectsApi.update(projectIdMatch, { areaSqft: sqft });
             }
 
             setSaveSnackbar('Проект сохранён ✅');
@@ -1074,7 +1242,10 @@ Notes: ${notes || 'N/A'}
                                     <Button
                                         size="small"
                                         startIcon={<AutoAwesomeIcon />}
-                                        onClick={() => setShowAiDialog(true)}
+                                        onClick={() => {
+                                            setResumeSessionId(undefined);
+                                            setShowAiDialog(true);
+                                        }}
                                         sx={{ ml: 'auto', background: 'linear-gradient(45deg, #2196F3 30%, #21CBF3 90%)', color: 'white' }}
                                     >
                                         AI Analysis
@@ -1148,6 +1319,30 @@ Notes: ${notes || 'N/A'}
                     {/* Main Content */}
                     <Grid size={{ xs: 12, lg: 9 }}>
                         <Paper sx={{ minHeight: 500 }}>
+                            {activeV3Sessions.length > 0 && (
+                                <Paper sx={{ p: 2, mb: 3, bgcolor: 'primary.light', color: 'primary.contrastText', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderRadius: 2 }}>
+                                    <Box>
+                                        <Typography variant="subtitle1" fontWeight="bold" display="flex" alignItems="center" gap={1}>
+                                            <AutoAwesomeIcon /> Paused AI Takeoff Found
+                                        </Typography>
+                                        <Typography variant="body2" sx={{ opacity: 0.9 }}>
+                                            You have an unfinished AI analysis session. Resume to complete the takeoff.
+                                        </Typography>
+                                    </Box>
+                                    <Button 
+                                        variant="contained" 
+                                        color="secondary" 
+                                        onClick={() => {
+                                            setResumeSessionId(activeV3Sessions[0].id);
+                                            setShowAiDialog(true);
+                                        }}
+                                        sx={{ whiteSpace: 'nowrap' }}
+                                    >
+                                        Resume Session
+                                    </Button>
+                                </Paper>
+                            )}
+
                             <Tabs
                                 value={activeTab}
                                 onChange={(_, v) => setActiveTab(v)}
@@ -1185,14 +1380,14 @@ Notes: ${notes || 'N/A'}
                                         )}
                                         <Grid container spacing={4}>
                                             <Grid size={{ xs: 12, md: 6 }}>
-                                                <Section items={devicesData.lighting} qtyMap={quantities} onChange={updateQty(setQuantities)} title="Lighting" icon={<LightIcon />} category="devices" isMobile={isMobile} isEditingRates={isEditingRates} onRateChange={updateRate} />
-                                                <Section items={devicesData.receptacles} qtyMap={quantities} onChange={updateQty(setQuantities)} title="Receptacles" icon={<PowerIcon />} category="devices" isMobile={isMobile} isEditingRates={isEditingRates} onRateChange={updateRate} />
-                                                <Section items={devicesData.switches} qtyMap={quantities} onChange={updateQty(setQuantities)} title="Switches" icon={<SwitchIcon />} category="devices" isMobile={isMobile} isEditingRates={isEditingRates} onRateChange={updateRate} />
+                                                <Section items={devicesData.lighting} qtyMap={quantities} onChange={updateQty(setQuantities)} title="Lighting" icon={<LightIcon />} category="devices" isMobile={isMobile} isEditingRates={isEditingRates} onRateChange={updateRate} getConfidence={getConfidence} getAnomaly={getAnomaly} onShowLineage={handleShowLineage} />
+                                                <Section items={devicesData.receptacles} qtyMap={quantities} onChange={updateQty(setQuantities)} title="Receptacles" icon={<PowerIcon />} category="devices" isMobile={isMobile} isEditingRates={isEditingRates} onRateChange={updateRate} getConfidence={getConfidence} getAnomaly={getAnomaly} onShowLineage={handleShowLineage} />
+                                                <Section items={devicesData.switches} qtyMap={quantities} onChange={updateQty(setQuantities)} title="Switches" icon={<SwitchIcon />} category="devices" isMobile={isMobile} isEditingRates={isEditingRates} onRateChange={updateRate} getConfidence={getConfidence} getAnomaly={getAnomaly} onShowLineage={handleShowLineage} />
                                             </Grid>
                                             <Grid size={{ xs: 12, md: 6 }}>
-                                                <Section items={devicesData.appliances} qtyMap={quantities} onChange={updateQty(setQuantities)} title="Appliances" icon={<ApplianceIcon />} category="devices" isMobile={isMobile} isEditingRates={isEditingRates} onRateChange={updateRate} />
-                                                <Section items={devicesData.hvac} qtyMap={quantities} onChange={updateQty(setQuantities)} title="HVAC" icon={<HvacIcon />} category="devices" isMobile={isMobile} isEditingRates={isEditingRates} onRateChange={updateRate} />
-                                                <Section items={devicesData.lowvoltage} qtyMap={quantities} onChange={updateQty(setQuantities)} title="Low Voltage" icon={<LowVoltageIcon />} category="devices" isMobile={isMobile} isEditingRates={isEditingRates} onRateChange={updateRate} />
+                                                <Section items={devicesData.appliances} qtyMap={quantities} onChange={updateQty(setQuantities)} title="Appliances" icon={<ApplianceIcon />} category="devices" isMobile={isMobile} isEditingRates={isEditingRates} onRateChange={updateRate} getConfidence={getConfidence} getAnomaly={getAnomaly} onShowLineage={handleShowLineage} />
+                                                <Section items={devicesData.hvac} qtyMap={quantities} onChange={updateQty(setQuantities)} title="HVAC" icon={<HvacIcon />} category="devices" isMobile={isMobile} isEditingRates={isEditingRates} onRateChange={updateRate} getConfidence={getConfidence} getAnomaly={getAnomaly} onShowLineage={handleShowLineage} />
+                                                <Section items={devicesData.lowvoltage} qtyMap={quantities} onChange={updateQty(setQuantities)} title="Low Voltage" icon={<LowVoltageIcon />} category="devices" isMobile={isMobile} isEditingRates={isEditingRates} onRateChange={updateRate} getConfidence={getConfidence} getAnomaly={getAnomaly} onShowLineage={handleShowLineage} />
                                             </Grid>
                                         </Grid>
                                     </>
@@ -1412,12 +1607,28 @@ Notes: ${notes || 'N/A'}
             </Container>
 
             {/* AI Dialogs */}
-            <BlueprintUploadDialog
-                open={showAiDialog}
+            <Dialog 
+                open={showAiDialog} 
                 onClose={() => setShowAiDialog(false)}
-                onApply={handleAiApply}
-                projectId={projectIdMatch}
-            />
+                maxWidth="lg"
+                fullWidth
+            >
+                <V3PipelineContainer 
+                    companyId={userProfile?.companyId || ''}
+                    userId={userProfile?.id || ''}
+                    initialSessionId={resumeSessionId}
+                    sqft={sqft}
+                    stories={stories}
+                    projectType={projectType}
+                    onAnalysisComplete={(results: any, v3R?: any, anom?: any, imgs?: any[]) => {
+                        handleAiApply(results);
+                        if (v3R) setV3Results(v3R);
+                        if (anom) setAnomalies(anom);
+                        if (imgs) setV3Images(imgs);
+                    }}
+                    onCancel={() => setShowAiDialog(false)}
+                />
+            </Dialog>
 
             {
                 pendingMappingData && (
@@ -1434,6 +1645,81 @@ Notes: ${notes || 'N/A'}
                     />
                 )
             }
+
+            {/* Lineage Popover */}
+            <Popover
+                open={Boolean(lineageAnchorEl) && !!lineageItem}
+                anchorEl={lineageAnchorEl}
+                onClose={() => setLineageAnchorEl(null)}
+                anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+                transformOrigin={{ vertical: 'top', horizontal: 'left' }}
+            >
+                <Box p={2} sx={{ minWidth: 250, maxWidth: 350 }}>
+                    <Typography variant="subtitle2" fontWeight="bold" mb={1} textTransform="capitalize" color="primary">
+                        {lineageItem?.replace(/_/g, ' ')} — AI Data Lineage
+                    </Typography>
+                    <Divider sx={{ mb: 1 }} />
+                    {v3Images.map(img => {
+                        const boxes = v3Results[img.id]?.[lineageItem || ''];
+                        if (!boxes || boxes.length === 0) return null;
+                        
+                        const avgConf = Math.round(boxes.reduce((s, b: any) => s + (b.confidence || 0), 0) / boxes.length);
+                        return (
+                            <Box key={img.id} display="flex" justifyContent="space-between" alignItems="center" mb={1}>
+                                <Typography variant="body2" color="text.secondary" noWrap sx={{ maxWidth: 160 }}>
+                                    {img.originalFileName} (pg {img.pageNumber})
+                                </Typography>
+                                <Box display="flex" alignItems="center" gap={1}>
+                                    <Chip label={boxes.length} size="small" />
+                                    <Typography variant="caption" sx={{ color: avgConf > 80 ? 'success.main' : 'warning.main', fontWeight: 'bold' }}>
+                                        {avgConf}%
+                                    </Typography>
+                                </Box>
+                            </Box>
+                        );
+                    })}
+                    {anomalies.find(a => a.itemKey === lineageItem) && (
+                        <Alert severity="error" sx={{ mt: 2, p: 0.5, '& .MuiAlert-message': { p: 1 } }}>
+                            <Typography variant="caption" fontWeight="bold">Anomaly Detected:</Typography><br/>
+                            <Typography variant="caption">{anomalies.find(a => a.itemKey === lineageItem)?.reason}</Typography>
+                        </Alert>
+                    )}
+                    
+                    {v3Images.length > 0 && Object.keys(v3Results).length > 0 && (
+                        <>
+                            <Divider sx={{ my: 2 }} />
+                            <Button 
+                                size="small" 
+                                variant="outlined" 
+                                fullWidth 
+                                onClick={() => {
+                                    setLineageAnchorEl(null);
+                                    setShowVisualProof(true);
+                                }}
+                            >
+                                View Visual Proof
+                            </Button>
+                        </>
+                    )}
+                </Box>
+            </Popover>
+
+            {/* Visual Proof Dialog */}
+            <Dialog open={showVisualProof} onClose={() => setShowVisualProof(false)} maxWidth="xl" fullWidth>
+                <Box sx={{ bgcolor: 'background.paper', height: '85vh', display: 'flex', flexDirection: 'column' }}>
+                    {v3Images.length > 0 && Object.keys(v3Results).length > 0 ? (
+                        <V3VisualProofStep
+                            images={v3Images}
+                            results={v3Results}
+                            aggregatedResult={currentEstimateData?.quantities || quantities || {}}
+                            onComplete={() => setShowVisualProof(false)}
+                            onBack={() => setShowVisualProof(false)}
+                        />
+                    ) : (
+                        <Typography p={4} textAlign="center">No visual data available.</Typography>
+                    )}
+                </Box>
+            </Dialog>
 
             {/* Sticky Footer for Mobile */}
             {

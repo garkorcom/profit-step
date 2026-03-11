@@ -512,6 +512,14 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // AI Estimator V3 Pipeline Sessions
+    match /blueprint_v3_sessions/{sessionId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update: if isSignedIn();
+      allow delete: if isAdmin();
+    }
+
     // Batch AI Analysis Jobs (Multi-File Pipeline)
     match /blueprint_batches/{batchId} {
       allow read: if isSignedIn();

@@ -10,28 +10,76 @@ const GEMINI_API_KEY = process.env.GEMINI_API_KEY || safeConfig().gemini?.api_ke
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || safeConfig().anthropic?.api_key || safeConfig().anthropic?.key;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || safeConfig().openai?.api_key || safeConfig().openai?.key;
 
-// ===== Valid takeoff keys =====
+// ===== Building Context (extracted before analysis) =====
+export interface BuildingContext {
+    buildingType: 'single-family' | 'multi-family' | 'commercial' | 'mixed-use' | 'unknown';
+    unitCount: number;         // 0 for single-family
+    stories: number;           // 0 if unknown
+    mainServiceAmps: number;   // 0 if unknown
+    hasCommonLaundry: boolean;
+    hasParking: boolean;
+    hasRetail: boolean;
+}
+
+const DEFAULT_BUILDING_CONTEXT: BuildingContext = {
+    buildingType: 'unknown', unitCount: 0, stories: 0, mainServiceAmps: 0,
+    hasCommonLaundry: false, hasParking: false, hasRetail: false,
+};
+
+// ===== Valid takeoff keys (synced with electricalDevices.ts) =====
 const VALID_TAKEOFF_KEYS = new Set([
-    'recessed_ic', 'recessed_nc', 'surface', 'duplex', 'gfi', 'dedicated_20a',
-    'outlet_240_30', 'outlet_240_50', 'floor_outlet', 'single_pole', '3way',
-    'dimmer', 'bath_exhaust', 'smoke_co', 'panel_200', 'subpanel_100',
-    'cat6', 'exterior', 'ceiling_fan', 'chandelier', 'pendant',
-    'range', 'cooktop', 'wall_oven', 'microwave', 'dishwasher',
-    'dryer', 'water_heater', 'ac_30a', 'ev_charger',
-    'under_cabinet', 'exhaust_fan',
-    'pool_pump', 'pool_light', 'pool_heater', 'spa_blower',
+    // LIGHTING
+    'recessed_ic', 'recessed_nc', 'surface', 'pendant', 'chandelier',
+    'ceiling_fan', 'under_cabinet', 'exhaust_fan', 'bath_exhaust', 'exterior',
+    // RECEPTACLES
+    'duplex', 'gfi', 'dedicated_20a', 'outlet_240_30', 'outlet_240_50', 'floor_outlet',
+    // SWITCHES
+    'single_pole', '3way', '4way', 'dimmer', 'smart_switch', 'occupancy',
+    // LOW VOLTAGE
+    'smoke', 'smoke_co', 'doorbell', 'doorbell_cam', 'cat6', 'coax', 'speaker_wire', 'central_vac',
+    // PANELS & GEAR
+    'panel_200', 'panel_400', 'ct_400', 'ct_600',
+    'subpanel_100', 'subpanel_125', 'subpanel_200',
+    'meter_200', 'meter_320', 'meter_400', 'grounding', 'surge',
+    // APPLIANCES
+    'range', 'cooktop', 'wall_oven', 'double_oven', 'microwave', 'dishwasher',
+    'disposal', 'dryer', 'washer', 'refrigerator', 'freezer',
+    'water_heater', 'tankless_wh', 'ev_charger', 'ev_charger_60',
+    // HVAC
+    'ac_30a', 'ac_40a', 'ac_disc', 'mini_split', 'air_handler', 'thermostat',
+    // POOL
+    'pool_pump', 'pool_light', 'pool_heater', 'pool_heater_elec',
+    'pool_bond', 'pool_light_jbox', 'pool_transformer',
+    'spa_pump', 'spa_blower', 'pool_gfi', 'pool_disc', 'pool_automation',
+    // GENERATOR
     'generator_panel', 'transfer_switch',
-    'landscape_light', 'landscape_transformer', 'irrigation_controller'
+    'gen_pad', 'ats_200', 'ats_400', 'gen_whip', 'gen_disc', 'gen_wire',
+    'gen_coord', 'interlock', 'inlet_box',
+    // LANDSCAPE
+    'landscape_light', 'landscape_transformer', 'irrigation_controller',
+    'land_trans_300', 'land_trans_600', 'land_trans_900',
+    'land_path', 'land_spot', 'land_well', 'land_flood', 'land_wire',
 ]);
 
 const TAKEOFF_PROMPT = `You are a professional Master Electrician and Estimator.
 Your task is to analyze the provided Electrical Blueprint.
 
+BUILDING CONTEXT (determine FIRST, before counting):
+1. Identify the BUILDING TYPE: single-family, multi-family, or commercial.
+2. If multi-family: count TOTAL DWELLING UNITS from Panel Schedule labels (e.g. "APT-1" through "APT-38" = 38 units).
+3. Distinguish PER-UNIT items vs COMMON/BUILDING items.
+4. If a Panel Schedule lists N unit subpanels, report the TOTAL (e.g. subpanel_125: 38), not just 1.
+5. If this page shows a TYPICAL UNIT floor plan, count items for ONE unit only.
+
 STRATEGY:
-1. First, locate the SYMBOL LEGEND on the blueprint to identify what each symbol means.
+1. Locate the SYMBOL LEGEND on the blueprint.
 2. Divide the floor plan into 4 QUADRANTS (NW, NE, SW, SE) and scan each systematically.
-3. Cross-reference symbols found on the plan with the legend.
-4. Sum up totals across all quadrants.
+3. Cross-reference symbols with the legend.
+4. If multi-family and you see a PANEL SCHEDULE:
+   - Count each unit subpanel listed
+   - Read circuit breaker sizes to identify appliances (20A cooktop, 40A tankless WH, etc.)
+   - Do NOT confuse a 20A cooktop circuit with a 50A range circuit
+5. Sum up totals across all quadrants.
 
 RULES:
 1. ONLY count electrical devices, receptacles, switches, lighting, panels, and equipment.
@@ -41,18 +89,26 @@ RULES:
 
   LIGHTING: recessed_ic, recessed_nc, surface, exterior, ceiling_fan, chandelier, pendant, under_cabinet
   RECEPTACLES: duplex, gfi, dedicated_20a, outlet_240_30, outlet_240_50, floor_outlet
-  SWITCHES: single_pole, 3way, dimmer
-  VENTILATION: bath_exhaust, exhaust_fan, smoke_co
-  PANELS: panel_200, subpanel_100
-  DATA: cat6
-  APPLIANCES: range, cooktop, wall_oven, microwave, dishwasher, dryer, water_heater, ac_30a, ev_charger
-  POOL: pool_pump, pool_light, pool_heater, spa_blower
-  GENERATOR: generator_panel, transfer_switch
-  LANDSCAPE: landscape_light, landscape_transformer, irrigation_controller
+  SWITCHES: single_pole, 3way, 4way, dimmer, smart_switch, occupancy
+  LOW_VOLTAGE: smoke, smoke_co, doorbell, doorbell_cam, cat6, coax, speaker_wire, central_vac
+  VENTILATION: bath_exhaust, exhaust_fan
+  PANELS: panel_200, panel_400, ct_400, ct_600, subpanel_100, subpanel_125, subpanel_200, meter_200, meter_320, meter_400, grounding, surge
+  APPLIANCES: range, cooktop, wall_oven, double_oven, microwave, dishwasher, disposal, dryer, washer, refrigerator, freezer, water_heater, tankless_wh, ev_charger, ev_charger_60
+  HVAC: ac_30a, ac_40a, ac_disc, mini_split, air_handler, thermostat
+  POOL: pool_pump, pool_light, pool_heater, pool_heater_elec, pool_bond, pool_light_jbox, pool_transformer, spa_pump, spa_blower, pool_gfi, pool_disc, pool_automation
+  GENERATOR: generator_panel, transfer_switch, gen_pad, ats_200, ats_400, gen_whip, gen_disc, gen_wire, gen_coord, interlock, inlet_box
+  LANDSCAPE: landscape_light, landscape_transformer, irrigation_controller, land_trans_300, land_trans_600, land_trans_900, land_path, land_spot, land_well, land_flood, land_wire
+
+CRITICAL DISTINCTIONS:
+- "cooktop" (20-40A) is NOT "range" (50A) — read the breaker size
+- "tankless_wh" (40-60A) is NOT "water_heater" (30A tank) — check circuit label
+- "mini_split" (ductless split) is NOT "ac_30a" (central A/C condenser)
+- "subpanel_125" is NOT "subpanel_100" — read the panel amperage
+- Common laundry dryers count as "dryer", not per-unit
 
 5. Values MUST be non-negative integers. DO NOT include items with count 0.
 6. Return ONLY the JSON object, no markdown, no \`\`\`json blocks.
-Example: {"recessed_ic": 42, "duplex": 28, "single_pole": 12, "panel_200": 1}
+Example: {"recessed_ic": 42, "duplex": 28, "single_pole": 12, "subpanel_125": 38, "tankless_wh": 38}
 `;
 
 const DISCREPANCY_PROMPT = `You are a professional Master Electrician acting as Senior Auditor.
@@ -70,37 +126,79 @@ ITEMS TO RE-COUNT:
 Example: {"recessed_ic": 45, "duplex": 32}
 `;
 
-const AUDIT_PROMPT = `You are a professional Master Electrician and Senior Estimator. 
+const AUDIT_PROMPT = `You are a professional Master Electrician and Senior Estimator.
 Your task is to AUDIT raw electrical takeoff data generated by an AI vision system. Vision systems often hallucinate elements due to poor blueprint scan quality or visually similar symbols.
 
 PROJECT CONTEXT:
 - Square Footage: {SQFT}
 - Project Type: {PROJECT_TYPE}
 - Facility Use / Details: {FACILITY_USE}
+- Building Type: {BUILDING_TYPE}
+- Dwelling Units: {UNIT_COUNT}
+- Stories: {STORIES}
+- Main Service: {MAIN_SERVICE_AMPS}A
 - Number of Blueprint Pages Scanned: {PAGE_COUNT}
 
 Raw Quantities from Vision Models (Aggregated from {PAGE_COUNT} pages):
 {RAW_DATA}
 
+VALIDATION RULES BY BUILDING TYPE:
+
+🏠 SINGLE-FAMILY:
+- 1 main panel (200A typical), 0-2 subpanels
+- 1 each: range OR cooktop, dishwasher, disposal, water heater/tankless
+- Receptacle density: ~1 per 25-50 sqft depending on room types
+- 14 dishwashers or 55 ranges = hallucination → reduce to 1
+
+🏢 MULTI-FAMILY ({UNIT_COUNT} units):
+- Subpanels ≈ unit count (±20%). 38 units → 30-46 subpanels is NORMAL
+- Water heaters/tankless ≈ unit count (1 per unit)
+- Cooktops or ranges ≈ unit count (1 per unit, but NOT both)
+- Dishwashers: NOT always 1 per unit — micro-units and studios often lack them. Check facility details.
+- Dryers: if common laundry rooms → 4-8 total. If in-unit → ≈ unit count.
+- Main service: 600A-1200A is NORMAL for 20+ units. Do NOT reduce to 200A.
+- Receptacles: 6-10 per micro/studio unit, 12-18 per 1BR+. Total ≈ unitCount × avgPerUnit.
+- Smoke/CO: at minimum 1 per unit, often 2-3 per unit (bedroom + hallway)
+
+🏬 COMMERCIAL:
+- Larger panels (400A-1200A), do NOT reduce to 200A
+- Few residential appliances (no cooktops/ranges unless restaurant)
+- Lighting: commercial density, mostly recessed/surface/troffer
+- Receptacles: lower density than residential (~1 per 50-80 sqft)
+
 RULES for your audit:
-1. APPLY NEC (National Electrical Code) logic and common sense design rules for the given project type, size, and facility use.
-2. CONSIDER the page count. If 10 pages were scanned, 10 panels might be perfectly normal for multi-family, but 10 panels on 1 page of a single-family home is a hallucination.
-3. SEVERELY cut down impossible numbers (e.g. 260 receptacles for a 3000 sqft home is a hallucination; use a logical density like 1 rec per 25-50 sq ft depending on room types).
-4. If a number looks reasonable, keep it or smooth it slightly.
-5. If a number looks like a hallucination (e.g., 14 dishwashers in a single-family home), cut it down to reality (e.g., 1).
-6. IF YOU CHANGE OR REDUCE ANY NUMBERS, you MUST provide a brief, professional explanation in the \`auditNotes\` array. Be specific about what you changed and why (e.g., "Reduced single_pole switches from 85 to 40 based on standard residential density for 2500 sq ft").
-7. Output MUST be ONLY a flat JSON object with exact keys. DO NOT include markdown formatting or explanations outside the JSON.
+1. FIRST determine building type from context, THEN apply the correct rules above.
+2. CONSIDER the page count — multi-page projects naturally have more items.
+3. Reduce only TRULY impossible numbers. For multi-family: 38 subpanels for 38 units is correct, NOT a hallucination.
+4. If a number looks reasonable for the building type, keep it or smooth it slightly.
+5. IF YOU CHANGE ANY NUMBERS, explain in \`auditNotes\` with the building-type rule you applied.
+6. Output MUST be ONLY a flat JSON object. No markdown.
 
 Expected JSON Form:
 {
-  "quantities": { "panel_200": 1, "duplex": 80, "recessed_ic": 40 },
-  "auditNotes": ["Reduced panel_200 from 15 to 1 as typical for a single-family home.", "Reduced duplex from 260 to 80 based on sqft density."]
+  "quantities": { "subpanel_125": 38, "tankless_wh": 38, "duplex": 280 },
+  "auditNotes": ["Kept subpanel_125 at 38: matches unit count for multi-family.", "Reduced duplex from 400 to 280: ~7 per unit × 38 units + common areas."]
 }
 `;
 
 const METADATA_PROMPT = `Extract Project Name/Description, Address, and Area (sq ft) from this blueprint.
 Return ONLY a JSON object: {"description": "...", "address": "...", "areaSqft": 2500}
 Use null for missing values. No markdown.`;
+
+const BUILDING_CONTEXT_PROMPT = `Analyze this electrical blueprint and extract BUILDING CONTEXT ONLY.
+Do NOT count individual devices. Focus ONLY on:
+1. Building type: single-family / multi-family / commercial / mixed-use
+2. Number of dwelling units (from panel schedule labels like "APT-1".."APT-38", or unit floor plans)
+3. Number of stories (from section drawings, floor labels, or title block)
+4. Main electrical service size in amps (from MDP/MOP panel schedule header)
+5. Are there common/shared laundry rooms? (yes/no)
+6. Is there structured parking on lower floors? (yes/no)
+7. Is there retail/commercial space? (yes/no)
+
+Return ONLY a JSON object, no markdown:
+{"buildingType": "multi-family", "unitCount": 38, "stories": 4, "mainServiceAmps": 1000, "hasCommonLaundry": true, "hasParking": true, "hasRetail": true}
+For single-family homes: {"buildingType": "single-family", "unitCount": 0, "stories": 2, "mainServiceAmps": 200, "hasCommonLaundry": false, "hasParking": false, "hasRetail": false}
+`;
 
 // ===== Blueprint Input: supports both PDF and images =====
 export interface BlueprintInput {
@@ -151,12 +249,17 @@ function flattenResult(raw: Record<string, any>): Record<string, any> {
     return flat;
 }
 
+// Keys starting with _ are metadata, not device counts
+const METADATA_KEYS = new Set(['_buildingType', '_unitCount', '_stories', '_mainServiceAmps', '_isTypicalUnit']);
+
 function sanitizeAgentResult(raw: Record<string, any>, agentLabel: string): BlueprintAgentResult {
     const flattened = flattenResult(raw);
     const cleaned: BlueprintAgentResult = {};
     const unknownKeys: string[] = [];
 
     for (const [key, value] of Object.entries(flattened)) {
+        // Skip metadata keys silently (they are valid but not counted)
+        if (METADATA_KEYS.has(key)) continue;
         if (!VALID_TAKEOFF_KEYS.has(key)) { unknownKeys.push(key); continue; }
         const num = Number(value);
         if (!Number.isFinite(num) || num < 0) continue;
@@ -223,11 +326,15 @@ export async function analyzeWithGemini(input: BlueprintInput): Promise<Blueprin
 
     logger.info(`Gemini: sending ${input.mimeType} (${(input.buffer.length / 1024).toFixed(0)}KB)`);
 
+    const finalPrompt = input.customPrompt
+        ? `${TAKEOFF_PROMPT}\n\nUSER SPECIFIC INSTRUCTIONS FOR THIS PROJECT:\n${input.customPrompt}`
+        : TAKEOFF_PROMPT;
+
     const result = await model.generateContent({
         contents: [{
             role: 'user',
             parts: [
-                { text: input.customPrompt || TAKEOFF_PROMPT },
+                { text: finalPrompt },
                 { inlineData: { mimeType: input.mimeType, data: input.base64 } }
             ]
         }]
@@ -255,6 +362,10 @@ export async function analyzeWithClaude(input: BlueprintInput): Promise<Blueprin
         ? { type: 'document' as const, source: { type: 'base64' as const, media_type: 'application/pdf' as const, data: input.base64 } }
         : { type: 'image' as const, source: { type: 'base64' as const, media_type: input.mimeType as 'image/png' | 'image/jpeg', data: input.base64 } };
 
+    const finalPrompt = input.customPrompt
+        ? `${TAKEOFF_PROMPT}\n\nUSER SPECIFIC INSTRUCTIONS FOR THIS PROJECT:\n${input.customPrompt}`
+        : TAKEOFF_PROMPT;
+
     const msg = await anthropic.messages.create({
         model: 'claude-sonnet-4-20250514',
         max_tokens: 1500,
@@ -262,7 +373,7 @@ export async function analyzeWithClaude(input: BlueprintInput): Promise<Blueprin
             role: 'user',
             content: [
                 fileContent,
-                { type: 'text', text: input.customPrompt || TAKEOFF_PROMPT }
+                { type: 'text', text: finalPrompt }
             ]
         }]
     });
@@ -295,12 +406,16 @@ export async function analyzeWithOpenAI(input: BlueprintInput): Promise<Blueprin
 
     logger.info(`OpenAI: sending ${input.mimeType} (${(input.buffer.length / 1024).toFixed(0)}KB)`);
 
+    const finalPrompt = input.customPrompt
+        ? `${TAKEOFF_PROMPT}\n\nUSER SPECIFIC INSTRUCTIONS FOR THIS PROJECT:\n${input.customPrompt}`
+        : TAKEOFF_PROMPT;
+
     const response = await openai.chat.completions.create({
         model: 'gpt-4o',
         messages: [{
             role: 'user',
             content: [
-                { type: 'text', text: input.customPrompt || TAKEOFF_PROMPT },
+                { type: 'text', text: finalPrompt },
                 {
                     type: 'image_url',
                     image_url: {
@@ -386,25 +501,31 @@ export async function performSmartAudit(
     squareFootage: string,
     projectType: string,
     pageCount: number = 1,
-    facilityUse: string = ''
+    facilityUse: string = '',
+    buildingContext?: BuildingContext
 ): Promise<{ auditedQuantities: BlueprintAgentResult; auditNotes: string[] }> {
     if (!ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY not configured for Smart Audit');
 
-    logger.info(`🧠 Performing Smart Audit for ${projectType} (${squareFootage} sqft, ${pageCount} pages) with ${Object.keys(rawQuantities).length} items`);
+    const ctx = buildingContext || DEFAULT_BUILDING_CONTEXT;
+    logger.info(`🧠 Performing Smart Audit for ${projectType} (${squareFootage} sqft, ${pageCount} pages, ${ctx.buildingType}, ${ctx.unitCount} units) with ${Object.keys(rawQuantities).length} items`);
 
     const promptText = AUDIT_PROMPT
         .replace(/{SQFT}/g, squareFootage || 'Unknown')
         .replace(/{PROJECT_TYPE}/g, projectType || 'Unknown')
         .replace(/{PAGE_COUNT}/g, String(pageCount))
         .replace(/{FACILITY_USE}/g, facilityUse || 'Not specified')
+        .replace(/{BUILDING_TYPE}/g, ctx.buildingType)
+        .replace(/{UNIT_COUNT}/g, String(ctx.unitCount))
+        .replace(/{STORIES}/g, String(ctx.stories))
+        .replace(/{MAIN_SERVICE_AMPS}/g, String(ctx.mainServiceAmps))
         .replace(/{RAW_DATA}/g, JSON.stringify(rawQuantities, null, 2));
 
     try {
         const anthropic = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
         const msg = await anthropic.messages.create({
-            model: 'claude-3-5-sonnet-20241022', // We use Sonnet for high reasoning capability
-            max_tokens: 1500,
-            temperature: 0.1, // Low temp for logic-based auditing
+            model: 'claude-3-5-sonnet-20241022',
+            max_tokens: 2000,
+            temperature: 0.1,
             messages: [{
                 role: 'user',
                 content: promptText
@@ -416,25 +537,154 @@ export async function performSmartAudit(
         const text = msg.content[0].text.trim();
         const parsed = parseJsonResponse(text);
 
-        let quantities = {};
+        let quantities: Record<string, number> = {};
         let notes: string[] = [];
 
-        // Handle both older flat structures and newer nested structures just in case
         if (parsed.quantities) {
             quantities = sanitizeAgentResult(parsed.quantities, 'SmartAuditor');
             notes = Array.isArray(parsed.auditNotes) ? parsed.auditNotes : [];
         } else {
-            // Fallback if LLM ignores format and returns flat JSON
             quantities = sanitizeAgentResult(parsed, 'SmartAuditor');
         }
 
-        logger.info(`✅ Smart Audit complete. Items output: ${Object.keys(quantities).length}. Notes: ${notes.length}`);
-        return { auditedQuantities: quantities, auditNotes: notes };
+        // Apply deterministic NEC guards after LLM audit
+        const { corrected, warnings } = applyNECGuards(quantities, ctx, squareFootage);
+        notes.push(...warnings);
+
+        logger.info(`✅ Smart Audit complete. Items: ${Object.keys(corrected).length}. Notes: ${notes.length}. NEC corrections: ${warnings.length}`);
+        return { auditedQuantities: corrected, auditNotes: notes };
     } catch (e: any) {
         logger.error('Smart Audit failed', e);
-        // Fallback to raw quantities if audit fails
         return { auditedQuantities: rawQuantities, auditNotes: ['Audit failed, returning raw model quantities.'] };
     }
+}
+
+// ===== Building Context Extraction (quick Gemini call) =====
+export async function extractBuildingContext(input: BlueprintInput): Promise<BuildingContext> {
+    if (!GEMINI_API_KEY) return DEFAULT_BUILDING_CONTEXT;
+
+    try {
+        const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+        const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+
+        const result = await model.generateContent({
+            contents: [{
+                role: 'user',
+                parts: [
+                    { text: BUILDING_CONTEXT_PROMPT },
+                    { inlineData: { mimeType: input.mimeType, data: input.base64 } }
+                ]
+            }]
+        });
+
+        const parsed = parseJsonResponse(result.response.text().trim());
+        const ctx: BuildingContext = {
+            buildingType: ['single-family', 'multi-family', 'commercial', 'mixed-use'].includes(parsed.buildingType)
+                ? parsed.buildingType : 'unknown',
+            unitCount: Math.max(0, Math.round(Number(parsed.unitCount) || 0)),
+            stories: Math.max(0, Math.round(Number(parsed.stories) || 0)),
+            mainServiceAmps: Math.max(0, Math.round(Number(parsed.mainServiceAmps) || 0)),
+            hasCommonLaundry: !!parsed.hasCommonLaundry,
+            hasParking: !!parsed.hasParking,
+            hasRetail: !!parsed.hasRetail,
+        };
+
+        logger.info(`🏗 Building Context: ${ctx.buildingType}, ${ctx.unitCount} units, ${ctx.stories} stories, ${ctx.mainServiceAmps}A`);
+        return ctx;
+    } catch (e) {
+        logger.error('Building context extraction failed', e);
+        return DEFAULT_BUILDING_CONTEXT;
+    }
+}
+
+// ===== Deterministic NEC Ratio Guards =====
+export function applyNECGuards(
+    quantities: Record<string, number>,
+    context: BuildingContext,
+    squareFootage?: string
+): { corrected: Record<string, number>; warnings: string[] } {
+    const corrected = { ...quantities };
+    const warnings: string[] = [];
+    const units = context.unitCount || 1;
+    const sqft = Number(squareFootage) || 0;
+    const isMultiFamily = context.buildingType === 'multi-family' || context.buildingType === 'mixed-use';
+    const isSingleFamily = context.buildingType === 'single-family';
+
+    const clamp = (key: string, max: number, reason: string) => {
+        if (corrected[key] && corrected[key] > max) {
+            warnings.push(`📐 NEC Guard: Reduced ${key} from ${corrected[key]} to ${max} — ${reason}`);
+            corrected[key] = max;
+        }
+    };
+
+    const clampMin = (key: string, min: number, reason: string) => {
+        if (corrected[key] && corrected[key] < min) {
+            warnings.push(`📐 NEC Guard: Increased ${key} from ${corrected[key]} to ${min} — ${reason}`);
+            corrected[key] = min;
+        }
+    };
+
+    if (isSingleFamily) {
+        // Single-family: strict per-house limits
+        clamp('range', 3, 'max 1-2 ranges in a single-family home');
+        clamp('cooktop', 3, 'max 1-2 cooktops in a single-family home');
+        clamp('dishwasher', 3, 'max 1-2 dishwashers in a single-family home');
+        clamp('disposal', 3, 'max 1-2 disposals in a single-family home');
+        clamp('water_heater', 3, 'max 1-2 water heaters in a single-family home');
+        clamp('tankless_wh', 3, 'max 1-2 tankless WHs in a single-family home');
+        clamp('dryer', 3, 'max 1-2 dryers in a single-family home');
+        clamp('washer', 3, 'max 1-2 washers in a single-family home');
+
+        // Panels: 1 main + 0-3 subpanels
+        const totalPanels = (corrected['panel_200'] || 0) + (corrected['panel_400'] || 0);
+        if (totalPanels > 2) clamp('panel_200', 1, 'single-family typically has 1 main panel');
+        const totalSub = (corrected['subpanel_100'] || 0) + (corrected['subpanel_125'] || 0) + (corrected['subpanel_200'] || 0);
+        if (totalSub > 4) {
+            clamp('subpanel_100', 2, 'max 2-3 subpanels in a single-family home');
+            clamp('subpanel_125', 2, 'max 2-3 subpanels in a single-family home');
+        }
+
+        // Receptacle density: max ~1 per 15 sqft
+        if (sqft > 0) {
+            clamp('duplex', Math.ceil(sqft / 15), `max receptacle density 1 per 15 sqft for ${sqft} sqft`);
+        }
+    }
+
+    if (isMultiFamily && units > 1) {
+        // Multi-family: per-unit ratio guards
+        const maxPerUnit = Math.ceil(units * 2); // generous 2× buffer
+
+        clamp('range', maxPerUnit, `max 2 per unit × ${units} units`);
+        clamp('cooktop', maxPerUnit, `max 2 per unit × ${units} units`);
+        clamp('water_heater', maxPerUnit, `max 2 per unit × ${units} units`);
+        clamp('tankless_wh', maxPerUnit, `max 2 per unit × ${units} units`);
+        clamp('dishwasher', maxPerUnit, `max 2 per unit × ${units} units`);
+        clamp('refrigerator', maxPerUnit, `max 2 per unit × ${units} units`);
+
+        // Panels should be roughly proportional to units
+        const totalSub = (corrected['subpanel_100'] || 0) + (corrected['subpanel_125'] || 0) + (corrected['subpanel_200'] || 0);
+        if (totalSub > units * 2) {
+            // Too many — scale down proportionally
+            for (const key of ['subpanel_100', 'subpanel_125', 'subpanel_200']) {
+                clamp(key, Math.ceil(units * 1.5), `subpanels should be roughly proportional to ${units} units`);
+            }
+        }
+
+        // Dryers: if common laundry, limit to ~2 per floor
+        if (context.hasCommonLaundry) {
+            const maxDryers = Math.max(6, (context.stories || 1) * 4);
+            clamp('dryer', maxDryers, `common laundry: max ~${maxDryers} dryers for ${context.stories || 1} floors`);
+        }
+
+        // NEC: minimum 1 smoke/CO per dwelling unit
+        const totalSmoke = (corrected['smoke'] || 0) + (corrected['smoke_co'] || 0);
+        if (totalSmoke > 0 && totalSmoke < units) {
+            const primaryKey = corrected['smoke_co'] ? 'smoke_co' : 'smoke';
+            clampMin(primaryKey, units, `NEC requires minimum 1 smoke/CO per dwelling unit (${units} units)`);
+        }
+    }
+
+    return { corrected, warnings };
 }
 
 // ===== V3 Reconciliation (arbiter rotation) =====

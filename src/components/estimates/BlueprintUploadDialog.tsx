@@ -26,7 +26,7 @@ import { Timestamp, doc, onSnapshot, updateDoc, collection, query, where, orderB
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { blueprintApi } from '../../api/blueprintApi';
 import { savedEstimateApi } from '../../api/savedEstimateApi';
-import { projectApi } from '../../api/projectApi';
+import { projectsApi } from '../../api/projectsApi';
 import { BlueprintBatchJob, BlueprintAgentResult, BlueprintFileEntry } from '../../types/blueprint.types';
 import { ProjectFile } from '../../types/project.types';
 import { DEVICES, GEAR, POOL, GENERATOR, LANDSCAPE } from '../../constants/electricalDevices';
@@ -1088,6 +1088,9 @@ export const BlueprintUploadDialog: React.FC<BlueprintUploadDialogProps> = ({ op
                                         const projectData: any = {
                                             companyId: userProfile.companyId,
                                             createdBy: userProfile.id,
+                                            clientId: '',           // TODO: Phase 2 — add client selector
+                                            clientName: '',
+                                            type: 'estimate' as const,
                                             name: projTitle,
                                             status: 'active',
                                             files: []
@@ -1095,9 +1098,9 @@ export const BlueprintUploadDialog: React.FC<BlueprintUploadDialogProps> = ({ op
                                         if (v2AreaSqft) projectData.areaSqft = Number(v2AreaSqft);
                                         if (v2Address) projectData.address = v2Address;
 
-                                        savedProjectId = await projectApi.create(cleanPayload(projectData));
+                                        savedProjectId = await projectsApi.create(cleanPayload(projectData));
                                     } else {
-                                        const proj = await projectApi.getById(savedProjectId);
+                                        const proj = await projectsApi.getById(savedProjectId);
                                         if (proj) projTitle = proj.name;
                                     }
 
@@ -1151,7 +1154,7 @@ export const BlueprintUploadDialog: React.FC<BlueprintUploadDialogProps> = ({ op
 
                                     if (newFiles.length > 0) {
                                         for (const nf of newFiles) {
-                                            await projectApi.addFile(savedProjectId, nf);
+                                            await projectsApi.addFile(savedProjectId, nf);
                                         }
                                     }
 

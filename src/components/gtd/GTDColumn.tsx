@@ -77,12 +77,14 @@ const COLUMN_STYLES: Record<GTDStatus, {
     }
 };
 
-// WIP limits per column — null means no limit
 const WIP_LIMITS: Partial<Record<GTDStatus, number>> = {
     next_action: 7,
     estimate: 5,
     projects: 10,
 };
+
+// Lazy loading: initial visible tasks limit
+const INITIAL_VISIBLE = 20;
 
 // Format minutes to compact hours string
 const formatHours = (minutes: number): string => {
@@ -111,6 +113,7 @@ const GTDColumn: React.FC<GTDColumnProps> = ({
     const [isCollapsed, setIsCollapsed] = useState(false);
     const [canScrollDown, setCanScrollDown] = useState(false);
     const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
+    const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE);
     const scrollRef = useRef<HTMLDivElement>(null);
     const isDone = columnId === 'done';
     const styles = COLUMN_STYLES[columnId];
@@ -568,22 +571,43 @@ const GTDColumn: React.FC<GTDColumnProps> = ({
                                     );
                                 })
                             ) : (
-                                // Single group or no groups — flat rendering
-                                tasks.map((task, index) => {
-                                    const showTimer = columnId !== 'done' && columnId !== 'someday';
-                                    return (
-                                        <GTDTaskCard
-                                            key={task.id}
-                                            task={task}
-                                            index={index}
-                                            clientName={task.clientId ? clientsMap[task.clientId]?.name : undefined}
-                                            onClick={onTaskClick}
-                                            onStartSession={showTimer ? onStartSession : undefined}
-                                            activeSession={showTimer ? activeSession : undefined}
-                                            onStopSession={showTimer ? onStopSession : undefined}
-                                        />
-                                    );
-                                })
+                                // Single group or no groups — flat rendering (with lazy loading)
+                                <>
+                                    {tasks.slice(0, visibleCount).map((task, index) => {
+                                        const showTimer = columnId !== 'done' && columnId !== 'someday';
+                                        return (
+                                            <GTDTaskCard
+                                                key={task.id}
+                                                task={task}
+                                                index={index}
+                                                clientName={task.clientId ? clientsMap[task.clientId]?.name : undefined}
+                                                onClick={onTaskClick}
+                                                onStartSession={showTimer ? onStartSession : undefined}
+                                                activeSession={showTimer ? activeSession : undefined}
+                                                onStopSession={showTimer ? onStopSession : undefined}
+                                            />
+                                        );
+                                    })}
+                                    {tasks.length > visibleCount && (
+                                        <Button
+                                            fullWidth
+                                            size="small"
+                                            onClick={() => setVisibleCount(prev => prev + INITIAL_VISIBLE)}
+                                            sx={{
+                                                mt: 0.5,
+                                                textTransform: 'none',
+                                                fontSize: '12px',
+                                                fontWeight: 600,
+                                                color: '#007aff',
+                                                borderRadius: '8px',
+                                                fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif',
+                                                '&:hover': { bgcolor: 'rgba(0,122,255,0.06)' },
+                                            }}
+                                        >
+                                            Show {Math.min(INITIAL_VISIBLE, tasks.length - visibleCount)} more…
+                                        </Button>
+                                    )}
+                                </>
                             )}
                             {provided.placeholder}
 

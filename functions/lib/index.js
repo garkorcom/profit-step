@@ -9,8 +9,8 @@
  * - adminDeleteUser: Безопасное удаление пользователя администратором
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.checkLongBreaks = exports.updateWorkSession = exports.mergeNotes = exports.splitChecklistItem = exports.auditBlueprintTakeoff = exports.refineAnalysisCallable = exports.analyzePageCallable = exports.onBlueprintBatchCreated = exports.onBlueprintJobCreated = exports.onNoteCreated = exports.onReceiptUpdate = exports.onWorkSessionUpdate = exports.onWorkSessionCreate = exports.generateDailyPayroll = exports.closePayrollPeriod = exports.forceFinishAllSessions = exports.sendDeadlineReminders = exports.finalizeExpiredSessions = exports.onCostsBotMessage = exports.onWorkerBotMessage = exports.parseClientWebsite = exports.parseSmartInput = exports.estimateTask = exports.generateLeadSummary = exports.sendMessage = exports.onTelegramMessage = exports.onWhatsAppMessage = exports.onLeadCreate = exports.updateCompanyMemberCount_v2 = exports.trackUserActivation_v2 = exports.logUserUpdates_v2 = exports.incrementLoginCount_v2 = exports.inviteUser = exports.adminDeleteUser = exports.onUserDelete = exports.onUserCreate = exports.admin_manageUser = exports.admin_createUserWithPassword = exports.logPaginationMetrics = exports.diagnoseBot = exports.logInvitationAccepted = exports.logInvitationSent = exports.logUserDeleted = exports.logUserCreated = exports.brevoWebhookHandler = exports.trackFirstInvite = exports.initializeUserActivation = exports.aggregateEngagementMetrics = exports.aggregateGrowthMetrics = exports.processAvatar = void 0;
-exports.modifyAiTask = exports.confirmAiTask = exports.generateAiTask = exports.categorizeBankTransactions = exports.uploadBankStatement = exports.onCostUpdate = exports.onCostCreated = exports.onTaskUpdate = exports.scheduledDayPlan = exports.generateDayPlan = exports.generatePriceEstimate = exports.syncActiveTimer = exports.onSessionChangeUpdateCost = exports.verifyTask = exports.submitForReview = void 0;
+exports.analyzeBlueprintV3Callable = exports.extractBuildingContextCallable = exports.auditBlueprintTakeoff = exports.refineAnalysisCallable = exports.analyzePageCallable = exports.onBlueprintBatchCreated = exports.onBlueprintJobCreated = exports.onNoteCreated = exports.onReceiptUpdate = exports.onWorkSessionUpdate = exports.onWorkSessionCreate = exports.generateDailyPayroll = exports.closePayrollPeriod = exports.forceFinishAllSessions = exports.sendDeadlineReminders = exports.autoCloseStaleSessions = exports.finalizeExpiredSessions = exports.onCostsBotMessage = exports.onWorkerBotMessage = exports.parseClientWebsite = exports.parseSmartInput = exports.estimateTask = exports.generateLeadSummary = exports.sendWorkerMessage = exports.sendMessage = exports.onTelegramMessage = exports.onWhatsAppMessage = exports.onLeadCreate = exports.updateCompanyMemberCount_v2 = exports.trackUserActivation_v2 = exports.logUserUpdates_v2 = exports.incrementLoginCount_v2 = exports.inviteUser = exports.adminDeleteUser = exports.onUserDelete = exports.onUserCreate = exports.admin_manageUser = exports.admin_createUserWithPassword = exports.logPaginationMetrics = exports.diagnoseBot = exports.logInvitationAccepted = exports.logInvitationSent = exports.logUserDeleted = exports.logUserCreated = exports.brevoWebhookHandler = exports.trackFirstInvite = exports.initializeUserActivation = exports.aggregateEngagementMetrics = exports.aggregateGrowthMetrics = exports.processAvatar = void 0;
+exports.modifyAiTask = exports.confirmAiTask = exports.generateAiTask = exports.categorizeBankTransactions = exports.uploadBankStatement = exports.onCostUpdate = exports.onCostCreated = exports.onTaskCreate = exports.onTaskUpdate = exports.scheduledDayPlan = exports.generateDayPlan = exports.generatePriceEstimate = exports.syncActiveTimer = exports.onSessionChangeUpdateCost = exports.verifyTask = exports.submitForReview = exports.checkLongBreaks = exports.updateWorkSession = exports.mergeNotes = exports.splitChecklistItem = exports.verifyEstimatePlausibilityCallable = void 0;
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 const crypto = require("crypto");
@@ -430,6 +430,8 @@ Object.defineProperty(exports, "onTelegramMessage", { enumerable: true, get: fun
 // Messaging
 var sendMessage_1 = require("./callable/messaging/sendMessage");
 Object.defineProperty(exports, "sendMessage", { enumerable: true, get: function () { return sendMessage_1.sendMessage; } });
+var sendWorkerMessage_1 = require("./callable/messaging/sendWorkerMessage");
+Object.defineProperty(exports, "sendWorkerMessage", { enumerable: true, get: function () { return sendWorkerMessage_1.sendWorkerMessage; } });
 // AI
 var generateLeadSummary_1 = require("./callable/ai/generateLeadSummary");
 Object.defineProperty(exports, "generateLeadSummary", { enumerable: true, get: function () { return generateLeadSummary_1.generateLeadSummary; } });
@@ -446,6 +448,8 @@ Object.defineProperty(exports, "onCostsBotMessage", { enumerable: true, get: fun
 // Scheduled: Session Management
 var finalizeExpiredSessions_1 = require("./scheduled/finalizeExpiredSessions");
 Object.defineProperty(exports, "finalizeExpiredSessions", { enumerable: true, get: function () { return finalizeExpiredSessions_1.finalizeExpiredSessions; } });
+var autoCloseStaleSessions_1 = require("./triggers/crons/autoCloseStaleSessions");
+Object.defineProperty(exports, "autoCloseStaleSessions", { enumerable: true, get: function () { return autoCloseStaleSessions_1.autoCloseStaleSessions; } });
 // export { sendSessionReminders } from './scheduled/sendSessionReminders'; // DISABLED: Session reminders turned off
 var deadlineReminders_1 = require("./scheduled/deadlineReminders"); // GTD task deadline notifications
 Object.defineProperty(exports, "sendDeadlineReminders", { enumerable: true, get: function () { return deadlineReminders_1.sendDeadlineReminders; } });
@@ -474,6 +478,11 @@ var analyzePage_1 = require("./callable/ai/analyzePage");
 Object.defineProperty(exports, "analyzePageCallable", { enumerable: true, get: function () { return analyzePage_1.analyzePageCallable; } });
 Object.defineProperty(exports, "refineAnalysisCallable", { enumerable: true, get: function () { return analyzePage_1.refineAnalysisCallable; } });
 Object.defineProperty(exports, "auditBlueprintTakeoff", { enumerable: true, get: function () { return analyzePage_1.auditBlueprintTakeoff; } });
+Object.defineProperty(exports, "extractBuildingContextCallable", { enumerable: true, get: function () { return analyzePage_1.extractBuildingContextCallable; } });
+var analyzeBlueprintV3_1 = require("./callable/ai/analyzeBlueprintV3");
+Object.defineProperty(exports, "analyzeBlueprintV3Callable", { enumerable: true, get: function () { return analyzeBlueprintV3_1.analyzeBlueprintV3Callable; } });
+var verifyEstimatePlausibility_1 = require("./callable/ai/verifyEstimatePlausibility");
+Object.defineProperty(exports, "verifyEstimatePlausibilityCallable", { enumerable: true, get: function () { return verifyEstimatePlausibility_1.verifyEstimatePlausibilityCallable; } });
 // Notes: Split & Merge operations
 var splitChecklistItem_1 = require("./callable/notes/splitChecklistItem");
 Object.defineProperty(exports, "splitChecklistItem", { enumerable: true, get: function () { return splitChecklistItem_1.splitChecklistItem; } });
@@ -507,6 +516,8 @@ Object.defineProperty(exports, "scheduledDayPlan", { enumerable: true, get: func
 // Task event triggers
 var onTaskUpdate_1 = require("./triggers/firestore/onTaskUpdate");
 Object.defineProperty(exports, "onTaskUpdate", { enumerable: true, get: function () { return onTaskUpdate_1.onTaskUpdate; } });
+var onTaskCreate_1 = require("./triggers/firestore/onTaskCreate");
+Object.defineProperty(exports, "onTaskCreate", { enumerable: true, get: function () { return onTaskCreate_1.onTaskCreate; } });
 // Cost event triggers
 var onCostCreated_1 = require("./triggers/firestore/onCostCreated");
 Object.defineProperty(exports, "onCostCreated", { enumerable: true, get: function () { return onCostCreated_1.onCostCreated; } });

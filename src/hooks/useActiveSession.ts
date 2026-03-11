@@ -22,7 +22,7 @@ export function useActiveSession(userId?: string | number) {
         const q = query(
             sessionsRef,
             where('employeeId', '==', userId),
-            where('status', '==', 'active')
+            where('status', 'in', ['active', 'paused'])
         );
 
         const unsubscribe = onSnapshot(q, (snapshot) => {

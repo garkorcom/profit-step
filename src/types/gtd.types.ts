@@ -188,6 +188,15 @@ export interface GTDTask {
     clientName?: string;
 
     /** 
+     * ID проекта из unified projects collection
+     * Enables task→project linking for project-level task management
+     */
+    projectId?: string;
+
+    /** Название проекта (денормализовано для быстрого отображения) */
+    projectName?: string;
+
+    /** 
      * ID контактов из Справочника, привязанных к задаче 
      */
     linkedContactIds?: string[];

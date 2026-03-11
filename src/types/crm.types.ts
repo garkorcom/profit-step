@@ -255,29 +255,8 @@ export interface ActivityLog {
 }
 
 // --- Project Accounting System ---
-
-export type ProjectStatus = 'active' | 'completed' | 'archived';
-
-export interface Project {
-  id: string;
-  clientId: string;
-  clientName: string; // Denormalized for display
-  companyId: string;
-
-  name: string; // "Kitchen Renovation", "Maintenance 2026"
-  description?: string;
-  status: ProjectStatus;
-
-  // Aggregated finances (updated by triggers)
-  totalDebit: number;   // All charges
-  totalCredit: number;  // All payments
-  balance: number;      // Saldo = debit - credit
-
-  // Metadata
-  createdAt: Timestamp;
-  updatedAt: Timestamp;
-  createdBy: string;
-}
+// Project and ProjectStatus are now unified in project.types.ts
+export { type Project, type ProjectStatus } from './project.types';
 
 export type LedgerEntryType = 'debit' | 'credit';
 export type LedgerCategory =

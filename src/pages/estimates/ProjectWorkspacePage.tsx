@@ -11,7 +11,7 @@ import FolderIcon from '@mui/icons-material/Folder';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile';
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
-import { projectApi } from '../../api/projectApi';
+import { projectsApi } from '../../api/projectsApi';
 import { savedEstimateApi } from '../../api/savedEstimateApi';
 import { Project } from '../../types/project.types';
 import { SavedEstimate } from '../../types/savedEstimate.types';
@@ -43,7 +43,7 @@ const ProjectWorkspacePage: React.FC = () => {
         (async () => {
             setLoading(true);
             try {
-                const proj = await projectApi.getById(id);
+                const proj = await projectsApi.getById(id);
                 setProject(proj);
                 if (proj) {
                     const companyId = proj.companyId;

@@ -136,11 +136,13 @@ const ProjectFinanceTab: React.FC<ProjectFinanceTabProps> = ({ clientId, clientN
         if (!newProjectName.trim() || !userProfile) return;
 
         try {
-            await projectsApi.createProject({
+            await projectsApi.create({
                 clientId,
                 clientName,
                 companyId: userProfile.companyId,
                 name: newProjectName.trim(),
+                type: 'work',
+                status: 'active',
                 createdBy: userProfile.id
             });
             setNewProjectName('');

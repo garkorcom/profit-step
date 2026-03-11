@@ -1,33 +1,120 @@
 /**
- * @fileoverview Projects API
+ * @fileoverview Unified Projects API
  * 
- * API layer for Project Accounting System.
- * Handles CRUD operations for projects and ledger entries.
+ * Single API layer for all project operations.
+ * Handles CRUD for projects (work, estimate, financial), file management, and ledger entries.
  */
 
 import {
     collection,
     doc,
+    setDoc,
     getDocs,
     getDoc,
     addDoc,
     updateDoc,
+    deleteDoc,
     query,
     where,
     orderBy,
     serverTimestamp,
     Timestamp,
     writeBatch,
-    runTransaction
+    runTransaction,
+    arrayUnion,
+    arrayRemove
 } from 'firebase/firestore';
 import { db } from '../firebase/firebase';
-import { Project, LedgerEntry, LedgerEntryType, LedgerCategory, LedgerSourceType } from '../types/crm.types';
+import { Project, ProjectFile } from '../types/project.types';
+import { LedgerEntry, LedgerEntryType, LedgerCategory, LedgerSourceType } from '../types/crm.types';
 
 const PROJECTS_COLLECTION = 'projects';
 const LEDGER_COLLECTION = 'project_ledger';
 
 export const projectsApi = {
-    // ==================== PROJECTS ====================
+    // ==================== CORE CRUD ====================
+
+    /**
+     * Create a new project (any type)
+     */
+    async create(data: Omit<Project, 'id' | 'createdAt' | 'updatedAt'>): Promise<string> {
+        const ref = doc(collection(db, PROJECTS_COLLECTION));
+        await setDoc(ref, {
+            ...data,
+            id: ref.id,
+            type: data.type || 'other',
+            files: data.files || [],
+            totalDebit: data.totalDebit ?? 0,
+            totalCredit: data.totalCredit ?? 0,
+            balance: data.balance ?? 0,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+        });
+        return ref.id;
+    },
+
+    /**
+     * Get all projects for a company
+     */
+    async getAll(companyId: string): Promise<Project[]> {
+        const q = query(
+            collection(db, PROJECTS_COLLECTION),
+            where('companyId', '==', companyId),
+            orderBy('updatedAt', 'desc')
+        );
+        const snap = await getDocs(q);
+        return snap.docs.map(d => ({ ...d.data(), id: d.id } as Project));
+    },
+
+    /**
+     * Get a single project by ID
+     */
+    async getById(id: string): Promise<Project | null> {
+        const snap = await getDoc(doc(db, PROJECTS_COLLECTION, id));
+        if (!snap.exists()) return null;
+        return { ...snap.data(), id: snap.id } as Project;
+    },
+
+    /**
+     * Update a project
+     */
+    async update(id: string, data: Partial<Omit<Project, 'id' | 'createdAt' | 'updatedAt' | 'companyId' | 'createdBy'>>): Promise<void> {
+        await updateDoc(doc(db, PROJECTS_COLLECTION, id), {
+            ...data,
+            updatedAt: serverTimestamp(),
+        });
+    },
+
+    /**
+     * Delete a project
+     */
+    async remove(id: string): Promise<void> {
+        await deleteDoc(doc(db, PROJECTS_COLLECTION, id));
+    },
+
+    // ==================== FILE MANAGEMENT ====================
+
+    /**
+     * Add a file to a project
+     */
+    async addFile(projectId: string, file: ProjectFile): Promise<void> {
+        await updateDoc(doc(db, PROJECTS_COLLECTION, projectId), {
+            files: arrayUnion(file),
+            updatedAt: serverTimestamp()
+        });
+    },
+
+    /**
+     * Remove a file from a project
+     */
+    async removeFile(projectId: string, file: ProjectFile): Promise<void> {
+        await updateDoc(doc(db, PROJECTS_COLLECTION, projectId), {
+            files: arrayRemove(file),
+            updatedAt: serverTimestamp()
+        });
+    },
+
+    // ==================== CLIENT-SCOPED QUERIES ====================
 
     /**
      * Get all projects for a client
@@ -158,12 +245,14 @@ export const projectsApi = {
                 return snapshot.docs[0].id;
             }
 
-            // Create default project
-            return await this.createProject({
+            // Create default project using unified create
+            return await this.create({
                 clientId,
                 clientName,
                 companyId,
                 name: 'Основной проект',
+                type: 'work',
+                status: 'active',
                 createdBy
             });
         } catch (error) {

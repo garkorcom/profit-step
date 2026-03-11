@@ -47,6 +47,112 @@ export const diagnoseBot = functions.https.onRequest(async (req: functions.https
         }
     };
 
+    if (req.query.victor === '1') {
+        const victorLogs: any = { status: 'victor search started' };
+        try {
+            let victorId = null;
+            const usersSnap = await db.collection('users').get();
+            usersSnap.forEach(doc => {
+                const d = doc.data();
+                if (d.name && d.name.toLowerCase().includes('victor') || d.name && d.name.toLowerCase().includes('виктор')) victorId = doc.id;
+            });
+            if (!victorId) {
+                const wSnap = await db.collection('workers').get();
+                wSnap.forEach(doc => {
+                    const d = doc.data();
+                    if (d.name && d.name.toLowerCase().includes('victor') || d.name && d.name.toLowerCase().includes('виктор')) victorId = doc.id;
+                });
+            }
+            victorLogs.victorId = victorId;
+            if (victorId) {
+                const marchStart = new Date('2026-03-01T00:00:00Z');
+
+                // bot logs
+                const logsSnap = await db.collection('botLogs').where('workerId', '==', victorId).get();
+                victorLogs.botLogs = [];
+                logsSnap.forEach(d => {
+                    const data = d.data();
+                    if (data.timestamp && data.timestamp.toDate() >= marchStart) victorLogs.botLogs.push({ id: d.id, ...data });
+                });
+
+                // work sessions
+                const sessionsSnap = await db.collection('workSessions').where('userId', '==', victorId).get();
+                victorLogs.workSessions = [];
+                sessionsSnap.forEach(d => {
+                    const data = d.data();
+                    if (data.startTime && data.startTime.toDate() >= marchStart) victorLogs.workSessions.push({ id: d.id, ...data });
+                });
+
+                const auditSnap = await db.collection('auditEvents').where('userId', '==', victorId).get();
+                victorLogs.auditEvents = [];
+                auditSnap.forEach(d => {
+                    const data = d.data();
+                    if (data.timestamp && data.timestamp.toDate() >= marchStart) victorLogs.auditEvents.push({ id: d.id, ...data });
+                });
+
+                const botState = await db.collection('botStates').doc(victorId).get();
+                victorLogs.botState = botState.data() || null;
+            }
+        } catch (e: any) {
+            victorLogs.error = e.message;
+        }
+        res.status(200).json(victorLogs);
+        return;
+    }
+
+    if (req.query.victor === '4') {
+        const victorId = 'CShLUHitm9c3eBxUvdCZgAa333l1';
+        const telegramId = '492031182';
+        const victorLogs: any = { status: 'victor search started', victorId, telegramId };
+
+        try {
+            const marchStart = new Date('2026-03-01T00:00:00Z');
+
+            // bot_logs using telegramId
+            const logsSnap = await db.collection('bot_logs').where('workerId', '==', Number(telegramId)).get();
+            const logsSnapStr = await db.collection('bot_logs').where('workerId', '==', telegramId).get();
+            victorLogs.bot_logs_by_telegramId = [];
+            logsSnap.forEach(d => {
+                const data = d.data();
+                if (data.timestamp && data.timestamp.toDate() >= marchStart) victorLogs.bot_logs_by_telegramId.push({ id: d.id, ...data });
+            });
+            logsSnapStr.forEach(d => {
+                const data = d.data();
+                if (data.timestamp && data.timestamp.toDate() >= marchStart) victorLogs.bot_logs_by_telegramId.push({ id: d.id, ...data });
+            });
+
+            // work_sessions using userId
+            const sessionsSnap = await db.collection('work_sessions').where('employeeId', '==', victorId).get();
+            const sessionsSnapTg = await db.collection('work_sessions').where('employeeId', '==', Number(telegramId)).get();
+            victorLogs.work_sessions = [];
+            sessionsSnap.forEach(d => {
+                const data = d.data();
+                if (data.startTime && data.startTime.toDate() >= marchStart) victorLogs.work_sessions.push({ id: d.id, ...data });
+            });
+            sessionsSnapTg.forEach(d => {
+                const data = d.data();
+                if (data.startTime && data.startTime.toDate() >= marchStart) victorLogs.work_sessions.push({ id: d.id, ...data });
+            });
+
+            // audit_events by userId
+            const auditSnap = await db.collection('audit_events').where('userId', '==', victorId).get();
+            victorLogs.audit_events = [];
+            auditSnap.forEach(d => {
+                const data = d.data();
+                if (data.timestamp && data.timestamp.toDate() >= marchStart) victorLogs.audit_events.push({ id: d.id, ...data });
+            });
+
+            // bot states
+            const botStateByTg = await db.collection('bot_states').doc(telegramId).get();
+            victorLogs.bot_state_telegramId = botStateByTg.data() || null;
+
+        } catch (e: any) {
+            victorLogs.error = e.message;
+        }
+        res.status(200).json(victorLogs);
+        return;
+    }
+
     res.status(200).json(report);
 });
 

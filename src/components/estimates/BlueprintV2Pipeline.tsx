@@ -92,7 +92,7 @@ const BlueprintV2Pipeline: React.FC<BlueprintV2PipelineProps> = ({ files, onComp
     const [analysisProgress, setAnalysisProgress] = useState({ done: 0, total: 0 });
 
     // Selected AI Agents
-    const [selectedAgents, setSelectedAgents] = useState<string[]>(['gemini', 'claude']);
+    const [selectedAgents, setSelectedAgents] = useState<string[]>(['gemini', 'claude', 'openai']);
 
     // Prompt Configuration
     const [projectType, setProjectType] = useState<string>('residential');
@@ -120,6 +120,9 @@ const BlueprintV2Pipeline: React.FC<BlueprintV2PipelineProps> = ({ files, onComp
     // Auditing (Stage 2)
     const [isAuditing, setIsAuditing] = useState(false);
     const [auditNotes, setAuditNotes] = useState<string[]>([]);
+
+    // Building Context (extracted automatically from first page)
+    const [buildingContext, setBuildingContext] = useState<Record<string, any> | null>(null);
 
     // Timer
     const [startTime, setStartTime] = useState<number | null>(null);
@@ -295,6 +298,31 @@ const BlueprintV2Pipeline: React.FC<BlueprintV2PipelineProps> = ({ files, onComp
         const analyzePageFn = httpsCallable(functions, 'analyzePageCallable');
         let failedCount = 0;
 
+        // Capture a stable, fresh timestamp inside the callback execution
+        const analysisStartTime = Date.now();
+        setStartTime(analysisStartTime);
+
+        // Extract building context from the first page (quick Gemini call)
+        if (pagesToAnalyze.length > 0) {
+            try {
+                const firstPage = pagesToAnalyze[0];
+                const ctxStoragePath = `blueprints/${userProfile.id}/v2_ctx/${Date.now()}_ctx.png`;
+                const ctxRef = ref(storage, ctxStoragePath);
+                await uploadBytes(ctxRef, firstPage.blob);
+
+                setProgress('🏗 Определение типа здания...');
+                const extractCtxFn = httpsCallable(functions, 'extractBuildingContextCallable');
+                const ctxResponse = await extractCtxFn({ storagePath: ctxStoragePath, fileName: firstPage.fileName });
+                const ctx = ctxResponse.data as Record<string, any>;
+                setBuildingContext(ctx);
+                if (ctx.buildingType !== 'unknown') {
+                    setProgress(`🏗 ${ctx.buildingType}, ${ctx.unitCount} units, ${ctx.stories} stories`);
+                }
+            } catch (err) {
+                console.warn('Building context extraction failed, proceeding without:', err);
+            }
+        }
+
         for (let i = 0; i < pagesToAnalyze.length; i++) {
             if (cancelledRef.current) break;
             const page = pagesToAnalyze[i];
@@ -350,11 +378,11 @@ const BlueprintV2Pipeline: React.FC<BlueprintV2PipelineProps> = ({ files, onComp
 
         setPageResults(results);
         const successCount = results.length - failedCount;
-        setProgress(`✅ Анализ: ${successCount}/${pagesToAnalyze.length} страниц за ${formatTime(Math.floor((Date.now() - (startTime || Date.now())) / 1000))}`);
+        setProgress(`✅ Анализ: ${successCount}/${pagesToAnalyze.length} страниц за ${formatTime(Math.floor((Date.now() - analysisStartTime) / 1000))}`);
         setStartTime(null);
         setPhase('results');
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [approvedFiles, userProfile]);
+    }, [approvedFiles, userProfile, selectedAgents, customPrompt]);
 
     // ===== Cross-verification entries =====
     const verificationEntries: PageVerificationEntry[] = useMemo(() => {
@@ -389,6 +417,19 @@ const BlueprintV2Pipeline: React.FC<BlueprintV2PipelineProps> = ({ files, onComp
         setIsAuditing(true);
         setProgress('🧠 Выполняется умный аудит (AI Smart Auditor)... сверка со строительными нормами.');
 
+        // Use extracted building context, or derive from projectType as fallback
+        const ctx = buildingContext || {
+            buildingType: projectType === 'multifamily' ? 'multi-family'
+                : projectType === 'commercial' ? 'commercial'
+                    : 'single-family',
+            unitCount: 0,
+            stories: 0,
+            mainServiceAmps: 0,
+            hasCommonLaundry: false,
+            hasParking: false,
+            hasRetail: false,
+        };
+
         try {
             // First run the raw text-based audit on the edited result
             const auditFn = httpsCallable(functions, 'auditBlueprintTakeoff');
@@ -398,6 +439,7 @@ const BlueprintV2Pipeline: React.FC<BlueprintV2PipelineProps> = ({ files, onComp
                 projectType,
                 facilityUse,
                 pageCount: pageResults.length || 1,
+                buildingContext: ctx,
             });
             const data = response.data as { auditedResult: BlueprintAgentResult, auditNotes?: string[] };
             const finalAuditedResult = data.auditedResult || editedResult;

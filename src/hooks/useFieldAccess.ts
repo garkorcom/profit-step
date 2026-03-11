@@ -76,8 +76,8 @@ export const useFieldAccess = () => {
                 return { hidden: true, readOnly: true, fullAccess: false };
             }
 
-            const role = userProfile.role;
-            const restrictions = ROLE_FIELD_RESTRICTIONS[role] || [];
+            const role = userProfile.role as UserRole;
+            const restrictions = ROLE_FIELD_RESTRICTIONS[role] || DEFAULT_FIELD_RESTRICTIONS;
 
             const restriction = restrictions.find(r => r.field === field);
 

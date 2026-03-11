@@ -3,6 +3,7 @@ import { doc, updateDoc, addDoc, collection, Timestamp, query, where, getDocs } 
 import { db } from '../firebase/firebase';
 import { useActiveSession, WorkSessionData } from './useActiveSession';
 import { GTDTask } from '../types/gtd.types';
+import toast from 'react-hot-toast';
 
 export interface UseSessionManagerReturn {
     activeSession: WorkSessionData | null;
@@ -44,6 +45,18 @@ export const useSessionManager = (userId?: string, userDisplayName?: string, use
             let diffArr = 0;
             if (startTime) {
                 diffArr = endTime.toMillis() - startTime.toMillis();
+                
+                // Subtract completed breaks
+                if (activeSession.totalBreakMinutes) {
+                    diffArr -= activeSession.totalBreakMinutes * 60 * 1000;
+                }
+                
+                // Subtract ongoing break if currently paused
+                if (activeSession.status === 'paused' && activeSession.lastBreakStart) {
+                    diffArr -= (endTime.toMillis() - activeSession.lastBreakStart.toMillis());
+                }
+                
+                if (diffArr < 0) diffArr = 0;
             }
             const durationMinutes = Math.round(diffArr / 1000 / 60);
 
@@ -85,6 +98,12 @@ export const useSessionManager = (userId?: string, userDisplayName?: string, use
 
     const startSession = async (task: GTDTask) => {
         if (!userId) return;
+
+        if (!navigator.onLine) {
+            toast.error("Offline. Cannot start task.", { icon: "🔌" });
+            return;
+        }
+
         try {
             // 1. Check/Close existing active session
             // We do this manually here because we want to capture the "Auto-switch" event msg
@@ -111,6 +130,16 @@ export const useSessionManager = (userId?: string, userDisplayName?: string, use
                 let diffArr = 0;
                 if (startTime) {
                     diffArr = endTime.toMillis() - startTime.toMillis();
+                    
+                    if (activeData.totalBreakMinutes) {
+                        diffArr -= activeData.totalBreakMinutes * 60 * 1000;
+                    }
+                    
+                    if (activeData.status === 'paused' && activeData.lastBreakStart) {
+                        diffArr -= (endTime.toMillis() - activeData.lastBreakStart.toMillis());
+                    }
+                    
+                    if (diffArr < 0) diffArr = 0;
                 }
                 const durationMinutes = Math.round(diffArr / 1000 / 60);
 

@@ -152,6 +152,29 @@ export const uploadUserAvatar = async (userId: string, file: File): Promise<stri
 };
 
 /**
+ * Загружает эталонное фото для Face Verification
+ * @param userId - ID пользователя
+ * @param file - Файл изображения (селфи)
+ * @returns URL загруженного файла
+ */
+export const uploadReferenceFacePhoto = async (userId: string, file: File): Promise<string> => {
+  try {
+    const storageRef = ref(storage, `avatars/${userId}/reference_face.jpg`);
+    await uploadBytes(storageRef, file);
+    const downloadURL = await getDownloadURL(storageRef);
+
+    const userRef = doc(db, 'users', userId);
+    await updateDoc(userRef, { referenceFacePhotoUrl: downloadURL });
+
+    console.log(`✅ Reference face photo uploaded for user: ${userId}`);
+    return downloadURL;
+  } catch (error) {
+    console.error('Error uploading reference face photo:', error);
+    throw error;
+  }
+};
+
+/**
  * Обновляет расширенный профиль пользователя
  * @param userId - ID пользователя
  * @param data - Данные для обновления

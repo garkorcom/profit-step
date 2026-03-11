@@ -15,10 +15,60 @@
 import * as admin from 'firebase-admin';
 import { logger } from 'firebase-functions';
 import axios from 'axios';
-import { sendMessage, editMessage } from '../telegramUtils';
-import { transcribeVoice } from '../../../services/costsAIService';
+import { sendMessage, editMessage, getActiveSession } from '../telegramUtils';
 import { parseVoiceTask } from '../../../services/smartDispatcherService';
 import { safeConfig } from '../../../utils/safeConfig';
+import { GoogleGenerativeAI } from '@google/generative-ai';
+
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || safeConfig().gemini?.api_key;
+const MODELS = ['gemini-2.0-flash', 'gemini-1.5-flash-latest', 'gemini-1.5-pro-latest'];
+
+/**
+ * Transcribe voice message for Inbox Tasks
+ */
+async function transcribeInboxVoice(audioBuffer: Buffer, mimeType: string = 'audio/ogg'): Promise<string | null> {
+    if (!GEMINI_API_KEY) {
+        logger.error('GEMINI_API_KEY not configured');
+        throw new Error('GEMINI_API_KEY not configured');
+    }
+    const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+    const audioBase64 = audioBuffer.toString('base64');
+
+    const TRANSCRIPTION_PROMPT = `Ты помощник, который точно транскрибирует голосовые сообщения рабочего на стройке в текст без изменений. Не добавляй от себя ничего, только текст сообщения. Никакого markdown. Выведи только то что услышал на аудио.`;
+
+    for (const modelName of MODELS) {
+        try {
+            const model = genAI.getGenerativeModel({ model: modelName });
+
+            const result = await model.generateContent({
+                contents: [{
+                    role: 'user',
+                    parts: [
+                        { text: TRANSCRIPTION_PROMPT },
+                        {
+                            inlineData: {
+                                mimeType: mimeType,
+                                data: audioBase64
+                            }
+                        }
+                    ]
+                }]
+            });
+
+            const response = await result.response;
+            const text = response.text()?.trim();
+
+            if (text && text.length > 0) {
+                return text;
+            }
+        } catch (error: any) {
+            logger.warn(`InboxAI transcribe: Model ${modelName} failed`, { error: error.message });
+        }
+    }
+
+    logger.error('InboxAI: Voice transcription failed on all models');
+    return null;
+}
 
 const db = admin.firestore();
 const storage = admin.storage();
@@ -49,7 +99,8 @@ interface InboxContext {
  */
 export async function handleInboxText(
     ctx: InboxContext,
-    text: string
+    text: string,
+    suppressReply: boolean = false
 ): Promise<void> {
     const title = text.length > 50 ? text.substring(0, 50) + '...' : text;
 
@@ -80,7 +131,7 @@ export async function handleInboxText(
         botReplyId
     });
 
-    if (!isComplex) {
+    if (!isComplex && !suppressReply) {
         await sendMessage(ctx.chatId, '✅ Записано');
     }
 }
@@ -120,7 +171,7 @@ export async function handleInboxVoice(
         );
 
         // 3. Transcribe with AI
-        const transcription = await transcribeVoice(audioBuffer, 'audio/ogg');
+        const transcription = await transcribeInboxVoice(audioBuffer, 'audio/ogg');
 
         if (!transcription) {
             throw new Error('Transcription returned empty');
@@ -187,6 +238,12 @@ export async function handleInboxVoice(
             await editMessage(ctx.chatId, botReplyId, responseMsg);
         } else {
             await sendMessage(ctx.chatId, responseMsg);
+        }
+
+        // 7. Check active session to warn user
+        const activeSession = await getActiveSession(ctx.userId);
+        if (!activeSession) {
+            await sendMessage(ctx.chatId, "⚠️ Данная задача сохранена во Входящие (Inbox), так как сейчас нет активной рабочей смены.\n\n📎 Отправьте геопозицию, чтобы начать смену.");
         }
 
     } catch (error: any) {
@@ -464,7 +521,7 @@ export async function handleInboxForward(
 // HELPERS
 // ═══════════════════════════════════════════════════════════
 
-interface CreateNoteParams {
+export interface CreateNoteParams {
     ctx: InboxContext;
     title: string;
     description?: string;
@@ -476,7 +533,7 @@ interface CreateNoteParams {
     botReplyId?: number;  // FIX #4: Store for later editing
 }
 
-async function createNote(params: CreateNoteParams): Promise<string> {
+export async function createNote(params: CreateNoteParams): Promise<string> {
     const { ctx, title, description, aiStatus, attachments, originalAudioUrl, mediaGroupId, forwardFrom, botReplyId } = params;
 
     const noteData: any = {

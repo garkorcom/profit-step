@@ -3,14 +3,16 @@ import {
     Dialog, DialogTitle, DialogContent, DialogActions, Button,
     Typography, Box, TextField, Tabs, Tab, Table, TableBody,
     TableCell, TableContainer, TableHead, TableRow, Paper,
-    CircularProgress, Chip, InputAdornment
+    CircularProgress, Chip, InputAdornment, List, ListItem, ListItemText, Divider
 } from '@mui/material';
-import { Timestamp } from 'firebase/firestore';
+import { Timestamp, collection, query, where, orderBy, getDocs } from 'firebase/firestore';
+import { db, functions } from '../../firebase/firebase';
+import { httpsCallable } from 'firebase/functions';
 import { updateEmployeeRate, getRateHistory, RateHistoryEntry, getEmployeeDetails } from '../../api/rateApi';
-import { useAuth } from '../../auth/AuthContext'; // Fixed path
+import { useAuth } from '../../auth/AuthContext';
 import AttachMoneyIcon from '@mui/icons-material/AttachMoney';
 import HistoryIcon from '@mui/icons-material/History';
-import ListAltIcon from '@mui/icons-material/ListAlt';
+import ChatIcon from '@mui/icons-material/Chat';
 
 interface EmployeeDetailsDialogProps {
     open: boolean;
@@ -36,11 +38,33 @@ const EmployeeDetailsDialog: React.FC<EmployeeDetailsDialogProps> = ({ open, onC
     // Employee Metadata
     const [isPlatformUser, setIsPlatformUser] = useState(false); // Default to employees collection
 
+    // Message Tab State
+    const [messageText, setMessageText] = useState('');
+    const [messagesHistory, setMessagesHistory] = useState<any[]>([]);
+    const [sending, setSending] = useState(false);
+
     useEffect(() => {
         if (open && employeeId) {
             loadData();
+            if (tabValue === 2) {
+                loadMessages();
+            }
         }
-    }, [open, employeeId]);
+    }, [open, employeeId, tabValue]);
+
+    const loadMessages = async () => {
+        try {
+            const q = query(
+                collection(db, 'worker_messages'),
+                where('employeeId', '==', employeeId),
+                orderBy('timestamp', 'desc')
+            );
+            const snapshot = await getDocs(q);
+            setMessagesHistory(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+        } catch (error) {
+            console.error('Failed to load messages history', error);
+        }
+    };
 
     const loadData = async () => {
         setLoading(true);
@@ -109,6 +133,26 @@ const EmployeeDetailsDialog: React.FC<EmployeeDetailsDialogProps> = ({ open, onC
         }
     };
 
+    const handleSendMessage = async () => {
+        if (!messageText.trim()) return;
+        setSending(true);
+        try {
+            const sendWorkerMessage = httpsCallable(functions, 'sendWorkerMessage');
+            await sendWorkerMessage({
+                employeeId,
+                message: messageText.trim()
+            });
+            alert('Сообщение успешно отправлено!');
+            setMessageText('');
+            loadMessages();
+        } catch (error: any) {
+            console.error('Error sending message:', error);
+            alert(`Ошибка: ${error.message || 'Не удалось отправить сообщение'}`);
+        } finally {
+            setSending(false);
+        }
+    };
+
     const formatDate = (ts: Timestamp) => {
         if (!ts) return '-';
         return new Date(ts.seconds * 1000).toLocaleString();
@@ -127,7 +171,7 @@ const EmployeeDetailsDialog: React.FC<EmployeeDetailsDialogProps> = ({ open, onC
                     <Tabs value={tabValue} onChange={(e, v) => setTabValue(v)}>
                         <Tab icon={<AttachMoneyIcon />} label="Rate Management" iconPosition="start" />
                         <Tab icon={<HistoryIcon />} label="Rate History" iconPosition="start" />
-                        {/* <Tab icon={<ListAltIcon />} label="Sessions" iconPosition="start" /> */}
+                        <Tab icon={<ChatIcon />} label="Message" iconPosition="start" />
                     </Tabs>
                 </Box>
 
@@ -208,6 +252,55 @@ const EmployeeDetailsDialog: React.FC<EmployeeDetailsDialogProps> = ({ open, onC
                             </TableBody>
                         </Table>
                     </TableContainer>
+                )}
+
+                {/* TAB 2: MESSAGES */}
+                {tabValue === 2 && (
+                    <Box>
+                        <Typography variant="subtitle1" gutterBottom>Send Message to Telegram</Typography>
+                        <Box display="flex" flexDirection="column" gap={2} mb={3}>
+                            <TextField
+                                label="Message text"
+                                multiline
+                                rows={3}
+                                value={messageText}
+                                onChange={(e) => setMessageText(e.target.value)}
+                                placeholder="Напишите сообщение работнику..."
+                                fullWidth
+                                disabled={sending || !currentUser}
+                            />
+                            <Button
+                                variant="contained"
+                                onClick={handleSendMessage}
+                                disabled={sending || !messageText.trim()}
+                                sx={{ alignSelf: 'flex-start' }}
+                                startIcon={sending && <CircularProgress size={16} />}
+                            >
+                                {sending ? 'Sending...' : 'Send Message'}
+                            </Button>
+                        </Box>
+
+                        <Typography variant="subtitle2" gutterBottom>History</Typography>
+                        <Paper variant="outlined" sx={{ maxHeight: 300, overflow: 'auto' }}>
+                            <List dense>
+                                {messagesHistory.length === 0 ? (
+                                    <ListItem><ListItemText primary="No messages found" /></ListItem>
+                                ) : (
+                                    messagesHistory.map((msg, index) => (
+                                        <React.Fragment key={msg.id}>
+                                            <ListItem alignItems="flex-start">
+                                                <ListItemText
+                                                    primary={msg.message}
+                                                    secondary={`Sent on ${formatDate(msg.timestamp)}`}
+                                                />
+                                            </ListItem>
+                                            {index < messagesHistory.length - 1 && <Divider component="li" />}
+                                        </React.Fragment>
+                                    ))
+                                )}
+                            </List>
+                        </Paper>
+                    </Box>
                 )}
             </DialogContent>
             <DialogActions>

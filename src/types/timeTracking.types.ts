@@ -6,6 +6,9 @@ export interface WorkSession {
     employeeName: string;
     clientId: string;
     clientName: string;
+    /** Optional: project within client for granular attribution */
+    projectId?: string;
+    projectName?: string;
     startTime: Timestamp;
     endTime?: Timestamp;
     durationMinutes?: number;
@@ -22,6 +25,8 @@ export interface WorkSession {
         durationMinutes: number;
     }[];
     totalBreakMinutes?: number;
+    lastBreakStart?: Timestamp; // added to support pausing logic
+    breakNotificationSent?: boolean;
     startLocation?: {
         latitude: number;
         longitude: number;
@@ -86,4 +91,13 @@ export interface WorkSession {
     voiceStartUrl?: string;          // URL to start voice file
     voiceEndUrl?: string;            // URL to end voice file
     aiTranscribedAt?: Timestamp;     // When AI processed the voice
+
+    // === GEOFENCING ===
+    locationMismatch?: boolean;
+    locationDistanceMeters?: number;
+
+    // === AI FACE VERIFICATION ===
+    faceMatch?: boolean;
+    faceConfidence?: number;
+    faceMismatchReason?: string;
 }

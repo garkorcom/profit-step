@@ -23,6 +23,9 @@ export interface Invoice {
     invoiceNumber: string; // e.g. "INV-2026-001"
     clientId: string;
     clientName: string;
+    /** Optional: project within client for project-level invoicing */
+    projectId?: string;
+    projectName?: string;
 
     date: Timestamp; // issue date
     dueDate: Timestamp; // deadline for payment

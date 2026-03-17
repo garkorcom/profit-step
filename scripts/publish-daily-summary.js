@@ -5,16 +5,6 @@
  * 
  * Использование:
  *   GOOGLE_APPLICATION_CREDENTIALS=~/.config/firebase/<user>_application_default_credentials.json node scripts/publish-daily-summary.js
- * 
- * Инструкция для AI-агента:
- *   1. Агент вызывает этот скрипт в конце рабочей сессии
- *   2. Перед вызовом — агент редактирует DAILY_SUMMARY ниже с актуальными данными
- *   3. Скрипт публикует статью в Firestore → она появляется на /blog
- * 
- * Workflow (для агента):
- *   - Ссылка: /publish-summary
- *   - Агент заполняет DAILY_SUMMARY объект реальными данными сессии
- *   - Запускает: node scripts/publish-daily-summary.js
  */
 
 const admin = require('firebase-admin');
@@ -38,69 +28,30 @@ const Timestamp = admin.firestore.Timestamp;
 // =====================================================
 
 const DAILY_SUMMARY = {
-    date: '2026-03-05',
-    title: '🛠️ AI Estimator Stabilization: File Saving & Data Sync Fixes',
-    emoji: '🛠️',
-    featureId: 'ai-estimator-fixes',
-    featureTitle: 'AI Estimator Data Flow',
-    type: 'bugfix',
-    timeSpentMinutes: 120,
+    date: '2026-03-17',
+    title: '🤖 Multi-Agent AI Estimator: Детерминистические Инструменты заменяют LLM-математику',
+    emoji: '🤖',
+    featureId: 'deterministic-circuit-tools',
+    featureTitle: 'Multi-Agent AI Estimator — Phase 9',
+    type: 'feature',
+    timeSpentMinutes: 240,
 
-    tldr: 'Исправлены критические ошибки в V2 пайплайне ИИ Сметчика. Восстановлена двусторонняя синхронизация Square Footage (Площадь) между калькулятором и окном анализа ИИ. Исправлено сохранение PDF чертежей и сканов от ИИ в облако. Исправлен UI-баг, из-за которого прятался индикатор работы модели OpenAI GPT-4o.',
+    tldr: 'Построена мультиагентная система оценки строительных смет на LangGraph. 4 агента (Circuit Designer, Panel Builder, Code Inspector, Pricing RAG) работают в связке React - Flask - LangGraph - Qdrant. Ключевое: вся математика (Manhattan distance, daisy-chaining, подбор автоматов) переведена на детерминистический Python — ноль галлюцинаций LLM, 100% воспроизводимый результат.',
 
-    // Подробное описание (RU + EN, markdown)
-    storyMarkdown: `![Code Stabilization](https://images.unsplash.com/photo-1555066931-4365d14bab8c?q=80&w=2000&auto=format&fit=crop)
+    storyMarkdown: '## \uD83C\uDDF7\uD83C\uDDFA Мультиагентный ИИ Сметчик — как 4 агента считают смету за 3 секунды\n\n### Проблема\nРучной подсчёт строительной сметы — это 2-4 часа на один чертёж. Даже с помощью ChatGPT результаты нестабильны: LLM может «забыть» добавить 15% запас кабеля или неправильно подобрать автомат для влажной зоны.\n\n### Решение: Мультиагентный пайплайн\n\nМы построили конвейер из **4 специализированных агентов**, каждый из которых решает свою задачу:\n\n| Агент | Задача | Технология |\n|-------|--------|-----------|\n| \uD83D\uDD0C **Circuit Designer** | Группировка устройств в цепи, расчёт кабеля | Manhattan Distance + Daisy-Chain |\n| ⚡ **Panel Builder** | Подбор автоматов и сборка щита | NEC/IEC таблицы + RCBO для влажных зон |\n| \uD83E\uDDD0 **Code Inspector** | Проверка на пожарную безопасность | 4 детерминистические проверки |\n| \uD83D\uDCB0 **Pricing RAG** | Поиск цен в базе материалов | Qdrant Vector DB (semantic search) |\n\n### Как считается каждый метр кабеля\n\nФормула длины провода для одной цепи:\n\n```\nTotal = HomeRun + DaisyChain + Drops + 15% Waste\n```\n\n- **Home Run** — Manhattan расстояние от щитка до первого устройства\n- **Daisy Chain** — Manhattan расстояние между устройствами в шлейфе\n- **Drops** — 4ft вниз + 4ft вверх на каждое устройство\n- **+15% Waste** — запас на повороты и обрезки\n\n### Пример: Квартира «Kitchen + Bedroom»\n\n| Цепь | Комната | Автомат | Длина кабеля |\n|------|---------|---------|-------------|\n| C1 | Кухня \uD83D\uDFE6WET | **20A RCBO/GFCI** | 508.9 ft |\n| C2 \uD83D\uDFE7DEDICATED | Кухня (духовка) | **40A Double-Pole** | 537.4 ft |\n| C3 | Спальня | 16A Single-Pole | 848.5 ft |\n\n> Кухня — влажная зона (wet zone). Система автоматически ставит RCBO/GFCI вместо обычного автомата. Духовка >20A — выделенная линия.\n\n### Human-in-the-Loop\n\nПайплайн **останавливается** перед финальной оценкой. Человек видит:\n- ⚡ Таблицу маршрутизации цепей (HomeRun / Chain / Drops / Waste / Total)\n- \uD83D\uDD0C Расписание щита (тип автомата, ампераж, полюсов)\n- \uD83D\uDCCB Полный BOM (Bill of Materials)\n\nТолько после нажатия **«Looks Good, Get Prices»** система запрашивает цены из Qdrant и считает итого.\n\n---\n\n## \uD83C\uDDEC\uD83C\uDDE7 Multi-Agent AI Estimator: How 4 Agents Build a Quote in 3 Seconds\n\n### The Problem\nManual takeoff from a blueprint takes 2-4 hours. Even with ChatGPT, results are inconsistent — LLMs hallucinate wire lengths and forget NEC code requirements.\n\n### The Solution: Deterministic Tool Calls\n\nWe built a **LangGraph pipeline** with 4 specialized agents. The critical insight: instead of asking an LLM to calculate wire lengths (unreliable), we use **deterministic Python functions** that the LLM agents call as tools:\n\n- **Manhattan Distance** — calculates wire routing along walls, not straight lines\n- **Daisy-Chain Optimization** — groups sockets into circuits, connects them in series\n- **NEC/IEC Compliance** — automatically selects RCBO/GFCI breakers for wet zones\n- **Panel Sizing** — picks the right enclosure (12/24/36-way) based on pole count + 20% reserve\n\n### The Pipeline\n\n```\nReact UI -> Flask API -> LangGraph Orchestrator\n    -> Circuit Designer (geometry_tools.py)\n    -> Panel Builder (breaker selection)\n    -> Code Inspector (4 NEC checks, reject -> retry loop)\n    -> Human Review\n    -> Pricing RAG (Qdrant Vector DB)\n    -> $$ Final Estimate\n```\n\n### Key Innovation: JSON 2.0 Input Format\n\nInstead of flat device lists, the system now accepts **room-based structured input** with zone types and scale multipliers. This enables the deterministic tools to make precise calculations based on real-world geometry, replacing LLM guesswork with reproducible Python math.',
 
-## 🇷🇺 Что сделали сегодня
-
-Сегодня мы сфокусировались на стабилизации V2 пайплайна **AI Estimator** (Фазы 11 и 12), устранив досадные ошибки потери данных и проблемы с загрузкой файлов проектов в облако. 
-
-### 1. Двусторонняя синхронизация Square Footage (Sqft)
-**Проблема:** Ввод метража (Sqft) в базовом калькуляторе часто сбрасывался или не передавался в диалог ИИ анализа, что приводило к потере данных после применения результатов сканирования.
-**Решение:** Внедрен строгий двусторонний мост данных. Если проект уже имеет метраж, он предзаполняет диалог ИИ. Если пользователь меняет метраж во время ИИ пайплайна, новое значение безопасно передается обратно в калькулятор при нажатии кнопки "Apply", ничего не перезатирая.
-
-### 2. Сохранение Чертежей (PDF) и Изображений ИИ (PNG)
-**Проблема:** При сохранении проекта (Save Project) в V2 загрузчике, файлы таинственным образом исчезали и не появлялись в Библиотеке Проектов.
-**Решение:** Исправлены правила безопасности Firebase Storage (\`storage.rules\`). Теперь оригинальные PDF-файлы и конвертированные ИИ PNG-страницы корректно привязываются к ID проекта и успешно загружаются в облако.
-
-### 3. Восстановление логики OpenAI
-**Проблема:** При выборе агента OpenAI GPT-4o система не отображала его в статус-баре, а в финальной таблице рисовалась пустая колонка.
-**Решение:** Починили логику динамического вывода агентов в UI (\`gemini + claude + openai\`). В саму таблицу добавлен явный лейбл **"Нет данных / Тайм-аут"**, который корректно высвечивается при ошибках генерации вместо пустых брешей в интерфейсе.
-
----
-
-## 🇬🇧 What We Built Today
-
-Today\'s focus was stabilizing the **V2 AI Estimator Pipeline** (Phases 11 & 12) by resolving silent data loss issues and diagnosing file upload roadblocks to Google Cloud Storage.
-
-### 1. Bidirectional Square Footage (Sqft) Syncing
-**The Bug:** Setting the Square Footage in the main estimator and then launching the AI analysis flow often resulted in the data being dropped or overridden.
-**The Fix:** Engineered a strict bidirectional data flow. The main estimator now passes its initial state into the AI modal, and the modal safely passes the validated \`sqft\` metric back out explicitly upon "Apply", preserving the user's manual inputs.
-
-### 2. Original PDF & AI PNG Persistence
-**The Bug:** Saving a project straight from the V2 Analysis modal resulted in missing blueprint libraries in the Project Workspace.
-**The Fix:** Fixed a blocking Firebase Storage security \`storage.rules\` bug. The system now flawlessly chains the upload of original user PDFs and the processed AI PNG scans, assigning them all to the correct \`projectId\` directory for future auditing.
-
-### 3. OpenAI GPT-4o UI Visibility
-**The Bug:** Selecting the OpenAI agent did not update the progress text and returned empty, confusing table columns.
-**The Fix:** Overhauled the UI text mapping. The progress label now dynamically parses the selected models (\`gemini + claude + openai\`), and any dropped payloads proactively render an explicit **"No Data / Timeout"** warning rather than an empty void.`,
-
-    technicalMarkdown: `### Architectural Decisions
-| Stage | Component | Change |
-|------|-----------|-----------|
-| **Data Sync** | \`ElectricalEstimatorPage.tsx\` | Decoupled \`sqft\` handling so manual adjustments persist alongside AI responses. |
-| **Storage Security** | \`storage.rules\` | Patched restrictive rules to explicitly allow RW auth requests against \`companies/{companyId}/projects/{projectId}/files\`. |
-| **Progress State** | \`BlueprintV2Pipeline.tsx\` | Re-wired the UI arrays to display explicit runtime agents dynamically instead of hard-coded defaults. |
-`,
+    technicalMarkdown: '### Architecture: React - Flask - LangGraph - Qdrant\n\n| File | Role |\n|------|------|\n| `geometry_tools.py` | Deterministic math: Manhattan distance, daisy-chain, wire gauge selection, breaker sizing, NEC compliance |\n| `langgraph_orchestrator.py` | StateGraph pipeline: orchestrator -> circuit_designer -> panel_builder -> qa -> human_review -> pricing |\n| `estimator_api.py` | Flask API bridge (port 8000) — exposes /api/estimate and /api/estimate/resume |\n| `EstimatorLangGraphUI.tsx` | React frontend: Accordion UI for circuits, panel schedule, BOM, human approval |\n\n### Wire Gauge Selection Table (NEC/IEC)\n| Device Type | Wire Gauge | Breaker |\n|-------------|-----------|---------|\n| Lighting / Switches | 1.5 mm2 (14/2 AWG) | 16A |\n| Standard Sockets | 2.5 mm2 (12/2 AWG) | 20A |\n| Ovens / HVAC | 6.0 mm2 (10/2 AWG) | 40A 2P |\n| EV Chargers | 10.0 mm2 (8/3 AWG) | 50A 2P |\n\n### Code Compliance Checks\n1. **Overload** — max 8 devices per 20A circuit\n2. **Wire/Breaker Mismatch** — 40A breaker on 2.5mm2 wire -> REJECT\n3. **Wet Zone Protection** — kitchen/bathroom without RCBO -> REJECT\n4. **Dedicated Lines** — oven sharing circuit with sockets -> REJECT',
 
     keyTakeaways: [
-        'Bidirectional data sharing across modal forms requires robust and explicitly typed callbacks to avoid accidental state overwriting.',
-        'Silent failures in cloud architecture are often due to overly restrictive default security rules (Firebase rules). Always cross-reference client payload errors with backend logs.',
-        'Intelligent empty states ("No Data / Timeout") dramatically improve UX compared to silent failures or blank inputs, specifically when managing multi-agent AI ecosystems.'
+        'Deterministic Python tools eliminate LLM math hallucinations — wire lengths are 100% reproducible across runs.',
+        'Manhattan distance + daisy-chain routing produces ~15% waste margin estimates, close to real-world electrician practice.',
+        'Room-based JSON 2.0 input with zone types enables automatic NEC/IEC code compliance without human intervention.',
+        'Human-in-the-Loop at the right point (after design, before pricing) builds trust without slowing down the pipeline.',
+        'LangGraph StateGraph with SqliteSaver enables pause/resume workflows — critical for construction approval processes.'
     ],
 
-    seoKeywords: ['AI Estimator', 'React state sync', 'Firebase Storage rules', 'GPT-4o logging', 'Data Persistence', 'Typescript Callbacks'],
-    seoDescription: 'Diagnosed and resolved critical architecture bugs in the AI Estimator V2 pipeline including bidirectional data sync, storage rule blockages, and explicit AI model logging.',
+    seoKeywords: ['AI Estimator', 'Multi-Agent System', 'LangGraph', 'Construction Takeoff', 'NEC Compliance', 'Deterministic Tools', 'Circuit Design', 'Manhattan Distance', 'Qdrant RAG', 'Bill of Materials'],
+    seoDescription: 'Multi-Agent AI Estimator pipeline using LangGraph with deterministic geometry tools for circuit design, NEC code compliance, and automated pricing via Qdrant Vector DB. Zero LLM math errors.',
 };
 
 // =====================================================

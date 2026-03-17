@@ -1,13 +1,15 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { 
     Box, Button, Typography, Paper, Table, TableBody, 
     TableCell, TableHead, TableRow, CircularProgress, Alert, Chip,
-    MenuItem, Select, Divider, Accordion, AccordionSummary, AccordionDetails
+    MenuItem, Select, Divider, Accordion, AccordionSummary, AccordionDetails,
+    LinearProgress, Tabs, Tab
 } from '@mui/material';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 
 export const EstimatorLangGraphUI: React.FC = () => {
-    const [status, setStatus] = useState<'idle' | 'processing' | 'review' | 'completed'>('idle');
+    const [status, setStatus] = useState<'idle' | 'uploading' | 'processing' | 'review' | 'pricing' | 'completed'>('idle');
     const [bom, setBom] = useState<any[]>([]);
     const [circuits, setCircuits] = useState<any[]>([]);
     const [panelSchedule, setPanelSchedule] = useState<any[]>([]);
@@ -15,6 +17,10 @@ export const EstimatorLangGraphUI: React.FC = () => {
     const [totalCost, setTotalCost] = useState<number>(0);
     const [blueprintType, setBlueprintType] = useState<string>('P');
     const [blueprintFile, setBlueprintFile] = useState<string>('plumbing_layout_P1.pdf');
+    const [parsedJson, setParsedJson] = useState<any>(null);
+    const [error, setError] = useState<string>('');
+    const [tabValue, setTabValue] = useState<number>(0); // 0 = Upload PDF, 1 = Sample
+    const fileInputRef = useRef<HTMLInputElement>(null);
 
     const handleFileChange = (e: any) => {
         const val = e.target.value;
@@ -22,8 +28,60 @@ export const EstimatorLangGraphUI: React.FC = () => {
         setBlueprintType(val.includes('electrical') ? 'E' : 'P');
     };
 
+    // --- Upload PDF flow (Phase 10) ---
+    const handlePdfUpload = async (file: File) => {
+        setStatus('uploading');
+        setError('');
+        setParsedJson(null);
+        const newThread = 'thread_' + Date.now();
+        setThreadId(newThread);
+
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('thread_id', newThread);
+
+        try {
+            const res = await fetch('http://localhost:8000/api/upload-blueprint', {
+                method: 'POST',
+                body: formData
+            });
+            const data = await res.json();
+
+            if (data.status === 'paused_for_review') {
+                setBom(data.pending_bom || []);
+                setCircuits(data.circuits || []);
+                setPanelSchedule(data.panel_schedule || []);
+                setParsedJson(data.blueprint_json || null);
+                setBlueprintType(data.blueprint_type || 'E');
+                setStatus('review');
+            } else if (data.status === 'error') {
+                setError(data.message);
+                setStatus('idle');
+            } else {
+                setStatus('completed');
+            }
+        } catch (e) {
+            console.error(e);
+            setError("Failed to connect to LangGraph API (port 8000). Is the server running?");
+            setStatus('idle');
+        }
+    };
+
+    const onFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (file) handlePdfUpload(file);
+    };
+
+    const onDrop = (e: React.DragEvent) => {
+        e.preventDefault();
+        const file = e.dataTransfer.files?.[0];
+        if (file && file.type === 'application/pdf') handlePdfUpload(file);
+    };
+
+    // --- Sample blueprint flow (legacy) ---
     const startPipeline = async () => {
         setStatus('processing');
+        setError('');
         const newThread = 'thread_' + Date.now();
         setThreadId(newThread);
         
@@ -45,13 +103,14 @@ export const EstimatorLangGraphUI: React.FC = () => {
             }
         } catch (e) {
             console.error(e);
+            setError("Failed to connect to LangGraph API (port 8000).");
             setStatus('idle');
-            alert("Failed to connect to local LangGraph API on port 8000.");
         }
     };
 
     const approvePipeline = async () => {
-        setStatus('processing');
+        setStatus('pricing');
+        setError('');
         try {
             const res = await fetch('http://localhost:8000/api/estimate/resume', {
                 method: 'POST',
@@ -59,10 +118,12 @@ export const EstimatorLangGraphUI: React.FC = () => {
                 body: JSON.stringify({ thread_id: threadId, approve: true })
             });
             const data = await res.json();
+            if (data.bom) setBom(data.bom); // Update BOM with prices
             setTotalCost(data.total_cost || 0.0);
             setStatus('completed');
         } catch (e) {
             console.error(e);
+            setError("Failed to resume pipeline.");
             setStatus('review');
         }
     };
@@ -71,25 +132,86 @@ export const EstimatorLangGraphUI: React.FC = () => {
         <Paper variant="outlined" sx={{ p: 4, mb: 4, bgcolor: '#fbfbfb', borderLeft: '4px solid #3f51b5' }}>
             <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
                 <Typography variant="h5" fontWeight="bold">Multi-Agent AI Estimator (LangGraph)</Typography>
-                <Chip label="Phase 9 — Deterministic Tools" color="primary" size="small" />
+                <Chip label="Phase 10 — Vision + Deterministic Tools" color="primary" size="small" />
             </Box>
             
             <Typography variant="body2" color="textSecondary" mb={3}>
-                This panel connects directly to the local Python LangGraph Orchestrator. 
-                Electrical estimates use <strong>deterministic geometry tools</strong> (Manhattan distance, daisy-chaining, NEC code compliance)
+                Upload a PDF blueprint and GPT-4o Vision will extract rooms, devices, and coordinates.
+                Then <strong>deterministic geometry tools</strong> calculate circuits, wire lengths, and panel schedule
                 — zero LLM math errors, 100% reproducible results.
             </Typography>
-            
+
+            {error && (
+                <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>
+                    {error}
+                </Alert>
+            )}
+
             {status === 'idle' && (
-                <Box display="flex" gap={2} alignItems="center">
-                    <Select value={blueprintFile} onChange={handleFileChange} size="small" sx={{ minWidth: 250, bgcolor: 'white' }}>
-                        <MenuItem value="plumbing_layout_P1.pdf">Plumbing Blueprint (P-1)</MenuItem>
-                        <MenuItem value="plumbing_flawed_P2.pdf">Plumbing Blueprint w/ Error (P-2)</MenuItem>
-                        <MenuItem value="electrical_plan_E1.pdf">Electrical Blueprint (E-1) — Kitchen + Bedroom</MenuItem>
-                    </Select>
-                    <Button variant="contained" onClick={startPipeline} color="primary" disableElevation>
-                        Analyze Blueprint
-                    </Button>
+                <Box>
+                    <Tabs value={tabValue} onChange={(_, v) => setTabValue(v)} sx={{ mb: 2 }}>
+                        <Tab label="📄 Upload PDF Blueprint" />
+                        <Tab label="🧪 Sample Blueprints" />
+                    </Tabs>
+                    
+                    {tabValue === 0 && (
+                        <Box
+                            onDrop={onDrop}
+                            onDragOver={(e) => e.preventDefault()}
+                            onClick={() => fileInputRef.current?.click()}
+                            sx={{
+                                border: '2px dashed #90caf9',
+                                borderRadius: 2,
+                                p: 5,
+                                textAlign: 'center',
+                                cursor: 'pointer',
+                                bgcolor: '#f5f9ff',
+                                transition: 'all 0.2s',
+                                '&:hover': { bgcolor: '#e3f2fd', borderColor: '#42a5f5' }
+                            }}
+                        >
+                            <CloudUploadIcon sx={{ fontSize: 48, color: '#42a5f5', mb: 1 }} />
+                            <Typography variant="h6" color="primary">
+                                Drop PDF Blueprint Here
+                            </Typography>
+                            <Typography variant="body2" color="textSecondary">
+                                or click to browse — GPT-4o Vision will analyze the floor plan
+                            </Typography>
+                            <input
+                                ref={fileInputRef}
+                                type="file"
+                                accept=".pdf"
+                                onChange={onFileInputChange}
+                                style={{ display: 'none' }}
+                            />
+                        </Box>
+                    )}
+
+                    {tabValue === 1 && (
+                        <Box display="flex" gap={2} alignItems="center">
+                            <Select value={blueprintFile} onChange={handleFileChange} size="small" sx={{ minWidth: 250, bgcolor: 'white' }}>
+                                <MenuItem value="plumbing_layout_P1.pdf">Plumbing Blueprint (P-1)</MenuItem>
+                                <MenuItem value="plumbing_flawed_P2.pdf">Plumbing Blueprint w/ Error (P-2)</MenuItem>
+                                <MenuItem value="electrical_plan_E1.pdf">Electrical Blueprint (E-1) — Kitchen + Bedroom</MenuItem>
+                            </Select>
+                            <Button variant="contained" onClick={startPipeline} color="primary" disableElevation>
+                                Analyze Blueprint
+                            </Button>
+                        </Box>
+                    )}
+                </Box>
+            )}
+
+            {status === 'uploading' && (
+                <Box p={3} bgcolor="white" borderRadius={2} border="1px dashed #ccc">
+                    <Box display="flex" alignItems="center" gap={2} mb={2}>
+                        <CircularProgress size={24} />
+                        <Typography><strong>👁️ Vision Agent analyzing blueprint...</strong></Typography>
+                    </Box>
+                    <LinearProgress variant="indeterminate" sx={{ borderRadius: 1 }} />
+                    <Typography variant="body2" color="textSecondary" mt={1}>
+                        GPT-4o is reading rooms, devices, and coordinates from the floor plan (10-15 sec)
+                    </Typography>
                 </Box>
             )}
 
@@ -105,6 +227,37 @@ export const EstimatorLangGraphUI: React.FC = () => {
                     <Alert severity="warning" sx={{ mb: 3 }}>
                         <strong>Human-in-the-Loop Review Required:</strong> The Code Compliance Inspector APPROVED the design. Review the circuits and BOM below.
                     </Alert>
+
+                    {parsedJson && (
+                        <Accordion sx={{ mb: 2, bgcolor: '#f3e5f5' }}>
+                            <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                                <Typography fontWeight="bold">
+                                    👁️ Vision Parser Output — {parsedJson.rooms?.length || 0} rooms, {
+                                        parsedJson.rooms?.reduce((sum: number, r: any) => sum + (r.devices?.length || 0), 0) || 0
+                                    } devices detected
+                                </Typography>
+                            </AccordionSummary>
+                            <AccordionDetails>
+                                {parsedJson.rooms?.map((room: any, ri: number) => (
+                                    <Box key={ri} mb={1}>
+                                        <Typography variant="subtitle2">
+                                            {room.name} 
+                                            <Chip 
+                                                label={room.zone_type} 
+                                                size="small" 
+                                                color={room.zone_type === 'wet' ? 'info' : 'default'} 
+                                                sx={{ ml: 1, height: 18, fontSize: 10 }} 
+                                            />
+                                            {' — '}{room.devices?.length || 0} devices
+                                        </Typography>
+                                        <Typography variant="body2" color="textSecondary" sx={{ pl: 2, fontSize: 11 }}>
+                                            {room.devices?.map((d: any) => `${d.id} (${d.type})`).join(', ')}
+                                        </Typography>
+                                    </Box>
+                                ))}
+                            </AccordionDetails>
+                        </Accordion>
+                    )}
                     
                     {circuits.length > 0 && (
                         <Accordion defaultExpanded sx={{ mb: 2 }}>
@@ -217,10 +370,20 @@ export const EstimatorLangGraphUI: React.FC = () => {
                         <Button variant="contained" color="success" onClick={approvePipeline} disableElevation>
                             Looks Good, Get Prices
                         </Button>
-                        <Button variant="outlined" color="error" onClick={() => setStatus('idle')}>
+                        <Button variant="outlined" color="error" onClick={() => { setStatus('idle'); setError(''); setParsedJson(null); }}>
                             Reject
                         </Button>
                     </Box>
+                </Box>
+            )}
+
+            {status === 'pricing' && (
+                <Box p={3} bgcolor="white" borderRadius={2} border="1px dashed #ccc">
+                    <Box display="flex" alignItems="center" gap={2} mb={2}>
+                        <CircularProgress size={24} />
+                        <Typography><strong>💰 Pricing Agent querying Qdrant Vector DB...</strong></Typography>
+                    </Box>
+                    <LinearProgress variant="indeterminate" sx={{ borderRadius: 1 }} />
                 </Box>
             )}
 
@@ -235,7 +398,40 @@ export const EstimatorLangGraphUI: React.FC = () => {
                             Detailed BOM with prices has been exported to <code>bom_export.csv</code>.
                         </Typography>
                     </Paper>
-                    <Button variant="outlined" sx={{ mt: 3 }} onClick={() => setStatus('idle')}>Run Another Blueprint</Button>
+
+                    {bom.length > 0 && bom.some(item => item.unit_price !== undefined) && (
+                        <Accordion sx={{ mt: 2 }}>
+                            <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                                <Typography fontWeight="bold">📊 Priced BOM ({bom.length} items)</Typography>
+                            </AccordionSummary>
+                            <AccordionDetails>
+                                <Table size="small">
+                                    <TableHead sx={{ bgcolor: '#e8f5e9' }}>
+                                        <TableRow>
+                                            <TableCell><strong>Item</strong></TableCell>
+                                            <TableCell align="right"><strong>Qty</strong></TableCell>
+                                            <TableCell><strong>Unit</strong></TableCell>
+                                            <TableCell align="right"><strong>Unit $</strong></TableCell>
+                                            <TableCell align="right"><strong>Total $</strong></TableCell>
+                                        </TableRow>
+                                    </TableHead>
+                                    <TableBody>
+                                        {bom.map((item, idx) => (
+                                            <TableRow key={idx}>
+                                                <TableCell>{item.item}</TableCell>
+                                                <TableCell align="right">{item.qty}</TableCell>
+                                                <TableCell>{item.unit}</TableCell>
+                                                <TableCell align="right">${item.unit_price?.toFixed(2) || '0.00'}</TableCell>
+                                                <TableCell align="right"><strong>${item.total_price?.toFixed(2) || '0.00'}</strong></TableCell>
+                                            </TableRow>
+                                        ))}
+                                    </TableBody>
+                                </Table>
+                            </AccordionDetails>
+                        </Accordion>
+                    )}
+
+                    <Button variant="outlined" sx={{ mt: 3 }} onClick={() => { setStatus('idle'); setError(''); setParsedJson(null); setTotalCost(0); setBom([]); setCircuits([]); setPanelSchedule([]); }}>Run Another Blueprint</Button>
                 </Box>
             )}
         </Paper>

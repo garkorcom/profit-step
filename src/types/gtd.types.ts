@@ -63,6 +63,15 @@ export interface ChecklistItem {
     completedAt?: Timestamp;
 }
 
+/**
+ * Вложение (внешняя ссылка, например Google Drive) к задаче GTD
+ */
+export interface TaskAttachment {
+    id: string;
+    url: string;
+    title: string;
+}
+
 
 /**
  * Интерфейс проекта (deprecated, сохранён для обратной совместимости)
@@ -203,6 +212,12 @@ export interface GTDTask {
 
     /** Дополнительные заметки к задаче */
     description?: string;
+
+    /** Secondary descriptive memo */
+    memo?: string;
+
+    /** External attachments or links (e.g. Google Drive) */
+    attachments?: TaskAttachment[];
 
     /** Дедлайн задачи */
     dueDate?: Timestamp;

@@ -6,6 +6,8 @@ import EditIcon from '@mui/icons-material/Edit';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import StopIcon from '@mui/icons-material/Stop';
+import InsertLinkIcon from '@mui/icons-material/InsertLink';
+import SubjectIcon from '@mui/icons-material/Subject';
 import { GTDTask, PRIORITY_COLORS } from '../../types/gtd.types';
 import { WorkSessionData } from '../../hooks/useActiveSession';
 
@@ -421,6 +423,24 @@ const GTDTaskCard: React.FC<GTDTaskCardProps> = ({
                                             ? `${Math.floor(task.estimatedDurationMinutes / 60)}h${task.estimatedDurationMinutes % 60 ? task.estimatedDurationMinutes % 60 + 'm' : ''}`
                                             : `${task.estimatedDurationMinutes}m`}
                                     </Typography>
+                                )}
+
+                                {/* Attachments Indicator */}
+                                {task.attachments && task.attachments.length > 0 && (
+                                    <Tooltip title={`${task.attachments.length} вложений`} arrow>
+                                        <Box sx={{ display: 'flex', alignItems: 'center', color: APPLE_COLORS.textSecondary }}>
+                                            <InsertLinkIcon sx={{ fontSize: 13 }} />
+                                        </Box>
+                                    </Tooltip>
+                                )}
+
+                                {/* Memo Indicator */}
+                                {task.memo && (
+                                    <Tooltip title="Есть заметка" arrow>
+                                        <Box sx={{ display: 'flex', alignItems: 'center', color: APPLE_COLORS.textSecondary }}>
+                                            <SubjectIcon sx={{ fontSize: 13 }} />
+                                        </Box>
+                                    </Tooltip>
                                 )}
 
                                 {/* Due date */}

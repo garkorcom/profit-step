@@ -20,8 +20,10 @@ import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import InboxIcon from '@mui/icons-material/Inbox';
 import AddIcon from '@mui/icons-material/Add';
 import WhatsAppIcon from '@mui/icons-material/WhatsApp';
+import InsertLinkIcon from '@mui/icons-material/InsertLink';
+import LaunchIcon from '@mui/icons-material/Launch';
 import { useForm, Controller } from 'react-hook-form';
-import { GTDTask, GTDStatus, GTDPriority, PRIORITY_COLORS, ChecklistItem } from '../../types/gtd.types';
+import { GTDTask, GTDStatus, GTDPriority, PRIORITY_COLORS, ChecklistItem, TaskAttachment } from '../../types/gtd.types';
 import { Client } from '../../types/crm.types';
 import { UserProfile } from '../../types/user.types';
 import { Timestamp, collection, getDocs, query, orderBy } from 'firebase/firestore';
@@ -45,6 +47,7 @@ interface GTDEditDialogProps {
 interface FormData {
     title: string;
     description: string;
+    memo: string;
     context: string;
     clientId: string;
     assigneeId: string;
@@ -102,6 +105,11 @@ const GTDEditDialog: React.FC<GTDEditDialogProps> = ({ open, onClose, task, onSa
     const [checklistItems, setChecklistItems] = useState<ChecklistItem[]>([]);
     const [newChecklistText, setNewChecklistText] = useState('');
 
+    // Attachments State
+    const [attachments, setAttachments] = useState<TaskAttachment[]>([]);
+    const [newAttachmentUrl, setNewAttachmentUrl] = useState('');
+    const [newAttachmentTitle, setNewAttachmentTitle] = useState('');
+
     // Co-assignees state
     const [coAssignees, setCoAssignees] = useState<Array<{ id: string; name: string; role: 'executor' | 'reviewer' | 'observer' }>>([]);
 
@@ -154,6 +162,7 @@ const GTDEditDialog: React.FC<GTDEditDialogProps> = ({ open, onClose, task, onSa
             reset({
                 title: task.title,
                 description: task.description || '',
+                memo: task.memo || '',
                 context: task.context || '',
                 clientId: task.clientId || '',
                 // Default to current user if no assignee
@@ -182,6 +191,11 @@ const GTDEditDialog: React.FC<GTDEditDialogProps> = ({ open, onClose, task, onSa
             // Initialize checklist
             setChecklistItems(task.checklistItems || []);
             setNewChecklistText('');
+
+            // Initialize Attachments
+            setAttachments(task.attachments || []);
+            setNewAttachmentUrl('');
+            setNewAttachmentTitle('');
 
             // Initialize co-assignees
             setCoAssignees((task.coAssignees || []).map((ca: any) => ({
@@ -216,6 +230,7 @@ const GTDEditDialog: React.FC<GTDEditDialogProps> = ({ open, onClose, task, onSa
         const updates: Partial<GTDTask> = {
             title: data.title,
             description: data.description || '',
+            memo: data.memo || '',
             context: data.context || '',
             status: data.status,
             priority: data.priority || 'none',
@@ -264,6 +279,9 @@ const GTDEditDialog: React.FC<GTDEditDialogProps> = ({ open, onClose, task, onSa
 
         // Checklist items
         updates.checklistItems = checklistItems.length > 0 ? checklistItems : [];
+
+        // Attachments
+        updates.attachments = attachments.length > 0 ? attachments : [];
 
         // Linked Contacts
         updates.linkedContactIds = linkedContactIds;
@@ -443,6 +461,25 @@ const GTDEditDialog: React.FC<GTDEditDialogProps> = ({ open, onClose, task, onSa
                             )}
                         />
 
+                        {/* 4.1 Memo / Дополнительное описание */}
+                        <Controller
+                            name="memo"
+                            control={control}
+                            render={({ field }) => (
+                                <TextField
+                                    {...field}
+                                    label="Дополнительное описание (Memo)"
+                                    placeholder="Детали задачи, ссылки или уточнения..."
+                                    multiline
+                                    rows={2}
+                                    fullWidth
+                                    size="small"
+                                    variant="outlined"
+                                    sx={{ bgcolor: 'background.paper' }}
+                                />
+                            )}
+                        />
+
                         {/* 4.5. Checklist Section */}
                         <Box sx={{ mb: 2 }}>
                             <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block', textTransform: 'uppercase', letterSpacing: 1, fontWeight: 'bold' }}>
@@ -550,6 +587,90 @@ const GTDEditDialog: React.FC<GTDEditDialogProps> = ({ open, onClose, task, onSa
                                     )
                                 }}
                             />
+                        </Box>
+
+                        {/* 4.8. Attachments Section */}
+                        <Box sx={{ mb: 2 }}>
+                            <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'flex', alignItems: 'center', gap: 0.5, textTransform: 'uppercase', letterSpacing: 1, fontWeight: 'bold' }}>
+                                <InsertLinkIcon fontSize="small" /> Ссылки на документы (Google Drive, Docs и др.)
+                            </Typography>
+
+                            {attachments.length > 0 && (
+                                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, mb: 1 }}>
+                                    {attachments.map((att) => (
+                                        <Box key={att.id} sx={{ display: 'flex', alignItems: 'center', p: 0.5, gap: 1, border: '1px solid #e0e0e0', borderRadius: 1.5, bgcolor: '#fafafa' }}>
+                                            <Box sx={{ flex: 1, overflow: 'hidden' }}>
+                                                <Typography variant="body2" sx={{ fontWeight: 500, whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
+                                                    {att.title || 'Вложение'}
+                                                </Typography>
+                                                <Link href={att.url} target="_blank" rel="noopener noreferrer" variant="caption" sx={{ display: 'block', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden', color: 'primary.main' }}>
+                                                    {att.url}
+                                                </Link>
+                                            </Box>
+                                            <IconButton size="small" component="a" href={att.url} target="_blank" rel="noopener noreferrer" sx={{ color: 'primary.main', bgcolor: alpha(theme.palette.primary.main, 0.08) }}>
+                                                <LaunchIcon fontSize="small" />
+                                            </IconButton>
+                                            <IconButton size="small" onClick={() => setAttachments(prev => prev.filter(a => a.id !== att.id))} sx={{ opacity: 0.5, '&:hover': { opacity: 1 } }}>
+                                                <DeleteOutlineIcon fontSize="small" />
+                                            </IconButton>
+                                        </Box>
+                                    ))}
+                                </Box>
+                            )}
+
+                            {/* Add new attachment row */}
+                            <Grid container spacing={1} alignItems="center">
+                                <Grid size={{ xs: 5 }}>
+                                    <TextField
+                                        fullWidth
+                                        size="small"
+                                        placeholder="Название (опц.)"
+                                        value={newAttachmentTitle}
+                                        onChange={(e) => setNewAttachmentTitle(e.target.value)}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter') e.preventDefault();
+                                        }}
+                                    />
+                                </Grid>
+                                <Grid size={{ xs: 7 }}>
+                                    <TextField
+                                        fullWidth
+                                        size="small"
+                                        placeholder="https://docs.google.com/..."
+                                        value={newAttachmentUrl}
+                                        onChange={(e) => setNewAttachmentUrl(e.target.value)}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter' && newAttachmentUrl.trim()) {
+                                                e.preventDefault();
+                                                const url = newAttachmentUrl.trim() || '';
+                                                if (url) {
+                                                    setAttachments(prev => [...prev, { id: nanoid(10), url: url.startsWith('http') ? url : `https://${url}`, title: newAttachmentTitle.trim() || 'Ссылка' }]);
+                                                    setNewAttachmentUrl('');
+                                                    setNewAttachmentTitle('');
+                                                }
+                                            }
+                                        }}
+                                        InputProps={{
+                                            endAdornment: (
+                                                <IconButton
+                                                    size="small"
+                                                    onClick={() => {
+                                                        const url = newAttachmentUrl.trim() || '';
+                                                        if (url) {
+                                                            setAttachments(prev => [...prev, { id: nanoid(10), url: url.startsWith('http') ? url : `https://${url}`, title: newAttachmentTitle.trim() || 'Ссылка' }]);
+                                                            setNewAttachmentUrl('');
+                                                            setNewAttachmentTitle('');
+                                                        }
+                                                    }}
+                                                    disabled={!newAttachmentUrl.trim()}
+                                                >
+                                                    <AddIcon fontSize="small" />
+                                                </IconButton>
+                                            )
+                                        }}
+                                    />
+                                </Grid>
+                            </Grid>
                         </Box>
 
                         {/* 5. Resources & Finance (Accordion) */}

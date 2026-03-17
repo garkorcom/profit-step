@@ -24,6 +24,7 @@ import * as XLSX from 'xlsx';
 import { AiMappingDialog } from '../../components/estimates/AiMappingDialog';
 import { V3PipelineContainer } from '../../components/estimates/pipeline/V3PipelineContainer';
 import { V3VisualProofStep } from '../../components/estimates/pipeline/V3VisualProofStep';
+import { EstimatorLangGraphUI } from '../../components/estimates/EstimatorLangGraphUI';
 import { useAuth } from '../../auth/AuthContext';
 import { savedEstimateApi } from '../../api/savedEstimateApi';
 import { projectsApi } from '../../api/projectsApi';
@@ -1168,6 +1169,8 @@ Notes: ${notes || 'N/A'}
             </AppBar>
 
             <Container maxWidth="xl" sx={{ mt: 3 }}>
+                <EstimatorLangGraphUI />
+
                 <Grid container spacing={3}>
                     {/* Project Info & Quick Fill */}
                     <Grid size={{ xs: 12 }}>

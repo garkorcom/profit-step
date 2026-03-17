@@ -99,6 +99,9 @@ export interface Client {
   // Business Info
   industry?: string;
   source?: string;
+  sourceType?: 'contact' | 'company' | 'manual';
+  sourceId?: string; // Links to the specific contact or company ID
+  sourceName?: string; // Display name of the source
   status: ClientStatus;
 
   // Location / Geofence

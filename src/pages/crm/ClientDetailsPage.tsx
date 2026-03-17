@@ -188,6 +188,27 @@ const ClientDetailsPage: React.FC = () => {
         );
     }
 
+const getStatusLabel = (status: string) => {
+    switch (status) {
+        case 'new': return 'Потенциальный';
+        case 'contacted': return 'Потенциальный (В контакте)';
+        case 'qualified': return 'Потенциальный (Квалифицирован)';
+        case 'customer': return 'В работе';
+        case 'done': return 'Закрыт';
+        case 'churned': return 'Закрыт (Отказ)';
+        default: return status;
+    }
+};
+
+const getStatusColor = (status: string) => {
+    switch (status) {
+        case 'new': case 'contacted': case 'qualified': return 'primary';
+        case 'customer': return 'success';
+        case 'done': case 'churned': return 'default';
+        default: return 'default';
+    }
+};
+
     return (
         <Container maxWidth="xl" sx={{ mt: 4, mb: 4 }}>
             <Button startIcon={<ArrowBackIcon />} onClick={() => navigate('/crm/clients')} sx={{ mb: 2 }}>
@@ -203,7 +224,7 @@ const ClientDetailsPage: React.FC = () => {
                         <EditIcon fontSize="small" />
                     </IconButton>
                 </Box>
-                <Chip label={client.status} color={client.status === 'customer' ? 'success' : 'default'} />
+                <Chip label={getStatusLabel(client.status)} color={getStatusColor(client.status) as any} />
             </Box>
 
             <Paper sx={{ width: '100%', mb: 2 }}>
@@ -219,6 +240,17 @@ const ClientDetailsPage: React.FC = () => {
                 <Paper sx={{ p: 3 }}>
                     <Typography variant="h6" gutterBottom>Client Information</Typography>
                     <Typography><strong>Type:</strong> {client.type}</Typography>
+                    <Typography>
+                        <strong>Статус:</strong> <Chip size="small" label={getStatusLabel(client.status)} color={getStatusColor(client.status) as any} sx={{ ml: 1 }} />
+                    </Typography>
+                    {client.sourceType && (
+                        <Typography>
+                            <strong>Источник:</strong>{' '}
+                            {client.sourceType === 'contact' ? `Контакт: ${client.sourceName}` :
+                             client.sourceType === 'company' ? `Компания: ${client.sourceName}` :
+                             client.source}
+                        </Typography>
+                    )}
                     <Typography><strong>Email:</strong> {client.email || 'N/A'}</Typography>
                     <Typography><strong>Phone:</strong> {client.phone || 'N/A'}</Typography>
                     <Typography><strong>Address:</strong> {client.address || 'N/A'}</Typography>

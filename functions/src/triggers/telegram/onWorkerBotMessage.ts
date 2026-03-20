@@ -833,6 +833,49 @@ async function handleLocation(chatId: number, userId: number, location: any) {
         return;
     }
 
+    // Handle Finish Location (Anti-Fraud Step)
+    if (sessionData.awaitingEndLocation) {
+        const targetLat = sessionData.startLocation?.latitude;
+        const targetLng = sessionData.startLocation?.longitude;
+
+        let distanceInfo = "";
+        let locationMismatch = false;
+        let locationDistanceMeters = null;
+
+        if (targetLat && targetLng) {
+            locationDistanceMeters = calculateDistanceMeters(latitude, longitude, targetLat, targetLng);
+            if (locationDistanceMeters > 500) {
+                locationMismatch = true;
+                distanceInfo = `\n⚠️ Сильное отклонение от старта (${locationDistanceMeters}м).`;
+            } else {
+                distanceInfo = `\n✅ Локация подтверждена.`;
+            }
+        }
+
+        const updatePayload: any = {
+            endLocation: location,
+            awaitingEndLocation: false,
+            awaitingEndPhoto: true
+        };
+        
+        if (locationMismatch) {
+            updatePayload.locationMismatch = true;
+            updatePayload.needsAdjustment = true;
+            updatePayload.locationMismatchReason = `Закрытие смены в ${locationDistanceMeters}м от старта`;
+        }
+        if (locationDistanceMeters !== null) {
+            updatePayload.endLocationDistanceMeters = locationDistanceMeters;
+        }
+
+        await activeSession.ref.update(updatePayload);
+
+        await sendMessage(chatId,
+            `📍 *Геопозиция получена.*${distanceInfo}\n\n📸 Теперь отправь **фото** (или файл/видео) выполненной работы.`,
+            { keyboard: [[{ text: "⏩ Пропустить фото" }]], resize_keyboard: true }
+        );
+        return;
+    }
+
     // Backwards Compatibility for old awaitingLocation state
     if (sessionData.awaitingLocation) {
         const clientId = sessionData.clientId;
@@ -1230,15 +1273,21 @@ async function handleFinishWorkRequest(chatId: number, userId: number) {
         return;
     }
 
-    // Mark as awaiting end photo
+    // Mark as awaiting end location (NEW: Anti-fraud step)
     await activeSession.ref.update({
-        awaitingEndPhoto: true
+        awaitingEndLocation: true
     });
 
-    await sendMessage(chatId, "📸 Пожалуйста, отправь **фото** (или файл/видео) выполненной работы для завершения смены.\n\nИли нажми кнопку Пропустить, если интернета нет.", {
-        keyboard: [[{ text: "⏩ Пропустить фото" }]],
-        resize_keyboard: true
-    });
+    await sendMessage(chatId, 
+        "📍 Для завершения смены отправь **текущую геопозицию**.\n(Скрепка 📎 -> Локация)\n\n*Это нужно для подтверждения твоего присутствия на объекте.*", 
+        {
+            keyboard: [
+                [{ text: "📍 Отправить Локацию", request_location: true }], 
+                [{ text: "⏩ Пропустить (Слабый интернет)" }, { text: "❌ Отмена" }]
+            ],
+            resize_keyboard: true
+        }
+    );
 }
 
 async function handleFinishLateRequest(chatId: number, userId: number) {
@@ -1276,7 +1325,21 @@ async function handleSkipMedia(chatId: number, userId: number) {
 
     const sessionData = activeSession.data();
 
-    if (sessionData.awaitingEndPhoto) {
+    if (sessionData.awaitingEndLocation) {
+        // Skip End Location → go to photo
+        await activeSession.ref.update({
+            awaitingEndLocation: false,
+            awaitingEndPhoto: true,
+            skippedEndLocation: true,
+            needsAdjustment: true,
+            locationMismatch: true,
+            locationMismatchReason: "Location skipped at finish"
+        });
+        await sendMessage(chatId,
+            "⏩ Локация пропущена. ⚠️ Отметка о пропуске сохранена.\n\n📸 Теперь отправь **фото** (или файл/видео) выполненной работы.",
+            { keyboard: [[{ text: "⏩ Пропустить фото" }]], resize_keyboard: true }
+        );
+    } else if (sessionData.awaitingEndPhoto) {
         // Skip End Photo → go to voice
         await activeSession.ref.update({
             awaitingEndPhoto: false,
@@ -1442,6 +1505,14 @@ async function handleCancel(chatId: number, userId: number) {
         if (data.awaitingLocation || data.awaitingStartPhoto) {
             await activeSession.ref.delete();
             await sendMessage(chatId, "✅ Сессия отменена.", { remove_keyboard: true });
+        } else if (data.awaitingEndLocation || data.awaitingEndPhoto || data.awaitingEndVoice) {
+            // Revert closing sequence
+            await activeSession.ref.update({
+                awaitingEndLocation: false,
+                awaitingEndPhoto: false,
+                awaitingEndVoice: false
+            });
+            await sendMessage(chatId, "✅ Завершение отменено. Продолжай работу.", { remove_keyboard: true });
         } else {
             await sendMessage(chatId, "⚠️ Нельзя отменить активную смену. Используй ⏹️ Finish Work.");
         }
@@ -1512,6 +1583,27 @@ async function handleText(chatId: number, userId: number, text: string) {
         return;
     }
 
+    if (sessionData.awaitingEndLocation) {
+        if (text === '❌ Отмена' || text === '❌ Cancel') {
+            await handleCancel(chatId, userId);
+            return;
+        }
+        await logBotAction(userId, userId, 'smart_fallback_end_location', { text_reason: text });
+        await activeSession.ref.update({
+            awaitingEndLocation: false,
+            awaitingEndPhoto: true,
+            skippedEndLocation: true,
+            needsAdjustment: true,
+            locationMismatch: true,
+            locationMismatchReason: `Пропуск локации текстом: ${text}`
+        });
+        await sendMessage(chatId,
+            `⏩ Локация пропущена. ⚠️ Отметка о пропуске сохранена.\n\n📸 Теперь отправь **фото** выполненной работы.`,
+            { keyboard: [[{ text: "⏩ Пропустить фото" }]], resize_keyboard: true }
+        );
+        return;
+    }
+
     if (sessionData.awaitingEndPhoto) {
         await logBotAction(userId, userId, 'smart_fallback_end_photo', { text_reason: text });
         await activeSession.ref.update({
@@ -1557,7 +1649,7 @@ async function handleText(chatId: number, userId: number, text: string) {
 
 async function finalizeSession(chatId: number, userId: number, activeSession: any, description: string) {
     const sessionData = activeSession.data();
-    const endTime = admin.firestore.Timestamp.now();
+    let endTime = admin.firestore.Timestamp.now();
     const startTime = sessionData.startTime;
 
     let hourlyRate = sessionData.hourlyRate;
@@ -1582,25 +1674,21 @@ async function finalizeSession(chatId: number, userId: number, activeSession: an
     let totalMinutes = Math.round((endTime.toMillis() - startTime.toMillis()) / 60000);
 
     // --- HANDLE OPEN BREAK (Finish while Paused) ---
-    const BREAK_LIMIT = 60;
     let currentBreakMinutes = 0;
     let adjustmentApplied = false;
 
     if (sessionData.status === 'paused' && sessionData.lastBreakStart) {
         const breakStart = sessionData.lastBreakStart;
-        const actualBreakMinutes = Math.round((endTime.toMillis() - breakStart.toMillis()) / 60000);
-
-        currentBreakMinutes = actualBreakMinutes;
-
-        // Apply auto-correction if needed
-        if (actualBreakMinutes > BREAK_LIMIT) {
-            currentBreakMinutes = BREAK_LIMIT;
-            adjustmentApplied = true;
-        }
-
-        // Record this final break in history (optional, or just deduct)
-        // Ideally we should push to 'breaks' array for completeness, but session is closing.
-        // We'll just ensure totalMinutes is correct.
+        
+        // FIX (Anti-Gamble): If finishing while paused, actual work ended when the break started.
+        // We rollback endTime to lastBreakStart and don't count the inactive period.
+        endTime = breakStart;
+        
+        // Recalculate total elapsed time since endTime was modified
+        totalMinutes = Math.round((endTime.toMillis() - startTime.toMillis()) / 60000);
+        
+        // We do not add actualBreakMinutes because the shift officially ends at breakStart
+        currentBreakMinutes = 0;
     }
 
     let existingBreaks = sessionData.totalBreakMinutes || 0;

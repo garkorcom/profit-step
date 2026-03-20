@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { collection, query, where, onSnapshot, orderBy, doc, updateDoc, addDoc, deleteDoc, Timestamp, or } from 'firebase/firestore';
+import { collection, query, onSnapshot, orderBy, doc, updateDoc, addDoc, deleteDoc, Timestamp } from 'firebase/firestore';
+import { httpsCallable } from 'firebase/functions';
 import { DropResult } from '@hello-pangea/dnd';
-import { db } from '../firebase/firebase';
+import { db, functions } from '../firebase/firebase';
 import { GTDTask, GTDStatus, GTDPriority } from '../types/gtd.types';
 import { Client } from '../types/crm.types';
 import { UserProfile } from '../types/user.types';
@@ -18,55 +19,59 @@ const createInitialData = (): Record<GTDStatus, GTDTask[]> => ({
 });
 
 export const useGTDTasks = (currentUser: any, showAllTasks: boolean = false) => {
+    const [rawTasks, setRawTasks] = useState<GTDTask[]>([]);
     const [columns, setColumns] = useState(createInitialData);
     const [loading, setLoading] = useState(true);
     // Keep a ref to previous columns for DnD rollback
     const prevColumnsRef = useRef<Record<GTDStatus, GTDTask[]> | null>(null);
 
-    // Subscribe to tasks
+    // 1. Subscribe to ALL tasks (Runs once, ignores showAllTasks changes)
     useEffect(() => {
         if (!currentUser) return;
         setLoading(true);
 
-        // Query based on showAllTasks flag
-        const q = showAllTasks
-            ? query(
-                collection(db, 'gtd_tasks'),
-                orderBy('createdAt', 'desc')
-            )
-            : query(
-                collection(db, 'gtd_tasks'),
-                or(
-                    where('ownerId', '==', currentUser.uid),
-                    where('assigneeId', '==', currentUser.uid),
-                    where('coAssigneeIds', 'array-contains', currentUser.uid)
-                )
-            );
+        const q = query(
+            collection(db, 'gtd_tasks'),
+            // Ограничение: желательно добавить where('status', '!=', 'done') если нужно,
+            // но пока грузим всё для консистентности.
+            orderBy('createdAt', 'desc')
+        );
 
         const unsubscribe = onSnapshot(q, (snapshot) => {
-            const newColumns = createInitialData();
-
-            snapshot.docs.forEach(doc => {
-                const task = { id: doc.id, ...doc.data() } as GTDTask;
-                // Safety check if status is valid
-                if (newColumns[task.status]) {
-                    newColumns[task.status].push(task);
-                }
-            });
-
-            // Sort
-            Object.keys(newColumns).forEach(key => {
-                newColumns[key as GTDStatus].sort((a, b) =>
-                    (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)
-                );
-            });
-
-            setColumns(newColumns);
+            const fetchedTasks = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as GTDTask));
+            setRawTasks(fetchedTasks);
             setLoading(false);
         });
 
         return () => unsubscribe();
-    }, [currentUser, showAllTasks]);
+    }, [currentUser]); // <-- Removed showAllTasks from dependencies!
+
+    // 2. Local memory filtering (Runs instantly on toggle without network requests)
+    useEffect(() => {
+        const newColumns = createInitialData();
+
+        rawTasks.forEach(task => {
+            const isMine = task.ownerId === currentUser?.uid || 
+                           task.assigneeId === currentUser?.uid || 
+                           task.coAssigneeIds?.includes(currentUser?.uid);
+
+            if (showAllTasks || isMine) {
+                // Safety check if status is valid
+                if (newColumns[task.status]) {
+                    newColumns[task.status].push(task);
+                }
+            }
+        });
+
+        // Sort chronologically
+        Object.keys(newColumns).forEach(key => {
+            newColumns[key as GTDStatus].sort((a, b) =>
+                (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)
+            );
+        });
+
+        setColumns(newColumns);
+    }, [rawTasks, showAllTasks, currentUser]);
 
     const moveTask = useCallback(async (result: DropResult) => {
         const { destination, source, draggableId } = result;
@@ -107,37 +112,15 @@ export const useGTDTasks = (currentUser: any, showAllTasks: boolean = false) => 
             };
         });
 
-        // Firestore Update
+        // Server-Side Firestore Update (Atomic)
         if (currentUser && updatedTaskRef) {
             try {
-                const taskRef = doc(db, 'gtd_tasks', draggableId);
-                const updates: any = { status: destColId, updatedAt: Timestamp.now() };
-
-                // Safe TaskHistory update
-                const newHistoryEvent = {
-                    type: 'status_changed',
-                    description: `Статус изменен на "${destColId.replace('_', ' ')}"`,
-                    userId: currentUser.uid,
-                    userName: currentUser.displayName || 'Пользователь',
-                    timestamp: Timestamp.now()
-                };
-
-                // Add to the cloned object's history, then save the full array.
-                // This prevents `arrayUnion` from failing on documents missing the taskHistory field.
-                const currentHistory = (updatedTaskRef as any).taskHistory || [];
-                const updatedHistory = [...currentHistory, newHistoryEvent];
-                updates.taskHistory = updatedHistory;
-
-                // Auto-set completedAt when moving to Done
-                if (destColId === 'done' && sourceColId !== 'done') {
-                    updates.completedAt = Timestamp.now();
-                }
-                // Auto-set needsEstimate when moving to Estimate
-                if (destColId === 'estimate') {
-                    updates.needsEstimate = true;
-                }
-
-                await updateDoc(taskRef, updates);
+                const moveGtdTaskFn = httpsCallable(functions, 'moveGtdTask');
+                await moveGtdTaskFn({
+                    taskId: draggableId,
+                    destColId,
+                    sourceColId
+                });
                 return { movedTask: updatedTaskRef as GTDTask, destColId };
             } catch (error) {
                 console.error("Error moving task:", error);

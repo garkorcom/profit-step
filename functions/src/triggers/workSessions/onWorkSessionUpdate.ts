@@ -62,24 +62,29 @@ export const onWorkSessionUpdate = functions.firestore
         // Notify user via Telegram about session closure
         // ═══════════════════════════════════════════════════
         try {
-            const userDoc = await db.collection('users').doc(after.employeeId).get();
-            if (userDoc.exists) {
-                const userData = userDoc.data();
-                const telegramChatId = userData?.telegramChatId || userData?.telegramId;
-                const telegramId = userData?.telegramId;
+            // 🛡️ ЗАЩИТА ОТ ЭХА
+            if (after.updatedBySource === 'telegram_bot' || after.updatedBySource === 'openclaw') {
+                console.log(`⏭️ Stopped via ${after.updatedBySource}, skipping echo notification.`);
+            } else {
+                const userDoc = await db.collection('users').doc(after.employeeId).get();
+                if (userDoc.exists) {
+                    const userData = userDoc.data();
+                    const telegramChatId = userData?.telegramChatId || userData?.telegramId;
+                    const telegramId = userData?.telegramId;
 
-                if (telegramChatId) {
-                    const earnedStr = after.sessionEarnings ? `$${after.sessionEarnings}` : 'N/A';
-                    let msg = `⏹️ *Рабочая смена завершена*\n\n⏱ Продолжительность: ${actualMinutes} мин\n💰 Заработано: ${earnedStr}`;
+                    if (telegramChatId) {
+                        const earnedStr = after.sessionEarnings ? `$${after.sessionEarnings}` : 'N/A';
+                        let msg = `⏹️ <b>Рабочая смена завершена (Web CRM) 💻</b>\n\n🏢 Объект: ${after.clientName || 'Не указан'}\n⏱ Время: ${actualMinutes} мин.\n💰 Заработано: ${earnedStr}`;
 
-                    if (after.autoClosed) {
-                        msg = `⚠️ *Ваша смена длилась слишком долго и была автоматически закрыта*\n\n⏱ Учтено: ${actualMinutes} мин\n💰 Заработано: ${earnedStr}\n\nПожалуйста, свяжитесь с администратором для корректировки времени.`;
+                        if (after.autoClosed) {
+                            msg = `⚠️ <b>Ваша смена длилась слишком долго и была автоматически закрыта</b>\n\n⏱ Учтено: ${actualMinutes} мин\n💰 Заработано: ${earnedStr}\n\nПожалуйста, свяжитесь с администратором для корректировки времени.`;
+                        }
+
+                        // Send text and force update keyboard to default
+                        await sendMessage(telegramChatId, msg, { parse_mode: 'HTML' });
+                        if (telegramId) await sendMainMenu(telegramChatId, telegramId);
+                        console.log(`✅ Session close notification sent to Telegram ID ${telegramChatId}`);
                     }
-
-                    // Send text and force update keyboard to default
-                    await sendMessage(telegramChatId, msg);
-                    await sendMainMenu(telegramChatId, telegramId);
-                    console.log(`✅ Session close notification sent to Telegram ID ${telegramChatId}`);
                 }
             }
         } catch (error) {

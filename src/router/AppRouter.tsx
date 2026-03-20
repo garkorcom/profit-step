@@ -34,13 +34,11 @@ const ClientDetailsPage = React.lazy(() => import('../pages/crm/ClientDetailsPag
 const ClientBuilderPage = React.lazy(() => import('../pages/crm/ClientBuilderPage'));
 const DevIndexPage = React.lazy(() => import('../pages/DevIndexPage'));
 const SystemHealthCheck = React.lazy(() => import('../pages/debug/SystemHealthCheck'));
-const TasksPage = React.lazy(() => import('../pages/crm/TasksPage'));
+
 const DealsPage = React.lazy(() => import('../pages/crm/DealsPage'));
-const CalendarPage = React.lazy(() => import('../pages/crm/CalendarPage'));
 const LeadDetailsPage = React.lazy(() => import('../pages/crm/LeadDetailsPage'));
 const TimeTrackingPage = React.lazy(() => import('../pages/crm/TimeTrackingPage'));
 const FinancePage = React.lazy(() => import('../pages/crm/FinancePage'));
-const GTDPage = React.lazy(() => import('../pages/crm/GTDPage'));
 const GTDCreatePage = React.lazy(() => import('../pages/crm/GTDCreatePage'));
 const UnifiedTasksPage = React.lazy(() => import('../pages/crm/UnifiedTasksPage'));
 const UnifiedCockpitPage = React.lazy(() => import('../pages/crm/UnifiedCockpitPage'));
@@ -50,6 +48,7 @@ const CostsReportPage = React.lazy(() => import('../pages/crm/CostsReportPage'))
 const RolesPage = React.lazy(() => import('../pages/admin/RolesPage'));
 const AIReportsPage = React.lazy(() => import('../pages/AIReportsPage'));
 const BankStatementsPage = React.lazy(() => import('../pages/crm/BankStatementsPage'));
+const ReconciliationPage = React.lazy(() => import('../pages/crm/ReconciliationPage'));
 const ExpensesBoardPage = React.lazy(() => import('../pages/crm/ExpensesBoardPage'));
 const TasksMasonryPage = React.lazy(() => import('../pages/crm/TasksMasonryPage'));
 const InventoryPage = React.lazy(() => import('../pages/crm/InventoryPage'));
@@ -212,6 +211,7 @@ const AppRouter: React.FC = () => {
           <Route path="/crm/time-tracking" element={<TimeTrackingPage />} />
           <Route path="/crm/finance" element={<FinancePage />} />
           <Route path="/crm/bank-statements" element={<BankStatementsPage />} />
+          <Route path="/crm/reconciliation" element={<ReconciliationPage />} />
           <Route path="/crm/expenses-board" element={<ExpensesBoardPage />} />
           <Route path="/crm/tasks-masonry" element={<TasksMasonryPage />} />
           <Route path="/crm/costs" element={<CostsReportPage />} />

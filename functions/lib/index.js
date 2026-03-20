@@ -10,7 +10,7 @@
  */
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.analyzeBlueprintV3Callable = exports.extractBuildingContextCallable = exports.auditBlueprintTakeoff = exports.refineAnalysisCallable = exports.analyzePageCallable = exports.onBlueprintBatchCreated = exports.onBlueprintJobCreated = exports.onNoteCreated = exports.onReceiptUpdate = exports.onWorkSessionUpdate = exports.onWorkSessionCreate = exports.generateDailyPayroll = exports.closePayrollPeriod = exports.forceFinishAllSessions = exports.sendDeadlineReminders = exports.autoCloseStaleSessions = exports.finalizeExpiredSessions = exports.onCostsBotMessage = exports.onWorkerBotMessage = exports.parseClientWebsite = exports.parseSmartInput = exports.estimateTask = exports.generateLeadSummary = exports.sendWorkerMessage = exports.sendMessage = exports.onTelegramMessage = exports.onWhatsAppMessage = exports.onLeadCreate = exports.updateCompanyMemberCount_v2 = exports.trackUserActivation_v2 = exports.logUserUpdates_v2 = exports.incrementLoginCount_v2 = exports.inviteUser = exports.adminDeleteUser = exports.onUserDelete = exports.onUserCreate = exports.admin_manageUser = exports.admin_createUserWithPassword = exports.logPaginationMetrics = exports.diagnoseBot = exports.logInvitationAccepted = exports.logInvitationSent = exports.logUserDeleted = exports.logUserCreated = exports.brevoWebhookHandler = exports.trackFirstInvite = exports.initializeUserActivation = exports.aggregateEngagementMetrics = exports.aggregateGrowthMetrics = exports.processAvatar = void 0;
-exports.modifyAiTask = exports.confirmAiTask = exports.generateAiTask = exports.categorizeBankTransactions = exports.uploadBankStatement = exports.onCostUpdate = exports.onCostCreated = exports.onTaskCreate = exports.onTaskUpdate = exports.scheduledDayPlan = exports.generateDayPlan = exports.generatePriceEstimate = exports.syncActiveTimer = exports.onSessionChangeUpdateCost = exports.verifyTask = exports.submitForReview = exports.checkLongBreaks = exports.updateWorkSession = exports.mergeNotes = exports.splitChecklistItem = exports.verifyEstimatePlausibilityCallable = void 0;
+exports.cleanupIdempotencyKeys = exports.invalidateClientCache = exports.agentApi = exports.modifyAiTask = exports.confirmAiTask = exports.generateAiTask = exports.categorizeBankTransactions = exports.uploadBankStatement = exports.onCostUpdate = exports.onCostCreated = exports.onTaskCreate = exports.onTaskUpdate = exports.moveGtdTask = exports.scheduledDayPlan = exports.generateDayPlan = exports.generatePriceEstimate = exports.syncActiveTimer = exports.onSessionChangeUpdateCost = exports.verifyTask = exports.submitForReview = exports.checkLongBreaks = exports.updateWorkSession = exports.mergeNotes = exports.splitChecklistItem = exports.verifyEstimatePlausibilityCallable = void 0;
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 const crypto = require("crypto");
@@ -509,6 +509,8 @@ var generateDayPlan_1 = require("./callable/gtd/generateDayPlan");
 Object.defineProperty(exports, "generateDayPlan", { enumerable: true, get: function () { return generateDayPlan_1.generateDayPlan; } });
 var scheduledDayPlan_1 = require("./scheduled/scheduledDayPlan");
 Object.defineProperty(exports, "scheduledDayPlan", { enumerable: true, get: function () { return scheduledDayPlan_1.scheduledDayPlan; } });
+var moveGtdTask_1 = require("./callable/gtd/moveGtdTask");
+Object.defineProperty(exports, "moveGtdTask", { enumerable: true, get: function () { return moveGtdTask_1.moveGtdTask; } });
 // ========================================
 // DATA WAREHOUSE & ANALYTICS
 // BigQuery audit logging and weekly digest
@@ -539,4 +541,12 @@ Object.defineProperty(exports, "generateAiTask", { enumerable: true, get: functi
 Object.defineProperty(exports, "confirmAiTask", { enumerable: true, get: function () { return generateAiTask_1.confirmAiTask; } });
 var modifyAiTask_1 = require("./callable/ai/modifyAiTask");
 Object.defineProperty(exports, "modifyAiTask", { enumerable: true, get: function () { return modifyAiTask_1.modifyAiTask; } });
+// ========================================
+// AGENT API (OpenClaw Integration)
+// ========================================
+var agentApi_1 = require("./agent/agentApi");
+Object.defineProperty(exports, "agentApi", { enumerable: true, get: function () { return agentApi_1.agentApi; } });
+var agentScheduled_1 = require("./agent/agentScheduled");
+Object.defineProperty(exports, "invalidateClientCache", { enumerable: true, get: function () { return agentScheduled_1.invalidateClientCache; } });
+Object.defineProperty(exports, "cleanupIdempotencyKeys", { enumerable: true, get: function () { return agentScheduled_1.cleanupIdempotencyKeys; } });
 //# sourceMappingURL=index.js.map

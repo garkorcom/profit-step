@@ -20,7 +20,7 @@
  */
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Box, Snackbar, Alert, Fab, Tab, Tabs, Badge, Button, useMediaQuery, Chip, Popover } from '@mui/material';
 import { startOfDay, addDays, endOfWeek, isBefore, isWithinInterval } from 'date-fns';
 import { DragDropContext, DropResult } from '@hello-pangea/dnd';
@@ -58,6 +58,7 @@ import { useSwipeGesture, triggerHaptic } from '../../hooks/useSwipeGesture';
 const GTDBoard: React.FC = () => {
     const { currentUser, userProfile } = useAuth();
     const navigate = useNavigate();
+    const [searchParams, setSearchParams] = useSearchParams();
 
     // ==================== СОСТОЯНИЕ ОТОБРАЖЕНИЯ ЗАДАЧ ====================
     const [showAllTasks, setShowAllTasks] = useState(false); // false = мои задачи, true = все
@@ -157,11 +158,31 @@ const GTDBoard: React.FC = () => {
                 const clientSnap = await getDocs(clientQ);
                 setClients(clientSnap.docs.map(d => ({ id: d.id, ...d.data() } as Client)));
             } catch (error) {
-                console.error('Error fetching data:', error);
+                console.error("Error fetching users/clients:", error);
             }
         };
+
         fetchData();
     }, []);
+
+    // ==================== DEEP LINKING ====================
+    // Автоматическое открытие задачи по ссылке из Telegram
+    useEffect(() => {
+        const urlTaskId = searchParams.get('taskId');
+        // Проверяем, что задача еще не открыта, чтобы избежать цикла
+        if (urlTaskId && !editingTask) {
+            // Ищем задачу по всем колонкам
+            for (const colInfo of GTD_COLUMNS) {
+                const found = columns[colInfo.id].find((t: GTDTask) => t.id === urlTaskId);
+                if (found) {
+                    setEditingTask(found);
+                    break;
+                }
+            }
+        }
+    }, [searchParams, columns, editingTask]);
+
+    // ==================== ОПТИМИЗАЦИЯ ФИЛЬТРОВ ====================
 
     // 2. Drag & Drop Handler
     const onDragEnd = async (result: DropResult) => {
@@ -653,9 +674,25 @@ const GTDBoard: React.FC = () => {
                         {GTD_COLUMNS.map((col, idx) => (
                             <Tab
                                 key={col.id}
+                                sx={{ 
+                                    minWidth: { xs: 80, sm: 100 }, 
+                                    opacity: 1,
+                                    '&.Mui-selected': { fontWeight: 700 } 
+                                }}
                                 label={
-                                    <Badge badgeContent={filteredColumns[col.id]?.length || 0} color="primary" max={99}>
-                                        <Box sx={{ pr: 1.5 }}>{col.title}</Box>
+                                    <Badge 
+                                        badgeContent={columns[col.id]?.length || 0} 
+                                        color="primary" 
+                                        max={99}
+                                        sx={{ 
+                                            '& .MuiBadge-badge': { 
+                                                right: -5, 
+                                                top: 5, 
+                                                px: 0.5 
+                                            } 
+                                        }}
+                                    >
+                                        <Box sx={{ pr: 1.5, whiteSpace: 'nowrap' }}>{col.title}</Box>
                                     </Badge>
                                 }
                             />
@@ -760,7 +797,7 @@ const GTDBoard: React.FC = () => {
                         overflowY: 'hidden',
                         gap: 1.5,
                         px: 1,
-                        scrollSnapType: 'x mandatory',
+                        // Removed scrollSnapType here because it intercepts Drags on Safari/iPadOS
                         WebkitOverflowScrolling: 'touch',
                         // Hide scrollbar but keep scrollable
                         '&::-webkit-scrollbar': { display: 'none' },
@@ -882,7 +919,14 @@ const GTDBoard: React.FC = () => {
             {editingTask && (
                 <GTDEditDialog
                     open={!!editingTask}
-                    onClose={() => setEditingTask(null)}
+                    onClose={() => {
+                        setEditingTask(null);
+                        // Очистка URL если мы зашли по диплинке
+                        if (searchParams.has('taskId')) {
+                            searchParams.delete('taskId');
+                            setSearchParams(searchParams, { replace: true });
+                        }
+                    }}
                     task={editingTask}
                     onSave={async (taskId, data) => {
                         await updateTask(taskId, data);

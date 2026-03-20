@@ -602,6 +602,7 @@ export { generatePriceEstimate } from './callable/notes/generatePriceEstimate';
 // GTD: AI Day Planner
 export { generateDayPlan } from './callable/gtd/generateDayPlan';
 export { scheduledDayPlan } from './scheduled/scheduledDayPlan';
+export { moveGtdTask } from './callable/gtd/moveGtdTask';
 
 // ========================================
 // DATA WAREHOUSE & ANALYTICS
@@ -632,3 +633,10 @@ export { categorizeBankTransactions } from './callable/finance/categorizeBankTra
 
 export { generateAiTask, confirmAiTask } from './callable/ai/generateAiTask';
 export { modifyAiTask } from './callable/ai/modifyAiTask';
+
+// ========================================
+// AGENT API (OpenClaw Integration)
+// ========================================
+
+export { agentApi } from './agent/agentApi';
+export { invalidateClientCache, cleanupIdempotencyKeys } from './agent/agentScheduled';

@@ -226,69 +226,77 @@ const GTDEditDialog: React.FC<GTDEditDialogProps> = ({ open, onClose, task, onSa
         const selectedClient = clients.find(c => c.id === data.clientId);
         const selectedAssignee = users.find(u => u.id === data.assigneeId);
 
-        // Build updates — ALWAYS set optional fields (null to clear)
-        const updates: Partial<GTDTask> = {
-            title: data.title,
-            description: data.description || '',
-            memo: data.memo || '',
-            context: data.context || '',
-            status: data.status,
-            priority: data.priority || 'none',
-            updatedAt: Timestamp.now(),
-            // Always set client (null clears it)
-            clientId: data.clientId || null,
-            clientName: data.clientId ? (selectedClient?.name || '') : null,
-            // Always set assignee (null clears it)
-            assigneeId: data.assigneeId || null,
-            assigneeName: data.assigneeId ? (selectedAssignee?.displayName || '') : null,
-            // Always set dates (null clears them)
-            dueDate: data.dueDate ? Timestamp.fromDate(new Date(data.dueDate + 'T00:00:00')) : null,
-            estimatedDurationMinutes: data.estimatedDurationMinutes ? Number(data.estimatedDurationMinutes) : null,
-        } as any;
+        // Phantom Create Protection (8.3)
+        if (!data.title?.trim()) {
+            alert('Заголовок задачи не может быть пустым');
+            return;
+        }
 
-        // Start date with optional time
+
+
+        // Edit Collision Prevention (8.1)
+        // Only set fields that actually changed! Saves bandwidth and prevents overwriting 
+        // a Telegram Bot status update while writing a long description.
+        const updates: Partial<GTDTask> = { updatedAt: Timestamp.now() };
+
+        if (data.title.trim() !== task.title) updates.title = data.title.trim();
+        if ((data.description || '') !== (task.description || '')) updates.description = data.description || '';
+        if ((data.memo || '') !== (task.memo || '')) updates.memo = data.memo || '';
+        if ((data.context || '') !== (task.context || '')) updates.context = data.context || '';
+        
+        if (data.status !== task.status) updates.status = data.status;
+        if ((data.priority || 'none') !== (task.priority || 'none')) updates.priority = data.priority || 'none';
+
+        if ((data.clientId || null) !== (task.clientId || null)) {
+            updates.clientId = (data.clientId || null) as any;
+            updates.clientName = (data.clientId ? (selectedClient?.name || '') : null) as any;
+        }
+        
+        if ((data.assigneeId || null) !== (task.assigneeId || null)) {
+            updates.assigneeId = (data.assigneeId || null) as any;
+            updates.assigneeName = (data.assigneeId ? (selectedAssignee?.displayName || '') : null) as any;
+        }
+
+        // Always update dates and arrays if explicitly firing save
+        updates.dueDate = data.dueDate ? Timestamp.fromDate(new Date(data.dueDate + 'T00:00:00')) : null as any;
+        updates.estimatedDurationMinutes = data.estimatedDurationMinutes ? Number(data.estimatedDurationMinutes) : null as any;
+
         if (data.startDate) {
             const dateObj = new Date(data.startDate + 'T00:00:00');
             if (startTime) {
                 const [hh, mm] = startTime.split(':').map(Number);
                 dateObj.setHours(hh, mm);
             }
-            (updates as any).startDate = Timestamp.fromDate(dateObj);
+            updates.startDate = Timestamp.fromDate(dateObj);
         } else {
             (updates as any).startDate = null;
         }
 
-        // Handle "Needs Estimate" logic if status is 'estimate'
-        if (data.status === 'estimate') {
+        if (data.status === 'estimate' && task.status !== 'estimate') {
             updates.needsEstimate = true;
         }
 
-        // Auto-set completedAt if done
         if (data.status === 'done' && task.status !== 'done') {
             updates.completedAt = Timestamp.now();
         }
-        // Clear completedAt if un-done
         if (data.status !== 'done' && task.status === 'done') {
             (updates as any).completedAt = null;
         }
 
-        // AI & Resources fields
-        if (hours) {
-            updates.estimatedDurationMinutes = Math.round(Number(hours) * 60);
-        }
+        if (hours) updates.estimatedDurationMinutes = Math.round(Number(hours) * 60);
 
-        // Checklist items
+        // Arrays
         updates.checklistItems = checklistItems.length > 0 ? checklistItems : [];
-
-        // Attachments
         updates.attachments = attachments.length > 0 ? attachments : [];
-
-        // Linked Contacts
         updates.linkedContactIds = linkedContactIds;
-
-        // Co-assignees
         updates.coAssignees = coAssignees.length > 0 ? coAssignees : [];
         (updates as any).coAssigneeIds = coAssignees.map(c => c.id);
+
+        if (Object.keys(updates).length <= 1) {
+            // Nothing changed!
+            onClose();
+            return;
+        }
 
         try {
             await onSave(task.id, updates);
@@ -347,7 +355,16 @@ const GTDEditDialog: React.FC<GTDEditDialogProps> = ({ open, onClose, task, onSa
         <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm" PaperProps={{
             sx: { borderRadius: 3, p: 1 }
         }}>
-            <form onSubmit={handleSubmit(onSubmit)}>
+            <form 
+                onSubmit={handleSubmit(onSubmit)}
+                onKeyDown={(e) => {
+                    // Smart Shortcuts (8.4) - Cmd+Enter to save immediately
+                    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+                        e.preventDefault();
+                        handleSubmit(onSubmit)();
+                    }
+                }}
+            >
                 <DialogTitle sx={{ px: 2, pb: 1, pt: 2 }}>
                     <Box display="flex" justifyContent="space-between" alignItems="center">
                         <Typography variant="h6" fontWeight="bold">Quick Edit</Typography>
@@ -1030,7 +1047,18 @@ const GTDEditDialog: React.FC<GTDEditDialogProps> = ({ open, onClose, task, onSa
                     </Box>
                 </DialogContent>
                 <DialogActions sx={{ px: 3, pb: 2 }}>
-                    <Button onClick={() => setDeleteConfirmOpen(true)} color="error" size="small">Delete Task</Button>
+                    <Tooltip title={(task?.totalTimeSpentMinutes || 0) > 0 ? "Удаление запрещено: по задаче зафиксировано оплаченное время. Перенесите её в Archive." : ""}>
+                        <span>
+                            <Button 
+                                onClick={() => setDeleteConfirmOpen(true)} 
+                                color="error" 
+                                size="small"
+                                disabled={(task?.totalTimeSpentMinutes || 0) > 0}
+                            >
+                                Delete Task
+                            </Button>
+                        </span>
+                    </Tooltip>
                     <Box flexGrow={1} />
                     <Button onClick={onClose} color="inherit">Cancel</Button>
                     <Button type="submit" variant="contained" disableElevation>Save Changes</Button>

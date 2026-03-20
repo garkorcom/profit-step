@@ -1,8 +1,6 @@
 import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
-import axios from 'axios';
-import { safeConfig } from '../../utils/safeConfig';
-import { sendMainMenu } from '../telegram/telegramUtils';
+import { sendMainMenu, sendMessage } from '../telegram/telegramUtils';
 
 const db = admin.firestore();
 
@@ -12,10 +10,15 @@ export const onWorkSessionCreate = functions.firestore
         const sessionData = snap.data();
         const employeeId = sessionData.employeeId;
         const description = sessionData.description || 'No description';
-        const clientName = sessionData.clientName ? ` for ${sessionData.clientName}` : '';
 
         // Only notify if status is 'active' (in case we create completed sessions for history)
         if (sessionData.status !== 'active') {
+            return;
+        }
+
+        // 🛡️ ЗАЩИТА ОТ ЭХА: Уведомляем, ТОЛЬКО если источник НЕ Jarvis и НЕ обычный TG-бот.
+        if (sessionData.source === 'openclaw' || sessionData.source === 'telegram_bot') {
+            console.log(`⏭️ Source is ${sessionData.source}, skipping echo notification.`);
             return;
         }
 
@@ -28,7 +31,7 @@ export const onWorkSessionCreate = functions.firestore
             }
 
             const userData = userDoc.data();
-            const telegramChatId = userData?.telegramChatId || userData?.telegramId; // Handle both field names
+            const telegramChatId = userData?.telegramChatId || userData?.telegramId;
             const telegramId = userData?.telegramId;
 
             if (!telegramChatId) {
@@ -36,28 +39,21 @@ export const onWorkSessionCreate = functions.firestore
                 return;
             }
 
-            // 2. Get Bot Token
-            const token = process.env.TELEGRAM_TOKEN || safeConfig().telegram?.token;
-            if (!token) {
-                console.error("Missing TELEGRAM_TOKEN, cannot send notification.");
-                return;
-            }
-
             // 3. Send Message
-            const messageText = `▶️ *Task Started via Web*\n\n📝 Title: ${description}${clientName}`;
+            const msg = `▶️ <b>Рабочая сессия начата (Web CRM) 💻</b>\n` +
+                        `🏢 Объект: ${sessionData.clientName || 'Не указан'}\n` +
+                        `📝 Задача: ${sessionData.relatedTaskTitle || description}`;
 
-            await axios.post(`https://api.telegram.org/bot${token}/sendMessage`, {
-                chat_id: telegramChatId,
-                text: messageText,
-                parse_mode: 'Markdown'
-            });
+            await sendMessage(telegramChatId, msg, { parse_mode: 'HTML' });
 
             console.log(`✅ Notification sent to Telegram ID ${telegramChatId} for session ${context.params.sessionId}`);
 
             // 4. Force Update Telegram Keyboard for this User to "Pause/Stop"
-            await sendMainMenu(telegramChatId, telegramId);
+            if (telegramId) {
+                await sendMainMenu(telegramChatId, telegramId);
+            }
 
         } catch (error) {
-            console.error("Error sending Telegram notification:", error);
+            functions.logger.error("Error sending Telegram notification:", error);
         }
     });

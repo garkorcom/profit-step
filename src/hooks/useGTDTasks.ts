@@ -51,6 +51,9 @@ export const useGTDTasks = (currentUser: any, showAllTasks: boolean = false) => 
         const newColumns = createInitialData();
 
         rawTasks.forEach(task => {
+            // V1 Fix: Never show subtasks on the main Kanban board
+            if (task.parentTaskId || task.isSubtask) return;
+
             const isMine = task.ownerId === currentUser?.uid || 
                            task.assigneeId === currentUser?.uid || 
                            task.coAssigneeIds?.includes(currentUser?.uid);
@@ -212,19 +215,62 @@ export const useGTDTasks = (currentUser: any, showAllTasks: boolean = false) => 
     const deleteTask = useCallback(async (taskId: string) => {
         if (!currentUser) return;
         try {
+            // V4 Fix: Cascade-delete all subtasks before deleting parent
+            const subtasks = rawTasks.filter(t => t.parentTaskId === taskId);
+            await Promise.all(subtasks.map(st => {
+                const stRef = doc(db, 'gtd_tasks', st.id);
+                return deleteDoc(stRef);
+            }));
+
             const taskRef = doc(db, 'gtd_tasks', taskId);
             await deleteDoc(taskRef);
         } catch (error) {
             console.error("Error deleting task:", error);
             throw error; // Let caller handle UI feedback
         }
-    }, [currentUser]);
+    }, [currentUser, rawTasks]);
+
+    /** Create a subtask linked to a parent task */
+    const addSubtask = useCallback(async (
+        parentTaskId: string,
+        title: string,
+        budgetAmount?: number,
+    ) => {
+        if (!currentUser) return;
+        try {
+            // Find the parent task to inherit clientId
+            const parent = rawTasks.find(t => t.id === parentTaskId);
+
+            const newSubtask: Partial<GTDTask> = {
+                title,
+                status: 'next_action' as GTDStatus,
+                priority: 'none' as GTDPriority,
+                createdAt: Timestamp.now(),
+                ownerId: currentUser.uid,
+                ownerName: currentUser.displayName || 'Unknown',
+                context: '',
+                description: '',
+                parentTaskId,
+                isSubtask: true,
+                budgetAmount: budgetAmount || 0,
+                progressPercentage: 0,
+                // Inherit from parent
+                ...(parent?.clientId && { clientId: parent.clientId, clientName: parent.clientName }),
+            };
+            await addDoc(collection(db, 'gtd_tasks'), newSubtask);
+        } catch (error) {
+            console.error("Error adding subtask:", error);
+            throw error;
+        }
+    }, [currentUser, rawTasks]);
 
     return {
         columns,
         loading,
+        rawTasks,
         moveTask,
         addTask,
+        addSubtask,
         updateTask,
         deleteTask
     };

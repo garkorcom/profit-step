@@ -181,7 +181,9 @@ export const getTodayAccomplishments = async (userId: string): Promise<{ notes: 
         const allTasksMap = new Map();
         tasks.forEach(t => allTasksMap.set(t.id, t));
         assigneeTasks.forEach(t => allTasksMap.set(t.id, t));
-        const allCompletedTasks = Array.from(allTasksMap.values());
+        // V6 Fix: Filter out subtasks to prevent devlog noise
+        const allCompletedTasks = Array.from(allTasksMap.values())
+            .filter(t => !t.parentTaskId && !t.isSubtask);
 
         if (allCompletedTasks.length > 0) {
             notesLines.push('**Завершенные задачи за сегодня:**');

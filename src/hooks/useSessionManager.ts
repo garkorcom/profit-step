@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { doc, updateDoc, addDoc, collection, Timestamp, query, where, getDocs } from 'firebase/firestore';
+import { doc, updateDoc, addDoc, collection, Timestamp, query, where, getDocs, getDoc } from 'firebase/firestore';
 import { db } from '../firebase/firebase';
 import { useActiveSession, WorkSessionData } from './useActiveSession';
 import { GTDTask } from '../types/gtd.types';
@@ -83,6 +83,18 @@ export const useSessionManager = (userId?: string, userDisplayName?: string, use
                         actualDurationMinutes: increment(durationMinutes),
                         updatedAt: Timestamp.now()
                     });
+
+                    // V7 Fix: Also update parent task aggregates if this is a subtask
+                    const taskSnap = await getDoc(taskRef);
+                    const taskData = taskSnap.data();
+                    if (taskData?.parentTaskId) {
+                        const parentRef = doc(db, 'gtd_tasks', taskData.parentTaskId);
+                        await updateDoc(parentRef, {
+                            totalTimeSpentMinutes: increment(durationMinutes),
+                            totalEarnings: increment(earnings),
+                            updatedAt: Timestamp.now()
+                        });
+                    }
                 } catch (e) {
                     console.warn('Could not update task aggregates:', e);
                 }

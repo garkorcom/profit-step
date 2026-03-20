@@ -190,7 +190,7 @@
             </h2>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
                 <!-- FloridaBrew Coffee -->
-                <a href="http://127.0.0.1:8080/coffee-subscription-premium/" class="glass-card p-8 rounded-xl group block relative" target="_blank">
+                <a href="/coffee-subscription-premium/" class="glass-card p-8 rounded-xl group block relative" target="_blank">
                     <div class="absolute top-4 right-4">
                         <span class="badge-premium text-black text-xs font-bold px-3 py-1 rounded-full">PREMIUM</span>
                     </div>
@@ -214,7 +214,7 @@
                 </a>
 
                 <!-- VisaFlow Immigration -->
-                <a href="http://127.0.0.1:8080/visa-aggregator-landing/" class="glass-card p-8 rounded-xl group block relative" target="_blank">
+                <a href="/visa-aggregator-landing/" class="glass-card p-8 rounded-xl group block relative" target="_blank">
                     <div class="absolute top-4 right-4">
                         <span class="badge-ai text-white text-xs font-bold px-3 py-1 rounded-full">AI-ASSISTANT</span>
                     </div>
@@ -300,9 +300,9 @@
                 });
             });
 
-            // Add loading states for external links
-            const externalLinks = document.querySelectorAll('a[href^="http://127.0.0.1"]');
-            externalLinks.forEach(link => {
+            // Add loading states for new landing pages
+            const newLandingLinks = document.querySelectorAll('a[href^="/coffee-"], a[href^="/visa-"]');
+            newLandingLinks.forEach(link => {
                 link.addEventListener('click', function(e) {
                     const card = this.closest('.glass-card');
                     if (card) {

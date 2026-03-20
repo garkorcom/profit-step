@@ -156,6 +156,7 @@ const Header: React.FC = () => {
       { path: '/crm/contacts', label: 'Справочник', icon: <ContactsIcon sx={{ mr: 0.5 }} /> },
       { path: '/crm/clients', label: 'Компании (Клиенты)', icon: <BusinessIcon sx={{ mr: 0.5 }} /> },
       { path: '/crm/deals', label: 'Сделки', icon: <KanbanIcon sx={{ mr: 0.5 }} /> },
+      { path: '/landings.html', label: 'Landing Pages', icon: <MarketingIcon sx={{ mr: 0.5 }} /> },
     ];
 
     const projectLinks = [

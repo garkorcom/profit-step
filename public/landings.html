@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Profit Step | Landing Pages</title>
+    <title>Profit Step | Landing Pages Gallery</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -19,6 +19,9 @@
                         primary: '#0a0a0a',
                         secondary: '#1a1a1a',
                         accent: '#D4AF37',
+                        coffee: '#8B4513',
+                        florida: '#FF6B35',
+                        visa: '#00A8CC'
                     },
                     fontFamily: {
                         sans: ['Inter', 'sans-serif'],
@@ -40,78 +43,285 @@
             backdrop-filter: blur(10px);
             border: 1px solid rgba(255, 255, 255, 0.1);
             transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
         }
 
         .glass-card:hover {
             border-color: #D4AF37;
             transform: translateY(-5px);
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+            box-shadow: 0 20px 40px rgba(212, 175, 55, 0.1);
+        }
+
+        .glass-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(135deg, transparent, rgba(212, 175, 55, 0.05), transparent);
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .glass-card:hover::before {
+            opacity: 1;
+        }
+
+        .category-header {
+            background: linear-gradient(90deg, #D4AF37, #FFD700);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .badge-new {
+            background: linear-gradient(45deg, #FF6B35, #FFB347);
+        }
+
+        .badge-premium {
+            background: linear-gradient(45deg, #D4AF37, #FFD700);
+        }
+
+        .badge-ai {
+            background: linear-gradient(45deg, #00A8CC, #87CEEB);
         }
     </style>
 </head>
 
-<body class="min-h-screen flex flex-col items-center justify-center p-4 relative overflow-hidden">
+<body class="min-h-screen flex flex-col items-center justify-start p-4 relative overflow-hidden">
     <!-- Background Gradient -->
     <div class="absolute inset-0 z-0">
         <div class="absolute top-0 left-0 w-full h-full bg-gradient-to-br from-primary via-secondary to-black"></div>
-        <div class="absolute top-0 right-0 w-1/2 h-full bg-accent/5 blur-3xl rounded-full transform translate-x-1/2">
-        </div>
+        <div class="absolute top-0 right-0 w-1/2 h-full bg-accent/5 blur-3xl rounded-full transform translate-x-1/2"></div>
+        <div class="absolute bottom-0 left-0 w-1/3 h-1/2 bg-coffee/5 blur-2xl rounded-full transform -translate-x-1/4"></div>
     </div>
 
-    <div class="relative z-10 max-w-4xl w-full">
+    <div class="relative z-10 max-w-7xl w-full py-8">
+        <!-- Header -->
         <div class="text-center mb-16">
-            <h1 class="text-5xl md:text-6xl font-bold text-white font-serif mb-4">Landing Pages</h1>
-            <p class="text-gray-400 text-lg">Select a demo page to view.</p>
-            <div class="w-24 h-1 bg-accent mx-auto mt-8 rounded-full"></div>
+            <h1 class="text-5xl md:text-6xl font-bold text-white font-serif mb-4">Landing Pages Gallery</h1>
+            <p class="text-gray-400 text-lg mb-2">Professional landing pages for different industries</p>
+            <div class="flex items-center justify-center gap-4 text-sm text-gray-500 mb-8">
+                <span class="flex items-center gap-1">
+                    <span class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+                    All pages responsive & optimized
+                </span>
+                <span>•</span>
+                <span>Premium designs</span>
+                <span>•</span>
+                <span>Conversion-focused</span>
+            </div>
+            <div class="w-24 h-1 bg-accent mx-auto rounded-full"></div>
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
-            <!-- Creative Agency -->
-            <a href="/promo-creative/" class="glass-card p-8 rounded-xl group block">
-                <div
-                    class="h-40 bg-gradient-to-br from-gray-800 to-black rounded-lg mb-6 flex items-center justify-center border border-white/5 group-hover:border-accent/30 transition">
-                    <span class="text-4xl">🎨</span>
-                </div>
-                <h2 class="text-2xl font-serif text-white mb-2 group-hover:text-accent transition">Creative Agency</h2>
-                <p class="text-gray-400 text-sm">Modern, dark-themed landing page for digital agencies. Features
-                    portfolio, process, and booking.</p>
-                <div class="mt-6 flex items-center text-accent text-sm font-bold uppercase tracking-widest">
-                    View Demo <span class="ml-2 transform group-hover:translate-x-1 transition">&rarr;</span>
-                </div>
-            </a>
+        <!-- Business/Construction Category -->
+        <div class="mb-12">
+            <h2 class="text-2xl font-bold category-header mb-6 flex items-center gap-3">
+                🏗️ Business & Construction
+                <span class="text-sm bg-gray-700 text-gray-300 px-2 py-1 rounded-full">3 Pages</span>
+            </h2>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+                <!-- Creative Agency -->
+                <a href="/promo-creative/" class="glass-card p-8 rounded-xl group block" target="_blank">
+                    <div class="h-40 bg-gradient-to-br from-gray-800 to-black rounded-lg mb-6 flex items-center justify-center border border-white/5 group-hover:border-accent/30 transition relative">
+                        <span class="text-4xl">🎨</span>
+                        <div class="absolute top-2 right-2 text-xs text-gray-400">B2B</div>
+                    </div>
+                    <h3 class="text-xl font-serif text-white mb-2 group-hover:text-accent transition">Creative Agency</h3>
+                    <p class="text-gray-400 text-sm mb-4">Modern dark-themed landing for digital agencies. Portfolio showcase, process flow, and booking system.</p>
+                    <div class="flex items-center justify-between">
+                        <div class="flex gap-1">
+                            <span class="text-xs bg-gray-700 text-gray-300 px-2 py-1 rounded">Dark Theme</span>
+                            <span class="text-xs bg-gray-700 text-gray-300 px-2 py-1 rounded">Portfolio</span>
+                        </div>
+                        <div class="flex items-center text-accent text-sm font-bold">
+                            View Demo <span class="ml-2 transform group-hover:translate-x-1 transition">&rarr;</span>
+                        </div>
+                    </div>
+                </a>
 
-            <!-- High-End Renovation -->
-            <a href="/promo-high-end/" class="glass-card p-8 rounded-xl group block">
-                <div
-                    class="h-40 bg-gradient-to-br from-gray-800 to-black rounded-lg mb-6 flex items-center justify-center border border-white/5 group-hover:border-accent/30 transition">
-                    <span class="text-4xl">🏛️</span>
-                </div>
-                <h2 class="text-2xl font-serif text-white mb-2 group-hover:text-accent transition">High-End Renovation
-                </h2>
-                <p class="text-gray-400 text-sm">Luxury design for architecture and construction. Premium typography and
-                    visuals.</p>
-                <div class="mt-6 flex items-center text-accent text-sm font-bold uppercase tracking-widest">
-                    View Demo <span class="ml-2 transform group-hover:translate-x-1 transition">&rarr;</span>
-                </div>
-            </a>
+                <!-- High-End Renovation -->
+                <a href="/promo-high-end/" class="glass-card p-8 rounded-xl group block" target="_blank">
+                    <div class="h-40 bg-gradient-to-br from-gray-800 to-black rounded-lg mb-6 flex items-center justify-center border border-white/5 group-hover:border-accent/30 transition relative">
+                        <span class="text-4xl">🏛️</span>
+                        <div class="absolute top-2 right-2 text-xs text-gray-400">Luxury</div>
+                    </div>
+                    <h3 class="text-xl font-serif text-white mb-2 group-hover:text-accent transition">High-End Renovation</h3>
+                    <p class="text-gray-400 text-sm mb-4">Luxury design for architecture and construction. Premium typography, elegant visuals, and project galleries.</p>
+                    <div class="flex items-center justify-between">
+                        <div class="flex gap-1">
+                            <span class="text-xs bg-gray-700 text-gray-300 px-2 py-1 rounded">Premium</span>
+                            <span class="text-xs bg-gray-700 text-gray-300 px-2 py-1 rounded">Gallery</span>
+                        </div>
+                        <div class="flex items-center text-accent text-sm font-bold">
+                            View Demo <span class="ml-2 transform group-hover:translate-x-1 transition">&rarr;</span>
+                        </div>
+                    </div>
+                </a>
 
-            <!-- Garkor Corp -->
-            <a href="/promo-garkor/" class="glass-card p-8 rounded-xl group block relative overflow-hidden">
-                <div class="absolute top-0 right-0 bg-accent text-black text-xs font-bold px-3 py-1 rounded-bl-lg">NEW
+                <!-- Garkor Corp -->
+                <a href="/promo-garkor/" class="glass-card p-8 rounded-xl group block relative" target="_blank">
+                    <div class="h-40 bg-gradient-to-br from-gray-800 to-black rounded-lg mb-6 flex items-center justify-center border border-white/5 group-hover:border-accent/30 transition relative">
+                        <span class="text-4xl">⚡</span>
+                        <div class="absolute top-2 right-2 text-xs text-gray-400">Electrical</div>
+                    </div>
+                    <h3 class="text-xl font-serif text-white mb-2 group-hover:text-accent transition">Garkor Corp</h3>
+                    <p class="text-gray-400 text-sm mb-4">Electrical contractor landing page. Professional services showcase with project portfolio and contact forms.</p>
+                    <div class="flex items-center justify-between">
+                        <div class="flex gap-1">
+                            <span class="text-xs bg-gray-700 text-gray-300 px-2 py-1 rounded">Corporate</span>
+                            <span class="text-xs bg-gray-700 text-gray-300 px-2 py-1 rounded">Services</span>
+                        </div>
+                        <div class="flex items-center text-accent text-sm font-bold">
+                            View Demo <span class="ml-2 transform group-hover:translate-x-1 transition">&rarr;</span>
+                        </div>
+                    </div>
+                </a>
+            </div>
+        </div>
+
+        <!-- AI-Powered Subscriptions Category -->
+        <div class="mb-12">
+            <h2 class="text-2xl font-bold category-header mb-6 flex items-center gap-3">
+                🤖 AI-Powered Subscriptions
+                <span class="text-sm badge-ai text-white px-2 py-1 rounded-full">2 NEW</span>
+            </h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <!-- FloridaBrew Coffee -->
+                <a href="http://127.0.0.1:8080/coffee-subscription-premium/" class="glass-card p-8 rounded-xl group block relative" target="_blank">
+                    <div class="absolute top-4 right-4">
+                        <span class="badge-premium text-black text-xs font-bold px-3 py-1 rounded-full">PREMIUM</span>
+                    </div>
+                    <div class="h-48 bg-gradient-to-br from-orange-900 to-yellow-800 rounded-lg mb-6 flex items-center justify-center border border-white/5 group-hover:border-florida/50 transition relative overflow-hidden">
+                        <span class="text-5xl">☕</span>
+                        <div class="absolute bottom-2 right-2 text-xs text-yellow-200">Climate-Adaptive</div>
+                        <div class="absolute top-0 left-0 w-full h-full bg-gradient-to-tr from-transparent via-yellow-400/10 to-orange-300/20"></div>
+                    </div>
+                    <h3 class="text-xl font-serif text-white mb-2 group-hover:text-florida transition">FloridaBrew Coffee</h3>
+                    <p class="text-gray-400 text-sm mb-4">Climate-adaptive coffee subscription for Florida. Features weather-smart delivery, local roasters, and cold brew optimization.</p>
+                    <div class="flex items-center justify-between">
+                        <div class="flex gap-1">
+                            <span class="text-xs bg-orange-900/50 text-orange-200 px-2 py-1 rounded">Subscription</span>
+                            <span class="text-xs bg-orange-900/50 text-orange-200 px-2 py-1 rounded">AI-Powered</span>
+                            <span class="text-xs bg-orange-900/50 text-orange-200 px-2 py-1 rounded">Florida</span>
+                        </div>
+                        <div class="flex items-center text-florida text-sm font-bold">
+                            View Demo <span class="ml-2 transform group-hover:translate-x-1 transition">&rarr;</span>
+                        </div>
+                    </div>
+                </a>
+
+                <!-- VisaFlow Immigration -->
+                <a href="http://127.0.0.1:8080/visa-aggregator-landing/" class="glass-card p-8 rounded-xl group block relative" target="_blank">
+                    <div class="absolute top-4 right-4">
+                        <span class="badge-ai text-white text-xs font-bold px-3 py-1 rounded-full">AI-ASSISTANT</span>
+                    </div>
+                    <div class="h-48 bg-gradient-to-br from-blue-900 to-cyan-800 rounded-lg mb-6 flex items-center justify-center border border-white/5 group-hover:border-visa/50 transition relative overflow-hidden">
+                        <span class="text-5xl">🇺🇸</span>
+                        <div class="absolute bottom-2 right-2 text-xs text-blue-200">Immigration</div>
+                        <div class="absolute top-0 left-0 w-full h-full bg-gradient-to-tr from-transparent via-blue-400/10 to-cyan-300/20"></div>
+                    </div>
+                    <h3 class="text-xl font-serif text-white mb-2 group-hover:text-visa transition">VisaFlow Immigration</h3>
+                    <p class="text-gray-400 text-sm mb-4">AI-powered US immigration assistant. Attorney matching, case analysis, and step-by-step visa guidance system.</p>
+                    <div class="flex items-center justify-between">
+                        <div class="flex gap-1">
+                            <span class="text-xs bg-blue-900/50 text-blue-200 px-2 py-1 rounded">Legal Tech</span>
+                            <span class="text-xs bg-blue-900/50 text-blue-200 px-2 py-1 rounded">Immigration</span>
+                            <span class="text-xs bg-blue-900/50 text-blue-200 px-2 py-1 rounded">AI-Matching</span>
+                        </div>
+                        <div class="flex items-center text-visa text-sm font-bold">
+                            View Demo <span class="ml-2 transform group-hover:translate-x-1 transition">&rarr;</span>
+                        </div>
+                    </div>
+                </a>
+            </div>
+        </div>
+
+        <!-- Coming Soon Section -->
+        <div class="mb-12">
+            <h2 class="text-2xl font-bold category-header mb-6 flex items-center gap-3">
+                🚀 Coming Soon
+                <span class="text-sm bg-gray-700 text-gray-300 px-2 py-1 rounded-full">In Development</span>
+            </h2>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+                <!-- E-commerce Template -->
+                <div class="glass-card p-8 rounded-xl opacity-60 relative">
+                    <div class="absolute top-4 right-4 bg-gray-600 text-white text-xs px-2 py-1 rounded">Soon</div>
+                    <div class="h-40 bg-gradient-to-br from-gray-700 to-gray-900 rounded-lg mb-6 flex items-center justify-center border border-white/5">
+                        <span class="text-4xl opacity-50">🛒</span>
+                    </div>
+                    <h3 class="text-xl font-serif text-gray-300 mb-2">E-commerce Store</h3>
+                    <p class="text-gray-500 text-sm">Modern e-commerce landing with product showcase, cart integration, and checkout flow.</p>
                 </div>
-                <div
-                    class="h-40 bg-gradient-to-br from-gray-800 to-black rounded-lg mb-6 flex items-center justify-center border border-white/5 group-hover:border-accent/30 transition">
-                    <span class="text-4xl">🏗️</span>
+
+                <!-- SaaS Product -->
+                <div class="glass-card p-8 rounded-xl opacity-60 relative">
+                    <div class="absolute top-4 right-4 bg-gray-600 text-white text-xs px-2 py-1 rounded">Soon</div>
+                    <div class="h-40 bg-gradient-to-br from-gray-700 to-gray-900 rounded-lg mb-6 flex items-center justify-center border border-white/5">
+                        <span class="text-4xl opacity-50">💻</span>
+                    </div>
+                    <h3 class="text-xl font-serif text-gray-300 mb-2">SaaS Product</h3>
+                    <p class="text-gray-500 text-sm">Software landing page with feature highlights, pricing tiers, and free trial signup.</p>
                 </div>
-                <h2 class="text-2xl font-serif text-white mb-2 group-hover:text-accent transition">Garkor Corp</h2>
-                <p class="text-gray-400 text-sm">General Contractor landing page. Adapted content for construction
-                    services.</p>
-                <div class="mt-6 flex items-center text-accent text-sm font-bold uppercase tracking-widest">
-                    View Demo <span class="ml-2 transform group-hover:translate-x-1 transition">&rarr;</span>
+
+                <!-- Real Estate -->
+                <div class="glass-card p-8 rounded-xl opacity-60 relative">
+                    <div class="absolute top-4 right-4 bg-gray-600 text-white text-xs px-2 py-1 rounded">Soon</div>
+                    <div class="h-40 bg-gradient-to-br from-gray-700 to-gray-900 rounded-lg mb-6 flex items-center justify-center border border-white/5">
+                        <span class="text-4xl opacity-50">🏠</span>
+                    </div>
+                    <h3 class="text-xl font-serif text-gray-300 mb-2">Real Estate</h3>
+                    <p class="text-gray-500 text-sm">Property showcase landing with virtual tours, search filters, and agent contact.</p>
                 </div>
-            </a>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="text-center pt-8 border-t border-white/10">
+            <div class="flex items-center justify-center gap-6 mb-4">
+                <a href="/admin/dashboard" class="text-accent hover:text-white transition">← Back to Dashboard</a>
+                <span class="text-gray-600">•</span>
+                <span class="text-gray-400">All landing pages are responsive & conversion-optimized</span>
+            </div>
+            <p class="text-gray-500 text-sm">Built with ❤️ for Profit Step CRM | Updated March 2026</p>
         </div>
     </div>
+
+    <script>
+        // Add interactive features
+        document.addEventListener('DOMContentLoaded', function() {
+            // Track clicks
+            document.querySelectorAll('.glass-card[href]').forEach(card => {
+                card.addEventListener('click', function() {
+                    console.log('Landing page visited:', this.href);
+                    // Add analytics tracking here
+                });
+            });
+
+            // Add loading states for external links
+            const externalLinks = document.querySelectorAll('a[href^="http://127.0.0.1"]');
+            externalLinks.forEach(link => {
+                link.addEventListener('click', function(e) {
+                    const card = this.closest('.glass-card');
+                    if (card) {
+                        card.style.opacity = '0.7';
+                        card.style.transform = 'scale(0.98)';
+                    }
+                });
+            });
+
+            // Add hover sound effect (optional)
+            document.querySelectorAll('.glass-card').forEach(card => {
+                card.addEventListener('mouseenter', function() {
+                    // Optional: add subtle hover sound
+                });
+            });
+
+            console.log('🎨 Landing Pages Gallery loaded successfully!');
+        });
+    </script>
 </body>
 
 </html>

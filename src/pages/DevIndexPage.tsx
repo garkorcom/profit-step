@@ -13,7 +13,8 @@ import {
 import { useAuth } from '../auth/AuthContext';
 import { seedLocalDb } from '../scripts/seedLocalDb';
 import { db } from '../firebase/firebase';
-import TaskTimerButton from '../components/tasks/TaskTimerButton';
+// [ARCHIVED] TaskTimerButton moved to _archived/timer-v2-fsm/
+// import TaskTimerButton from '../components/tasks/TaskTimerButton';
 
 const DevIndexPage: React.FC = () => {
     const navigate = useNavigate();
@@ -78,46 +79,12 @@ const DevIndexPage: React.FC = () => {
     };
 
     // Time Tracking Test Logic
-    const [testTask, setTestTask] = React.useState<any>(null);
-    const [testSite, setTestSite] = React.useState<any>(null);
+    // [ARCHIVED] testTask/testSite were for timer-v2-fsm test
+    // const [testTask, setTestTask] = React.useState<any>(null);
+    // const [testSite, setTestSite] = React.useState<any>(null);
 
-    React.useEffect(() => {
-        const fetchTestData = async () => {
-            if (!currentUser?.uid) return;
-            try {
-                // Get Company ID from user profile (we need to fetch profile first if not available in context, 
-                // but let's assume we can get it or query broadly for dev purposes)
-                // Actually, let's just query collections directly since we are in dev mode
-                // Note: This assumes we have permissions or rules allow it.
-
-                // 1. Get a Client
-                const clientsSnap = await import('firebase/firestore').then(mod =>
-                    mod.getDocs(mod.query(mod.collection(db, 'clients'), mod.limit(1)))
-                );
-                if (clientsSnap.empty) return;
-                const client = clientsSnap.docs[0];
-
-                // 2. Get a Site for that client
-                const sitesSnap = await import('firebase/firestore').then(mod =>
-                    mod.getDocs(mod.query(mod.collection(db, `companies/${client.data().companyId}/clients/${client.id}/sites`), mod.limit(1)))
-                );
-                if (sitesSnap.empty) return;
-                const site = { id: sitesSnap.docs[0].id, ...sitesSnap.docs[0].data() };
-                setTestSite(site);
-
-                // 3. Get a Task
-                const tasksSnap = await import('firebase/firestore').then(mod =>
-                    mod.getDocs(mod.query(mod.collection(db, `companies/${client.data().companyId}/tasks`), mod.limit(1)))
-                );
-                if (!tasksSnap.empty) {
-                    setTestTask({ id: tasksSnap.docs[0].id, ...tasksSnap.docs[0].data() });
-                }
-            } catch (e) {
-                console.error('Failed to fetch test data for timer:', e);
-            }
-        };
-        fetchTestData();
-    }, [currentUser]);
+    // [ARCHIVED] useEffect for fetching timer-v2-fsm test data removed
+    // See _archived/timer-v2-fsm/ for original code
 
     return (
         <Container maxWidth="lg" sx={{ py: 4 }}>
@@ -313,22 +280,10 @@ const DevIndexPage: React.FC = () => {
                                 <Typography variant="h6">⏱️ Time Tracking Test</Typography>
                             </Box>
                             <Divider sx={{ mb: 2 }} />
-                            {testTask && testSite ? (
-                                <Box>
-                                    <Typography variant="caption" gutterBottom>
-                                        Task: {testTask.number}
-                                    </Typography>
-                                    <Box mt={1}>
-                                        <Box mt={1}>
-                                            <TaskTimerButton task={testTask} site={testSite} />
-                                        </Box>
-                                    </Box>
-                                </Box>
-                            ) : (
-                                <Typography variant="body2" color="text.secondary">
-                                    Seed DB to test timer.
-                                </Typography>
-                            )}
+                            {/* [ARCHIVED] Timer test UI moved to src/_archived/timer-v2-fsm/ */}
+                            <Typography variant="body2" color="text.secondary">
+                                Timer v2 (FSM) archived. See _archived/timer-v2-fsm/RESTORE_PLAN.md
+                            </Typography>
                         </CardContent>
                     </Card>
                 </Grid>

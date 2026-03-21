@@ -1,20 +1,25 @@
 /**
  * Agent API — Express Application
  *
- * 13 endpoints for OpenClaw agent integration:
- * - GET   /api/clients/search
- * - POST  /api/gtd-tasks
- * - GET   /api/gtd-tasks/list
- * - PATCH /api/gtd-tasks/:id
- * - POST  /api/costs
- * - GET   /api/costs/list
- * - POST  /api/time-tracking
- * - GET   /api/time-tracking/active-all
- * - GET   /api/projects/status
- * - GET   /api/finance/context
- * - POST  /api/finance/transactions/batch
- * - POST  /api/finance/transactions/approve
- * - POST  /api/finance/transactions/undo
+ * 20 endpoints for OpenClaw agent integration:
+ * - GET    /api/clients/search
+ * - POST   /api/gtd-tasks
+ * - GET    /api/gtd-tasks/list
+ * - PATCH  /api/gtd-tasks/:id
+ * - DELETE /api/gtd-tasks/:id          ← Phase 2
+ * - POST   /api/costs
+ * - GET    /api/costs/list
+ * - DELETE /api/costs/:id              ← Phase 2
+ * - POST   /api/time-tracking          (start now supports startTime, stop supports endTime)
+ * - GET    /api/time-tracking/active-all
+ * - GET    /api/time-tracking/summary  ← Phase 2
+ * - POST   /api/time-tracking/admin-stop ← Phase 2
+ * - GET    /api/users/search           ← Phase 2
+ * - GET    /api/projects/status
+ * - GET    /api/finance/context
+ * - POST   /api/finance/transactions/batch
+ * - POST   /api/finance/transactions/approve
+ * - POST   /api/finance/transactions/undo
  */
 
 import * as admin from 'firebase-admin';
@@ -85,8 +90,12 @@ const TimeTrackingSchema = z.discriminatedUnion('action', [
     taskTitle: z.string().min(1),
     clientId: z.string().optional(),
     clientName: z.string().optional(),
+    startTime: z.string().optional(), // ISO string — manual override ("забыл отметиться утром в 7")
   }),
-  z.object({ action: z.literal('stop') }),
+  z.object({
+    action: z.literal('stop'),
+    endTime: z.string().optional(), // ISO string — manual override ("забыл закрыть вчера в 5")
+  }),
   z.object({ action: z.literal('status') }),
 ]);
 
@@ -175,6 +184,24 @@ const ListCostsQuerySchema = z.object({
 
 const ActiveSessionsQuerySchema = z.object({
   clientId: z.string().optional(),
+});
+
+// ─── Phase 2 Schemas ───────────────────────────────────────────────
+
+const TimeSummaryQuerySchema = z.object({
+  from: z.string().min(1), // ISO date, required
+  to: z.string().min(1),   // ISO date, required
+  employeeId: z.string().optional(), // filter to specific employee
+});
+
+const AdminStopSchema = z.object({
+  sessionId: z.string().min(1),
+  endTime: z.string().optional(), // ISO string — optional manual end time
+});
+
+const UserSearchQuerySchema = z.object({
+  q: z.string().min(1),
+  limit: z.coerce.number().int().min(1).max(20).default(5),
 });
 
 // ─── GET /api/clients/search ────────────────────────────────────────
@@ -339,7 +366,28 @@ app.post('/api/time-tracking', async (req, res, next) => {
     switch (data.action) {
       // ─── START ──────────────────────────────────────────
       case 'start': {
-        logger.info('⏱️ timer:start', { taskTitle: data.taskTitle, clientId: data.clientId });
+        logger.info('⏱️ timer:start', { taskTitle: data.taskTitle, clientId: data.clientId, startTime: data.startTime });
+
+        // Validate optional manual startTime
+        let manualStartTime: admin.firestore.Timestamp | null = null;
+        if (data.startTime) {
+          const parsed = new Date(data.startTime);
+          if (isNaN(parsed.getTime())) {
+            res.status(400).json({ error: 'Invalid startTime format (ISO string expected)' });
+            return;
+          }
+          const now = Date.now();
+          const sevenDaysAgo = now - 7 * 24 * 3600_000;
+          if (parsed.getTime() > now + 60_000) { // 1 min grace
+            res.status(400).json({ error: 'startTime не может быть в будущем' });
+            return;
+          }
+          if (parsed.getTime() < sevenDaysAgo) {
+            res.status(400).json({ error: 'startTime не может быть старше 7 дней' });
+            return;
+          }
+          manualStartTime = Timestamp.fromDate(parsed);
+        }
 
         const result = await db.runTransaction(async (tx) => {
           // 1. Get user doc → activeSessionId pointer
@@ -356,7 +404,7 @@ app.post('/api/time-tracking', async (req, res, next) => {
 
             if (oldDoc.exists && ['active', 'paused'].includes(oldDoc.data()!.status)) {
               const old = oldDoc.data()!;
-              const endTime = Timestamp.now();
+              const endTime = manualStartTime || Timestamp.now();
               let diff = endTime.toMillis() - old.startTime.toMillis();
               if (old.totalBreakMinutes) diff -= old.totalBreakMinutes * 60000;
               if (old.status === 'paused' && old.lastBreakStart) {
@@ -400,11 +448,12 @@ app.post('/api/time-tracking', async (req, res, next) => {
           }
 
           // 4. Create new session + update pointer
+          const effectiveStartTime = manualStartTime || Timestamp.now();
           const newRef = db.collection('work_sessions').doc();
           tx.set(newRef, {
             employeeId: userId,
             employeeName: userName,
-            startTime: Timestamp.now(),
+            startTime: effectiveStartTime,
             status: 'active',
             description: data.taskTitle,
             clientId: data.clientId || '',
@@ -448,7 +497,28 @@ app.post('/api/time-tracking', async (req, res, next) => {
 
       // ─── STOP ───────────────────────────────────────────
       case 'stop': {
-        logger.info('⏱️ timer:stop');
+        logger.info('⏱️ timer:stop', { endTime: data.endTime });
+
+        // Validate optional manual endTime
+        let manualEndTime: admin.firestore.Timestamp | null = null;
+        if (data.endTime) {
+          const parsed = new Date(data.endTime);
+          if (isNaN(parsed.getTime())) {
+            res.status(400).json({ error: 'Invalid endTime format (ISO string expected)' });
+            return;
+          }
+          const now = Date.now();
+          if (parsed.getTime() > now + 60_000) { // 1 min grace
+            res.status(400).json({ error: 'endTime не может быть в будущем' });
+            return;
+          }
+          const sevenDaysAgo = now - 7 * 24 * 3600_000;
+          if (parsed.getTime() < sevenDaysAgo) {
+            res.status(400).json({ error: 'endTime не может быть старше 7 дней' });
+            return;
+          }
+          manualEndTime = Timestamp.fromDate(parsed);
+        }
 
         const result = await db.runTransaction(async (tx) => {
           const userRef = db.collection('users').doc(userId);
@@ -468,7 +538,13 @@ app.post('/api/time-tracking', async (req, res, next) => {
           }
 
           const s = sessionDoc.data()!;
-          const endTime = Timestamp.now();
+          const endTime = manualEndTime || Timestamp.now();
+
+          // Validate endTime > startTime
+          if (endTime.toMillis() < s.startTime.toMillis()) {
+            throw new Error('END_BEFORE_START');
+          }
+
           let diff = endTime.toMillis() - s.startTime.toMillis();
           if (s.totalBreakMinutes) diff -= s.totalBreakMinutes * 60000;
           if (s.status === 'paused' && s.lastBreakStart) {
@@ -495,7 +571,17 @@ app.post('/api/time-tracking', async (req, res, next) => {
           }
 
           return { mins, earn, task: s.relatedTaskTitle || s.description };
+        }).catch((e: Error) => {
+          if (e.message === 'END_BEFORE_START') {
+            return 'END_BEFORE_START' as const;
+          }
+          throw e;
         });
+
+        if (result === 'END_BEFORE_START') {
+          res.status(400).json({ error: 'endTime не может быть раньше startTime сессии' });
+          return;
+        }
 
         if (!result) {
           res.status(404).json({ error: 'Нет активной сессии' });
@@ -1086,6 +1172,330 @@ app.post('/api/finance/transactions/undo', async (req, res, next) => {
 
     await batch.commit();
     res.status(200).json({ success: true, count: snaps.filter(s => s.exists).length });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// ─── DELETE /api/costs/:id (Phase 2) ────────────────────────────────
+
+app.delete('/api/costs/:id', async (req, res, next) => {
+  try {
+    const costId = req.params.id;
+    logger.info('💰 costs:void', { costId });
+
+    const costRef = db.collection('costs').doc(costId);
+    const costDoc = await costRef.get();
+
+    if (!costDoc.exists) {
+      res.status(404).json({ error: 'Расход не найден' });
+      return;
+    }
+
+    const costData = costDoc.data()!;
+    if (costData.status === 'voided') {
+      res.status(400).json({ error: 'Расход уже удалён (voided)' });
+      return;
+    }
+
+    await costRef.update({
+      status: 'voided',
+      voidedAt: FieldValue.serverTimestamp(),
+      voidedBy: req.agentUserId,
+    });
+
+    logger.info('💰 costs:voided', { costId });
+    await logAgentActivity({
+      userId: req.agentUserId!,
+      action: 'cost_voided',
+      endpoint: `/api/costs/${costId}`,
+      metadata: { costId, previousAmount: costData.amount, category: costData.category },
+    });
+
+    res.json({ costId, voided: true, message: 'Расход удалён (voided)' });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// ─── DELETE /api/gtd-tasks/:id (Phase 2) ───────────────────────────
+
+app.delete('/api/gtd-tasks/:id', async (req, res, next) => {
+  try {
+    const taskId = req.params.id;
+    logger.info('📋 tasks:archive-delete', { taskId });
+
+    const taskRef = db.collection('gtd_tasks').doc(taskId);
+    const taskDoc = await taskRef.get();
+
+    if (!taskDoc.exists) {
+      res.status(404).json({ error: 'Задача не найдена' });
+      return;
+    }
+
+    const taskData = taskDoc.data()!;
+    if (taskData.status === 'archived') {
+      res.status(400).json({ error: 'Задача уже удалена (archived)' });
+      return;
+    }
+
+    await taskRef.update({
+      status: 'archived',
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+
+    logger.info('📋 tasks:archived', { taskId });
+    await logAgentActivity({
+      userId: req.agentUserId!,
+      action: 'task_archived',
+      endpoint: `/api/gtd-tasks/${taskId}`,
+      metadata: { taskId, previousStatus: taskData.status, title: taskData.title },
+    });
+
+    res.json({ taskId, archived: true, message: 'Задача удалена (archived)' });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// ─── GET /api/time-tracking/summary (Phase 2) ──────────────────────
+
+app.get('/api/time-tracking/summary', async (req, res, next) => {
+  try {
+    const params = TimeSummaryQuerySchema.parse(req.query);
+    logger.info('⏱️ timer:summary', { from: params.from, to: params.to, employeeId: params.employeeId });
+
+    const fromDate = new Date(params.from);
+    const toDate = new Date(params.to);
+    if (isNaN(fromDate.getTime()) || isNaN(toDate.getTime())) {
+      res.status(400).json({ error: 'Invalid date format (ISO string expected)' });
+      return;
+    }
+    // Extend 'to' to end of day
+    toDate.setDate(toDate.getDate() + 1);
+
+    let q: admin.firestore.Query = db.collection('work_sessions')
+      .where('status', '==', 'completed')
+      .where('startTime', '>=', Timestamp.fromDate(fromDate))
+      .where('startTime', '<', Timestamp.fromDate(toDate));
+
+    if (params.employeeId) {
+      q = q.where('employeeId', '==', params.employeeId);
+    }
+
+    const snap = await q.get();
+
+    // Aggregate per employee
+    const byEmployee: Record<string, {
+      employeeId: string;
+      employeeName: string;
+      totalMinutes: number;
+      totalEarnings: number;
+      sessionCount: number;
+    }> = {};
+
+    let grandTotalMinutes = 0;
+    let grandTotalEarnings = 0;
+
+    snap.docs.forEach((d) => {
+      const s = d.data();
+      const eid = s.employeeId || 'unknown';
+      if (!byEmployee[eid]) {
+        byEmployee[eid] = {
+          employeeId: eid,
+          employeeName: s.employeeName || 'Unknown',
+          totalMinutes: 0,
+          totalEarnings: 0,
+          sessionCount: 0,
+        };
+      }
+      const mins = s.durationMinutes || 0;
+      const earn = s.sessionEarnings || 0;
+      byEmployee[eid].totalMinutes += mins;
+      byEmployee[eid].totalEarnings += earn;
+      byEmployee[eid].sessionCount += 1;
+      grandTotalMinutes += mins;
+      grandTotalEarnings += earn;
+    });
+
+    const employees = Object.values(byEmployee).map((e) => ({
+      ...e,
+      totalHours: +(e.totalMinutes / 60).toFixed(1),
+      totalEarnings: +e.totalEarnings.toFixed(2),
+    }));
+
+    // Sort by totalMinutes desc
+    employees.sort((a, b) => b.totalMinutes - a.totalMinutes);
+
+    res.json({
+      from: params.from,
+      to: params.to,
+      totalHours: +(grandTotalMinutes / 60).toFixed(1),
+      totalEarnings: +grandTotalEarnings.toFixed(2),
+      totalSessions: snap.size,
+      employees,
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// ─── POST /api/time-tracking/admin-stop (Phase 2) ──────────────────
+
+app.post('/api/time-tracking/admin-stop', async (req, res, next) => {
+  try {
+    // Security: only OWNER can admin-stop
+    if (req.agentUserId !== process.env.OWNER_UID) {
+      res.status(403).json({ error: 'Только владелец может останавливать чужие сессии' });
+      return;
+    }
+
+    const data = AdminStopSchema.parse(req.body);
+    logger.info('⏱️ timer:admin-stop', { sessionId: data.sessionId, endTime: data.endTime });
+
+    // Validate optional manual endTime
+    let manualEndTime: admin.firestore.Timestamp | null = null;
+    if (data.endTime) {
+      const parsed = new Date(data.endTime);
+      if (isNaN(parsed.getTime())) {
+        res.status(400).json({ error: 'Invalid endTime format (ISO string expected)' });
+        return;
+      }
+      if (parsed.getTime() > Date.now() + 60_000) {
+        res.status(400).json({ error: 'endTime не может быть в будущем' });
+        return;
+      }
+      manualEndTime = Timestamp.fromDate(parsed);
+    }
+
+    const result = await db.runTransaction(async (tx) => {
+      const sessionRef = db.collection('work_sessions').doc(data.sessionId);
+      const sessionDoc = await tx.get(sessionRef);
+
+      if (!sessionDoc.exists) {
+        throw new Error('SESSION_NOT_FOUND');
+      }
+
+      const s = sessionDoc.data()!;
+      if (!['active', 'paused'].includes(s.status)) {
+        throw new Error('SESSION_NOT_ACTIVE');
+      }
+
+      const endTime = manualEndTime || Timestamp.now();
+
+      if (endTime.toMillis() < s.startTime.toMillis()) {
+        throw new Error('END_BEFORE_START');
+      }
+
+      let diff = endTime.toMillis() - s.startTime.toMillis();
+      if (s.totalBreakMinutes) diff -= s.totalBreakMinutes * 60000;
+      if (s.status === 'paused' && s.lastBreakStart) {
+        diff -= (endTime.toMillis() - s.lastBreakStart.toMillis());
+      }
+      const mins = Math.max(0, Math.round(diff / 60000));
+      const earn = +((mins / 60) * (s.hourlyRate || 0)).toFixed(2);
+
+      tx.update(sessionRef, {
+        status: 'completed',
+        endTime,
+        durationMinutes: mins,
+        sessionEarnings: earn,
+      });
+
+      // Clear activeSessionId pointer on the employee
+      const employeeRef = db.collection('users').doc(s.employeeId);
+      const employeeDoc = await tx.get(employeeRef);
+      if (employeeDoc.exists && employeeDoc.data()?.activeSessionId === data.sessionId) {
+        tx.update(employeeRef, { activeSessionId: null });
+      }
+
+      // Aggregate on linked task
+      if (s.relatedTaskId) {
+        tx.update(db.collection('gtd_tasks').doc(s.relatedTaskId), {
+          totalTimeSpentMinutes: FieldValue.increment(mins),
+          totalEarnings: FieldValue.increment(earn),
+          updatedAt: FieldValue.serverTimestamp(),
+        });
+      }
+
+      return {
+        mins,
+        earn,
+        employeeId: s.employeeId,
+        employeeName: s.employeeName,
+        task: s.relatedTaskTitle || s.description,
+      };
+    }).catch((e: Error) => {
+      if (['SESSION_NOT_FOUND', 'SESSION_NOT_ACTIVE', 'END_BEFORE_START'].includes(e.message)) {
+        return e.message as 'SESSION_NOT_FOUND' | 'SESSION_NOT_ACTIVE' | 'END_BEFORE_START';
+      }
+      throw e;
+    });
+
+    if (result === 'SESSION_NOT_FOUND') {
+      res.status(404).json({ error: 'Сессия не найдена' });
+      return;
+    }
+    if (result === 'SESSION_NOT_ACTIVE') {
+      res.status(400).json({ error: 'Сессия не активна' });
+      return;
+    }
+    if (result === 'END_BEFORE_START') {
+      res.status(400).json({ error: 'endTime не может быть раньше startTime сессии' });
+      return;
+    }
+
+    logger.info('⏱️ timer:admin-stopped', result);
+    await logAgentActivity({
+      userId: req.agentUserId!,
+      action: 'timer_admin_stopped',
+      endpoint: '/api/time-tracking/admin-stop',
+      metadata: { sessionId: data.sessionId, ...result },
+    });
+
+    res.json({
+      sessionId: data.sessionId,
+      durationMinutes: result.mins,
+      earnings: result.earn,
+      employeeName: result.employeeName,
+      message: `Сессия ${result.employeeName} остановлена: ${result.mins}мин, $${result.earn}`,
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// ─── GET /api/users/search (Phase 2) ───────────────────────────────
+
+app.get('/api/users/search', async (req, res, next) => {
+  try {
+    const params = UserSearchQuerySchema.parse(req.query);
+    logger.info('👤 users:search', { q: params.q });
+
+    const snap = await db.collection('users').get();
+    const users = snap.docs.map((d) => ({
+      id: d.id,
+      displayName: d.data().displayName || '',
+      email: d.data().email || '',
+      role: d.data().role || 'employee',
+      hourlyRate: d.data().hourlyRate || 0,
+    }));
+
+    const fuse = new Fuse(users, {
+      keys: ['displayName', 'email'],
+      threshold: 0.4,
+    });
+
+    const results = fuse.search(params.q, { limit: params.limit }).map((r: any) => ({
+      userId: r.item.id,
+      displayName: r.item.displayName,
+      email: r.item.email,
+      role: r.item.role,
+      hourlyRate: r.item.hourlyRate,
+      score: r.score,
+    }));
+
+    res.json({ results, count: results.length });
   } catch (e) {
     next(e);
   }

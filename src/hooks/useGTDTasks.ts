@@ -235,6 +235,7 @@ export const useGTDTasks = (currentUser: any, showAllTasks: boolean = false) => 
         parentTaskId: string,
         title: string,
         budgetAmount?: number,
+        extras?: { estimatedMinutes?: number; budgetCategory?: string },
     ) => {
         if (!currentUser) return;
         try {
@@ -254,6 +255,9 @@ export const useGTDTasks = (currentUser: any, showAllTasks: boolean = false) => 
                 isSubtask: true,
                 budgetAmount: budgetAmount || 0,
                 progressPercentage: 0,
+                paidAmount: 0,
+                ...(extras?.budgetCategory && { budgetCategory: extras.budgetCategory }),
+                ...(extras?.estimatedMinutes && { estimatedMinutes: extras.estimatedMinutes }),
                 // Inherit from parent
                 ...(parent?.clientId && { clientId: parent.clientId, clientName: parent.clientName }),
             };

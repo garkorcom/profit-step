@@ -47,7 +47,7 @@ interface GTDEditDialogProps {
     /** All raw tasks for subtask filtering */
     allTasks?: GTDTask[];
     /** Add a subtask to the current task */
-    onAddSubtask?: (parentTaskId: string, title: string, budgetAmount?: number) => Promise<void>;
+    onAddSubtask?: (parentTaskId: string, title: string, budgetAmount?: number, extras?: { estimatedMinutes?: number; budgetCategory?: string }) => Promise<void>;
     /** Start time tracking session */
     onStartSession?: (task: GTDTask) => void;
     /** Stop active session */

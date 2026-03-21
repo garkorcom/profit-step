@@ -363,6 +363,23 @@ export interface GTDTask {
      * Служит для Plan-Fact анализа (Estimated vs totalTimeSpentMinutes).
      */
     estimatedMinutes?: number;
+
+    // ═══════════════════════════════════════
+    // BUDGET TRACKING / ПРОЦЕНТОВКА
+    // ═══════════════════════════════════════
+
+    /**
+     * Сумма, уже оплаченная по этой работе.
+     * Дебет = budgetAmount - paidAmount.
+     */
+    paidAmount?: number;
+
+    /**
+     * Категория работы для группировки подзадач.
+     * Примеры: 'HVAC', 'Electrical', 'Plumbing', 'Materials'
+     * Используется для collapsible section headers в GTDSubtasksTable.
+     */
+    budgetCategory?: string;
 }
 
 /**

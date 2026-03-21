@@ -1,12 +1,20 @@
 /**
  * Agent API — Express Application
  *
- * 5 endpoints for OpenClaw agent integration:
- * - GET  /api/clients/search
- * - POST /api/gtd-tasks
- * - POST /api/costs
- * - POST /api/time-tracking
- * - GET  /api/projects/status
+ * 13 endpoints for OpenClaw agent integration:
+ * - GET   /api/clients/search
+ * - POST  /api/gtd-tasks
+ * - GET   /api/gtd-tasks/list
+ * - PATCH /api/gtd-tasks/:id
+ * - POST  /api/costs
+ * - GET   /api/costs/list
+ * - POST  /api/time-tracking
+ * - GET   /api/time-tracking/active-all
+ * - GET   /api/projects/status
+ * - GET   /api/finance/context
+ * - POST  /api/finance/transactions/batch
+ * - POST  /api/finance/transactions/approve
+ * - POST  /api/finance/transactions/undo
  */
 
 import * as admin from 'firebase-admin';
@@ -64,9 +72,10 @@ const CreateCostSchema = z.object({
   clientId: z.string().min(1),
   clientName: z.string().min(1),
   category: z.enum(['materials', 'tools', 'reimbursement', 'fuel', 'housing', 'food', 'permit', 'other']),
-  amount: z.number().positive(),
+  amount: z.number().positive().max(1_000_000),
   description: z.string().optional(),
   idempotencyKey: z.string().min(1).optional(),
+  taskId: z.string().optional(),
 });
 
 const TimeTrackingSchema = z.discriminatedUnion('action', [
@@ -119,6 +128,53 @@ const FinanceApproveSchema = z.object({
 
 const FinanceUndoSchema = z.object({
   transactionIds: z.array(z.string().min(1)),
+});
+
+// ─── NEW Zod Schemas ───────────────────────────────────────────────
+
+const ListTasksQuerySchema = z.object({
+  clientId: z.string().optional(),
+  clientName: z.string().min(2).optional(),
+  status: z.string().optional(), // comma-separated: "inbox,next_action"
+  assigneeId: z.string().optional(),
+  priority: z.enum(['high', 'medium', 'low', 'none']).optional(),
+  dueBefore: z.string().optional(),
+  dueAfter: z.string().optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+  offset: z.coerce.number().int().min(0).default(0),
+  sortBy: z.enum(['createdAt', 'dueDate', 'priority', 'updatedAt']).default('createdAt'),
+  sortDir: z.enum(['asc', 'desc']).default('desc'),
+});
+
+const UpdateTaskSchema = z.object({
+  status: z.enum([
+    'inbox', 'next_action', 'waiting', 'projects', 'estimate', 'someday', 'completed', 'archived',
+  ]).optional(),
+  priority: z.enum(['high', 'medium', 'low', 'none']).optional(),
+  dueDate: z.string().nullable().optional(),
+  assigneeId: z.string().nullable().optional(),
+  assigneeName: z.string().nullable().optional(),
+  description: z.string().optional(),
+  title: z.string().min(1).optional(),
+  estimatedDurationMinutes: z.number().positive().optional(),
+}).refine(data => Object.keys(data).length > 0, {
+  message: 'At least one field must be provided',
+});
+
+const ListCostsQuerySchema = z.object({
+  clientId: z.string().optional(),
+  clientName: z.string().min(2).optional(),
+  category: z.string().optional(), // comma-separated
+  from: z.string().optional(), // ISO date
+  to: z.string().optional(), // ISO date
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+  offset: z.coerce.number().int().min(0).default(0),
+  sortBy: z.enum(['createdAt', 'amount', 'category']).default('createdAt'),
+  sortDir: z.enum(['asc', 'desc']).default('desc'),
+});
+
+const ActiveSessionsQuerySchema = z.object({
+  clientId: z.string().optional(),
 });
 
 // ─── GET /api/clients/search ────────────────────────────────────────
@@ -245,6 +301,7 @@ app.post('/api/costs', async (req, res, next) => {
       voiceNoteUrl: null,
       status: 'confirmed',
       source: 'openclaw',
+      taskId: data.taskId || null,
       createdAt: FieldValue.serverTimestamp(),
     });
 
@@ -557,6 +614,300 @@ app.get('/api/projects/status', async (req, res, next) => {
   }
 });
 
+// ─── GET /api/time-tracking/active-all ──────────────────────────────
+
+app.get('/api/time-tracking/active-all', async (req, res, next) => {
+  try {
+    const query = ActiveSessionsQuerySchema.parse(req.query);
+    logger.info('⏱️ timer:active-all', { clientId: query.clientId });
+
+    let q: admin.firestore.Query = db.collection('work_sessions')
+      .where('status', '==', 'active');
+
+    if (query.clientId) {
+      q = q.where('clientId', '==', query.clientId);
+    }
+
+    const snap = await q.get();
+
+    const activeSessions = snap.docs.map((d) => {
+      const s = d.data();
+      return {
+        sessionId: d.id,
+        employeeId: s.employeeId,
+        employeeName: s.employeeName,
+        clientId: s.clientId,
+        clientName: s.clientName,
+        task: s.relatedTaskTitle || s.description,
+        relatedTaskId: s.relatedTaskId || null,
+        startTime: s.startTime?.toDate?.()?.toISOString() || null,
+        elapsedMinutes: s.startTime
+          ? Math.round((Date.now() - s.startTime.toMillis()) / 60000)
+          : 0,
+        hourlyRate: s.hourlyRate || 0,
+      };
+    });
+
+    res.json({ activeSessions, count: activeSessions.length });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// ─── GET /api/gtd-tasks/list ───────────────────────────────────────
+
+app.get('/api/gtd-tasks/list', async (req, res, next) => {
+  try {
+    const params = ListTasksQuerySchema.parse(req.query);
+    let clientId = params.clientId;
+
+    // Resolve clientName → clientId via fuzzy search
+    if (!clientId && params.clientName) {
+      const match = await fuzzySearchClient(params.clientName);
+      if (!match) {
+        res.status(404).json({ error: 'Клиент не найден' });
+        return;
+      }
+      clientId = match.id;
+    }
+
+    logger.info('📋 tasks:list', { clientId, status: params.status, limit: params.limit });
+
+    let q: admin.firestore.Query = db.collection('gtd_tasks');
+
+    if (clientId) {
+      q = q.where('clientId', '==', clientId);
+    }
+    if (params.assigneeId) {
+      q = q.where('assigneeId', '==', params.assigneeId);
+    }
+    if (params.priority) {
+      q = q.where('priority', '==', params.priority);
+    }
+
+    // Status filter: comma-separated → 'in' query
+    if (params.status) {
+      const statuses = params.status.split(',').map((s) => s.trim()).filter(Boolean);
+      if (statuses.length === 1) {
+        q = q.where('status', '==', statuses[0]);
+      } else if (statuses.length > 1 && statuses.length <= 10) {
+        q = q.where('status', 'in', statuses);
+      }
+    }
+
+    // Date filters
+    if (params.dueBefore) {
+      q = q.where('dueDate', '<=', Timestamp.fromDate(new Date(params.dueBefore)));
+    }
+    if (params.dueAfter) {
+      q = q.where('dueDate', '>=', Timestamp.fromDate(new Date(params.dueAfter)));
+    }
+
+    // Sort — only apply if not conflicting with inequality filters
+    // Firestore requires orderBy on inequality field first
+    const hasDateFilter = !!(params.dueBefore || params.dueAfter);
+    if (hasDateFilter) {
+      q = q.orderBy('dueDate', params.sortDir);
+    } else {
+      q = q.orderBy(params.sortBy, params.sortDir);
+    }
+
+    // Count total before pagination
+    const countSnap = await q.count().get();
+    const total = countSnap.data().count;
+
+    // Apply pagination
+    if (params.offset > 0) {
+      q = q.offset(params.offset);
+    }
+    q = q.limit(params.limit);
+
+    const snap = await q.get();
+    const tasks = snap.docs.map((d) => {
+      const t = d.data();
+      return {
+        id: d.id,
+        title: t.title,
+        status: t.status,
+        priority: t.priority,
+        clientId: t.clientId,
+        clientName: t.clientName,
+        assigneeId: t.assigneeId || null,
+        assigneeName: t.assigneeName || null,
+        description: t.description || '',
+        dueDate: t.dueDate?.toDate?.()?.toISOString() || null,
+        taskType: t.taskType || null,
+        estimatedDurationMinutes: t.estimatedDurationMinutes || null,
+        totalTimeSpentMinutes: t.totalTimeSpentMinutes || 0,
+        totalEarnings: t.totalEarnings || 0,
+        source: t.source || null,
+        createdAt: t.createdAt?.toDate?.()?.toISOString() || null,
+        updatedAt: t.updatedAt?.toDate?.()?.toISOString() || null,
+      };
+    });
+
+    res.json({ tasks, total, hasMore: params.offset + tasks.length < total });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// ─── PATCH /api/gtd-tasks/:id ──────────────────────────────────────
+
+app.patch('/api/gtd-tasks/:id', async (req, res, next) => {
+  try {
+    const taskId = req.params.id;
+    const data = UpdateTaskSchema.parse(req.body);
+
+    logger.info('📋 tasks:update', { taskId, fields: Object.keys(data) });
+
+    const taskRef = db.collection('gtd_tasks').doc(taskId);
+    const taskDoc = await taskRef.get();
+
+    if (!taskDoc.exists) {
+      res.status(404).json({ error: 'Задача не найдена' });
+      return;
+    }
+
+    const updatePayload: Record<string, any> = {
+      updatedAt: FieldValue.serverTimestamp(),
+    };
+
+    if (data.status !== undefined) updatePayload.status = data.status;
+    if (data.priority !== undefined) updatePayload.priority = data.priority;
+    if (data.title !== undefined) updatePayload.title = data.title;
+    if (data.description !== undefined) updatePayload.description = data.description;
+    if (data.assigneeId !== undefined) updatePayload.assigneeId = data.assigneeId;
+    if (data.assigneeName !== undefined) updatePayload.assigneeName = data.assigneeName;
+    if (data.estimatedDurationMinutes !== undefined) {
+      updatePayload.estimatedDurationMinutes = data.estimatedDurationMinutes;
+    }
+
+    // dueDate: string → Timestamp, null → null (clear)
+    if (data.dueDate !== undefined) {
+      updatePayload.dueDate = data.dueDate
+        ? Timestamp.fromDate(new Date(data.dueDate))
+        : null;
+    }
+
+    await taskRef.update(updatePayload);
+
+    logger.info('📋 tasks:updated', { taskId });
+    await logAgentActivity({
+      userId: req.agentUserId!,
+      action: 'task_updated',
+      endpoint: `/api/gtd-tasks/${taskId}`,
+      metadata: { taskId, fields: Object.keys(data) },
+    });
+
+    res.json({ taskId, updated: true });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// ─── GET /api/costs/list ───────────────────────────────────────────
+
+app.get('/api/costs/list', async (req, res, next) => {
+  try {
+    const params = ListCostsQuerySchema.parse(req.query);
+    let clientId = params.clientId;
+
+    // Resolve clientName → clientId via fuzzy search
+    if (!clientId && params.clientName) {
+      const match = await fuzzySearchClient(params.clientName);
+      if (!match) {
+        res.status(404).json({ error: 'Клиент не найден' });
+        return;
+      }
+      clientId = match.id;
+    }
+
+    logger.info('💰 costs:list', { clientId, category: params.category, limit: params.limit });
+
+    let q: admin.firestore.Query = db.collection('costs');
+
+    if (clientId) {
+      q = q.where('clientId', '==', clientId);
+    }
+
+    // Category filter: comma-separated
+    if (params.category) {
+      const categories = params.category.split(',').map((c) => c.trim()).filter(Boolean);
+      if (categories.length === 1) {
+        q = q.where('category', '==', categories[0]);
+      } else if (categories.length > 1 && categories.length <= 10) {
+        q = q.where('category', 'in', categories);
+      }
+    }
+
+    // Date range filters
+    const hasDateFilter = !!(params.from || params.to);
+    if (params.from) {
+      q = q.where('createdAt', '>=', Timestamp.fromDate(new Date(params.from)));
+    }
+    if (params.to) {
+      // Add 1 day to 'to' to include the entire day
+      const toDate = new Date(params.to);
+      toDate.setDate(toDate.getDate() + 1);
+      q = q.where('createdAt', '<', Timestamp.fromDate(toDate));
+    }
+
+    // Sort
+    if (hasDateFilter) {
+      q = q.orderBy('createdAt', params.sortDir);
+    } else {
+      q = q.orderBy(params.sortBy, params.sortDir);
+    }
+
+    // Count total before pagination
+    const countSnap = await q.count().get();
+    const total = countSnap.data().count;
+
+    // Apply pagination
+    if (params.offset > 0) {
+      q = q.offset(params.offset);
+    }
+    q = q.limit(params.limit);
+
+    const snap = await q.get();
+    const costs = snap.docs.map((d) => {
+      const c = d.data();
+      return {
+        id: d.id,
+        clientId: c.clientId,
+        clientName: c.clientName,
+        category: c.category,
+        categoryLabel: c.categoryLabel,
+        amount: c.amount,
+        originalAmount: c.originalAmount,
+        description: c.description || null,
+        taskId: c.taskId || null,
+        status: c.status,
+        source: c.source || null,
+        createdAt: c.createdAt?.toDate?.()?.toISOString() || null,
+      };
+    });
+
+    // Aggregate sum by category
+    const byCategory: Record<string, number> = {};
+    let totalAmount = 0;
+    costs.forEach((c) => {
+      totalAmount += c.amount;
+      byCategory[c.category] = (byCategory[c.category] || 0) + c.amount;
+    });
+
+    res.json({
+      costs,
+      total,
+      hasMore: params.offset + costs.length < total,
+      sum: { total: +totalAmount.toFixed(2), byCategory },
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
 // ─── GET /api/finance/context ───────────────────────────────────────
 
 app.get('/api/finance/context', async (req, res, next) => {
@@ -635,7 +986,9 @@ app.post('/api/finance/transactions/approve', async (req, res, next) => {
     const data = FinanceApproveSchema.parse(req.body);
     logger.info(`🏦 finance:approve. Count: ${data.transactions.length}`);
 
-    const CHUNK_SIZE = 400;
+    // Each transaction can generate up to 3 batch ops (cost + rule + bank_tx update).
+    // Firestore batch limit = 500 ops. 150 × 3 = 450 — safe margin.
+    const CHUNK_SIZE = 150;
     for (let i = 0; i < data.transactions.length; i += CHUNK_SIZE) {
       const chunk = data.transactions.slice(i, i + CHUNK_SIZE);
       const batch = db.batch();

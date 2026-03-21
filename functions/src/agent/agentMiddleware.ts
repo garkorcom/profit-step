@@ -58,41 +58,35 @@ export const rateLimitMiddleware = async (req: Request, res: Response, next: Nex
   const now = Date.now();
 
   try {
-    const doc = await ref.get();
-    const data = doc.data();
-    const count = data?.count || 0;
-    const resetAt = data?.resetAt || 0;
+    // All paths use transaction to prevent race condition where
+    // concurrent requests read count=0 and all set count=1
+    const result = await db.runTransaction(async (tx) => {
+      const doc = await tx.get(ref);
+      const data = doc.data();
+      const count = data?.count || 0;
+      const resetAt = data?.resetAt || 0;
 
-    // Window expired → reset
-    if (now >= resetAt) {
-      await ref.set({ count: 1, resetAt: now + RATE_WINDOW_MS });
-      next();
-      return;
-    }
-
-    // Over limit
-    if (count >= RATE_LIMIT) {
-      logger.warn('⚠️ Rate limit hit', { userId, count });
-      res.status(429).json({ error: 'Rate limit exceeded', retryAfterMs: resetAt - now });
-      return;
-    }
-
-    // Fast path (< 55): increment without transaction
-    if (count < 55) {
-      await ref.update({ count: FieldValue.increment(1) });
-      next();
-      return;
-    }
-
-    // Near threshold (55-59): precise count via transaction
-    await db.runTransaction(async (tx) => {
-      const d = await tx.get(ref);
-      const currentCount = d.data()?.count || 0;
-      if (currentCount >= RATE_LIMIT) {
-        throw new Error('RATE_LIMITED');
+      // Window expired → reset
+      if (now >= resetAt) {
+        tx.set(ref, { count: 1, resetAt: now + RATE_WINDOW_MS });
+        return { allowed: true };
       }
+
+      // Over limit
+      if (count >= RATE_LIMIT) {
+        return { allowed: false, retryAfterMs: resetAt - now };
+      }
+
+      // Increment atomically within transaction
       tx.update(ref, { count: FieldValue.increment(1) });
+      return { allowed: true };
     });
+
+    if (!result.allowed) {
+      logger.warn('⚠️ Rate limit hit', { userId });
+      res.status(429).json({ error: 'Rate limit exceeded', retryAfterMs: result.retryAfterMs });
+      return;
+    }
     next();
   } catch (e: any) {
     if (e.message === 'RATE_LIMITED') {

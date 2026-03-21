@@ -836,6 +836,13 @@ app.get('/api/gtd-tasks/list', async (req, res, next) => {
         source: t.source || null,
         createdAt: t.createdAt?.toDate?.()?.toISOString() || null,
         updatedAt: t.updatedAt?.toDate?.()?.toISOString() || null,
+        // Budget Tracking fields
+        parentTaskId: t.parentTaskId || null,
+        isSubtask: t.isSubtask || false,
+        budgetAmount: t.budgetAmount || null,
+        paidAmount: t.paidAmount || null,
+        budgetCategory: t.budgetCategory || null,
+        progressPercentage: t.progressPercentage ?? null,
       };
     });
 

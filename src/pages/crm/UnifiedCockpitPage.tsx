@@ -40,7 +40,7 @@ import {
     Telegram as TelegramIcon,
     ExpandMore as ExpandMoreIcon
 } from '@mui/icons-material';
-import { doc, updateDoc, onSnapshot, Timestamp, collection, getDocs, query, where, deleteDoc, orderBy } from 'firebase/firestore';
+import { doc, updateDoc, onSnapshot, Timestamp, collection, getDocs, query, where, deleteDoc, orderBy, addDoc } from 'firebase/firestore';
 import { db, functions } from '../../firebase/firebase';
 import { useAuth } from '../../auth/AuthContext';
 import { httpsCallable } from 'firebase/functions';
@@ -54,6 +54,7 @@ import TaskMaterialsTab from '../../components/crm/TaskMaterialsTab';
 import { TaskMaterial } from '../../types/inventory.types';
 import { calculateMaterialsCost } from '../../features/inventory/inventoryService';
 import GlobalContactQuickAdd from '../../components/contacts/GlobalContactQuickAdd';
+import GTDSubtasksTable from '../../components/gtd/GTDSubtasksTable';
 
 // ═══════════════════════════════════════════════════════════
 // HELPER TYPES
@@ -293,6 +294,9 @@ const UnifiedCockpitPage: React.FC = () => {
     // Materials state
     const [materials, setMaterials] = useState<TaskMaterial[]>([]);
 
+    // Subtasks state (for GTDSubtasksTable)
+    const [subtasks, setSubtasks] = useState<GTDTask[]>([]);
+
     // Contacts state
     const [contacts, setContacts] = useState<any[]>([]);
     const [linkedContactIds, setLinkedContactIds] = useState<string[]>([]);
@@ -361,6 +365,15 @@ const UnifiedCockpitPage: React.FC = () => {
             }
         });
 
+        // Real-time subscription to subtasks for this parent task
+        const subtasksQuery = query(
+            collection(db, 'gtd_tasks'),
+            where('parentTaskId', '==', taskId)
+        );
+        const unsubSubtasks = onSnapshot(subtasksQuery, (snap) => {
+            setSubtasks(snap.docs.map(d => ({ id: d.id, ...d.data() } as GTDTask)));
+        });
+
         // Load clients
         getDocs(query(collection(db, 'clients'), where('status', '!=', 'archived')))
             .then(snap => {
@@ -393,7 +406,10 @@ const UnifiedCockpitPage: React.FC = () => {
                 })));
             });
 
-        return () => unsubscribe();
+        return () => {
+            unsubscribe();
+            unsubSubtasks();
+        };
     }, [taskId]);
 
     // Auto-calculate end date from startDate + estimatedDurationMinutes
@@ -649,6 +665,45 @@ const UnifiedCockpitPage: React.FC = () => {
         setHasChanges(true);
     };
 
+    // ── Subtask handlers ──
+    const handleUpdateSubtask = useCallback(async (subtaskId: string, updates: Partial<GTDTask>) => {
+        const taskRef = doc(db, 'gtd_tasks', subtaskId);
+        await updateDoc(taskRef, { ...updates, updatedAt: Timestamp.now() });
+    }, []);
+
+    const handleDeleteSubtask = useCallback(async (subtaskId: string) => {
+        const taskRef = doc(db, 'gtd_tasks', subtaskId);
+        await deleteDoc(taskRef);
+    }, []);
+
+    const handleAddSubtask = useCallback(async (
+        parentId: string,
+        title: string,
+        budgetAmount?: number,
+        extras?: { estimatedMinutes?: number; budgetCategory?: string }
+    ) => {
+        if (!currentUser) return;
+        const newSubtask: Partial<GTDTask> = {
+            title,
+            status: 'next_action' as GTDStatus,
+            priority: 'none' as GTDPriority,
+            createdAt: Timestamp.now(),
+            ownerId: currentUser.uid,
+            ownerName: currentUser.displayName || 'Unknown',
+            context: '',
+            description: '',
+            parentTaskId: parentId,
+            isSubtask: true,
+            budgetAmount: budgetAmount || 0,
+            progressPercentage: 0,
+            paidAmount: 0,
+            ...(extras?.budgetCategory && { budgetCategory: extras.budgetCategory }),
+            ...(extras?.estimatedMinutes && { estimatedMinutes: extras.estimatedMinutes }),
+            ...(clientId && { clientId, clientName: clientName || undefined }),
+        };
+        await addDoc(collection(db, 'gtd_tasks'), newSubtask);
+    }, [currentUser, clientId, clientName]);
+
     const handleDelete = async () => {
         if (!taskId) return;
         if (!window.confirm('Delete this task?')) return;
@@ -841,6 +896,27 @@ const UnifiedCockpitPage: React.FC = () => {
                                 onChange={(e) => { setDescription(e.target.value); setHasChanges(true); }}
                                 sx={{ mb: 3 }}
                             />
+
+                            {/* Subtasks / Budget Table */}
+                            {taskId && (
+                                <GTDSubtasksTable
+                                    parentTaskId={taskId}
+                                    allTasks={subtasks}
+                                    onUpdateTask={handleUpdateSubtask}
+                                    onDeleteTask={handleDeleteSubtask}
+                                    onAddSubtask={handleAddSubtask}
+                                    onStartSession={(st) => {
+                                        startSession({
+                                            id: st.id,
+                                            title: st.title,
+                                            clientId: clientId || '',
+                                            clientName: clientName || '',
+                                        } as GTDTask);
+                                    }}
+                                    onStopSession={() => stopSession()}
+                                    activeSession={activeSession}
+                                />
+                            )}
 
                             <Divider sx={{ my: 2 }} />
 

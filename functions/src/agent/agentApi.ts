@@ -166,6 +166,13 @@ const UpdateTaskSchema = z.object({
   description: z.string().optional(),
   title: z.string().min(1).optional(),
   estimatedDurationMinutes: z.number().positive().optional(),
+  // Budget Tracking fields
+  parentTaskId: z.string().optional(),
+  isSubtask: z.boolean().optional(),
+  budgetAmount: z.number().optional(),
+  paidAmount: z.number().optional(),
+  budgetCategory: z.string().optional(),
+  progressPercentage: z.number().min(0).max(100).optional(),
 }).refine(data => Object.keys(data).length > 0, {
   message: 'At least one field must be provided',
 });
@@ -875,6 +882,14 @@ app.patch('/api/gtd-tasks/:id', async (req, res, next) => {
         ? Timestamp.fromDate(new Date(data.dueDate))
         : null;
     }
+
+    // Budget Tracking fields
+    if (data.parentTaskId !== undefined) updatePayload.parentTaskId = data.parentTaskId;
+    if (data.isSubtask !== undefined) updatePayload.isSubtask = data.isSubtask;
+    if (data.budgetAmount !== undefined) updatePayload.budgetAmount = data.budgetAmount;
+    if (data.paidAmount !== undefined) updatePayload.paidAmount = data.paidAmount;
+    if (data.budgetCategory !== undefined) updatePayload.budgetCategory = data.budgetCategory;
+    if (data.progressPercentage !== undefined) updatePayload.progressPercentage = data.progressPercentage;
 
     await taskRef.update(updatePayload);
 

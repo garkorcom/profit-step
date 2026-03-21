@@ -21,6 +21,8 @@ import { PayrollReport } from './PayrollReport';
 
 import { WorkSession } from '../../types/timeTracking.types';
 
+const PnLView = React.lazy(() => import('../../components/finance/PnLView'));
+
 interface Employee {
     id: string;
     name: string;
@@ -606,6 +608,7 @@ const FinancePage: React.FC = () => {
                     <Tab label="Overview (Payroll)" />
                     <Tab label="Invoices (Billing)" />
                     <Tab label="Expenses" />
+                    <Tab label="P&L" />
                 </Tabs>
             </Box>
 
@@ -907,7 +910,19 @@ const FinancePage: React.FC = () => {
             )}
 
             {tabIndex === 1 && <InvoicesTab />}
-            {tabIndex === 2 && <ExpensesTab />}
+            {tabIndex === 2 && (
+                <ExpensesTab
+                    costs={costs}
+                    loading={loading}
+                    startDate={startDate}
+                    endDate={endDate}
+                />
+            )}
+            {tabIndex === 3 && (
+                <React.Suspense fallback={<CircularProgress sx={{ mt: 4, display: 'block', mx: 'auto' }} />}>
+                    <PnLView startDate={startDate} endDate={endDate} />
+                </React.Suspense>
+            )}
 
             {/* Confirmation Dialog */}
             <Dialog open={!!confirmAction} onClose={() => setConfirmAction(null)} maxWidth="xs" fullWidth>

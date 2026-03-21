@@ -31,6 +31,8 @@ import { db } from '../../firebase/firebase';
 import { useAuth } from '../../auth/AuthContext';
 import { useClientUsageHistory } from '../../hooks/useClientUsageHistory';
 import GlobalContactQuickAdd from '../contacts/GlobalContactQuickAdd';
+import GTDSubtasksTable from './GTDSubtasksTable';
+import { WorkSessionData } from '../../hooks/useActiveSession';
 
 interface GTDEditDialogProps {
     open: boolean;
@@ -42,6 +44,16 @@ interface GTDEditDialogProps {
     propUsers?: UserProfile[];
     /** Pass from parent to avoid duplicate Firestore reads */
     propClients?: Client[];
+    /** All raw tasks for subtask filtering */
+    allTasks?: GTDTask[];
+    /** Add a subtask to the current task */
+    onAddSubtask?: (parentTaskId: string, title: string, budgetAmount?: number) => Promise<void>;
+    /** Start time tracking session */
+    onStartSession?: (task: GTDTask) => void;
+    /** Stop active session */
+    onStopSession?: (task: GTDTask) => void;
+    /** Currently active session */
+    activeSession?: WorkSessionData | null;
 }
 
 interface FormData {
@@ -75,7 +87,7 @@ const STATUS_PIPELINE: { id: GTDStatus; label: string; icon: React.ReactNode }[]
     { id: 'done', label: 'Done', icon: <CheckCircleIcon fontSize="small" /> }
 ];
 
-const GTDEditDialog: React.FC<GTDEditDialogProps> = ({ open, onClose, task, onSave, onDelete, propUsers, propClients }) => {
+const GTDEditDialog: React.FC<GTDEditDialogProps> = ({ open, onClose, task, onSave, onDelete, propUsers, propClients, allTasks, onAddSubtask, onStartSession, onStopSession, activeSession }) => {
     const theme = useTheme();
     const { userProfile } = useAuth(); // Corrected usage check
     const { control, handleSubmit, reset, setValue, watch } = useForm<FormData>();
@@ -689,6 +701,20 @@ const GTDEditDialog: React.FC<GTDEditDialogProps> = ({ open, onClose, task, onSa
                                 </Grid>
                             </Grid>
                         </Box>
+
+                        {/* 4.9 Subtasks / Progress Tracking Table */}
+                        {task && allTasks && onAddSubtask && (
+                            <GTDSubtasksTable
+                                parentTaskId={task.id}
+                                allTasks={allTasks}
+                                onUpdateTask={async (taskId, updates) => await onSave(taskId, updates)}
+                                onDeleteTask={async (taskId) => await onDelete(taskId)}
+                                onAddSubtask={onAddSubtask}
+                                onStartSession={onStartSession}
+                                onStopSession={onStopSession}
+                                activeSession={activeSession}
+                            />
+                        )}
 
                         {/* 5. Resources & Finance (Accordion) */}
                         <Accordion expanded={resourcesExpanded} onChange={() => setResourcesExpanded(!resourcesExpanded)} disableGutters elevation={0} sx={{ border: '1px solid #e0e0e0', borderRadius: '8px !important', '&:before': { display: 'none' }, bgcolor: alpha(theme.palette.grey[500], 0.05) }}>

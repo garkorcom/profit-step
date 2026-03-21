@@ -357,6 +357,12 @@ export interface GTDTask {
      * Клампится на стороне UI при вводе.
      */
     progressPercentage?: number;
+
+    /**
+     * Плановое время выполнения работы (в минутах).
+     * Служит для Plan-Fact анализа (Estimated vs totalTimeSpentMinutes).
+     */
+    estimatedMinutes?: number;
 }
 
 /**

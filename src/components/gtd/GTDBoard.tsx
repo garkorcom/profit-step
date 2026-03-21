@@ -65,8 +65,10 @@ const GTDBoard: React.FC = () => {
 
     const {
         columns,
+        rawTasks,
         moveTask,
         addTask,
+        addSubtask,
         updateTask,
         deleteTask
     } = useGTDTasks(currentUser, showAllTasks);
@@ -935,6 +937,11 @@ const GTDBoard: React.FC = () => {
                     onDelete={deleteTask}
                     propUsers={users}
                     propClients={clients}
+                    allTasks={rawTasks}
+                    onAddSubtask={addSubtask}
+                    onStartSession={startSession}
+                    onStopSession={stopSession}
+                    activeSession={activeSession}
                 />
             )}
 

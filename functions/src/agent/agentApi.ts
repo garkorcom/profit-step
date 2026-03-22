@@ -223,6 +223,35 @@ const UserSearchQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(20).default(5),
 });
 
+// ─── Contacts Schemas ──────────────────────────────────────────────
+
+const ContactPhoneSchema = z.object({
+  number: z.string().min(1),
+  label: z.string().default('Мобильный'),
+});
+
+const CreateContactSchema = z.object({
+  name: z.string().min(1),
+  phones: z.array(ContactPhoneSchema).default([]),
+  roles: z.array(z.string()).default([]),
+  linkedProjects: z.array(z.string()).default([]),
+  notes: z.string().optional(),
+  location: z.string().optional(),
+  emails: z.array(z.string().email()).default([]),
+  messengers: z.object({
+    whatsapp: z.string().optional(),
+    telegram: z.string().optional(),
+  }).default({}),
+  defaultCity: z.string().optional(),
+});
+
+const SearchContactsQuerySchema = z.object({
+  q: z.string().min(1),
+  role: z.string().optional(),
+  projectId: z.string().optional(),
+  limit: z.coerce.number().int().min(1).max(50).default(10),
+});
+
 // ─── GET /api/clients/search ────────────────────────────────────────
 
 app.get('/api/clients/search', async (req, res, next) => {
@@ -1635,6 +1664,90 @@ app.get('/api/users/search', async (req, res, next) => {
       email: r.item.email,
       role: r.item.role,
       hourlyRate: r.item.hourlyRate,
+      score: r.score,
+    }));
+
+    res.json({ results, count: results.length });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// ─── POST /api/contacts ────────────────────────────────────────────
+
+app.post('/api/contacts', async (req, res, next) => {
+  try {
+    const data = CreateContactSchema.parse(req.body);
+    logger.info('📇 contacts:create', { name: data.name });
+
+    const docRef = await db.collection('contacts').add({
+      name: data.name,
+      phones: data.phones,
+      roles: data.roles,
+      linkedProjects: data.linkedProjects,
+      notes: data.notes || '',
+      emails: data.emails,
+      messengers: data.messengers,
+      defaultCity: data.defaultCity || null,
+      createdAt: FieldValue.serverTimestamp(),
+      createdBy: req.agentUserId || 'system',
+    });
+
+    logger.info('📇 contacts:created', { contactId: docRef.id });
+    await logAgentActivity({
+      userId: req.agentUserId!,
+      action: 'contact_created',
+      endpoint: '/api/contacts',
+      metadata: { contactId: docRef.id, name: data.name },
+    });
+
+    res.status(201).json({ contactId: docRef.id, name: data.name });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// ─── GET /api/contacts/search ──────────────────────────────────────
+
+app.get('/api/contacts/search', async (req, res, next) => {
+  try {
+    const params = SearchContactsQuerySchema.parse(req.query);
+    logger.info('📇 contacts:search', { q: params.q, role: params.role, projectId: params.projectId });
+
+    const snap = await db.collection('contacts').get();
+    let contacts = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+
+    // Filter by role if specified
+    if (params.role) {
+      const roleLower = params.role.toLowerCase();
+      contacts = contacts.filter((c: any) =>
+        Array.isArray(c.roles) && c.roles.some((r: string) => r.toLowerCase().includes(roleLower))
+      );
+    }
+
+    // Filter by project if specified
+    if (params.projectId) {
+      contacts = contacts.filter((c: any) =>
+        Array.isArray(c.linkedProjects) && c.linkedProjects.includes(params.projectId)
+      );
+    }
+
+    // Fuzzy search by name
+    const fuseOptions = {
+      keys: ['name', 'notes', 'defaultCity'],
+      threshold: 0.4,
+    };
+    const fuse = new Fuse(contacts, fuseOptions);
+    const results = fuse.search(params.q, { limit: params.limit }).map((r: any) => ({
+      contactId: r.item.id,
+      name: r.item.name,
+      phones: r.item.phones || [],
+      roles: r.item.roles || [],
+      linkedProjects: r.item.linkedProjects || [],
+      notes: r.item.notes || '',
+      emails: r.item.emails || [],
+      messengers: r.item.messengers || {},
+      defaultCity: r.item.defaultCity || null,
       score: r.score,
     }));
 

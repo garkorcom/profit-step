@@ -320,6 +320,31 @@ const ReconciliationPage: React.FC = () => {
     return Array.from(months).sort().reverse();
   }, [enrichedTransactions]);
 
+  /** Format sum of transactions as compact dollar string */
+  const fmtSum = (txs: typeof enrichedTransactions): string => {
+    const total = txs.reduce((s, t) => s + Math.abs(t.amount), 0);
+    if (total >= 1000) return `$${(total / 1000).toFixed(1).replace(/\.0$/, '')}k`;
+    return `$${total.toFixed(0)}`;
+  };
+
+  /** Pre-computed filter stats (count + formatted sum) for quick filter buttons */
+  const filterStats = useMemo(() => {
+    const calc = (list: typeof enrichedTransactions) => ({ count: list.length, sum: fmtSum(list) });
+    const tampaList = enrichedTransactions.filter(t => isTampaArea(t._location));
+    const companyList = enrichedTransactions.filter(t => t.paymentType === 'company');
+    const personalList = enrichedTransactions.filter(t => t.paymentType !== 'company');
+    const fuelList = enrichedTransactions.filter(t => isFuelTransaction(t));
+    const unassignedList = enrichedTransactions.filter(t => !t.projectId && !t.paymentType);
+    return {
+      tampa: calc(tampaList),
+      company: calc(companyList),
+      personal: calc(personalList),
+      fuel: calc(fuelList),
+      unassigned: calc(unassignedList),
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enrichedTransactions]);
+
   // Apply quick filter + month filter
   const filteredTransactions = useMemo(() => {
     let result = enrichedTransactions;
@@ -497,15 +522,25 @@ const ReconciliationPage: React.FC = () => {
                 exclusive
                 onChange={(_, val) => val && setQuickFilter(val as QuickFilter)}
               >
-                <ToggleButton value="all">All ({enrichedTransactions.length})</ToggleButton>
-                <ToggleButton value="tampa">🏗️ Tampa ({enrichedTransactions.filter(t => isTampaArea(t._location)).length})</ToggleButton>
-                <ToggleButton value="company">🏢 Company ({enrichedTransactions.filter(t => t.paymentType === 'company').length})</ToggleButton>
-                <ToggleButton value="personal">👤 Personal ({enrichedTransactions.filter(t => t.paymentType !== 'company').length})</ToggleButton>
-                <ToggleButton value="fuel">⛽ Топливо ({enrichedTransactions.filter(t => isFuelTransaction(t)).length})</ToggleButton>
-                <ToggleButton value="unassigned">❓ Неразнесённые ({enrichedTransactions.filter(t => !t.projectId && !t.paymentType).length})</ToggleButton>
+                <ToggleButton value="all">All ({enrichedTransactions.length}) {fmtSum(enrichedTransactions)}</ToggleButton>
+                <ToggleButton value="tampa">🏗️ Tampa ({filterStats.tampa.count}) {filterStats.tampa.sum}</ToggleButton>
+                <ToggleButton value="company">🏢 Company ({filterStats.company.count}) {filterStats.company.sum}</ToggleButton>
+                <ToggleButton value="personal">👤 Personal ({filterStats.personal.count}) {filterStats.personal.sum}</ToggleButton>
+                <ToggleButton value="fuel">⛽ Топливо ({filterStats.fuel.count}) {filterStats.fuel.sum}</ToggleButton>
+                <ToggleButton value="unassigned">❓ Неразнесённые ({filterStats.unassigned.count}) {filterStats.unassigned.sum}</ToggleButton>
               </ToggleButtonGroup>
             </Box>
           )}
+        </Box>
+      )}
+
+      {/* Selected filter summary */}
+      {quickFilter !== 'all' && filteredTransactions.length > 0 && (
+        <Box mb={1.5}>
+          <Typography variant="body2" color="text.secondary" fontWeight="medium">
+            Выбрано: {filteredTransactions.length} транзакций на сумму{' '}
+            <strong>${filteredTransactions.reduce((s, t) => s + Math.abs(t.amount), 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+          </Typography>
         </Box>
       )}
 

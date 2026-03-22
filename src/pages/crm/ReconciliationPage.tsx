@@ -105,6 +105,7 @@ const ReconciliationPage: React.FC = () => {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [quickFilter, setQuickFilter] = useState<QuickFilter>('all');
   const [filterMonth, setFilterMonth] = useState<string>('all'); // 'all' or 'YYYY-MM'
+  const [amountSort, setAmountSort] = useState<'none' | 'asc' | 'desc'>('none');
 
   useEffect(() => {
     fetchData();
@@ -326,8 +327,17 @@ const ReconciliationPage: React.FC = () => {
     else if (quickFilter === 'personal') result = result.filter(t => t.paymentType !== 'company');
     else if (quickFilter === 'unassigned') result = result.filter(t => !t.projectId && !t.paymentType);
 
+    // Amount sort
+    if (amountSort !== 'none') {
+      result = [...result].sort((a, b) =>
+        amountSort === 'desc'
+          ? Math.abs(b.amount) - Math.abs(a.amount)
+          : Math.abs(a.amount) - Math.abs(b.amount)
+      );
+    }
+
     return result;
-  }, [enrichedTransactions, quickFilter, filterMonth]);
+  }, [enrichedTransactions, quickFilter, filterMonth, amountSort]);
 
   // Summary cards data
   const summaryData = useMemo(() => {
@@ -452,6 +462,21 @@ const ReconciliationPage: React.FC = () => {
               })}
             </Select>
           </Box>
+
+          {/* Amount Sort */}
+          <Button
+            size="small"
+            variant={amountSort !== 'none' ? 'contained' : 'outlined'}
+            color={amountSort !== 'none' ? 'primary' : 'inherit'}
+            onClick={() =>
+              setAmountSort(prev =>
+                prev === 'none' ? 'desc' : prev === 'desc' ? 'asc' : 'none'
+              )
+            }
+            sx={{ minWidth: 'auto', whiteSpace: 'nowrap' }}
+          >
+            {amountSort === 'desc' ? '💰 По сумме ↓' : amountSort === 'asc' ? '💰 По сумме ↑' : '💰 По сумме'}
+          </Button>
 
           {/* Quick Filters */}
           {view === 'draft' && (

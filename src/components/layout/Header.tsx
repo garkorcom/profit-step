@@ -67,18 +67,22 @@ const Header: React.FC = () => {
   const [anchorElUser, setAnchorElUser] = useState<null | HTMLElement>(null);
 
   // Nav Menus State
-  const [anchorElProjects, setAnchorElProjects] = useState<null | HTMLElement>(null);
-  const [anchorElTime, setAnchorElTime] = useState<null | HTMLElement>(null);
-  const [anchorElMarketing, setAnchorElMarketing] = useState<null | HTMLElement>(null);
-  const [anchorElSettings, setAnchorElSettings] = useState<null | HTMLElement>(null);
+  const [anchorElTasks, setAnchorElTasks] = useState<null | HTMLElement>(null);
+  const [anchorElFinance, setAnchorElFinance] = useState<null | HTMLElement>(null);
+  const [anchorElOperations, setAnchorElOperations] = useState<null | HTMLElement>(null);
+  const [anchorElCRM, setAnchorElCRM] = useState<null | HTMLElement>(null);
+  const [anchorElEstimates, setAnchorElEstimates] = useState<null | HTMLElement>(null);
+  const [anchorElAdmin, setAnchorElAdmin] = useState<null | HTMLElement>(null);
 
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   // Mobile Collapse States
-  const [mobileOpenProjects, setMobileOpenProjects] = useState(false);
-  const [mobileOpenTime, setMobileOpenTime] = useState(false);
-  const [mobileOpenMarketing, setMobileOpenMarketing] = useState(false);
-  const [mobileOpenSettings, setMobileOpenSettings] = useState(false);
+  const [mobileOpenTasks, setMobileOpenTasks] = useState(false);
+  const [mobileOpenFinance, setMobileOpenFinance] = useState(false);
+  const [mobileOpenOperations, setMobileOpenOperations] = useState(false);
+  const [mobileOpenCRM, setMobileOpenCRM] = useState(false);
+  const [mobileOpenEstimates, setMobileOpenEstimates] = useState(false);
+  const [mobileOpenAdmin, setMobileOpenAdmin] = useState(false);
 
   const handleUserMenuOpen = (event: React.MouseEvent<HTMLElement>) => {
     setAnchorElUser(event.currentTarget);
@@ -117,78 +121,106 @@ const Header: React.FC = () => {
   };
 
   // --- Handlers for Desktop Dropdowns ---
-  const handleOpenProjects = (event: React.MouseEvent<HTMLElement>) => setAnchorElProjects(event.currentTarget);
-  const handleCloseProjects = () => setAnchorElProjects(null);
+  const handleOpenTasks = (event: React.MouseEvent<HTMLElement>) => setAnchorElTasks(event.currentTarget);
+  const handleCloseTasks = () => setAnchorElTasks(null);
 
-  const handleOpenTime = (event: React.MouseEvent<HTMLElement>) => setAnchorElTime(event.currentTarget);
-  const handleCloseTime = () => setAnchorElTime(null);
+  const handleOpenFinance = (event: React.MouseEvent<HTMLElement>) => setAnchorElFinance(event.currentTarget);
+  const handleCloseFinance = () => setAnchorElFinance(null);
 
-  const handleOpenMarketing = (event: React.MouseEvent<HTMLElement>) => setAnchorElMarketing(event.currentTarget);
-  const handleCloseMarketing = () => setAnchorElMarketing(null);
+  const handleOpenOperations = (event: React.MouseEvent<HTMLElement>) => setAnchorElOperations(event.currentTarget);
+  const handleCloseOperations = () => setAnchorElOperations(null);
 
-  const handleOpenSettings = (event: React.MouseEvent<HTMLElement>) => setAnchorElSettings(event.currentTarget);
-  const handleCloseSettings = () => setAnchorElSettings(null);
+  const handleOpenCRM = (event: React.MouseEvent<HTMLElement>) => setAnchorElCRM(event.currentTarget);
+  const handleCloseCRM = () => setAnchorElCRM(null);
+
+  const handleOpenEstimates = (event: React.MouseEvent<HTMLElement>) => setAnchorElEstimates(event.currentTarget);
+  const handleCloseEstimates = () => setAnchorElEstimates(null);
+
+  const handleOpenAdmin = (event: React.MouseEvent<HTMLElement>) => setAnchorElAdmin(event.currentTarget);
+  const handleCloseAdmin = () => setAnchorElAdmin(null);
 
   // --- Navigation Structure ---
   const getNavStructure = () => {
-    if (!userProfile) return { dashboard: [], projects: [], time: [], marketing: [], settings: [] };
+    if (!userProfile) return { dashboard: [], tasks: [], finance: [], operations: [], crm: [], estimates: [], admin: [] };
 
     const isAdmin = userProfile.role === 'admin';
-    // const isManager = userProfile.role === 'manager';
 
     const dashboardLink = { path: '/admin/dashboard', label: 'Дашборд', icon: <DashboardIcon sx={{ mr: 0.5 }} /> };
 
-    const timeMgmtLinks = [
-      { path: '/crm/calendar', label: 'Календарь', icon: <CalendarIcon sx={{ mr: 0.5 }} /> },
+    const tasksLinks = [
+      { path: '/crm/tasks?view=board', label: 'GTD Board (Kanban)', icon: <KanbanIcon sx={{ mr: 0.5 }} /> },
+      { path: '/crm/tasks?view=calendar', label: 'Calendar', icon: <CalendarIcon sx={{ mr: 0.5 }} /> },
       { path: '/crm/time-tracking', label: 'Time Tracking', icon: <DescriptionIcon sx={{ mr: 0.5 }} /> },
-      { path: '/crm/finance', label: 'Финансы', icon: <AttachMoneyIcon sx={{ mr: 0.5 }} /> },
-      { path: '/crm/gtd', label: 'Cockpit', icon: <TaskIcon sx={{ mr: 0.5 }} /> },
-      { path: '/crm/tasks-masonry', label: 'Touch Board (Beta)', icon: <TouchBoardIcon sx={{ mr: 0.5 }} /> },
-      { path: '/crm/shopping', label: 'Закупки', icon: <ShoppingCartIcon sx={{ mr: 0.5 }} /> },
-      { path: '/crm/inventory', label: 'Склад', icon: <InventoryIcon sx={{ mr: 0.5 }} /> },
-      { path: '/crm/bank-statements', label: 'Bank Statements', icon: <BankIcon sx={{ mr: 0.5 }} /> },
-      { path: '/crm/reconciliation', label: 'Сверка Выписок', icon: <BankIcon sx={{ mr: 0.5 }} /> },
-      { path: '/crm/expenses-board', label: 'Smart Expenses (Beta)', icon: <GridViewIcon sx={{ mr: 0.5 }} /> },
-      { path: '/ai-reports', label: 'AI Отчёты', icon: <AIIcon sx={{ mr: 0.5 }} /> },
+      { path: '/crm/shopping', label: 'Shopping', icon: <ShoppingCartIcon sx={{ mr: 0.5 }} /> },
     ];
 
-    const marketingLinks = [
-      { path: '/crm/contacts', label: 'Справочник', icon: <ContactsIcon sx={{ mr: 0.5 }} /> },
-      { path: '/crm/clients', label: 'Компании (Клиенты)', icon: <BusinessIcon sx={{ mr: 0.5 }} /> },
-      { path: '/crm/deals', label: 'Сделки', icon: <KanbanIcon sx={{ mr: 0.5 }} /> },
+    const financeLinks = [
+      { path: '/crm/finance', label: 'Payroll', icon: <AttachMoneyIcon sx={{ mr: 0.5 }} /> },
+      { path: '/crm/finance?tab=2', label: 'Expenses', icon: <AttachMoneyIcon sx={{ mr: 0.5 }} /> },
+      { path: '/crm/finance?tab=1', label: 'Invoices', icon: <AttachMoneyIcon sx={{ mr: 0.5 }} /> },
+      { path: '/crm/bank-statements', label: 'Bank & Reconciliation', icon: <BankIcon sx={{ mr: 0.5 }} /> },
+      { path: '/crm/finance?tab=3', label: 'P&L Reports', icon: <AttachMoneyIcon sx={{ mr: 0.5 }} /> },
+    ];
+
+    const operationsLinks = [
+      { path: '/crm/inventory', label: 'Inventory', icon: <InventoryIcon sx={{ mr: 0.5 }} /> },
+      { path: '/ai-reports', label: 'AI Reports', icon: <AIIcon sx={{ mr: 0.5 }} /> },
+    ];
+
+    const crmLinks = [
+      { path: '/crm/clients', label: 'Clients', icon: <BusinessIcon sx={{ mr: 0.5 }} /> },
+      { path: '/crm/contacts', label: 'Contacts', icon: <ContactsIcon sx={{ mr: 0.5 }} /> },
+      { path: '/crm/deals', label: 'Deals', icon: <KanbanIcon sx={{ mr: 0.5 }} /> },
       { path: '/landings.html', label: 'Landing Pages', icon: <MarketingIcon sx={{ mr: 0.5 }} /> },
     ];
 
-    const projectLinks = [
-      { path: '/estimates/projects', label: 'Библиотека Проектов', icon: <FolderIcon sx={{ mr: 0.5 }} /> },
-      { path: '/estimates/electrical', label: 'Калькулятор', icon: <CalculateIcon sx={{ mr: 0.5 }} /> },
+    const estimatesLinks = [
+      { path: '/estimates/projects', label: 'Project Library', icon: <FolderIcon sx={{ mr: 0.5 }} /> },
+      { path: '/estimates/electrical', label: 'Calculator', icon: <CalculateIcon sx={{ mr: 0.5 }} /> },
     ];
 
-    // "Settings" group as requested (Team, Companies, Tasks, Calculator)
-    const settingsGroupLinks = [
-      { path: '/crm/tasks', label: 'Задачи', icon: <TaskIcon sx={{ mr: 0.5 }} /> },
-      { path: '/about', label: 'О проекте', icon: <InfoIcon sx={{ mr: 0.5 }} /> },
+    const adminLinks = [
+      { path: '/crm/tasks', label: 'Tasks', icon: <TaskIcon sx={{ mr: 0.5 }} /> },
+      { path: '/about', label: 'About', icon: <InfoIcon sx={{ mr: 0.5 }} /> },
     ];
 
     if (isAdmin) {
-      settingsGroupLinks.unshift(
-        { path: '/admin/team', label: 'Команда', icon: <PeopleIcon sx={{ mr: 0.5 }} /> },
-        { path: '/admin/companies', label: 'Компании', icon: <BusinessIcon sx={{ mr: 0.5 }} /> }
+      adminLinks.unshift(
+        { path: '/admin/team', label: 'Team', icon: <PeopleIcon sx={{ mr: 0.5 }} /> },
+        { path: '/admin/companies', label: 'Companies', icon: <BusinessIcon sx={{ mr: 0.5 }} /> }
       );
     }
 
     return {
       dashboard: [dashboardLink],
-      projects: projectLinks,
-      time: timeMgmtLinks,
-      marketing: marketingLinks,
-      settings: settingsGroupLinks // Named "settings" in code, label will be "Настройки"
+      tasks: tasksLinks,
+      finance: financeLinks,
+      operations: operationsLinks,
+      crm: crmLinks,
+      estimates: estimatesLinks,
+      admin: adminLinks,
     };
   };
 
   const navStruct = getNavStructure();
 
-  const isActive = (path: string) => location.pathname === path;
+  const isActive = (path: string) => {
+    // Handle paths with query strings (e.g., /crm/tasks?view=board)
+    const qIndex = path.indexOf('?');
+    if (qIndex !== -1) {
+      const pathPart = path.substring(0, qIndex);
+      const queryPart = path.substring(qIndex + 1);
+      if (location.pathname !== pathPart) return false;
+      const params = new URLSearchParams(queryPart);
+      const currentParams = new URLSearchParams(location.search);
+      let match = true;
+      params.forEach((value, key) => {
+        if (currentParams.get(key) !== value) match = false;
+      });
+      return match;
+    }
+    return location.pathname === path;
+  };
   const isGroupActive = (links: { path: string }[]) => links.some(link => isActive(link.path));
 
   // Helper to render Desktop Menu
@@ -305,10 +337,12 @@ const Header: React.FC = () => {
             ))}
 
             {/* Groups */}
-            {renderDesktopMenu("Проекты", <FolderIcon sx={{ mr: 0.5 }} />, navStruct.projects, anchorElProjects, handleOpenProjects, handleCloseProjects)}
-            {renderDesktopMenu("Управление временем", <TimeManagementIcon sx={{ mr: 0.5 }} />, navStruct.time, anchorElTime, handleOpenTime, handleCloseTime)}
-            {renderDesktopMenu("Маркетинг", <MarketingIcon sx={{ mr: 0.5 }} />, navStruct.marketing, anchorElMarketing, handleOpenMarketing, handleCloseMarketing)}
-            {renderDesktopMenu("Настройки", <SettingsIcon sx={{ mr: 0.5 }} />, navStruct.settings, anchorElSettings, handleOpenSettings, handleCloseSettings)}
+            {renderDesktopMenu("Tasks & Work", <TaskIcon sx={{ mr: 0.5 }} />, navStruct.tasks, anchorElTasks, handleOpenTasks, handleCloseTasks)}
+            {renderDesktopMenu("Finance", <AttachMoneyIcon sx={{ mr: 0.5 }} />, navStruct.finance, anchorElFinance, handleOpenFinance, handleCloseFinance)}
+            {renderDesktopMenu("Operations", <ToolsIcon sx={{ mr: 0.5 }} />, navStruct.operations, anchorElOperations, handleOpenOperations, handleCloseOperations)}
+            {renderDesktopMenu("CRM", <BusinessIcon sx={{ mr: 0.5 }} />, navStruct.crm, anchorElCRM, handleOpenCRM, handleCloseCRM)}
+            {renderDesktopMenu("Estimates", <CalculateIcon sx={{ mr: 0.5 }} />, navStruct.estimates, anchorElEstimates, handleOpenEstimates, handleCloseEstimates)}
+            {renderDesktopMenu("Admin", <SettingsIcon sx={{ mr: 0.5 }} />, navStruct.admin, anchorElAdmin, handleOpenAdmin, handleCloseAdmin)}
           </Box>
 
           {/* Active Session Indicator */}
@@ -381,15 +415,15 @@ const Header: React.FC = () => {
             </ListItem>
           ))}
 
-          {/* Projects */}
-          <ListItemButton onClick={() => setMobileOpenProjects(!mobileOpenProjects)}>
-            <ListItemIcon><FolderIcon /></ListItemIcon>
-            <ListItemText primary="Проекты" />
-            {mobileOpenProjects ? <ExpandLess /> : <ExpandMore />}
+          {/* Tasks & Work */}
+          <ListItemButton onClick={() => setMobileOpenTasks(!mobileOpenTasks)}>
+            <ListItemIcon><TaskIcon /></ListItemIcon>
+            <ListItemText primary="Tasks & Work" />
+            {mobileOpenTasks ? <ExpandLess /> : <ExpandMore />}
           </ListItemButton>
-          <Collapse in={mobileOpenProjects} timeout="auto" unmountOnExit>
+          <Collapse in={mobileOpenTasks} timeout="auto" unmountOnExit>
             <List component="div" disablePadding>
-              {navStruct.projects.map(link => (
+              {navStruct.tasks.map(link => (
                 <ListItemButton key={link.path} sx={{ pl: 4 }} component={Link} to={link.path} onClick={handleMobileMenuClose} selected={isActive(link.path)}>
                   <ListItemIcon>{link.icon}</ListItemIcon>
                   <ListItemText primary={link.label} />
@@ -398,15 +432,15 @@ const Header: React.FC = () => {
             </List>
           </Collapse>
 
-          {/* Time Management */}
-          <ListItemButton onClick={() => setMobileOpenTime(!mobileOpenTime)}>
-            <ListItemIcon><TimeManagementIcon /></ListItemIcon>
-            <ListItemText primary="Управление временем" />
-            {mobileOpenTime ? <ExpandLess /> : <ExpandMore />}
+          {/* Finance */}
+          <ListItemButton onClick={() => setMobileOpenFinance(!mobileOpenFinance)}>
+            <ListItemIcon><AttachMoneyIcon /></ListItemIcon>
+            <ListItemText primary="Finance" />
+            {mobileOpenFinance ? <ExpandLess /> : <ExpandMore />}
           </ListItemButton>
-          <Collapse in={mobileOpenTime} timeout="auto" unmountOnExit>
+          <Collapse in={mobileOpenFinance} timeout="auto" unmountOnExit>
             <List component="div" disablePadding>
-              {navStruct.time.map(link => (
+              {navStruct.finance.map(link => (
                 <ListItemButton key={link.path} sx={{ pl: 4 }} component={Link} to={link.path} onClick={handleMobileMenuClose} selected={isActive(link.path)}>
                   <ListItemIcon>{link.icon}</ListItemIcon>
                   <ListItemText primary={link.label} />
@@ -415,15 +449,15 @@ const Header: React.FC = () => {
             </List>
           </Collapse>
 
-          {/* Marketing */}
-          <ListItemButton onClick={() => setMobileOpenMarketing(!mobileOpenMarketing)}>
-            <ListItemIcon><MarketingIcon /></ListItemIcon>
-            <ListItemText primary="Маркетинг" />
-            {mobileOpenMarketing ? <ExpandLess /> : <ExpandMore />}
+          {/* Operations */}
+          <ListItemButton onClick={() => setMobileOpenOperations(!mobileOpenOperations)}>
+            <ListItemIcon><ToolsIcon /></ListItemIcon>
+            <ListItemText primary="Operations" />
+            {mobileOpenOperations ? <ExpandLess /> : <ExpandMore />}
           </ListItemButton>
-          <Collapse in={mobileOpenMarketing} timeout="auto" unmountOnExit>
+          <Collapse in={mobileOpenOperations} timeout="auto" unmountOnExit>
             <List component="div" disablePadding>
-              {navStruct.marketing.map(link => (
+              {navStruct.operations.map(link => (
                 <ListItemButton key={link.path} sx={{ pl: 4 }} component={Link} to={link.path} onClick={handleMobileMenuClose} selected={isActive(link.path)}>
                   <ListItemIcon>{link.icon}</ListItemIcon>
                   <ListItemText primary={link.label} />
@@ -432,15 +466,49 @@ const Header: React.FC = () => {
             </List>
           </Collapse>
 
-          {/* Settings */}
-          <ListItemButton onClick={() => setMobileOpenSettings(!mobileOpenSettings)}>
+          {/* CRM */}
+          <ListItemButton onClick={() => setMobileOpenCRM(!mobileOpenCRM)}>
+            <ListItemIcon><BusinessIcon /></ListItemIcon>
+            <ListItemText primary="CRM" />
+            {mobileOpenCRM ? <ExpandLess /> : <ExpandMore />}
+          </ListItemButton>
+          <Collapse in={mobileOpenCRM} timeout="auto" unmountOnExit>
+            <List component="div" disablePadding>
+              {navStruct.crm.map(link => (
+                <ListItemButton key={link.path} sx={{ pl: 4 }} component={Link} to={link.path} onClick={handleMobileMenuClose} selected={isActive(link.path)}>
+                  <ListItemIcon>{link.icon}</ListItemIcon>
+                  <ListItemText primary={link.label} />
+                </ListItemButton>
+              ))}
+            </List>
+          </Collapse>
+
+          {/* Estimates */}
+          <ListItemButton onClick={() => setMobileOpenEstimates(!mobileOpenEstimates)}>
+            <ListItemIcon><CalculateIcon /></ListItemIcon>
+            <ListItemText primary="Estimates" />
+            {mobileOpenEstimates ? <ExpandLess /> : <ExpandMore />}
+          </ListItemButton>
+          <Collapse in={mobileOpenEstimates} timeout="auto" unmountOnExit>
+            <List component="div" disablePadding>
+              {navStruct.estimates.map(link => (
+                <ListItemButton key={link.path} sx={{ pl: 4 }} component={Link} to={link.path} onClick={handleMobileMenuClose} selected={isActive(link.path)}>
+                  <ListItemIcon>{link.icon}</ListItemIcon>
+                  <ListItemText primary={link.label} />
+                </ListItemButton>
+              ))}
+            </List>
+          </Collapse>
+
+          {/* Admin */}
+          <ListItemButton onClick={() => setMobileOpenAdmin(!mobileOpenAdmin)}>
             <ListItemIcon><SettingsIcon /></ListItemIcon>
-            <ListItemText primary="Настройки" />
-            {mobileOpenSettings ? <ExpandLess /> : <ExpandMore />}
+            <ListItemText primary="Admin" />
+            {mobileOpenAdmin ? <ExpandLess /> : <ExpandMore />}
           </ListItemButton>
-          <Collapse in={mobileOpenSettings} timeout="auto" unmountOnExit>
+          <Collapse in={mobileOpenAdmin} timeout="auto" unmountOnExit>
             <List component="div" disablePadding>
-              {navStruct.settings.map(link => (
+              {navStruct.admin.map(link => (
                 <ListItemButton key={link.path} sx={{ pl: 4 }} component={Link} to={link.path} onClick={handleMobileMenuClose} selected={isActive(link.path)}>
                   <ListItemIcon>{link.icon}</ListItemIcon>
                   <ListItemText primary={link.label} />

@@ -25,6 +25,7 @@
 import * as admin from 'firebase-admin';
 import * as functions from 'firebase-functions';
 import * as express from 'express';
+import * as cors from 'cors';
 import { z } from 'zod';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const Fuse = require('fuse.js');
@@ -51,6 +52,7 @@ const Timestamp = admin.firestore.Timestamp;
 // ─── Express App ────────────────────────────────────────────────────
 
 const app = express();
+app.use(cors({ origin: true }));
 app.use(express.json());
 app.use(requestLogger);
 app.use(authMiddleware);

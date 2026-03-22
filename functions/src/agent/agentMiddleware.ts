@@ -27,18 +27,36 @@ declare global {
 
 /**
  * Bearer token authentication.
- * Phase 1: token from AGENT_API_KEY env. Phase 2: JWT decode.
+ * Supports two modes:
+ *   1. Static AGENT_API_KEY (for OpenClaw / server-to-server)
+ *   2. Firebase Auth JWT (for browser / ReconciliationPage)
  */
-export const authMiddleware = (req: Request, res: Response, next: NextFunction): void => {
+export const authMiddleware = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   const token = req.headers.authorization?.replace('Bearer ', '');
-  if (!token || token !== process.env.AGENT_API_KEY) {
-    logger.warn('🔐 Auth failed', { ip: req.ip, hasToken: !!token });
-    res.status(401).json({ error: 'Invalid API key' });
+  if (!token) {
+    logger.warn('🔐 Auth failed: no token', { ip: req.ip });
+    res.status(401).json({ error: 'Missing authorization token' });
     return;
   }
-  req.agentUserId = process.env.OWNER_UID;
-  req.agentUserName = process.env.OWNER_DISPLAY_NAME;
-  next();
+
+  // Mode 1: Static API key (agent / server calls)
+  if (token === process.env.AGENT_API_KEY) {
+    req.agentUserId = process.env.OWNER_UID;
+    req.agentUserName = process.env.OWNER_DISPLAY_NAME;
+    next();
+    return;
+  }
+
+  // Mode 2: Firebase Auth JWT (browser calls)
+  try {
+    const decoded = await admin.auth().verifyIdToken(token);
+    req.agentUserId = decoded.uid;
+    req.agentUserName = decoded.name || decoded.email || decoded.uid;
+    next();
+  } catch (e: any) {
+    logger.warn('🔐 Auth failed: invalid token', { ip: req.ip, error: e.message });
+    res.status(401).json({ error: 'Invalid authorization token' });
+  }
 };
 
 /**

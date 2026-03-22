@@ -9,6 +9,7 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import UndoIcon from '@mui/icons-material/Undo';
 import FilterListIcon from '@mui/icons-material/FilterList';
+import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
 import { db } from '../../firebase/firebase';
 import { collection, query, where, getDocs, Timestamp, orderBy, limit } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
@@ -24,7 +25,12 @@ const COST_CATEGORY_LABELS: Record<string, string> = {
   other: '📦 Прочее',
 };
 
-type QuickFilter = 'all' | 'tampa' | 'company' | 'personal';
+type QuickFilter = 'all' | 'tampa' | 'company' | 'personal' | 'unassigned';
+
+const MONTH_LABELS = [
+  'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
+  'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь',
+];
 
 /**
  * Parse location (city) from rawDescription.
@@ -98,6 +104,7 @@ const ReconciliationPage: React.FC = () => {
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [quickFilter, setQuickFilter] = useState<QuickFilter>('all');
+  const [filterMonth, setFilterMonth] = useState<string>('all'); // 'all' or 'YYYY-MM'
 
   useEffect(() => {
     fetchData();
@@ -155,25 +162,55 @@ const ReconciliationPage: React.FC = () => {
 
   const getApiUrl = () => process.env.REACT_APP_FIREBASE_FUNCTIONS_URL || 'https://us-central1-profit-step.cloudfunctions.net/agentApi';
 
+  /** Normalize date to ISO string for API (Firestore Timestamp → string) */
+  const normalizeDate = (d: string | Timestamp | any): string => {
+    if (!d) return new Date().toISOString();
+    if (typeof d === 'string') return d;
+    if (d.toDate) return d.toDate().toISOString();
+    return new Date().toISOString();
+  };
+
+  /** Prepare transactions for API: normalize dates, resolve split IDs */
+  const prepareForApi = (txs: ReconcileTx[]) =>
+    txs.map(t => {
+      // Split transactions have IDs like "abc_splitA" — use the original doc ID
+      const realId = t.id.replace(/_split[AB]$/, '');
+      return {
+        id: realId,
+        date: normalizeDate(t.date),
+        rawDescription: t.rawDescription || '',
+        cleanMerchant: t.cleanMerchant || '',
+        amount: t.amount,
+        paymentType: t.paymentType || 'cash',
+        categoryId: t.categoryId || 'other',
+        projectId: t.projectId || null,
+        confidence: t.confidence || 'low',
+      };
+    });
+
   const handleApproveAll = async () => {
     setSubmitting(true);
+    setErrorMsg(null);
     try {
       const auth = getAuth();
       const token = await auth.currentUser?.getIdToken();
-      if (!token) throw new Error("No auth jwt");
+      if (!token) throw new Error("Вы не авторизованы. Перезайдите в систему.");
       
-      const payload = { transactions };
+      const payload = { transactions: prepareForApi(filteredTransactions) };
       const resp = await fetch(`${getApiUrl()}/api/finance/transactions/approve`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify(payload)
       });
 
-      if (!resp.ok) throw new Error(`API Error: ${resp.status} ${await resp.text()}`);
+      if (!resp.ok) {
+        const text = await resp.text();
+        throw new Error(`API ${resp.status}: ${text}`);
+      }
       await fetchData();
     } catch (e) {
       console.error("Approve failed", e);
-      alert("Ошибка при сохранении: " + (e as Error).message);
+      setErrorMsg("Ошибка при сохранении: " + (e as Error).message);
     } finally {
       setSubmitting(false);
     }
@@ -219,18 +256,21 @@ const ReconciliationPage: React.FC = () => {
       const token = await auth.currentUser?.getIdToken();
       if (!token) throw new Error("No auth jwt");
       
-      const payload = { transactions: tampaTransactions };
+      const payload = { transactions: prepareForApi(tampaTransactions) };
       const resp = await fetch(`${getApiUrl()}/api/finance/transactions/approve`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify(payload)
       });
 
-      if (!resp.ok) throw new Error(`API Error: ${resp.status} ${await resp.text()}`);
+      if (!resp.ok) {
+        const text = await resp.text();
+        throw new Error(`API ${resp.status}: ${text}`);
+      }
       await fetchData();
     } catch (e) {
       console.error("Approve Tampa failed", e);
-      alert("Ошибка при сохранении Tampa: " + (e as Error).message);
+      setErrorMsg("Ошибка при сохранении Tampa: " + (e as Error).message);
     } finally {
       setSubmitting(false);
     }
@@ -252,14 +292,42 @@ const ReconciliationPage: React.FC = () => {
     [transactions]
   );
 
-  // Apply quick filter
+  /** Parse transaction date to YYYY-MM string */
+  const getMonthKey = (d: string | Timestamp | any): string => {
+    let date: Date | null = null;
+    if (typeof d === 'string') date = new Date(d);
+    else if (d?.toDate) date = d.toDate();
+    if (!date || isNaN(date.getTime())) return '';
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+  };
+
+  /** Available months from transactions */
+  const availableMonths = useMemo(() => {
+    const months = new Set<string>();
+    enrichedTransactions.forEach(t => {
+      const mk = getMonthKey(t.date);
+      if (mk) months.add(mk);
+    });
+    return Array.from(months).sort().reverse();
+  }, [enrichedTransactions]);
+
+  // Apply quick filter + month filter
   const filteredTransactions = useMemo(() => {
-    if (quickFilter === 'all') return enrichedTransactions;
-    if (quickFilter === 'tampa') return enrichedTransactions.filter(t => isTampaArea(t._location));
-    if (quickFilter === 'company') return enrichedTransactions.filter(t => t.paymentType === 'company');
-    if (quickFilter === 'personal') return enrichedTransactions.filter(t => t.paymentType !== 'company');
-    return enrichedTransactions;
-  }, [enrichedTransactions, quickFilter]);
+    let result = enrichedTransactions;
+
+    // Month filter
+    if (filterMonth !== 'all') {
+      result = result.filter(t => getMonthKey(t.date) === filterMonth);
+    }
+
+    // Quick filter
+    if (quickFilter === 'tampa') result = result.filter(t => isTampaArea(t._location));
+    else if (quickFilter === 'company') result = result.filter(t => t.paymentType === 'company');
+    else if (quickFilter === 'personal') result = result.filter(t => t.paymentType !== 'company');
+    else if (quickFilter === 'unassigned') result = result.filter(t => !t.projectId && !t.paymentType);
+
+    return result;
+  }, [enrichedTransactions, quickFilter, filterMonth]);
 
   // Summary cards data
   const summaryData = useMemo(() => {
@@ -360,21 +428,49 @@ const ReconciliationPage: React.FC = () => {
         </Box>
       )}
 
-      {/* Quick Filters */}
-      {view === 'draft' && enrichedTransactions.length > 0 && (
-        <Box mb={2} display="flex" alignItems="center" gap={1}>
-          <FilterListIcon color="action" fontSize="small" />
-          <ToggleButtonGroup
-            size="small"
-            value={quickFilter}
-            exclusive
-            onChange={(_, val) => val && setQuickFilter(val as QuickFilter)}
-          >
-            <ToggleButton value="all">All ({enrichedTransactions.length})</ToggleButton>
-            <ToggleButton value="tampa">🏗️ Tampa ({enrichedTransactions.filter(t => isTampaArea(t._location)).length})</ToggleButton>
-            <ToggleButton value="company">🏢 Company ({enrichedTransactions.filter(t => t.paymentType === 'company').length})</ToggleButton>
-            <ToggleButton value="personal">👤 Personal ({enrichedTransactions.filter(t => t.paymentType !== 'company').length})</ToggleButton>
-          </ToggleButtonGroup>
+      {/* Month Filter + Quick Filters */}
+      {enrichedTransactions.length > 0 && (
+        <Box mb={2} display="flex" alignItems="center" gap={2} flexWrap="wrap">
+          {/* Month / Year selector */}
+          <Box display="flex" alignItems="center" gap={0.5}>
+            <CalendarMonthIcon color="action" fontSize="small" />
+            <Select
+              size="small"
+              value={filterMonth}
+              onChange={e => setFilterMonth(e.target.value)}
+              sx={{ minWidth: 180, bgcolor: 'white' }}
+            >
+              <MenuItem value="all">📅 Все месяцы ({enrichedTransactions.length})</MenuItem>
+              {availableMonths.map(mk => {
+                const [y, m] = mk.split('-');
+                const count = enrichedTransactions.filter(t => getMonthKey(t.date) === mk).length;
+                return (
+                  <MenuItem key={mk} value={mk}>
+                    {MONTH_LABELS[parseInt(m, 10) - 1]} {y} ({count})
+                  </MenuItem>
+                );
+              })}
+            </Select>
+          </Box>
+
+          {/* Quick Filters */}
+          {view === 'draft' && (
+            <Box display="flex" alignItems="center" gap={0.5}>
+              <FilterListIcon color="action" fontSize="small" />
+              <ToggleButtonGroup
+                size="small"
+                value={quickFilter}
+                exclusive
+                onChange={(_, val) => val && setQuickFilter(val as QuickFilter)}
+              >
+                <ToggleButton value="all">All ({enrichedTransactions.length})</ToggleButton>
+                <ToggleButton value="tampa">🏗️ Tampa ({enrichedTransactions.filter(t => isTampaArea(t._location)).length})</ToggleButton>
+                <ToggleButton value="company">🏢 Company ({enrichedTransactions.filter(t => t.paymentType === 'company').length})</ToggleButton>
+                <ToggleButton value="personal">👤 Personal ({enrichedTransactions.filter(t => t.paymentType !== 'company').length})</ToggleButton>
+                <ToggleButton value="unassigned">❓ Неразнесённые ({enrichedTransactions.filter(t => !t.projectId && !t.paymentType).length})</ToggleButton>
+              </ToggleButtonGroup>
+            </Box>
+          )}
         </Box>
       )}
 

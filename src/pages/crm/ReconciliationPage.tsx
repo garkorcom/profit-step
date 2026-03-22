@@ -1,17 +1,20 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import {
   Box, Typography, Button, Paper, Table, TableBody,
   TableCell, TableContainer, TableHead, TableRow,
   Select, MenuItem, Chip, CircularProgress, Alert,
-  ToggleButton, ToggleButtonGroup, Card, CardContent
+  ToggleButton, ToggleButtonGroup, Card, CardContent,
+  Checkbox, Tooltip, FormControlLabel, Switch
 } from '@mui/material';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import UndoIcon from '@mui/icons-material/Undo';
 import FilterListIcon from '@mui/icons-material/FilterList';
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
+import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdf';
+import VerifiedIcon from '@mui/icons-material/Verified';
 import { db } from '../../firebase/firebase';
-import { collection, query, where, getDocs, Timestamp, orderBy, limit } from 'firebase/firestore';
+import { collection, query, where, getDocs, Timestamp, orderBy, limit, doc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 
 const COST_CATEGORY_LABELS: Record<string, string> = {
@@ -25,7 +28,7 @@ const COST_CATEGORY_LABELS: Record<string, string> = {
   other: '📦 Прочее',
 };
 
-type QuickFilter = 'all' | 'tampa' | 'company' | 'personal' | 'unassigned' | 'fuel';
+type QuickFilter = 'all' | 'tampa' | 'company' | 'personal' | 'unassigned' | 'fuel' | 'returns';
 
 const FUEL_KEYWORDS = ['TESLA', 'SHELL', 'CHEVRON', 'EXXON', 'MARATHON', 'RACETRAC', 'CIRCLE K', 'WAWA', 'CHARGEPOINT', 'PILOT', 'SUPERCHARGER'];
 
@@ -102,6 +105,8 @@ interface ReconcileTx {
   projectId: string | null;
   confidence: 'high' | 'low';
   status: 'draft' | 'approved' | 'ignored';
+  verifiedBy?: string | null;
+  verifiedAt?: Timestamp | null;
 }
 
 const ReconciliationPage: React.FC = () => {
@@ -114,6 +119,7 @@ const ReconciliationPage: React.FC = () => {
   const [quickFilter, setQuickFilter] = useState<QuickFilter>('all');
   const [filterMonth, setFilterMonth] = useState<string>('all'); // 'all' or 'YYYY-MM'
   const [amountSort, setAmountSort] = useState<'none' | 'asc' | 'desc'>('none');
+  const [hideReturns, setHideReturns] = useState(false);
 
   useEffect(() => {
     fetchData();
@@ -249,6 +255,32 @@ const ReconciliationPage: React.FC = () => {
     }
   };
 
+  const handleVerify = useCallback(async (transactionId: string, currentlyVerified: boolean) => {
+    try {
+      const auth = getAuth();
+      const user = auth.currentUser;
+      if (!user) return;
+      
+      const txRef = doc(db, 'bank_transactions', transactionId);
+      if (currentlyVerified) {
+        await updateDoc(txRef, { verifiedBy: null, verifiedAt: null });
+        setTransactions(prev => prev.map(t => 
+          t.id === transactionId ? { ...t, verifiedBy: null, verifiedAt: null } : t
+        ));
+      } else {
+        await updateDoc(txRef, { 
+          verifiedBy: user.displayName || user.email || user.uid,
+          verifiedAt: serverTimestamp()
+        });
+        setTransactions(prev => prev.map(t => 
+          t.id === transactionId ? { ...t, verifiedBy: user.displayName || user.email || user.uid, verifiedAt: Timestamp.now() } : t
+        ));
+      }
+    } catch (e) {
+      console.error('Verify failed', e);
+    }
+  }, []);
+
   const handleApproveTampa = async () => {
     const tampaTransactions = enrichedTransactions.filter(t => 
       isTampaArea(t._location) && t.status === 'draft'
@@ -335,12 +367,14 @@ const ReconciliationPage: React.FC = () => {
     const personalList = enrichedTransactions.filter(t => t.paymentType !== 'company');
     const fuelList = enrichedTransactions.filter(t => isFuelTransaction(t));
     const unassignedList = enrichedTransactions.filter(t => !t.projectId && !t.paymentType);
+    const returnsList = enrichedTransactions.filter(t => t.amount > 0);
     return {
       tampa: calc(tampaList),
       company: calc(companyList),
       personal: calc(personalList),
       fuel: calc(fuelList),
       unassigned: calc(unassignedList),
+      returns: calc(returnsList),
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enrichedTransactions]);
@@ -354,12 +388,18 @@ const ReconciliationPage: React.FC = () => {
       result = result.filter(t => getMonthKey(t.date) === filterMonth);
     }
 
+    // Hide returns (positive amounts = refunds in bank statements)
+    if (hideReturns) {
+      result = result.filter(t => t.amount <= 0);
+    }
+
     // Quick filter
     if (quickFilter === 'tampa') result = result.filter(t => isTampaArea(t._location));
     else if (quickFilter === 'company') result = result.filter(t => t.paymentType === 'company');
     else if (quickFilter === 'personal') result = result.filter(t => t.paymentType !== 'company');
     else if (quickFilter === 'fuel') result = result.filter(t => isFuelTransaction(t));
     else if (quickFilter === 'unassigned') result = result.filter(t => !t.projectId && !t.paymentType);
+    else if (quickFilter === 'returns') result = result.filter(t => t.amount > 0);
 
     // Amount sort
     if (amountSort !== 'none') {
@@ -371,7 +411,7 @@ const ReconciliationPage: React.FC = () => {
     }
 
     return result;
-  }, [enrichedTransactions, quickFilter, filterMonth, amountSort]);
+  }, [enrichedTransactions, quickFilter, filterMonth, amountSort, hideReturns]);
 
   // Summary cards data
   const summaryData = useMemo(() => {
@@ -386,6 +426,58 @@ const ReconciliationPage: React.FC = () => {
       .reduce((sum, t) => sum + Math.abs(t.amount), 0);
     return { tampa, company, personal, total: enrichedTransactions.reduce((sum, t) => sum + Math.abs(t.amount), 0) };
   }, [enrichedTransactions]);
+
+  const handleExportPDF = useCallback(async () => {
+    const { default: jsPDF } = await import('jspdf');
+    await import('jspdf-autotable');
+    
+    const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+    
+    // Title
+    const now = new Date();
+    const title = `Reconciliation Report — ${now.toLocaleDateString('ru-RU')}`;
+    pdf.setFontSize(16);
+    pdf.text(title, 14, 15);
+    
+    // Filters info
+    pdf.setFontSize(9);
+    const filterInfo: string[] = [];
+    if (view !== 'draft') filterInfo.push(`View: ${view}`);
+    if (filterMonth !== 'all') filterInfo.push(`Month: ${filterMonth}`);
+    if (quickFilter !== 'all') filterInfo.push(`Filter: ${quickFilter}`);
+    if (hideReturns) filterInfo.push('Returns hidden');
+    if (filterInfo.length > 0) {
+      pdf.text(`Filters: ${filterInfo.join(' | ')}`, 14, 22);
+    }
+    
+    // Table data
+    const tableData = filteredTransactions.map(t => [
+      renderDate(t.date),
+      t.cleanMerchant || '',
+      (t as any)._location || '',
+      `$${Math.abs(t.amount).toFixed(2)}${t.amount > 0 ? ' (ret)' : ''}`,
+      t.paymentType === 'company' ? 'Company' : 'Personal',
+      COST_CATEGORY_LABELS[t.categoryId] || t.categoryId,
+      projects.find(p => p.id === t.projectId)?.name || '—',
+      t.verifiedBy ? '✓' : '',
+    ]);
+    
+    (pdf as any).autoTable({
+      head: [['Date', 'Merchant', 'Location', 'Amount', 'Type', 'Category', 'Project', 'Verified']],
+      body: tableData,
+      startY: filterInfo.length > 0 ? 26 : 20,
+      styles: { fontSize: 7, cellPadding: 1.5 },
+      headStyles: { fillColor: [59, 130, 246], fontSize: 8 },
+    });
+    
+    // Totals
+    const finalY = (pdf as any).lastAutoTable?.finalY || 200;
+    const totalAmount = filteredTransactions.reduce((s, t) => s + Math.abs(t.amount), 0);
+    pdf.setFontSize(10);
+    pdf.text(`Total: $${totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })} | Count: ${filteredTransactions.length}`, 14, finalY + 8);
+    
+    pdf.save(`reconciliation-${now.toISOString().slice(0, 10)}.pdf`);
+  }, [filteredTransactions, view, filterMonth, quickFilter, hideReturns, projects]);
 
   if (loading) return <Box p={4} textAlign="center"><CircularProgress /></Box>;
 
@@ -406,6 +498,15 @@ const ReconciliationPage: React.FC = () => {
         </Box>
         
         <Box display="flex" alignItems="center" gap={2}>
+          <Button
+            variant="outlined"
+            size="medium"
+            startIcon={<PictureAsPdfIcon />}
+            onClick={handleExportPDF}
+            disabled={filteredTransactions.length === 0}
+          >
+            Export PDF
+          </Button>
           <Typography variant="subtitle1" color="text.secondary">
             Найдено: {filteredTransactions.length}
           </Typography>
@@ -497,6 +598,13 @@ const ReconciliationPage: React.FC = () => {
             </Select>
           </Box>
 
+          {/* Hide Returns Toggle */}
+          <FormControlLabel
+            control={<Switch size="small" checked={hideReturns} onChange={(e) => setHideReturns(e.target.checked)} />}
+            label="Скрыть возвраты"
+            sx={{ mr: 1 }}
+          />
+
           {/* Amount Sort */}
           <Button
             size="small"
@@ -528,6 +636,7 @@ const ReconciliationPage: React.FC = () => {
                 <ToggleButton value="personal">👤 Personal ({filterStats.personal.count}) {filterStats.personal.sum}</ToggleButton>
                 <ToggleButton value="fuel">⛽ Топливо ({filterStats.fuel.count}) {filterStats.fuel.sum}</ToggleButton>
                 <ToggleButton value="unassigned">❓ Неразнесённые ({filterStats.unassigned.count}) {filterStats.unassigned.sum}</ToggleButton>
+                <ToggleButton value="returns">↩️ Возвраты ({filterStats.returns.count}) {filterStats.returns.sum}</ToggleButton>
               </ToggleButtonGroup>
             </Box>
           )}
@@ -576,6 +685,7 @@ const ReconciliationPage: React.FC = () => {
               <TableCell><strong>Тип Средств</strong></TableCell>
               <TableCell><strong>Категория</strong></TableCell>
               <TableCell><strong>Проект</strong></TableCell>
+              <TableCell align="center"><strong>✓</strong></TableCell>
               <TableCell align="right"><strong>Действия</strong></TableCell>
             </TableRow>
           </TableHead>
@@ -678,6 +788,19 @@ const ReconciliationPage: React.FC = () => {
                     </Select>
                   </TableCell>
 
+                  <TableCell align="center">
+                    {view === 'approved' && (
+                      <Tooltip title={t.verifiedBy ? `Проверил: ${t.verifiedBy}` : 'Отметить как проверено'}>
+                        <Checkbox
+                          size="small"
+                          checked={!!t.verifiedBy}
+                          onChange={() => handleVerify(t.id, !!t.verifiedBy)}
+                          icon={<VerifiedIcon color="disabled" />}
+                          checkedIcon={<VerifiedIcon color="success" />}
+                        />
+                      </Tooltip>
+                    )}
+                  </TableCell>
                   <TableCell align="right">
                     {view === 'approved' ? (
                       <Button
@@ -709,7 +832,7 @@ const ReconciliationPage: React.FC = () => {
             
             {filteredTransactions.length === 0 && (
               <TableRow>
-                <TableCell colSpan={10} align="center" sx={{ py: 6 }}>
+                <TableCell colSpan={11} align="center" sx={{ py: 6 }}>
                   <Typography variant="h6" color="text.secondary">
                     {view === 'draft' ? "🎉 Нет выписок для сверки. Загрузите файл через Telegram." : "Список недавних утверждений пуст."}
                   </Typography>

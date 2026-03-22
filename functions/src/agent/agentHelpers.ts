@@ -95,6 +95,37 @@ export async function fuzzySearchClient(name: string): Promise<ClientItem | null
   return results.length > 0 ? results[0].item : null;
 }
 
+// ─── Company ID Resolution ──────────────────────────────────────────
+
+let cachedCompanyId: string | null = null;
+
+/**
+ * Resolve the owner's companyId.
+ * Priority: env OWNER_COMPANY_ID → cached → Firestore user profile lookup.
+ */
+export async function resolveOwnerCompanyId(): Promise<string> {
+  // 1. Check env
+  const envCompanyId = process.env.OWNER_COMPANY_ID;
+  if (envCompanyId) return envCompanyId;
+
+  // 2. Check cache
+  if (cachedCompanyId) return cachedCompanyId;
+
+  // 3. Lookup from Firestore user profile
+  const ownerUid = process.env.OWNER_UID;
+  if (!ownerUid) throw new Error('OWNER_UID not configured');
+
+  const userDoc = await db.collection('users').doc(ownerUid).get();
+  if (!userDoc.exists) throw new Error(`Owner user ${ownerUid} not found in Firestore`);
+
+  const companyId = userDoc.data()?.companyId as string;
+  if (!companyId) throw new Error(`Owner user ${ownerUid} has no companyId`);
+
+  cachedCompanyId = companyId;
+  logger.info('🏢 Resolved owner companyId', { companyId });
+  return companyId;
+}
+
 // ─── Activity Logger ────────────────────────────────────────────────
 
 /**

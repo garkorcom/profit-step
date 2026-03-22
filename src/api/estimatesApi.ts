@@ -135,8 +135,8 @@ export const estimatesApi = {
         }
     },
 
-    // Convert to Job (Task) - Placeholder logic for now
-    convertToTask: async (estimateId: string, companyId: string, userId: string): Promise<string> => {
+    // Convert estimate to GTD task(s) in root `gtd_tasks` collection
+    convertToTask: async (estimateId: string, _companyId: string, userId: string): Promise<string> => {
         try {
             // 1. Get Estimate
             const estimateRef = doc(db, COLLECTION, estimateId);
@@ -145,28 +145,32 @@ export const estimatesApi = {
 
             const estimate = estimateSnap.data() as Estimate;
 
-            // 2. Create Task based on Estimate
-            // We need to import tasks collection logic or use direct firestore
-            // For simplicity, direct firestore here
+            // 2. Build items summary for description
+            const itemsSummary = estimate.items
+                .map(item => `• ${item.description}: ${item.quantity} × $${item.unitPrice} = $${item.total}`)
+                .join('\n');
 
+            // 3. Create GTD task in root `gtd_tasks` collection (matches agentApi pattern)
             const taskData = {
-                companyId,
+                ownerId: userId,
+                title: `${estimate.number}: ${estimate.clientName} — Electrical`,
+                description: `Converted from estimate ${estimate.number}.\n${estimate.notes || ''}\n\nItems:\n${itemsSummary}\n\nTotal: $${estimate.total}`,
+                status: 'next_action' as const,
+                priority: 'high' as const,
+                context: '@office',
                 clientId: estimate.clientId,
-                title: `Job from ${estimate.number}`,
-                description: `Converted from estimate. Notes: ${estimate.notes || ''}`,
-                status: 'todo',
-                priority: 'medium',
-                salesPrice: estimate.total,
-                // Copy items as materials/services if needed, or just link
+                clientName: estimate.clientName,
+                budgetAmount: estimate.total,
+                taskType: 'estimate_conversion',
+                source: `estimate:${estimateId}`,
                 estimateId: estimateId,
                 createdAt: serverTimestamp(),
                 updatedAt: serverTimestamp(),
-                createdBy: userId
             };
 
-            const taskRef = await addDoc(collection(db, `companies/${companyId}/tasks`), taskData);
+            const taskRef = await addDoc(collection(db, 'gtd_tasks'), taskData);
 
-            // 3. Update Estimate status
+            // 4. Update Estimate status
             await updateDoc(estimateRef, {
                 status: 'converted',
                 convertedToTaskId: taskRef.id,

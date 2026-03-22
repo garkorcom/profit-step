@@ -1,7 +1,7 @@
 /**
  * Agent API — Express Application
  *
- * 20 endpoints for OpenClaw agent integration:
+ * 26 endpoints for OpenClaw agent integration:
  * - GET    /api/clients/search
  * - POST   /api/gtd-tasks
  * - GET    /api/gtd-tasks/list
@@ -16,6 +16,12 @@
  * - POST   /api/time-tracking/admin-stop ← Phase 2
  * - GET    /api/users/search           ← Phase 2
  * - GET    /api/projects/status
+ * - POST   /api/estimates              ← Estimator
+ * - GET    /api/estimates/list         ← Estimator
+ * - PATCH  /api/estimates/:id          ← Estimator
+ * - POST   /api/estimates/:id/convert-to-tasks ← Estimator
+ * - POST   /api/projects              ← Estimator
+ * - GET    /api/projects/list          ← Estimator
  * - GET    /api/finance/context
  * - POST   /api/finance/transactions/batch
  * - POST   /api/finance/transactions/approve
@@ -41,6 +47,7 @@ import {
   getCachedClients,
   fuzzySearchClient,
   logAgentActivity,
+  resolveOwnerCompanyId,
   COST_CATEGORY_LABELS,
 } from './agentHelpers';
 
@@ -1752,6 +1759,482 @@ app.get('/api/contacts/search', async (req, res, next) => {
     }));
 
     res.json({ results, count: results.length });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// ESTIMATES & PROJECTS — Estimator Agent Endpoints
+// ═══════════════════════════════════════════════════════════════════
+
+const CreateEstimateSchema = z.object({
+  clientId: z.string().min(1),
+  clientName: z.string().min(1),
+  items: z.array(z.object({
+    id: z.string().min(1),
+    description: z.string().min(1),
+    quantity: z.number().min(0),
+    unitPrice: z.number().min(0),
+    total: z.number().min(0),
+    type: z.enum(['labor', 'material', 'service', 'other']),
+  })).min(1),
+  notes: z.string().optional(),
+  terms: z.string().optional(),
+  validUntil: z.string().optional(), // ISO date string
+  taxRate: z.number().min(0).max(100).optional(),
+});
+
+const ListEstimatesQuerySchema = z.object({
+  clientId: z.string().optional(),
+  clientName: z.string().min(2).optional(),
+  status: z.string().optional(), // comma-separated: "draft,sent"
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+  offset: z.coerce.number().int().min(0).default(0),
+});
+
+const UpdateEstimateSchema = z.object({
+  status: z.enum(['draft', 'sent', 'approved', 'rejected', 'converted']).optional(),
+  items: z.array(z.object({
+    id: z.string().min(1),
+    description: z.string().min(1),
+    quantity: z.number().min(0),
+    unitPrice: z.number().min(0),
+    total: z.number().min(0),
+    type: z.enum(['labor', 'material', 'service', 'other']),
+  })).optional(),
+  notes: z.string().optional(),
+  terms: z.string().optional(),
+  validUntil: z.string().nullable().optional(),
+  taxRate: z.number().min(0).max(100).optional(),
+}).refine(data => Object.keys(data).length > 0, {
+  message: 'At least one field must be provided',
+});
+
+const CreateProjectSchema = z.object({
+  clientId: z.string().min(1),
+  clientName: z.string().min(1),
+  name: z.string().min(1),
+  description: z.string().optional(),
+  type: z.enum(['work', 'estimate', 'financial', 'other']).default('work'),
+  address: z.string().optional(),
+  areaSqft: z.number().optional(),
+  projectType: z.string().optional(),
+  facilityUse: z.string().optional(),
+});
+
+const ListProjectsQuerySchema = z.object({
+  clientId: z.string().optional(),
+  clientName: z.string().min(2).optional(),
+  status: z.string().optional(),
+  type: z.string().optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+});
+
+// ─── POST /api/estimates ────────────────────────────────────────────
+
+app.post('/api/estimates', async (req, res, next) => {
+  try {
+    const data = CreateEstimateSchema.parse(req.body);
+    logger.info('📐 estimates:create', { clientId: data.clientId, itemCount: data.items.length });
+
+    const companyId = await resolveOwnerCompanyId();
+
+    // Generate estimate number
+    const number = `EST-${Date.now().toString().slice(-6)}`;
+
+    const subtotal = data.items.reduce((sum, item) => sum + item.total, 0);
+    const taxRate = data.taxRate || 0;
+    const taxAmount = +(subtotal * (taxRate / 100)).toFixed(2);
+    const total = +(subtotal + taxAmount).toFixed(2);
+
+    const docRef = await db.collection('estimates').add({
+      companyId,
+      clientId: data.clientId,
+      clientName: data.clientName,
+      number,
+      status: 'draft',
+      items: data.items,
+      subtotal: +subtotal.toFixed(2),
+      taxRate,
+      taxAmount,
+      total,
+      notes: data.notes || '',
+      terms: data.terms || '',
+      validUntil: data.validUntil ? Timestamp.fromDate(new Date(data.validUntil)) : null,
+      createdBy: req.agentUserId,
+      source: 'openclaw_estimator',
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+
+    logger.info('📐 estimates:created', { estimateId: docRef.id, number, total });
+    await logAgentActivity({
+      userId: req.agentUserId!,
+      action: 'estimate_created',
+      endpoint: '/api/estimates',
+      metadata: { estimateId: docRef.id, number, clientId: data.clientId, total },
+    });
+
+    res.status(201).json({ estimateId: docRef.id, number, total });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// ─── GET /api/estimates/list ────────────────────────────────────────
+
+app.get('/api/estimates/list', async (req, res, next) => {
+  try {
+    const params = ListEstimatesQuerySchema.parse(req.query);
+    let clientId = params.clientId;
+
+    if (!clientId && params.clientName) {
+      const match = await fuzzySearchClient(params.clientName);
+      if (!match) {
+        res.status(404).json({ error: 'Клиент не найден' });
+        return;
+      }
+      clientId = match.id;
+    }
+
+    const companyId = await resolveOwnerCompanyId();
+    logger.info('📐 estimates:list', { companyId, clientId, status: params.status });
+
+    let q: admin.firestore.Query = db.collection('estimates')
+      .where('companyId', '==', companyId);
+
+    if (clientId) {
+      q = q.where('clientId', '==', clientId);
+    }
+
+    if (params.status) {
+      const statuses = params.status.split(',').map(s => s.trim()).filter(Boolean);
+      if (statuses.length === 1) {
+        q = q.where('status', '==', statuses[0]);
+      } else if (statuses.length > 1 && statuses.length <= 10) {
+        q = q.where('status', 'in', statuses);
+      }
+    }
+
+    q = q.orderBy('createdAt', 'desc');
+
+    const countSnap = await q.count().get();
+    const total = countSnap.data().count;
+
+    if (params.offset > 0) {
+      q = q.offset(params.offset);
+    }
+    q = q.limit(params.limit);
+
+    const snap = await q.get();
+    const estimates = snap.docs.map(d => {
+      const e = d.data();
+      return {
+        id: d.id,
+        number: e.number,
+        clientId: e.clientId,
+        clientName: e.clientName,
+        status: e.status,
+        subtotal: e.subtotal,
+        taxRate: e.taxRate,
+        taxAmount: e.taxAmount,
+        total: e.total,
+        itemCount: e.items?.length || 0,
+        notes: e.notes || '',
+        validUntil: e.validUntil?.toDate?.()?.toISOString() || null,
+        createdAt: e.createdAt?.toDate?.()?.toISOString() || null,
+        updatedAt: e.updatedAt?.toDate?.()?.toISOString() || null,
+      };
+    });
+
+    res.json({ estimates, total, hasMore: params.offset + estimates.length < total });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// ─── PATCH /api/estimates/:id ───────────────────────────────────────
+
+app.patch('/api/estimates/:id', async (req, res, next) => {
+  try {
+    const estimateId = req.params.id;
+    const data = UpdateEstimateSchema.parse(req.body);
+
+    logger.info('📐 estimates:update', { estimateId, fields: Object.keys(data) });
+
+    const estimateRef = db.collection('estimates').doc(estimateId);
+    const estimateDoc = await estimateRef.get();
+
+    if (!estimateDoc.exists) {
+      res.status(404).json({ error: 'Смета не найдена' });
+      return;
+    }
+
+    const updatePayload: Record<string, any> = {
+      updatedAt: FieldValue.serverTimestamp(),
+    };
+
+    if (data.status !== undefined) updatePayload.status = data.status;
+    if (data.notes !== undefined) updatePayload.notes = data.notes;
+    if (data.terms !== undefined) updatePayload.terms = data.terms;
+    if (data.taxRate !== undefined) updatePayload.taxRate = data.taxRate;
+
+    if (data.validUntil !== undefined) {
+      updatePayload.validUntil = data.validUntil
+        ? Timestamp.fromDate(new Date(data.validUntil))
+        : null;
+    }
+
+    if (data.items !== undefined) {
+      updatePayload.items = data.items;
+      const subtotal = data.items.reduce((sum, item) => sum + item.total, 0);
+      const taxRate = data.taxRate ?? estimateDoc.data()!.taxRate ?? 0;
+      const taxAmount = +(subtotal * (taxRate / 100)).toFixed(2);
+      updatePayload.subtotal = +subtotal.toFixed(2);
+      updatePayload.taxAmount = taxAmount;
+      updatePayload.total = +(subtotal + taxAmount).toFixed(2);
+    }
+
+    await estimateRef.update(updatePayload);
+
+    logger.info('📐 estimates:updated', { estimateId });
+    await logAgentActivity({
+      userId: req.agentUserId!,
+      action: 'estimate_updated',
+      endpoint: `/api/estimates/${estimateId}`,
+      metadata: { estimateId, fields: Object.keys(data) },
+    });
+
+    res.json({ estimateId, updated: true });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// ─── POST /api/estimates/:id/convert-to-tasks ──────────────────────
+
+app.post('/api/estimates/:id/convert-to-tasks', async (req, res, next) => {
+  try {
+    const estimateId = req.params.id;
+    logger.info('📐 estimates:convert-to-tasks', { estimateId });
+
+    const estimateRef = db.collection('estimates').doc(estimateId);
+    const estimateDoc = await estimateRef.get();
+
+    if (!estimateDoc.exists) {
+      res.status(404).json({ error: 'Смета не найдена' });
+      return;
+    }
+
+    const estimate = estimateDoc.data()!;
+
+    if (estimate.status === 'converted') {
+      res.status(400).json({ error: 'Смета уже конвертирована', taskId: estimate.convertedToTaskId });
+      return;
+    }
+
+    // Group items by type for sub-tasks
+    const byType: Record<string, { items: any[]; total: number }> = {};
+    for (const item of (estimate.items || [])) {
+      const type = item.type || 'other';
+      if (!byType[type]) byType[type] = { items: [], total: 0 };
+      byType[type].items.push(item);
+      byType[type].total += item.total || 0;
+    }
+
+    const batch = db.batch();
+    const createdTaskIds: string[] = [];
+
+    // Parent task
+    const parentRef = db.collection('gtd_tasks').doc();
+    const itemsSummary = (estimate.items || [])
+      .map((i: any) => `• ${i.description}: ${i.quantity} × $${i.unitPrice} = $${i.total}`)
+      .join('\n');
+
+    batch.set(parentRef, {
+      ownerId: req.agentUserId,
+      title: `${estimate.number}: ${estimate.clientName} — Electrical`,
+      description: `Converted from estimate ${estimate.number}.\n${estimate.notes || ''}\n\nItems:\n${itemsSummary}\n\nTotal: $${estimate.total}`,
+      status: 'next_action',
+      priority: 'high',
+      context: '@office',
+      clientId: estimate.clientId,
+      clientName: estimate.clientName,
+      budgetAmount: estimate.total,
+      taskType: 'estimate_conversion',
+      source: `estimate:${estimateId}`,
+      estimateId,
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    createdTaskIds.push(parentRef.id);
+
+    // Sub-tasks by category
+    const typeLabels: Record<string, string> = {
+      material: 'Materials',
+      labor: 'Labor',
+      service: 'Services',
+      other: 'Other',
+    };
+
+    for (const [type, group] of Object.entries(byType)) {
+      const subRef = db.collection('gtd_tasks').doc();
+      const label = typeLabels[type] || type;
+      batch.set(subRef, {
+        ownerId: req.agentUserId,
+        title: `${estimate.number}: ${label} — $${group.total.toFixed(2)}`,
+        description: group.items.map((i: any) => `• ${i.description}: $${i.total}`).join('\n'),
+        status: 'next_action',
+        priority: 'medium',
+        context: '@office',
+        clientId: estimate.clientId,
+        clientName: estimate.clientName,
+        parentTaskId: parentRef.id,
+        isSubtask: true,
+        budgetAmount: +group.total.toFixed(2),
+        budgetCategory: type,
+        taskType: 'estimate_conversion',
+        source: `estimate:${estimateId}`,
+        estimateId,
+        createdAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+      createdTaskIds.push(subRef.id);
+    }
+
+    // Update estimate status
+    batch.update(estimateRef, {
+      status: 'converted',
+      convertedToTaskId: parentRef.id,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+
+    await batch.commit();
+
+    logger.info('📐 estimates:converted', { estimateId, taskCount: createdTaskIds.length });
+    await logAgentActivity({
+      userId: req.agentUserId!,
+      action: 'estimate_converted',
+      endpoint: `/api/estimates/${estimateId}/convert-to-tasks`,
+      metadata: { estimateId, parentTaskId: parentRef.id, taskCount: createdTaskIds.length },
+    });
+
+    res.status(201).json({
+      parentTaskId: parentRef.id,
+      taskIds: createdTaskIds,
+      taskCount: createdTaskIds.length,
+      message: `Создано ${createdTaskIds.length} задач из сметы ${estimate.number}`,
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// ─── POST /api/projects ─────────────────────────────────────────────
+
+app.post('/api/projects', async (req, res, next) => {
+  try {
+    const data = CreateProjectSchema.parse(req.body);
+    logger.info('🏗️ projects:create', { clientId: data.clientId, name: data.name });
+
+    const companyId = await resolveOwnerCompanyId();
+
+    const docRef = db.collection('projects').doc();
+    await docRef.set({
+      id: docRef.id,
+      companyId,
+      clientId: data.clientId,
+      clientName: data.clientName,
+      name: data.name,
+      description: data.description || '',
+      status: 'active',
+      type: data.type,
+      address: data.address || null,
+      areaSqft: data.areaSqft || null,
+      projectType: data.projectType || null,
+      facilityUse: data.facilityUse || null,
+      files: [],
+      totalDebit: 0,
+      totalCredit: 0,
+      balance: 0,
+      createdBy: req.agentUserId,
+      source: 'openclaw_estimator',
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+
+    logger.info('🏗️ projects:created', { projectId: docRef.id });
+    await logAgentActivity({
+      userId: req.agentUserId!,
+      action: 'project_created',
+      endpoint: '/api/projects',
+      metadata: { projectId: docRef.id, name: data.name, clientId: data.clientId },
+    });
+
+    res.status(201).json({ projectId: docRef.id, name: data.name });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// ─── GET /api/projects/list ─────────────────────────────────────────
+
+app.get('/api/projects/list', async (req, res, next) => {
+  try {
+    const params = ListProjectsQuerySchema.parse(req.query);
+    let clientId = params.clientId;
+
+    if (!clientId && params.clientName) {
+      const match = await fuzzySearchClient(params.clientName);
+      if (!match) {
+        res.status(404).json({ error: 'Клиент не найден' });
+        return;
+      }
+      clientId = match.id;
+    }
+
+    const companyId = await resolveOwnerCompanyId();
+    logger.info('🏗️ projects:list', { companyId, clientId, status: params.status });
+
+    let q: admin.firestore.Query = db.collection('projects')
+      .where('companyId', '==', companyId);
+
+    if (clientId) {
+      q = q.where('clientId', '==', clientId);
+    }
+
+    if (params.status) {
+      q = q.where('status', '==', params.status);
+    }
+
+    if (params.type) {
+      q = q.where('type', '==', params.type);
+    }
+
+    q = q.orderBy('updatedAt', 'desc').limit(params.limit);
+
+    const snap = await q.get();
+    const projects = snap.docs.map(d => {
+      const p = d.data();
+      return {
+        id: d.id,
+        name: p.name,
+        clientId: p.clientId,
+        clientName: p.clientName,
+        status: p.status,
+        type: p.type || 'other',
+        address: p.address || null,
+        totalDebit: p.totalDebit || 0,
+        totalCredit: p.totalCredit || 0,
+        balance: p.balance || 0,
+        fileCount: p.files?.length || 0,
+        createdAt: p.createdAt?.toDate?.()?.toISOString() || null,
+        updatedAt: p.updatedAt?.toDate?.()?.toISOString() || null,
+      };
+    });
+
+    res.json({ projects, count: projects.length });
   } catch (e) {
     next(e);
   }

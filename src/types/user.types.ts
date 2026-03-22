@@ -84,6 +84,9 @@ export interface UserProfile {
 
   // --- Face Recognition ---
   referenceFacePhotoUrl?: string; // Эталонное фото для сверки ИИ
+
+  // --- Referral ---
+  referredBy?: string; // Кто привёл (имя, контакт или userId)
 }
 
 /**

@@ -789,6 +789,7 @@ const TeamAdminPage: React.FC = () => {
                         Последний вход
                       </TableCell>
                       <TableCell>Статус</TableCell>
+                      <TableCell sx={{ display: { xs: 'none', lg: 'table-cell' } }}>Привёл</TableCell>
                       <TableCell align="right">Действия</TableCell>
                     </TableRow>
                   </TableHead>
@@ -873,6 +874,14 @@ const TeamAdminPage: React.FC = () => {
                             color={user.status === 'active' ? 'success' : 'default'}
                             size="small"
                           />
+                        </TableCell>
+
+                        <TableCell sx={{ display: { xs: 'none', lg: 'table-cell' } }}>
+                          {(user as any).referredBy ? (
+                            <Typography variant="body2">{(user as any).referredBy}</Typography>
+                          ) : (
+                            <Typography variant="body2" color="text.disabled">—</Typography>
+                          )}
                         </TableCell>
 
                         <TableCell align="right">

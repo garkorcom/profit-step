@@ -69,6 +69,7 @@ interface UserFormData {
     reportsTo: string;
     hourlyRate: string;
     telegramId: string;
+    referredBy: string;
     isActive: boolean;
 }
 
@@ -134,6 +135,7 @@ const UserFormDialog: React.FC<UserFormDialogProps> = ({
             reportsTo: '',
             hourlyRate: '',
             telegramId: '',
+            referredBy: '',
             isActive: true,
         },
         mode: 'onChange',
@@ -158,6 +160,7 @@ const UserFormDialog: React.FC<UserFormDialogProps> = ({
                 reportsTo: user.reportsTo || '',
                 hourlyRate: user.hourlyRate ? String(user.hourlyRate) : '',
                 telegramId: user.telegramId || '',
+                referredBy: (user as any).referredBy || '',
                 isActive: user.status === 'active',
             });
         } else if (open && !user) {
@@ -173,6 +176,7 @@ const UserFormDialog: React.FC<UserFormDialogProps> = ({
                 reportsTo: '',
                 hourlyRate: '',
                 telegramId: '',
+                referredBy: '',
                 isActive: true,
             });
             setPhotoURL('');
@@ -316,6 +320,7 @@ const UserFormDialog: React.FC<UserFormDialogProps> = ({
                     telegramId: data.telegramId.trim() || undefined,
                     hourlyRate: data.hourlyRate ? parseFloat(data.hourlyRate) : 0,
                     reportsTo: data.reportsTo || undefined,
+                    referredBy: data.referredBy.trim() || undefined,
                     // Role and status are updated separately via API
                 });
 
@@ -739,6 +744,23 @@ const UserFormDialog: React.FC<UserFormDialogProps> = ({
                                         margin="normal"
                                         placeholder="123456789"
                                         helperText="ID для привязки к Worker Bot"
+                                        disabled={loading}
+                                    />
+                                )}
+                            />
+
+                            {/* Referred By */}
+                            <Controller
+                                name="referredBy"
+                                control={control}
+                                render={({ field }) => (
+                                    <TextField
+                                        {...field}
+                                        label="Кто привёл (Referred By)"
+                                        fullWidth
+                                        margin="normal"
+                                        placeholder="Имя или контакт"
+                                        helperText="Кто порекомендовал этого сотрудника"
                                         disabled={loading}
                                     />
                                 )}

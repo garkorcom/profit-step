@@ -173,6 +173,16 @@ const UpdateTaskSchema = z.object({
   paidAmount: z.number().optional(),
   budgetCategory: z.string().optional(),
   progressPercentage: z.number().min(0).max(100).optional(),
+  // Payment tracking
+  payments: z.array(z.object({
+    id: z.string(),
+    amount: z.number().positive(),
+    date: z.any(), // Firestore Timestamp or serialized
+    note: z.string().optional(),
+    method: z.enum(['check', 'wire', 'cash', 'card']).optional(),
+    createdBy: z.string(),
+    createdAt: z.any(), // Firestore Timestamp or serialized
+  })).optional(),
 }).refine(data => Object.keys(data).length > 0, {
   message: 'At least one field must be provided',
 });
@@ -897,6 +907,7 @@ app.patch('/api/gtd-tasks/:id', async (req, res, next) => {
     if (data.paidAmount !== undefined) updatePayload.paidAmount = data.paidAmount;
     if (data.budgetCategory !== undefined) updatePayload.budgetCategory = data.budgetCategory;
     if (data.progressPercentage !== undefined) updatePayload.progressPercentage = data.progressPercentage;
+    if (data.payments !== undefined) updatePayload.payments = data.payments;
 
     await taskRef.update(updatePayload);
 

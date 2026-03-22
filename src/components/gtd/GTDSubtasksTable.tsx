@@ -1,9 +1,10 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import {
     Box, Typography, IconButton, TextField, Button, Tooltip, Chip,
     Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
     Paper, LinearProgress, InputAdornment, Collapse, useTheme, alpha,
-    Select, MenuItem, FormControl,
+    Select, MenuItem, FormControl, Dialog, DialogTitle, DialogContent,
+    DialogActions, List, ListItem, ListItemText, Divider,
 } from '@mui/material';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import StopIcon from '@mui/icons-material/Stop';
@@ -14,7 +15,9 @@ import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import PersonIcon from '@mui/icons-material/Person';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import KeyboardArrowRightIcon from '@mui/icons-material/KeyboardArrowRight';
-import { GTDTask } from '../../types/gtd.types';
+import { Timestamp } from 'firebase/firestore';
+import { nanoid } from 'nanoid';
+import { GTDTask, Payment, PaymentMethod } from '../../types/gtd.types';
 import { WorkSessionData } from '../../hooks/useActiveSession';
 
 const SF_FONT = '-apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif';
@@ -27,6 +30,24 @@ const BUDGET_CATEGORIES = [
 
 const UNCATEGORIZED_KEY = '__uncategorized__';
 const UNCATEGORIZED_LABEL = 'Общие работы';
+
+const PAYMENT_METHODS: { value: PaymentMethod; label: string; emoji: string }[] = [
+    { value: 'check', label: 'Чек', emoji: '🏦' },
+    { value: 'wire', label: 'Перевод', emoji: '🔄' },
+    { value: 'cash', label: 'Наличные', emoji: '💵' },
+    { value: 'card', label: 'Карта', emoji: '💳' },
+];
+
+/** Payment status indicator */
+const getPaymentStatus = (budgetAmount: number, paidAmount: number): {
+    label: string; color: string; bgColor: string; emoji: string;
+} => {
+    if (budgetAmount <= 0) return { label: '', color: '#86868b', bgColor: 'transparent', emoji: '' };
+    if (paidAmount <= 0) return { label: 'Не оплачено', color: '#86868b', bgColor: '#f0f0f2', emoji: '○' };
+    if (paidAmount > budgetAmount) return { label: 'Переплата', color: '#c2410c', bgColor: '#fff7ed', emoji: '⚠' };
+    if (paidAmount >= budgetAmount) return { label: 'Оплачено', color: '#166534', bgColor: '#dcfce7', emoji: '✓' };
+    return { label: 'Частично', color: '#92400e', bgColor: '#FEF3C7', emoji: '◐' };
+};
 
 interface GTDSubtasksTableProps {
     parentTaskId: string;
@@ -71,6 +92,17 @@ const GTDSubtasksTable: React.FC<GTDSubtasksTableProps> = ({
     const [newCategory, setNewCategory] = useState('');
     const [isAdding, setIsAdding] = useState(false);
     const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set());
+
+    // Payment dialog state
+    const [paymentDialogTask, setPaymentDialogTask] = useState<GTDTask | null>(null);
+    const [paymentAmount, setPaymentAmount] = useState('');
+    const [paymentDate, setPaymentDate] = useState(() => new Date().toISOString().split('T')[0]);
+    const [paymentNote, setPaymentNote] = useState('');
+    const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | ''>('');
+    const [paymentSaving, setPaymentSaving] = useState(false);
+
+    // Payment history dialog state
+    const [historyTask, setHistoryTask] = useState<GTDTask | null>(null);
 
     // Filter subtasks for this parent
     const subtasks = useMemo(
@@ -198,10 +230,69 @@ const GTDSubtasksTable: React.FC<GTDSubtasksTableProps> = ({
         await onUpdateTask(taskId, { estimatedMinutes: num * 60 });
     };
 
-    const handlePaidAmountChange = async (taskId: string, value: string) => {
-        const num = Math.max(0, parseFloat(value) || 0);
-        await onUpdateTask(taskId, { paidAmount: num });
-    };
+    const openPaymentDialog = useCallback((task: GTDTask) => {
+        setPaymentDialogTask(task);
+        setPaymentAmount('');
+        setPaymentDate(new Date().toISOString().split('T')[0]);
+        setPaymentNote('');
+        setPaymentMethod('');
+        setPaymentSaving(false);
+    }, []);
+
+    const closePaymentDialog = useCallback(() => {
+        setPaymentDialogTask(null);
+    }, []);
+
+    const handleSavePayment = useCallback(async () => {
+        if (!paymentDialogTask || !paymentAmount) return;
+        const amount = parseFloat(paymentAmount);
+        if (isNaN(amount) || amount <= 0) return;
+
+        setPaymentSaving(true);
+        try {
+            const newPayment: Payment = {
+                id: nanoid(),
+                amount,
+                date: Timestamp.fromDate(new Date(paymentDate + 'T12:00:00')),
+                note: paymentNote.trim() || undefined,
+                method: (paymentMethod as PaymentMethod) || undefined,
+                createdBy: 'owner', // will be resolved on display
+                createdAt: Timestamp.now(),
+            };
+
+            const existingPayments = paymentDialogTask.payments || [];
+            const updatedPayments = [...existingPayments, newPayment];
+            const newPaidAmount = updatedPayments.reduce((sum, p) => sum + p.amount, 0);
+
+            await onUpdateTask(paymentDialogTask.id, {
+                payments: updatedPayments,
+                paidAmount: newPaidAmount,
+            } as Partial<GTDTask>);
+
+            closePaymentDialog();
+        } catch (e) {
+            console.error('Failed to save payment:', e);
+        } finally {
+            setPaymentSaving(false);
+        }
+    }, [paymentDialogTask, paymentAmount, paymentDate, paymentNote, paymentMethod, onUpdateTask, closePaymentDialog]);
+
+    const handleDeletePayment = useCallback(async (task: GTDTask, paymentId: string) => {
+        const existingPayments = task.payments || [];
+        const updatedPayments = existingPayments.filter(p => p.id !== paymentId);
+        const newPaidAmount = updatedPayments.reduce((sum, p) => sum + p.amount, 0);
+
+        await onUpdateTask(task.id, {
+            payments: updatedPayments,
+            paidAmount: newPaidAmount,
+        } as Partial<GTDTask>);
+
+        // Update history dialog if open
+        if (historyTask?.id === task.id) {
+            const updatedTask = { ...task, payments: updatedPayments, paidAmount: newPaidAmount };
+            setHistoryTask(updatedTask);
+        }
+    }, [onUpdateTask, historyTask]);
 
     const formatCurrency = (n: number) => `$${n.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
     const formatTime = (mins: number) => {
@@ -389,6 +480,7 @@ const GTDSubtasksTable: React.FC<GTDSubtasksTableProps> = ({
                                         const isActive = activeSession && activeSession.relatedTaskId === st.id;
                                         const isFullyPaid = budget > 0 && paid >= budget;
                                         const hasDebt = budget > 0 && debt > 0;
+                                        const paymentStatus = getPaymentStatus(budget, paid);
 
                                         return (
                                             <TableRow
@@ -452,30 +544,48 @@ const GTDSubtasksTable: React.FC<GTDSubtasksTableProps> = ({
                                                     </Typography>
                                                 </TableCell>
 
-                                                {/* Paid Amount (inline editable) */}
+                                                {/* Paid Amount + Payment Button */}
                                                 <TableCell align="right" sx={{ py: 0.5, borderBottom: '1px solid rgba(0,0,0,0.04)' }}>
-                                                    <TextField
-                                                        type="number"
-                                                        size="small"
-                                                        value={paid || ''}
-                                                        onChange={(e) => handlePaidAmountChange(st.id, e.target.value)}
-                                                        placeholder="0"
-                                                        inputProps={{ min: 0, step: 100 }}
-                                                        InputProps={{
-                                                            startAdornment: <InputAdornment position="start" sx={{ '& .MuiTypography-root': { fontSize: '11px', color: '#86868b' } }}>$</InputAdornment>,
-                                                        }}
-                                                        sx={{
-                                                            width: 85,
-                                                            '& .MuiInputBase-input': {
-                                                                fontSize: '12px', fontWeight: 600, py: 0.5, px: 0.5, textAlign: 'right', fontFamily: SF_FONT,
-                                                                color: isFullyPaid ? '#166534' : '#1d1d1f',
-                                                            },
-                                                            '& .MuiOutlinedInput-root': {
-                                                                borderRadius: '6px',
-                                                                ...(isFullyPaid && { bgcolor: 'rgba(34,197,94,0.06)' }),
-                                                            },
-                                                        }}
-                                                    />
+                                                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 0.5 }}>
+                                                        {paid > 0 ? (
+                                                            <Tooltip title="Показать историю оплат">
+                                                                <Box
+                                                                    onClick={() => setHistoryTask(st)}
+                                                                    sx={{ cursor: 'pointer', '&:hover': { opacity: 0.7 } }}
+                                                                >
+                                                                    <Typography sx={{
+                                                                        fontSize: '12px', fontWeight: 600, fontFamily: SF_FONT,
+                                                                        color: paymentStatus.color,
+                                                                    }}>
+                                                                        {formatCurrency(paid)}
+                                                                    </Typography>
+                                                                    <Typography sx={{
+                                                                        fontSize: '9px', fontWeight: 600, fontFamily: SF_FONT,
+                                                                        color: paymentStatus.color, textAlign: 'right',
+                                                                    }}>
+                                                                        {paymentStatus.emoji} {paymentStatus.label}
+                                                                    </Typography>
+                                                                </Box>
+                                                            </Tooltip>
+                                                        ) : (
+                                                            <Typography sx={{ fontSize: '12px', color: '#86868b', fontFamily: SF_FONT }}>
+                                                                —
+                                                            </Typography>
+                                                        )}
+                                                        <Tooltip title="Записать оплату">
+                                                            <IconButton
+                                                                size="small"
+                                                                onClick={() => openPaymentDialog(st)}
+                                                                sx={{
+                                                                    width: 24, height: 24,
+                                                                    fontSize: '14px',
+                                                                    '&:hover': { bgcolor: 'rgba(0,122,255,0.08)' },
+                                                                }}
+                                                            >
+                                                                💰
+                                                            </IconButton>
+                                                        </Tooltip>
+                                                    </Box>
                                                 </TableCell>
 
                                                 {/* Debt (auto-calculated) */}
@@ -701,6 +811,289 @@ const GTDSubtasksTable: React.FC<GTDSubtasksTableProps> = ({
                     </Button>
                 )}
             </Collapse>
+
+            {/* ═══ Payment Dialog ═══ */}
+            <Dialog
+                open={!!paymentDialogTask}
+                onClose={closePaymentDialog}
+                maxWidth="xs"
+                fullWidth
+                PaperProps={{ sx: { borderRadius: '14px', fontFamily: SF_FONT } }}
+            >
+                {paymentDialogTask && (() => {
+                    const taskBudget = paymentDialogTask.budgetAmount || 0;
+                    const taskPaid = paymentDialogTask.paidAmount || 0;
+                    const remaining = Math.max(0, taskBudget - taskPaid);
+                    return (
+                        <>
+                            <DialogTitle sx={{
+                                fontFamily: SF_FONT, fontWeight: 700, fontSize: '16px',
+                                pb: 0.5, display: 'flex', alignItems: 'center', gap: 1,
+                            }}>
+                                💰 Записать оплату
+                            </DialogTitle>
+                            <DialogContent>
+                                <Box sx={{ mb: 2, mt: 1, p: 1.5, bgcolor: '#f9fafb', borderRadius: '10px' }}>
+                                    <Typography sx={{ fontSize: '13px', fontWeight: 600, fontFamily: SF_FONT, color: '#1d1d1f', mb: 0.5 }}>
+                                        {paymentDialogTask.title}
+                                    </Typography>
+                                    <Box sx={{ display: 'flex', gap: 2 }}>
+                                        <Typography sx={{ fontSize: '12px', fontFamily: SF_FONT, color: '#86868b' }}>
+                                            Смета: <b>{formatCurrency(taskBudget)}</b>
+                                        </Typography>
+                                        <Typography sx={{ fontSize: '12px', fontFamily: SF_FONT, color: '#86868b' }}>
+                                            Оплачено: <b>{formatCurrency(taskPaid)}</b>
+                                        </Typography>
+                                        {remaining > 0 && (
+                                            <Typography sx={{ fontSize: '12px', fontFamily: SF_FONT, color: '#dc2626' }}>
+                                                Остаток: <b>{formatCurrency(remaining)}</b>
+                                            </Typography>
+                                        )}
+                                    </Box>
+                                </Box>
+
+                                <TextField
+                                    autoFocus
+                                    fullWidth
+                                    label="Сумма"
+                                    type="number"
+                                    value={paymentAmount}
+                                    onChange={(e) => setPaymentAmount(e.target.value)}
+                                    inputProps={{ min: 0, step: 100 }}
+                                    InputProps={{
+                                        startAdornment: <InputAdornment position="start">$</InputAdornment>,
+                                    }}
+                                    sx={{
+                                        mb: 2,
+                                        '& .MuiInputBase-input': { fontFamily: SF_FONT, fontWeight: 600 },
+                                        '& .MuiOutlinedInput-root': { borderRadius: '10px' },
+                                    }}
+                                    helperText={remaining > 0 ? `Остаток: ${formatCurrency(remaining)}` : undefined}
+                                />
+
+                                <TextField
+                                    fullWidth
+                                    label="Дата"
+                                    type="date"
+                                    value={paymentDate}
+                                    onChange={(e) => setPaymentDate(e.target.value)}
+                                    sx={{
+                                        mb: 2,
+                                        '& .MuiInputBase-input': { fontFamily: SF_FONT },
+                                        '& .MuiOutlinedInput-root': { borderRadius: '10px' },
+                                    }}
+                                    InputLabelProps={{ shrink: true }}
+                                />
+
+                                <FormControl fullWidth sx={{ mb: 2 }}>
+                                    <Select
+                                        value={paymentMethod}
+                                        onChange={(e) => setPaymentMethod(e.target.value as PaymentMethod | '')}
+                                        displayEmpty
+                                        sx={{
+                                            fontFamily: SF_FONT, borderRadius: '10px',
+                                            '& .MuiSelect-select': { fontSize: '14px' },
+                                        }}
+                                    >
+                                        <MenuItem value="">
+                                            <em>Метод оплаты (необязательно)</em>
+                                        </MenuItem>
+                                        {PAYMENT_METHODS.map(m => (
+                                            <MenuItem key={m.value} value={m.value} sx={{ fontSize: '14px' }}>
+                                                {m.emoji} {m.label}
+                                            </MenuItem>
+                                        ))}
+                                    </Select>
+                                </FormControl>
+
+                                <TextField
+                                    fullWidth
+                                    label="Заметка"
+                                    placeholder="Check #1234, Invoice ref, etc."
+                                    value={paymentNote}
+                                    onChange={(e) => setPaymentNote(e.target.value)}
+                                    multiline
+                                    minRows={2}
+                                    sx={{
+                                        '& .MuiInputBase-input': { fontFamily: SF_FONT, fontSize: '14px' },
+                                        '& .MuiOutlinedInput-root': { borderRadius: '10px' },
+                                    }}
+                                />
+                            </DialogContent>
+                            <DialogActions sx={{ px: 3, pb: 2 }}>
+                                <Button
+                                    onClick={closePaymentDialog}
+                                    sx={{
+                                        textTransform: 'none', fontFamily: SF_FONT, fontWeight: 600,
+                                        color: '#86868b', borderRadius: '10px',
+                                    }}
+                                >
+                                    Отмена
+                                </Button>
+                                <Button
+                                    variant="contained"
+                                    onClick={handleSavePayment}
+                                    disabled={!paymentAmount || parseFloat(paymentAmount) <= 0 || paymentSaving}
+                                    sx={{
+                                        textTransform: 'none', fontFamily: SF_FONT, fontWeight: 700,
+                                        bgcolor: '#007aff', borderRadius: '10px', boxShadow: 'none',
+                                        px: 3,
+                                        '&:hover': { bgcolor: '#0066cc', boxShadow: 'none' },
+                                    }}
+                                >
+                                    {paymentSaving ? 'Сохраняю...' : 'Записать'}
+                                </Button>
+                            </DialogActions>
+                        </>
+                    );
+                })()}
+            </Dialog>
+
+            {/* ═══ Payment History Dialog ═══ */}
+            <Dialog
+                open={!!historyTask}
+                onClose={() => setHistoryTask(null)}
+                maxWidth="xs"
+                fullWidth
+                PaperProps={{ sx: { borderRadius: '14px', fontFamily: SF_FONT } }}
+            >
+                {historyTask && (() => {
+                    const payments = historyTask.payments || [];
+                    const taskBudget = historyTask.budgetAmount || 0;
+                    const taskPaid = payments.reduce((sum, p) => sum + p.amount, 0);
+                    const status = getPaymentStatus(taskBudget, taskPaid);
+                    return (
+                        <>
+                            <DialogTitle sx={{
+                                fontFamily: SF_FONT, fontWeight: 700, fontSize: '16px',
+                                pb: 0.5,
+                            }}>
+                                📋 История оплат
+                            </DialogTitle>
+                            <DialogContent>
+                                <Box sx={{ mb: 2, p: 1.5, bgcolor: '#f9fafb', borderRadius: '10px' }}>
+                                    <Typography sx={{ fontSize: '13px', fontWeight: 600, fontFamily: SF_FONT, color: '#1d1d1f', mb: 0.5 }}>
+                                        {historyTask.title}
+                                    </Typography>
+                                    <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+                                        <Typography sx={{ fontSize: '12px', fontFamily: SF_FONT, color: '#86868b' }}>
+                                            Смета: <b>{formatCurrency(taskBudget)}</b>
+                                        </Typography>
+                                        <Typography sx={{ fontSize: '12px', fontFamily: SF_FONT, color: '#86868b' }}>
+                                            Оплачено: <b>{formatCurrency(taskPaid)}</b>
+                                        </Typography>
+                                        <Chip
+                                            label={`${status.emoji} ${status.label}`}
+                                            size="small"
+                                            sx={{
+                                                height: 20, fontSize: '10px', fontWeight: 700,
+                                                bgcolor: status.bgColor, color: status.color,
+                                                fontFamily: SF_FONT,
+                                            }}
+                                        />
+                                    </Box>
+                                </Box>
+
+                                {payments.length === 0 ? (
+                                    <Typography sx={{ fontSize: '13px', color: '#86868b', fontFamily: SF_FONT, textAlign: 'center', py: 3 }}>
+                                        Нет записей об оплатах
+                                    </Typography>
+                                ) : (
+                                    <List dense disablePadding>
+                                        {payments
+                                            .slice()
+                                            .sort((a, b) => {
+                                                const aMs = a.date?.toMillis?.() || 0;
+                                                const bMs = b.date?.toMillis?.() || 0;
+                                                return bMs - aMs;
+                                            })
+                                            .map((p, idx) => {
+                                                const dateStr = p.date?.toDate?.()
+                                                    ? p.date.toDate().toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit' })
+                                                    : '—';
+                                                const methodInfo = PAYMENT_METHODS.find(m => m.value === p.method);
+                                                return (
+                                                    <React.Fragment key={p.id}>
+                                                        {idx > 0 && <Divider />}
+                                                        <ListItem
+                                                            sx={{ px: 0.5, py: 0.75 }}
+                                                            secondaryAction={
+                                                                <Tooltip title="Удалить оплату">
+                                                                    <IconButton
+                                                                        edge="end"
+                                                                        size="small"
+                                                                        onClick={() => handleDeletePayment(historyTask, p.id)}
+                                                                        sx={{ opacity: 0.4, '&:hover': { opacity: 1, color: '#ff3b30' } }}
+                                                                    >
+                                                                        <DeleteOutlineIcon sx={{ fontSize: 16 }} />
+                                                                    </IconButton>
+                                                                </Tooltip>
+                                                            }
+                                                        >
+                                                            <ListItemText
+                                                                primary={
+                                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                                        <Typography sx={{ fontSize: '13px', fontWeight: 700, fontFamily: SF_FONT, color: '#1d1d1f' }}>
+                                                                            {formatCurrency(p.amount)}
+                                                                        </Typography>
+                                                                        <Typography sx={{ fontSize: '11px', fontFamily: SF_FONT, color: '#86868b' }}>
+                                                                            {dateStr}
+                                                                        </Typography>
+                                                                        {methodInfo && (
+                                                                            <Chip
+                                                                                label={`${methodInfo.emoji} ${methodInfo.label}`}
+                                                                                size="small"
+                                                                                sx={{
+                                                                                    height: 18, fontSize: '10px',
+                                                                                    bgcolor: '#f0f0f2', color: '#6B7280',
+                                                                                    fontFamily: SF_FONT,
+                                                                                }}
+                                                                            />
+                                                                        )}
+                                                                    </Box>
+                                                                }
+                                                                secondary={p.note ? (
+                                                                    <Typography sx={{ fontSize: '11px', fontFamily: SF_FONT, color: '#86868b', mt: 0.25 }}>
+                                                                        {p.note}
+                                                                    </Typography>
+                                                                ) : undefined}
+                                                            />
+                                                        </ListItem>
+                                                    </React.Fragment>
+                                                );
+                                            })}
+                                    </List>
+                                )}
+                            </DialogContent>
+                            <DialogActions sx={{ px: 3, pb: 2 }}>
+                                <Button
+                                    onClick={() => {
+                                        setHistoryTask(null);
+                                        openPaymentDialog(historyTask);
+                                    }}
+                                    startIcon={<AddIcon />}
+                                    sx={{
+                                        textTransform: 'none', fontFamily: SF_FONT, fontWeight: 600,
+                                        color: '#007aff', borderRadius: '10px',
+                                    }}
+                                >
+                                    Добавить оплату
+                                </Button>
+                                <Box sx={{ flex: 1 }} />
+                                <Button
+                                    onClick={() => setHistoryTask(null)}
+                                    sx={{
+                                        textTransform: 'none', fontFamily: SF_FONT, fontWeight: 600,
+                                        color: '#86868b', borderRadius: '10px',
+                                    }}
+                                >
+                                    Закрыть
+                                </Button>
+                            </DialogActions>
+                        </>
+                    );
+                })()}
+            </Dialog>
         </Box>
     );
 };

@@ -130,6 +130,30 @@ export interface TaskHistoryEvent {
     meta?: Record<string, any>;
 }
 
+/** Метод оплаты */
+export type PaymentMethod = 'check' | 'wire' | 'cash' | 'card';
+
+/**
+ * Запись об оплате по позиции бюджета.
+ * Embedded в GTDTask.payments[].
+ */
+export interface Payment {
+    /** Уникальный ID платежа (nanoid) */
+    id: string;
+    /** Сумма платежа */
+    amount: number;
+    /** Дата платежа */
+    date: Timestamp;
+    /** Комментарий ("Check #1234", "Wire transfer") */
+    note?: string;
+    /** Метод оплаты */
+    method?: PaymentMethod;
+    /** ID пользователя, записавшего платёж */
+    createdBy: string;
+    /** Дата создания записи */
+    createdAt: Timestamp;
+}
+
 export interface GTDTask {
     /** Уникальный ID задачи (Firestore document ID) */
     id: string;
@@ -370,6 +394,7 @@ export interface GTDTask {
 
     /**
      * Сумма, уже оплаченная по этой работе.
+     * Автоматически вычисляется как sum(payments[].amount).
      * Дебет = budgetAmount - paidAmount.
      */
     paidAmount?: number;
@@ -380,6 +405,13 @@ export interface GTDTask {
      * Используется для collapsible section headers в GTDSubtasksTable.
      */
     budgetCategory?: string;
+
+    /**
+     * История оплат (partial payments).
+     * Embedded array — не отдельная коллекция.
+     * paidAmount пересчитывается автоматически из payments[].
+     */
+    payments?: Payment[];
 }
 
 /**

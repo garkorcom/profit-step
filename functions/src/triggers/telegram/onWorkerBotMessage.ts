@@ -743,6 +743,11 @@ async function initWorkSession(chatId: number, userId: number, clientId: string,
 
     await logBotAction(userId, userId, 'session_created', { sessionId: sessionRef.id, clientId, clientName });
 
+    // ─── hourlyRate = 0 warning ───
+    if (!hourlyRate) {
+        await sendMessage(chatId, '⚠️ Внимание! Ваша почасовая ставка не установлена ($0/ч). Пожалуйста, свяжитесь с руководителем для уточнения.');
+    }
+
     // ZERO-BLOCK: Immediately send the main menu keyboard (Break / Finish Work) 
     // so the user is never blocked, even while waiting for location.
     await sendMainMenu(chatId, userId);
@@ -1004,6 +1009,11 @@ async function handleLocationConfirmStart(chatId: number, userId: number) {
 
     await pendingStartRef.delete();
 
+    // ─── hourlyRate = 0 warning ───
+    if (!hourlyRate) {
+        await sendMessage(chatId, '⚠️ Внимание! Ваша почасовая ставка не установлена ($0/ч). Пожалуйста, свяжитесь с руководителем для уточнения.');
+    }
+
     await sendMessage(chatId,
         `✅ *Смена начата!*\n\n` +
         `🏢 Объект: *${clientName}${serviceName ? ' - ' + serviceName : ''}*\n\n` +
@@ -1165,6 +1175,11 @@ async function handleLocationNewClient(chatId: number, userId: number, clientId:
     });
 
     await pendingStartRef.delete();
+
+    // ─── hourlyRate = 0 warning ───
+    if (!hourlyRate) {
+        await sendMessage(chatId, '⚠️ Внимание! Ваша почасовая ставка не установлена ($0/ч). Пожалуйста, свяжитесь с руководителем для уточнения.');
+    }
 
     await sendMessage(chatId,
         `✅ *Смена начата!*\n\n` +

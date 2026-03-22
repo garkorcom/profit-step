@@ -406,51 +406,89 @@ app.post('/api/time-tracking', async (req, res, next) => {
           manualStartTime = Timestamp.fromDate(parsed);
         }
 
+        // ─── Cross-lookup: resolve telegramId ↔ Firebase UID ───
+        // The user calling this API uses Firebase UID (userId).
+        // But they may also have a telegramId in their profile,
+        // meaning the Telegram Bot creates sessions with employeeId = telegramId (number).
+        // We need to close active sessions from BOTH IDs before starting a new one.
+        const userDocSnap = await db.collection('users').doc(userId).get();
+        const telegramId = userDocSnap.data()?.telegramId as string | undefined;
+        const allEmployeeIds: (string | number)[] = [userId];
+        if (telegramId) {
+          allEmployeeIds.push(Number(telegramId)); // Bot stores employeeId as number
+          allEmployeeIds.push(telegramId);          // Fallback: string variant
+        }
+        logger.info('⏱️ timer:start — cross-lookup IDs', { userId, telegramId, allEmployeeIds });
+
         const result = await db.runTransaction(async (tx) => {
           // 1. Get user doc → activeSessionId pointer
           const userRef = db.collection('users').doc(userId);
           const userDoc = await tx.get(userRef);
           const activeSessionId = userDoc.data()?.activeSessionId as string | undefined;
 
-          let closedSession: { id: string; mins: number; earn: number } | null = null;
+          const closedSessions: { id: string; mins: number; earn: number }[] = [];
 
-          // 2. Close existing session if pointer is set
+          // Helper: close an active/paused session
+          const closeSession = (
+            sessionRef: admin.firestore.DocumentReference,
+            sessionDoc: admin.firestore.DocumentSnapshot,
+          ) => {
+            const old = sessionDoc.data()!;
+            const endTime = manualStartTime || Timestamp.now();
+            let diff = endTime.toMillis() - old.startTime.toMillis();
+            if (old.totalBreakMinutes) diff -= old.totalBreakMinutes * 60000;
+            if (old.status === 'paused' && old.lastBreakStart) {
+              diff -= (endTime.toMillis() - old.lastBreakStart.toMillis());
+            }
+            const mins = Math.max(0, Math.round(diff / 60000));
+            const earn = +((mins / 60) * (old.hourlyRate || 0)).toFixed(2);
+
+            tx.update(sessionRef, {
+              status: 'completed',
+              endTime,
+              durationMinutes: mins,
+              sessionEarnings: earn,
+            });
+
+            if (old.relatedTaskId) {
+              tx.update(db.collection('gtd_tasks').doc(old.relatedTaskId), {
+                totalTimeSpentMinutes: FieldValue.increment(mins),
+                totalEarnings: FieldValue.increment(earn),
+                updatedAt: FieldValue.serverTimestamp(),
+              });
+            }
+
+            closedSessions.push({ id: sessionDoc.id, mins, earn });
+            logger.info('⏱️ timer:start — closed session', { id: sessionDoc.id, mins, earn });
+          };
+
+          // 2a. Close session via activeSessionId pointer (fast path)
+          const closedPointerSessionId = new Set<string>();
           if (activeSessionId) {
             const oldRef = db.collection('work_sessions').doc(activeSessionId);
             const oldDoc = await tx.get(oldRef);
 
             if (oldDoc.exists && ['active', 'paused'].includes(oldDoc.data()!.status)) {
-              const old = oldDoc.data()!;
-              const endTime = manualStartTime || Timestamp.now();
-              let diff = endTime.toMillis() - old.startTime.toMillis();
-              if (old.totalBreakMinutes) diff -= old.totalBreakMinutes * 60000;
-              if (old.status === 'paused' && old.lastBreakStart) {
-                diff -= (endTime.toMillis() - old.lastBreakStart.toMillis());
-              }
-              const mins = Math.max(0, Math.round(diff / 60000));
-              const earn = +((mins / 60) * (old.hourlyRate || 0)).toFixed(2);
-
-              tx.update(oldRef, {
-                status: 'completed',
-                endTime,
-                durationMinutes: mins,
-                sessionEarnings: earn,
-              });
-
-              // Aggregate on linked task
-              if (old.relatedTaskId) {
-                tx.update(db.collection('gtd_tasks').doc(old.relatedTaskId), {
-                  totalTimeSpentMinutes: FieldValue.increment(mins),
-                  totalEarnings: FieldValue.increment(earn),
-                  updatedAt: FieldValue.serverTimestamp(),
-                });
-              }
-
-              closedSession = { id: oldDoc.id, mins, earn };
-              logger.info('⏱️ timer:start — closed previous', closedSession);
+              closeSession(oldRef, oldDoc);
+              closedPointerSessionId.add(activeSessionId);
             } else {
-              // Auto-heal: stale pointer
               logger.warn('⏱️ auto-heal: stale activeSessionId', { activeSessionId });
+            }
+          }
+
+          // 2b. Cross-platform scan: find ANY active sessions for ALL employee IDs
+          // This catches Telegram Bot sessions that use numeric telegramId as employeeId
+          for (const empId of allEmployeeIds) {
+            const activeSnap = await tx.get(
+              db.collection('work_sessions')
+                .where('employeeId', '==', empId)
+                .where('status', 'in', ['active', 'paused'])
+                .limit(5)
+            );
+            for (const doc of activeSnap.docs) {
+              if (!closedPointerSessionId.has(doc.id) && !closedSessions.some(cs => cs.id === doc.id)) {
+                closeSession(doc.ref, doc);
+              }
             }
           }
 
@@ -483,13 +521,16 @@ app.post('/api/time-tracking', async (req, res, next) => {
           });
           tx.update(userRef, { activeSessionId: newRef.id });
 
-          return { sessionId: newRef.id, closedSession, hourlyRate };
+          return { sessionId: newRef.id, closedSessions, hourlyRate };
         });
+
+        // Build response for closed sessions
+        const primaryClosed = result.closedSessions.length > 0 ? result.closedSessions[0] : null;
 
         logger.info('⏱️ timer:started', {
           sessionId: result.sessionId,
           hourlyRate: result.hourlyRate,
-          closedPrevious: !!result.closedSession,
+          closedCount: result.closedSessions.length,
         });
         await logAgentActivity({
           userId,
@@ -498,16 +539,24 @@ app.post('/api/time-tracking', async (req, res, next) => {
           metadata: {
             sessionId: result.sessionId,
             taskTitle: data.taskTitle,
-            closedSession: result.closedSession,
+            closedSessions: result.closedSessions,
           },
         });
+
+        // hourlyRate = 0 warning
+        const warnings: string[] = [];
+        if (!result.hourlyRate) {
+          warnings.push('⚠️ Ставка $0/ч. Обратитесь к руководителю.');
+        }
 
         res.status(201).json({
           sessionId: result.sessionId,
           message: 'Таймер запущен',
-          closedPrevious: result.closedSession
-            ? `Предыдущая сессия закрыта: ${result.closedSession.mins}мин, $${result.closedSession.earn}`
+          closedPrevious: primaryClosed
+            ? `Предыдущая сессия закрыта: ${primaryClosed.mins}мин, $${primaryClosed.earn}`
             : null,
+          closedCount: result.closedSessions.length,
+          ...(warnings.length > 0 ? { warnings } : {}),
         });
         return;
       }
@@ -537,15 +586,54 @@ app.post('/api/time-tracking', async (req, res, next) => {
           manualEndTime = Timestamp.fromDate(parsed);
         }
 
+        // Cross-lookup: resolve telegramId for this user (same as start)
+        const stopUserDoc = await db.collection('users').doc(userId).get();
+        const stopTelegramId = stopUserDoc.data()?.telegramId as string | undefined;
+        const stopAllIds: (string | number)[] = [userId];
+        if (stopTelegramId) {
+          stopAllIds.push(Number(stopTelegramId));
+          stopAllIds.push(stopTelegramId);
+        }
+
         const result = await db.runTransaction(async (tx) => {
           const userRef = db.collection('users').doc(userId);
           const userDoc = await tx.get(userRef);
           const sid = userDoc.data()?.activeSessionId as string | undefined;
 
-          if (!sid) return null;
+          // Try pointer first, then cross-platform scan
+          let sessionRef: admin.firestore.DocumentReference | null = null;
+          let sessionDoc: admin.firestore.DocumentSnapshot | null = null;
 
-          const sessionRef = db.collection('work_sessions').doc(sid);
-          const sessionDoc = await tx.get(sessionRef);
+          if (sid) {
+            sessionRef = db.collection('work_sessions').doc(sid);
+            sessionDoc = await tx.get(sessionRef);
+            if (!sessionDoc.exists || !['active', 'paused'].includes(sessionDoc.data()!.status)) {
+              logger.warn('⏱️ auto-heal: clearing stale pointer', { sid });
+              tx.update(userRef, { activeSessionId: null });
+              sessionRef = null;
+              sessionDoc = null;
+            }
+          }
+
+          // Cross-platform fallback: find active session by any employee ID
+          if (!sessionDoc) {
+            for (const empId of stopAllIds) {
+              const snap = await tx.get(
+                db.collection('work_sessions')
+                  .where('employeeId', '==', empId)
+                  .where('status', 'in', ['active', 'paused'])
+                  .limit(1)
+              );
+              if (!snap.empty) {
+                sessionDoc = snap.docs[0];
+                sessionRef = sessionDoc.ref;
+                logger.info('⏱️ timer:stop — found cross-platform session', { id: sessionDoc.id, empId });
+                break;
+              }
+            }
+          }
+
+          if (!sessionRef || !sessionDoc) return null;
 
           // Auto-heal: stale pointer
           if (!sessionDoc.exists || !['active', 'paused'].includes(sessionDoc.data()!.status)) {
@@ -623,24 +711,44 @@ app.post('/api/time-tracking', async (req, res, next) => {
 
       // ─── STATUS ─────────────────────────────────────────
       case 'status': {
-        const userDoc = await db.collection('users').doc(userId).get();
-        const sid = userDoc.data()?.activeSessionId as string | undefined;
+        const statusUserDoc = await db.collection('users').doc(userId).get();
+        const statusSid = statusUserDoc.data()?.activeSessionId as string | undefined;
+        const statusTelegramId = statusUserDoc.data()?.telegramId as string | undefined;
 
-        if (!sid) {
+        // 1. Try pointer
+        let foundSession: admin.firestore.DocumentSnapshot | null = null;
+        if (statusSid) {
+          const s = await db.collection('work_sessions').doc(statusSid).get();
+          if (s.exists && ['active', 'paused'].includes(s.data()!.status)) {
+            foundSession = s;
+          }
+        }
+
+        // 2. Cross-platform fallback
+        if (!foundSession && statusTelegramId) {
+          const searchIds: (string | number)[] = [userId, Number(statusTelegramId), statusTelegramId];
+          for (const empId of searchIds) {
+            const snap = await db.collection('work_sessions')
+              .where('employeeId', '==', empId)
+              .where('status', 'in', ['active', 'paused'])
+              .limit(1)
+              .get();
+            if (!snap.empty) {
+              foundSession = snap.docs[0];
+              break;
+            }
+          }
+        }
+
+        if (!foundSession) {
           res.json({ active: false, message: 'Нет активной сессии' });
           return;
         }
 
-        const session = await db.collection('work_sessions').doc(sid).get();
-        if (!session.exists) {
-          res.json({ active: false, message: 'Нет активной сессии' });
-          return;
-        }
-
-        const s = session.data()!;
+        const s = foundSession.data()!;
         res.json({
           active: true,
-          sessionId: sid,
+          sessionId: foundSession.id,
           task: s.relatedTaskTitle || s.description,
           client: s.clientName,
           status: s.status,

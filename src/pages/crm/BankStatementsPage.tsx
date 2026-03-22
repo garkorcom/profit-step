@@ -630,14 +630,19 @@ export const BankStatementsPage: React.FC = () => {
                 (selectedMonth !== 'all' && detectedPeriod.month !== selectedMonth);
 
             if (periodMismatch) {
-                // Show confirmation dialog to redirect to correct period
-                setPendingUpload({
-                    detectedYear: detectedPeriod.year,
-                    detectedMonth: detectedPeriod.month,
-                    totalNew,
-                    totalDuplicates
+                // Auto-redirect: switch filters to detected period automatically
+                setSelectedYear(detectedPeriod.year);
+                setSelectedMonth(detectedPeriod.month);
+                
+                setNotification({
+                    open: true,
+                    message: `✅ Выписка за ${MONTH_NAMES[detectedPeriod.month - 1]} ${detectedPeriod.year} загружена! ${totalNew} новых транзакций${totalDuplicates > 0 ? `, ${totalDuplicates} дубликатов пропущено` : ''}. Фильтр переключён автоматически.`,
+                    severity: 'success'
                 });
-                setShowPeriodConfirm(true);
+
+                // Reload data for the new period
+                await loadTransactions();
+                await loadStatements();
 
                 // Reset input
                 if (fileInputRef.current) {
@@ -1371,7 +1376,7 @@ export const BankStatementsPage: React.FC = () => {
 
     // Review needed: transactions from ambiguous vendors
     const reviewNeededTransactions = withRefundFlags.filter(tx =>
-        AMBIGUOUS_VENDORS.some(v => tx.vendor.toUpperCase().includes(v)) ||
+        AMBIGUOUS_VENDORS.some(v => (tx.vendor || '').toUpperCase().includes(v)) ||
         tx.category === 'uncategorized'
     );
 
@@ -1643,7 +1648,7 @@ export const BankStatementsPage: React.FC = () => {
         const vendorMonths: Record<string, Set<number>> = {};
         yearFilteredTransactions.forEach(tx => {
             const month = new Date(tx.date.seconds * 1000).getMonth();
-            const key = tx.vendor.toUpperCase().trim();
+            const key = (tx.vendor || '').toUpperCase().trim();
             if (!vendorMonths[key]) vendorMonths[key] = new Set();
             vendorMonths[key].add(month);
         });
@@ -1661,7 +1666,7 @@ export const BankStatementsPage: React.FC = () => {
         const vendorCatCount: Record<string, Record<string, number>> = {};
         transactions.forEach(tx => {
             if (tx.category === 'uncategorized') return;
-            const key = tx.vendor.toUpperCase().trim();
+            const key = (tx.vendor || '').toUpperCase().trim();
             if (!vendorCatCount[key]) vendorCatCount[key] = {};
             vendorCatCount[key][tx.category] = (vendorCatCount[key][tx.category] || 0) + 1;
         });

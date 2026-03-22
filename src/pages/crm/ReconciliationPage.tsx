@@ -25,7 +25,15 @@ const COST_CATEGORY_LABELS: Record<string, string> = {
   other: '📦 Прочее',
 };
 
-type QuickFilter = 'all' | 'tampa' | 'company' | 'personal' | 'unassigned';
+type QuickFilter = 'all' | 'tampa' | 'company' | 'personal' | 'unassigned' | 'fuel';
+
+const FUEL_KEYWORDS = ['TESLA', 'SHELL', 'CHEVRON', 'EXXON', 'MARATHON', 'RACETRAC', 'CIRCLE K', 'WAWA', 'CHARGEPOINT', 'PILOT', 'SUPERCHARGER'];
+
+const isFuelTransaction = (t: { categoryId: string; rawDescription: string }): boolean => {
+  if (t.categoryId === 'fuel') return true;
+  const upper = (t.rawDescription || '').toUpperCase();
+  return FUEL_KEYWORDS.some(kw => upper.includes(kw));
+};
 
 const MONTH_LABELS = [
   'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
@@ -325,6 +333,7 @@ const ReconciliationPage: React.FC = () => {
     if (quickFilter === 'tampa') result = result.filter(t => isTampaArea(t._location));
     else if (quickFilter === 'company') result = result.filter(t => t.paymentType === 'company');
     else if (quickFilter === 'personal') result = result.filter(t => t.paymentType !== 'company');
+    else if (quickFilter === 'fuel') result = result.filter(t => isFuelTransaction(t));
     else if (quickFilter === 'unassigned') result = result.filter(t => !t.projectId && !t.paymentType);
 
     // Amount sort
@@ -492,6 +501,7 @@ const ReconciliationPage: React.FC = () => {
                 <ToggleButton value="tampa">🏗️ Tampa ({enrichedTransactions.filter(t => isTampaArea(t._location)).length})</ToggleButton>
                 <ToggleButton value="company">🏢 Company ({enrichedTransactions.filter(t => t.paymentType === 'company').length})</ToggleButton>
                 <ToggleButton value="personal">👤 Personal ({enrichedTransactions.filter(t => t.paymentType !== 'company').length})</ToggleButton>
+                <ToggleButton value="fuel">⛽ Топливо ({enrichedTransactions.filter(t => isFuelTransaction(t)).length})</ToggleButton>
                 <ToggleButton value="unassigned">❓ Неразнесённые ({enrichedTransactions.filter(t => !t.projectId && !t.paymentType).length})</ToggleButton>
               </ToggleButtonGroup>
             </Box>

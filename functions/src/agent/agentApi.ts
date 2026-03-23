@@ -46,6 +46,8 @@ import {
 import {
   getCachedClients,
   fuzzySearchClient,
+  searchClientByAddress,
+  autoCreateClientByAddress,
   logAgentActivity,
   resolveOwnerCompanyId,
   COST_CATEGORY_LABELS,
@@ -1769,8 +1771,9 @@ app.get('/api/contacts/search', async (req, res, next) => {
 // ═══════════════════════════════════════════════════════════════════
 
 const CreateEstimateSchema = z.object({
-  clientId: z.string().min(1),
-  clientName: z.string().min(1),
+  clientId: z.string().min(1).optional(),
+  clientName: z.string().min(1).optional(),
+  address: z.string().min(1).optional(),
   idempotencyKey: z.string().min(1).optional(),
   items: z.array(z.object({
     id: z.string().min(1),
@@ -1813,8 +1816,8 @@ const UpdateEstimateSchema = z.object({
 });
 
 const CreateProjectSchema = z.object({
-  clientId: z.string().min(1),
-  clientName: z.string().min(1),
+  clientId: z.string().min(1).optional(),
+  clientName: z.string().min(1).optional(),
   name: z.string().min(1),
   description: z.string().optional(),
   type: z.enum(['work', 'estimate', 'financial', 'other']).default('work'),
@@ -1837,7 +1840,7 @@ const ListProjectsQuerySchema = z.object({
 app.post('/api/estimates', async (req, res, next) => {
   try {
     const data = CreateEstimateSchema.parse(req.body);
-    logger.info('📐 estimates:create', { clientId: data.clientId, itemCount: data.items.length, key: data.idempotencyKey });
+    logger.info('📐 estimates:create', { clientId: data.clientId, address: data.address, itemCount: data.items.length, key: data.idempotencyKey });
 
     // Dedup check via _idempotency collection
     if (data.idempotencyKey) {
@@ -1850,10 +1853,35 @@ app.post('/api/estimates', async (req, res, next) => {
       }
     }
 
+    // Resolve client: by clientId, or auto-find/create by address
+    let clientId = data.clientId;
+    let clientName = data.clientName;
+
+    if (!clientId && data.address) {
+      // Search by address first (deduplication)
+      const found = await searchClientByAddress(data.address);
+      if (found) {
+        clientId = found.id;
+        clientName = clientName || found.name;
+        logger.info('📐 estimates:client found by address', { clientId, address: data.address });
+      } else {
+        // Auto-create client with address as name
+        const created = await autoCreateClientByAddress(data.address, 'estimate');
+        clientId = created.id;
+        clientName = clientName || created.name;
+        logger.info('📐 estimates:client auto-created', { clientId, address: data.address });
+      }
+    }
+
+    if (!clientId) {
+      res.status(400).json({ error: 'Необходим clientId или address для создания estimate' });
+      return;
+    }
+
     // Validate clientId exists in Firestore
-    const clientDoc = await db.collection('clients').doc(data.clientId).get();
+    const clientDoc = await db.collection('clients').doc(clientId).get();
     if (!clientDoc.exists) {
-      res.status(400).json({ error: `Клиент с ID "${data.clientId}" не найден` });
+      res.status(400).json({ error: `Клиент с ID "${clientId}" не найден` });
       return;
     }
 
@@ -1869,8 +1897,8 @@ app.post('/api/estimates', async (req, res, next) => {
 
     const docRef = await db.collection('estimates').add({
       companyId,
-      clientId: data.clientId,
-      clientName: data.clientName,
+      clientId,
+      clientName: clientName || '',
       number,
       status: 'draft',
       items: data.items,
@@ -1902,7 +1930,7 @@ app.post('/api/estimates', async (req, res, next) => {
       userId: req.agentUserId!,
       action: 'estimate_created',
       endpoint: '/api/estimates',
-      metadata: { estimateId: docRef.id, number, clientId: data.clientId, total },
+      metadata: { estimateId: docRef.id, number, clientId, total },
     });
 
     res.status(201).json({ estimateId: docRef.id, number, total });
@@ -2182,7 +2210,30 @@ app.post('/api/estimates/:id/convert-to-tasks', async (req, res, next) => {
 app.post('/api/projects', async (req, res, next) => {
   try {
     const data = CreateProjectSchema.parse(req.body);
-    logger.info('🏗️ projects:create', { clientId: data.clientId, name: data.name });
+    logger.info('🏗️ projects:create', { clientId: data.clientId, address: data.address, name: data.name });
+
+    // Resolve client: by clientId, or auto-find/create by address
+    let clientId = data.clientId;
+    let clientName = data.clientName;
+
+    if (!clientId && data.address) {
+      const found = await searchClientByAddress(data.address);
+      if (found) {
+        clientId = found.id;
+        clientName = clientName || found.name;
+        logger.info('🏗️ projects:client found by address', { clientId, address: data.address });
+      } else {
+        const created = await autoCreateClientByAddress(data.address, 'project');
+        clientId = created.id;
+        clientName = clientName || created.name;
+        logger.info('🏗️ projects:client auto-created', { clientId, address: data.address });
+      }
+    }
+
+    if (!clientId) {
+      res.status(400).json({ error: 'Необходим clientId или address для создания проекта' });
+      return;
+    }
 
     const companyId = await resolveOwnerCompanyId();
 
@@ -2190,8 +2241,8 @@ app.post('/api/projects', async (req, res, next) => {
     await docRef.set({
       id: docRef.id,
       companyId,
-      clientId: data.clientId,
-      clientName: data.clientName,
+      clientId,
+      clientName: clientName || '',
       name: data.name,
       description: data.description || '',
       status: 'active',
@@ -2215,7 +2266,7 @@ app.post('/api/projects', async (req, res, next) => {
       userId: req.agentUserId!,
       action: 'project_created',
       endpoint: '/api/projects',
-      metadata: { projectId: docRef.id, name: data.name, clientId: data.clientId },
+      metadata: { projectId: docRef.id, name: data.name, clientId },
     });
 
     res.status(201).json({ projectId: docRef.id, name: data.name });

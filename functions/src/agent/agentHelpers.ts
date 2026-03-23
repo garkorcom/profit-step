@@ -126,6 +126,84 @@ export async function resolveOwnerCompanyId(): Promise<string> {
   return companyId;
 }
 
+// ─── Client Search by Address ───────────────────────────────────────
+
+/**
+ * Search for a client by address (exact or fuzzy).
+ * First tries exact match, then fuzzy with threshold 0.3.
+ * Searches ALL clients (not just cached active ones).
+ */
+export async function searchClientByAddress(address: string): Promise<ClientItem | null> {
+  const normalized = address.trim().toLowerCase();
+  if (!normalized) return null;
+
+  // 1. Try exact match in Firestore (case-insensitive via all clients scan)
+  const snap = await db.collection('clients').get();
+  const allClients: ClientItem[] = snap.docs.map((d) => ({
+    id: d.id,
+    name: d.data().name || '',
+    address: d.data().address || null,
+  }));
+
+  // Exact address match (case-insensitive)
+  const exact = allClients.find(
+    (c) => c.address && c.address.trim().toLowerCase() === normalized
+  );
+  if (exact) {
+    logger.info('🔍 client:address exact match', { clientId: exact.id, address });
+    return exact;
+  }
+
+  // 2. Fuzzy match on address field
+  const fuse = new Fuse(allClients.filter((c) => c.address), {
+    keys: ['address'],
+    threshold: 0.3,
+  });
+  const results = fuse.search(address, { limit: 1 });
+  if (results.length > 0) {
+    logger.info('🔍 client:address fuzzy match', {
+      clientId: results[0].item.id,
+      score: results[0].score,
+      address,
+    });
+    return results[0].item;
+  }
+
+  return null;
+}
+
+/**
+ * Auto-create a client with address as name.
+ * Used when estimate/project has address but no existing client.
+ * Invalidates client cache after creation.
+ */
+export async function autoCreateClientByAddress(
+  address: string,
+  source: string
+): Promise<{ id: string; name: string }> {
+  const docRef = db.collection('clients').doc();
+  const clientName = address.trim();
+
+  await docRef.set({
+    name: clientName,
+    address: clientName,
+    contactPerson: '',
+    phone: '',
+    email: '',
+    notes: `Auto-created from ${source}`,
+    status: 'active',
+    source: source,
+    createdAt: FieldValue.serverTimestamp(),
+    updatedAt: FieldValue.serverTimestamp(),
+  });
+
+  // Invalidate cache so next search picks up the new client
+  await db.doc(CACHE_DOC_PATH).update({ stale: true }).catch(() => {});
+
+  logger.info('🏠 client:auto-created', { clientId: docRef.id, name: clientName, source });
+  return { id: docRef.id, name: clientName };
+}
+
 // ─── Activity Logger ────────────────────────────────────────────────
 
 /**

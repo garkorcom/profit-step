@@ -2945,7 +2945,6 @@ app.get('/api/sites', async (req, res, next) => {
 
     const snap = await db.collection('sites')
       .where('clientId', '==', clientId)
-      .orderBy('createdAt', 'desc')
       .get();
 
     const sites = snap.docs.map((d) => {

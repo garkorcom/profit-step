@@ -24,6 +24,20 @@ import { Contact } from '../../types/contact.types';
 import { contactsService } from '../../services/contactsService';
 import GlobalContactQuickAdd from '../../components/contacts/GlobalContactQuickAdd';
 
+// Preset roles for quick filtering
+const PRESET_ROLES = [
+    'Inspector',
+    'Building Inspector',
+    'Electrical Inspector',
+    'Mechanical Inspector',
+    'Landlord',
+    'Owner',
+    'Designer/Architect',
+    'Worker',
+    'Subcontractor',
+    'Supplier',
+] as const;
+
 const ContactsPage: React.FC = () => {
     const [contacts, setContacts] = useState<Contact[]>([]);
     const [loading, setLoading] = useState(true);
@@ -52,8 +66,8 @@ const ContactsPage: React.FC = () => {
                 const data = await contactsService.getContacts();
                 setContacts(data);
 
-                // Extract unique roles for the filter
-                const roles = new Set<string>();
+                // Extract unique roles for the filter (merge preset + dynamic)
+                const roles = new Set<string>(PRESET_ROLES);
                 data.forEach(c => c.roles?.forEach(r => roles.add(r)));
                 setAllRoles(Array.from(roles).sort());
             } catch (err: any) {

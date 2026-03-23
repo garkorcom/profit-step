@@ -1,7 +1,7 @@
 /**
  * Agent API — Express Application
  *
- * 26 endpoints for OpenClaw agent integration:
+ * 29 endpoints for OpenClaw agent integration:
  * - GET    /api/clients/search
  * - POST   /api/gtd-tasks
  * - GET    /api/gtd-tasks/list
@@ -28,6 +28,9 @@
  * - POST   /api/finance/transactions/batch
  * - POST   /api/finance/transactions/approve
  * - POST   /api/finance/transactions/undo
+ * - POST   /api/blueprint/split           ← Estimator V3 Phase 2
+ * - POST   /api/blackboard                ← Estimator V3 Phase 3
+ * - GET    /api/blackboard/:projectId     ← Estimator V3 Phase 3
  */
 
 import * as admin from 'firebase-admin';
@@ -37,6 +40,8 @@ import * as cors from 'cors';
 import { z } from 'zod';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const Fuse = require('fuse.js');
+
+import { PDFDocument } from 'pdf-lib';
 
 import {
   authMiddleware,
@@ -2482,6 +2487,275 @@ app.get('/api/projects/:id/files', async (req, res, next) => {
     }
 
     res.json({ files, grouped, count: files.length });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// BLUEPRINT SPLIT — Estimator V3 Phase 2
+// ═══════════════════════════════════════════════════════════════════
+
+const BlueprintSplitSchema = z.object({
+  projectId: z.string().min(1),
+  fileId: z.string().min(1),
+});
+
+app.post('/api/blueprint/split', async (req, res, next) => {
+  try {
+    const data = BlueprintSplitSchema.parse(req.body);
+    logger.info('📄 blueprint:split', { projectId: data.projectId, fileId: data.fileId });
+
+    // 1. Validate project exists
+    const projectDoc = await db.collection('projects').doc(data.projectId).get();
+    if (!projectDoc.exists) {
+      res.status(404).json({ error: `Проект "${data.projectId}" не найден` });
+      return;
+    }
+
+    // 2. Get file metadata from Firestore
+    const fileDoc = await db.collection('projects').doc(data.projectId)
+      .collection('files').doc(data.fileId).get();
+    if (!fileDoc.exists) {
+      res.status(404).json({ error: `Файл "${data.fileId}" не найден` });
+      return;
+    }
+
+    const fileMeta = fileDoc.data()!;
+    if (!fileMeta.contentType?.includes('pdf')) {
+      res.status(400).json({ error: 'Только PDF файлы можно разбить на страницы' });
+      return;
+    }
+
+    // 3. Download PDF from Storage
+    const bucket = admin.storage().bucket();
+    const sourceFile = bucket.file(fileMeta.path);
+    const [exists] = await sourceFile.exists();
+    if (!exists) {
+      res.status(404).json({ error: 'Файл не найден в Storage' });
+      return;
+    }
+
+    const [pdfBuffer] = await sourceFile.download();
+    logger.info('📄 blueprint:split — downloaded PDF', { size: pdfBuffer.length });
+
+    // 4. Parse PDF and split into individual pages
+    const pdfDoc = await PDFDocument.load(pdfBuffer);
+    const pageCount = pdfDoc.getPageCount();
+    logger.info('📄 blueprint:split — pages', { pageCount });
+
+    if (pageCount === 0) {
+      res.status(400).json({ error: 'PDF не содержит страниц' });
+      return;
+    }
+
+    // 5. Split each page into a separate PDF and save to Storage
+    const pages: Array<{
+      pageNumber: number;
+      path: string;
+      url: string;
+      size: number;
+      width: number;
+      height: number;
+    }> = [];
+
+    const basePath = `projects/${data.projectId}/rasterized`;
+
+    for (let i = 0; i < pageCount; i++) {
+      const singlePageDoc = await PDFDocument.create();
+      const [copiedPage] = await singlePageDoc.copyPages(pdfDoc, [i]);
+      singlePageDoc.addPage(copiedPage);
+
+      const pageBytes = await singlePageDoc.save();
+      const pageBuffer = Buffer.from(pageBytes);
+
+      const pagePath = `${basePath}/page-${i + 1}.pdf`;
+      const pageFile = bucket.file(pagePath);
+
+      await pageFile.save(pageBuffer, {
+        metadata: {
+          contentType: 'application/pdf',
+          metadata: {
+            projectId: data.projectId,
+            sourceFileId: data.fileId,
+            pageNumber: String(i + 1),
+            totalPages: String(pageCount),
+          },
+        },
+      });
+
+      // Generate signed URL (30-day expiry)
+      const [signedUrl] = await pageFile.getSignedUrl({
+        action: 'read',
+        expires: Date.now() + 30 * 24 * 60 * 60 * 1000,
+      });
+
+      // Get page dimensions
+      const pageObj = pdfDoc.getPage(i);
+      const { width, height } = pageObj.getSize();
+
+      pages.push({
+        pageNumber: i + 1,
+        path: pagePath,
+        url: signedUrl,
+        size: pageBuffer.length,
+        width: Math.round(width),
+        height: Math.round(height),
+      });
+    }
+
+    // 6. Save split metadata to Firestore
+    await db.collection('projects').doc(data.projectId)
+      .collection('blueprint_pages').doc(data.fileId).set({
+        sourceFileId: data.fileId,
+        sourceFileName: fileMeta.name,
+        totalPages: pageCount,
+        pages,
+        splitAt: FieldValue.serverTimestamp(),
+        splitBy: req.agentUserId || 'agent',
+      });
+
+    logger.info('📄 blueprint:split — complete', { projectId: data.projectId, pageCount });
+    await logAgentActivity({
+      userId: req.agentUserId!,
+      action: 'blueprint_split',
+      endpoint: '/api/blueprint/split',
+      metadata: { projectId: data.projectId, fileId: data.fileId, pageCount },
+    });
+
+    res.status(200).json({
+      projectId: data.projectId,
+      fileId: data.fileId,
+      totalPages: pageCount,
+      pages,
+      message: `PDF разбит на ${pageCount} страниц`,
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// BLACKBOARD — Estimator V3 Phase 3
+// ═══════════════════════════════════════════════════════════════════
+
+const CreateBlackboardSchema = z.object({
+  projectId: z.string().min(1),
+  version: z.number().int().min(1).default(1),
+  zones: z.array(z.string()).default([]),
+  extracted_elements: z.array(z.any()).default([]),
+  rfis: z.array(z.any()).default([]),
+  estimate_summary: z.record(z.any()).default({}),
+  status: z.enum(['in_progress', 'completed', 'review_needed']).default('in_progress'),
+});
+
+app.post('/api/blackboard', async (req, res, next) => {
+  try {
+    const data = CreateBlackboardSchema.parse(req.body);
+    logger.info('📋 blackboard:create', { projectId: data.projectId, version: data.version });
+
+    // Validate project exists
+    const projectDoc = await db.collection('projects').doc(data.projectId).get();
+    if (!projectDoc.exists) {
+      res.status(404).json({ error: `Проект "${data.projectId}" не найден` });
+      return;
+    }
+
+    // Check if blackboard already exists for this project+version
+    const existingSnap = await db.collection('estimate_blackboard')
+      .where('projectId', '==', data.projectId)
+      .where('version', '==', data.version)
+      .limit(1)
+      .get();
+
+    if (!existingSnap.empty) {
+      // Update existing
+      const existingDoc = existingSnap.docs[0];
+      await existingDoc.ref.update({
+        zones: data.zones,
+        extracted_elements: data.extracted_elements,
+        rfis: data.rfis,
+        estimate_summary: data.estimate_summary,
+        status: data.status,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+
+      logger.info('📋 blackboard:updated', { blackboardId: existingDoc.id });
+      res.json({
+        blackboardId: existingDoc.id,
+        updated: true,
+        message: `Blackboard v${data.version} обновлён`,
+      });
+      return;
+    }
+
+    // Create new blackboard
+    const docRef = await db.collection('estimate_blackboard').add({
+      projectId: data.projectId,
+      version: data.version,
+      zones: data.zones,
+      extracted_elements: data.extracted_elements,
+      rfis: data.rfis,
+      estimate_summary: data.estimate_summary,
+      status: data.status,
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+      createdBy: req.agentUserId || 'agent',
+    });
+
+    logger.info('📋 blackboard:created', { blackboardId: docRef.id });
+    await logAgentActivity({
+      userId: req.agentUserId!,
+      action: 'blackboard_created',
+      endpoint: '/api/blackboard',
+      metadata: { blackboardId: docRef.id, projectId: data.projectId, version: data.version },
+    });
+
+    res.status(201).json({
+      blackboardId: docRef.id,
+      message: `Blackboard v${data.version} создан`,
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
+app.get('/api/blackboard/:projectId', async (req, res, next) => {
+  try {
+    const projectId = req.params.projectId;
+    const version = req.query.version ? Number(req.query.version) : undefined;
+    logger.info('📋 blackboard:get', { projectId, version });
+
+    let q: admin.firestore.Query = db.collection('estimate_blackboard')
+      .where('projectId', '==', projectId);
+
+    if (version) {
+      q = q.where('version', '==', version);
+    }
+
+    q = q.orderBy('version', 'desc').limit(1);
+    const snap = await q.get();
+
+    if (snap.empty) {
+      res.status(404).json({ error: 'Blackboard не найден для проекта' });
+      return;
+    }
+
+    const doc = snap.docs[0];
+    const data = doc.data();
+
+    res.json({
+      blackboardId: doc.id,
+      projectId: data.projectId,
+      version: data.version,
+      zones: data.zones || [],
+      extracted_elements: data.extracted_elements || [],
+      rfis: data.rfis || [],
+      estimate_summary: data.estimate_summary || {},
+      status: data.status,
+      createdAt: data.createdAt?.toDate?.()?.toISOString() || null,
+      updatedAt: data.updatedAt?.toDate?.()?.toISOString() || null,
+    });
   } catch (e) {
     next(e);
   }

@@ -38,7 +38,8 @@ import {
     Contacts as ContactsIcon,
     WhatsApp as WhatsAppIcon,
     Telegram as TelegramIcon,
-    ExpandMore as ExpandMoreIcon
+    ExpandMore as ExpandMoreIcon,
+    Description as BlueprintIcon
 } from '@mui/icons-material';
 import { doc, updateDoc, onSnapshot, Timestamp, collection, getDocs, query, where, deleteDoc, orderBy, addDoc } from 'firebase/firestore';
 import { db, functions } from '../../firebase/firebase';
@@ -55,6 +56,7 @@ import { TaskMaterial } from '../../types/inventory.types';
 import { calculateMaterialsCost } from '../../features/inventory/inventoryService';
 import GlobalContactQuickAdd from '../../components/contacts/GlobalContactQuickAdd';
 import GTDSubtasksTable from '../../components/gtd/GTDSubtasksTable';
+import ProjectFilesTab from '../../components/crm/ProjectFilesTab';
 
 // ═══════════════════════════════════════════════════════════
 // HELPER TYPES
@@ -300,6 +302,9 @@ const UnifiedCockpitPage: React.FC = () => {
     // Contacts state
     const [contacts, setContacts] = useState<any[]>([]);
     const [linkedContactIds, setLinkedContactIds] = useState<string[]>([]);
+
+    // Linked project for files tab
+    const [linkedProjectId, setLinkedProjectId] = useState<string | null>(null);
     const [globalContactOpen, setGlobalContactOpen] = useState(false);
 
     // reference arrays
@@ -411,6 +416,26 @@ const UnifiedCockpitPage: React.FC = () => {
             unsubSubtasks();
         };
     }, [taskId]);
+
+    // Look up linked project when clientId changes (for Files tab)
+    useEffect(() => {
+        if (!clientId) {
+            setLinkedProjectId(null);
+            return;
+        }
+        getDocs(query(collection(db, 'projects'), where('clientId', '==', clientId)))
+            .then(snap => {
+                if (!snap.empty) {
+                    const sorted = snap.docs
+                        .map(d => ({ id: d.id, ...d.data() }))
+                        .sort((a: any, b: any) => (b.updatedAt?.toMillis?.() || 0) - (a.updatedAt?.toMillis?.() || 0));
+                    setLinkedProjectId(sorted[0].id);
+                } else {
+                    setLinkedProjectId(null);
+                }
+            })
+            .catch(err => console.error('Error finding linked project:', err));
+    }, [clientId]);
 
     // Auto-calculate end date from startDate + estimatedDurationMinutes
     useEffect(() => {
@@ -1012,6 +1037,7 @@ const UnifiedCockpitPage: React.FC = () => {
                                 <Tab icon={<PersonIcon />} label="История" />
                                 <Tab icon={<InventoryIcon />} label="Материалы" />
                                 <Tab icon={<ContactsIcon />} label="Справочник" />
+                                <Tab icon={<BlueprintIcon />} label="Чертежи" />
                             </Tabs>
 
                             {activeTab === 0 && (
@@ -1054,6 +1080,18 @@ const UnifiedCockpitPage: React.FC = () => {
                                         setHasChanges(true);
                                     }}
                                 />
+                            )}
+
+                            {activeTab === 4 && (
+                                <Box sx={{ py: 2, pr: 1 }}>
+                                    {linkedProjectId ? (
+                                        <ProjectFilesTab projectId={linkedProjectId} />
+                                    ) : (
+                                        <Alert severity="info">
+                                            Для работы с чертежами необходимо привязать задачу к клиенту с активным проектом.
+                                        </Alert>
+                                    )}
+                                </Box>
                             )}
 
                             {activeTab === 3 && (

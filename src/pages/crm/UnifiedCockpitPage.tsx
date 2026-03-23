@@ -18,9 +18,10 @@ import {
     Box, Typography, TextField, Button, IconButton, Paper,
     Breadcrumbs, Link, Chip, Select, MenuItem, FormControl,
     Autocomplete, Avatar, Divider, Checkbox,
-    Alert, List, ListItem, ListItemIcon, Tab, Tabs, Stack, Snackbar,
+    Alert, List, ListItem, ListItemIcon, ListItemText, Tab, Tabs, Stack, Snackbar,
     CircularProgress, Tooltip, InputAdornment, FormControlLabel,
     Accordion, AccordionSummary, AccordionDetails,
+    Table, TableBody, TableCell, TableHead, TableRow,
     useMediaQuery, useTheme
 } from '@mui/material';
 import {
@@ -39,7 +40,10 @@ import {
     WhatsApp as WhatsAppIcon,
     Telegram as TelegramIcon,
     ExpandMore as ExpandMoreIcon,
-    Description as BlueprintIcon
+    Description as BlueprintIcon,
+    Receipt as EstimateIcon,
+    BarChart as PercentageIcon,
+    Architecture as BlueprintsIcon
 } from '@mui/icons-material';
 import { doc, updateDoc, onSnapshot, Timestamp, collection, getDocs, query, where, deleteDoc, orderBy, addDoc } from 'firebase/firestore';
 import { db, functions } from '../../firebase/firebase';
@@ -57,6 +61,8 @@ import { calculateMaterialsCost } from '../../features/inventory/inventoryServic
 import GlobalContactQuickAdd from '../../components/contacts/GlobalContactQuickAdd';
 import GTDSubtasksTable from '../../components/gtd/GTDSubtasksTable';
 import ProjectFilesTab from '../../components/crm/ProjectFilesTab';
+import { estimatesApi } from '../../api/estimatesApi';
+import { Estimate, EstimateStatus } from '../../types/estimate.types';
 
 // ═══════════════════════════════════════════════════════════
 // HELPER TYPES
@@ -238,6 +244,388 @@ const WorkSessionsList: React.FC<{ taskId: string }> = ({ taskId }) => {
 };
 
 // ═══════════════════════════════════════════════════════════
+// ESTIMATES TAB CONTENT
+// ═══════════════════════════════════════════════════════════
+
+const STATUS_COLORS: Record<EstimateStatus, string> = {
+    draft: '#9e9e9e',
+    sent: '#2196f3',
+    approved: '#4caf50',
+    rejected: '#f44336',
+    converted: '#ff9800',
+};
+
+const STATUS_LABELS: Record<EstimateStatus, string> = {
+    draft: 'Черновик',
+    sent: 'Отправлено',
+    approved: 'Одобрено',
+    rejected: 'Отклонено',
+    converted: 'Конвертировано',
+};
+
+const EstimatesTabContent: React.FC<{
+    estimates: Estimate[];
+    loading: boolean;
+    expandedId: string | null;
+    onToggle: (id: string) => void;
+}> = ({ estimates, loading, expandedId, onToggle }) => {
+    if (loading) return <Box display="flex" justifyContent="center" py={4}><CircularProgress /></Box>;
+
+    if (estimates.length === 0) {
+        return (
+            <Paper variant="outlined" sx={{ p: 4, textAlign: 'center', borderStyle: 'dashed' }}>
+                <EstimateIcon sx={{ fontSize: 48, color: 'grey.400', mb: 1 }} />
+                <Typography color="text.secondary">Нет смет для этого клиента</Typography>
+                <Typography variant="caption" color="text.secondary">
+                    Создайте смету на странице Estimates
+                </Typography>
+            </Paper>
+        );
+    }
+
+    return (
+        <Stack spacing={1.5}>
+            {estimates.map(est => {
+                const isExpanded = expandedId === est.id;
+                const createdDate = est.createdAt?.toDate ? formatDate(est.createdAt.toDate(), 'dd MMM yyyy', { locale: ru }) : '—';
+                return (
+                    <Paper
+                        key={est.id}
+                        variant="outlined"
+                        sx={{
+                            overflow: 'hidden',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s',
+                            '&:hover': { borderColor: 'primary.main', boxShadow: 1 },
+                        }}
+                        onClick={() => onToggle(est.id)}
+                    >
+                        <Box sx={{ p: 2, display: 'flex', alignItems: 'center', gap: 2 }}>
+                            <Box flex={1}>
+                                <Box display="flex" alignItems="center" gap={1} mb={0.5}>
+                                    <Typography variant="subtitle1" fontWeight={600}>
+                                        {est.number}
+                                    </Typography>
+                                    <Chip
+                                        label={STATUS_LABELS[est.status] || est.status}
+                                        size="small"
+                                        sx={{
+                                            bgcolor: STATUS_COLORS[est.status] || '#9e9e9e',
+                                            color: '#fff',
+                                            fontWeight: 600,
+                                            height: 22,
+                                            fontSize: '0.7rem',
+                                        }}
+                                    />
+                                </Box>
+                                <Typography variant="body2" color="text.secondary">
+                                    {est.clientName} · {createdDate}
+                                </Typography>
+                            </Box>
+                            <Typography variant="h6" fontWeight={700} color="primary.main">
+                                ${est.total?.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                            </Typography>
+                            <ExpandMoreIcon sx={{
+                                transform: isExpanded ? 'rotate(180deg)' : 'rotate(0)',
+                                transition: 'transform 0.2s',
+                            }} />
+                        </Box>
+
+                        {isExpanded && (
+                            <Box sx={{ px: 2, pb: 2, borderTop: '1px solid', borderColor: 'divider' }}>
+                                <Table size="small" sx={{ mt: 1 }}>
+                                    <TableHead>
+                                        <TableRow>
+                                            <TableCell sx={{ fontWeight: 600 }}>Описание</TableCell>
+                                            <TableCell align="center" sx={{ fontWeight: 600 }}>Кол-во</TableCell>
+                                            <TableCell align="right" sx={{ fontWeight: 600 }}>Цена</TableCell>
+                                            <TableCell align="right" sx={{ fontWeight: 600 }}>Итого</TableCell>
+                                        </TableRow>
+                                    </TableHead>
+                                    <TableBody>
+                                        {est.items.map((item, idx) => (
+                                            <TableRow key={item.id || idx}>
+                                                <TableCell>
+                                                    <Box>
+                                                        <Typography variant="body2">{item.description}</Typography>
+                                                        <Chip label={item.type} size="small" variant="outlined" sx={{ height: 18, fontSize: '0.65rem', mt: 0.5 }} />
+                                                    </Box>
+                                                </TableCell>
+                                                <TableCell align="center">{item.quantity}</TableCell>
+                                                <TableCell align="right">${item.unitPrice.toFixed(2)}</TableCell>
+                                                <TableCell align="right" sx={{ fontWeight: 600 }}>${item.total.toFixed(2)}</TableCell>
+                                            </TableRow>
+                                        ))}
+                                    </TableBody>
+                                </Table>
+                                <Box sx={{ mt: 1.5, display: 'flex', justifyContent: 'flex-end', gap: 3 }}>
+                                    <Typography variant="body2" color="text.secondary">
+                                        Subtotal: <strong>${est.subtotal?.toFixed(2)}</strong>
+                                    </Typography>
+                                    {est.taxAmount > 0 && (
+                                        <Typography variant="body2" color="text.secondary">
+                                            Tax ({est.taxRate}%): <strong>${est.taxAmount?.toFixed(2)}</strong>
+                                        </Typography>
+                                    )}
+                                    <Typography variant="body1" fontWeight={700} color="primary.main">
+                                        Total: ${est.total?.toFixed(2)}
+                                    </Typography>
+                                </Box>
+                                {est.notes && (
+                                    <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+                                        📝 {est.notes}
+                                    </Typography>
+                                )}
+                            </Box>
+                        )}
+                    </Paper>
+                );
+            })}
+        </Stack>
+    );
+};
+
+// ═══════════════════════════════════════════════════════════
+// BLUEPRINTS TAB CONTENT (Enhanced with sections)
+// ═══════════════════════════════════════════════════════════
+
+const BLUEPRINT_SECTIONS = [
+    { key: 'electrical', label: 'Electrical', icon: '⚡' },
+    { key: 'plumbing', label: 'Plumbing', icon: '🔧' },
+    { key: 'mechanical', label: 'Mechanical', icon: '⚙️' },
+    { key: 'architectural', label: 'Architectural', icon: '🏗️' },
+    { key: 'fire', label: 'Fire', icon: '🔥' },
+    { key: 'general', label: 'General', icon: '📄' },
+] as const;
+
+type BlueprintSection = typeof BLUEPRINT_SECTIONS[number]['key'];
+
+interface BlueprintFile {
+    id: string;
+    name: string;
+    path: string;
+    url: string;
+    size: number;
+    contentType: string;
+    description: string;
+    version: number;
+    uploadedBy: string;
+    uploadedAt: string | null;
+    section?: string;
+}
+
+const BlueprintsTabContent: React.FC<{ projectId: string }> = ({ projectId }) => {
+    const [files, setFiles] = useState<BlueprintFile[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [uploading, setUploading] = useState(false);
+    const [selectedSection, setSelectedSection] = useState<BlueprintSection>('electrical');
+    const [uploadSection, setUploadSection] = useState<BlueprintSection>('electrical');
+    const [error, setError] = useState<string | null>(null);
+    const [successMsg, setSuccessMsg] = useState<string | null>(null);
+    const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(BLUEPRINT_SECTIONS.map(s => s.key)));
+
+    useEffect(() => {
+        if (!projectId) return;
+        setLoading(true);
+
+        const q = query(
+            collection(db, `clients/${projectId}/files`),
+            orderBy('uploadedAt', 'desc')
+        );
+
+        const unsubscribe = onSnapshot(q, (snap) => {
+            const filesList: BlueprintFile[] = snap.docs.map(d => {
+                const data = d.data();
+                return {
+                    id: d.id,
+                    name: data.name || 'unnamed',
+                    path: data.path || '',
+                    url: data.url || '',
+                    size: data.size || 0,
+                    contentType: data.contentType || '',
+                    description: data.description || '',
+                    version: data.version || 1,
+                    uploadedBy: data.uploadedBy || 'unknown',
+                    uploadedAt: data.uploadedAt?.toDate?.()?.toISOString() || null,
+                    section: data.section || 'general',
+                };
+            });
+            setFiles(filesList);
+            setLoading(false);
+        }, (err) => {
+            console.error('Error loading blueprint files:', err);
+            setError('Не удалось загрузить файлы');
+            setLoading(false);
+        });
+
+        return () => unsubscribe();
+    }, [projectId]);
+
+    const handleFileUpload = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const selectedFiles = event.target.files;
+        if (!selectedFiles || selectedFiles.length === 0) return;
+
+        setUploading(true);
+        setError(null);
+
+        try {
+            for (let i = 0; i < selectedFiles.length; i++) {
+                const file = selectedFiles[i];
+                if (file.size > 50 * 1024 * 1024) {
+                    setError(`Файл "${file.name}" слишком большой (максимум 50MB)`);
+                    continue;
+                }
+
+                const base64 = await new Promise<string>((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = () => {
+                        const result = reader.result as string;
+                        resolve(result.split(',')[1]);
+                    };
+                    reader.onerror = reject;
+                    reader.readAsDataURL(file);
+                });
+
+                const response = await fetch(`/api/projects/${projectId}/files`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        fileName: file.name,
+                        contentType: file.type,
+                        base64Data: base64,
+                        section: uploadSection,
+                    }),
+                });
+
+                if (!response.ok) {
+                    const errData = await response.json().catch(() => ({}));
+                    throw new Error(errData.error || `Upload failed: ${response.status}`);
+                }
+
+                setSuccessMsg(`Файл "${file.name}" загружен в ${uploadSection}`);
+            }
+        } catch (err: any) {
+            console.error('Upload error:', err);
+            setError(err.message || 'Ошибка загрузки файла');
+        } finally {
+            setUploading(false);
+            event.target.value = '';
+        }
+    }, [projectId, uploadSection]);
+
+    const toggleSection = (key: string) => {
+        setExpandedSections(prev => {
+            const next = new Set(prev);
+            if (next.has(key)) next.delete(key);
+            else next.add(key);
+            return next;
+        });
+    };
+
+    const formatFileSize = (bytes: number) => {
+        if (bytes < 1024) return `${bytes} B`;
+        if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+        return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    };
+
+    if (loading) return <Box display="flex" justifyContent="center" py={4}><CircularProgress /></Box>;
+
+    // Group files by section
+    const grouped: Record<string, BlueprintFile[]> = {};
+    BLUEPRINT_SECTIONS.forEach(s => { grouped[s.key] = []; });
+    files.forEach(f => {
+        const sec = f.section || 'general';
+        if (grouped[sec]) grouped[sec].push(f);
+        else grouped['general'].push(f);
+    });
+
+    return (
+        <Box>
+            {/* Upload area */}
+            <Paper variant="outlined" sx={{ p: 2, mb: 2, display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
+                <FormControl size="small" sx={{ minWidth: 160 }}>
+                    <Select
+                        value={uploadSection}
+                        onChange={(e) => setUploadSection(e.target.value as BlueprintSection)}
+                        displayEmpty
+                    >
+                        {BLUEPRINT_SECTIONS.map(s => (
+                            <MenuItem key={s.key} value={s.key}>{s.icon} {s.label}</MenuItem>
+                        ))}
+                    </Select>
+                </FormControl>
+                <Button
+                    variant="contained"
+                    component="label"
+                    disabled={uploading}
+                    startIcon={uploading ? <CircularProgress size={18} color="inherit" /> : <AddIcon />}
+                >
+                    {uploading ? 'Загрузка...' : 'Загрузить'}
+                    <input
+                        type="file"
+                        hidden
+                        multiple
+                        accept=".pdf,.png,.jpg,.jpeg,.dwg,.dxf"
+                        onChange={handleFileUpload}
+                    />
+                </Button>
+            </Paper>
+
+            {error && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>{error}</Alert>}
+            {successMsg && <Alert severity="success" sx={{ mb: 2 }} onClose={() => setSuccessMsg(null)}>{successMsg}</Alert>}
+
+            {/* Sections */}
+            {BLUEPRINT_SECTIONS.map(sec => {
+                const sectionFiles = grouped[sec.key] || [];
+                return (
+                    <Accordion
+                        key={sec.key}
+                        expanded={expandedSections.has(sec.key)}
+                        onChange={() => toggleSection(sec.key)}
+                        variant="outlined"
+                        sx={{ mb: 1, '&:before': { display: 'none' } }}
+                        disableGutters
+                    >
+                        <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                            <Box display="flex" alignItems="center" gap={1}>
+                                <Typography>{sec.icon}</Typography>
+                                <Typography fontWeight={600}>{sec.label}</Typography>
+                                <Chip label={sectionFiles.length} size="small" sx={{ height: 20, fontSize: '0.7rem' }} />
+                            </Box>
+                        </AccordionSummary>
+                        <AccordionDetails sx={{ p: 1 }}>
+                            {sectionFiles.length === 0 ? (
+                                <Typography variant="body2" color="text.secondary" sx={{ py: 1, pl: 1 }}>
+                                    Нет файлов в этом разделе
+                                </Typography>
+                            ) : (
+                                <List dense disablePadding>
+                                    {sectionFiles.map(file => (
+                                        <ListItem key={file.id} sx={{ py: 0.5 }}>
+                                            <ListItemIcon sx={{ minWidth: 36 }}>
+                                                {file.contentType?.includes('pdf') ? <BlueprintIcon color="error" fontSize="small" /> : <BlueprintIcon color="primary" fontSize="small" />}
+                                            </ListItemIcon>
+                                            <ListItemText
+                                                primary={
+                                                    <Link href={file.url} target="_blank" rel="noopener noreferrer" underline="hover" fontWeight={500}>
+                                                        {file.name}
+                                                    </Link>
+                                                }
+                                                secondary={`${formatFileSize(file.size)} · v${file.version}${file.uploadedAt ? ' · ' + formatDate(new Date(file.uploadedAt), 'dd MMM yyyy', { locale: ru }) : ''}`}
+                                            />
+                                        </ListItem>
+                                    ))}
+                                </List>
+                            )}
+                        </AccordionDetails>
+                    </Accordion>
+                );
+            })}
+        </Box>
+    );
+};
+
+// ═══════════════════════════════════════════════════════════
 // MAIN COMPONENT
 // ═══════════════════════════════════════════════════════════
 
@@ -247,7 +635,7 @@ const UnifiedCockpitPage: React.FC = () => {
     const { taskId } = useParams<{ taskId: string }>();
     const navigate = useNavigate();
     const location = useLocation();
-    const { currentUser } = useAuth();
+    const { currentUser, userProfile } = useAuth();
 
     // Context-aware back navigation
     const backPath = (location.state as any)?.from || '/crm/gtd';
@@ -313,6 +701,11 @@ const UnifiedCockpitPage: React.FC = () => {
 
     // AI modification state
     const [isAiModifying, setIsAiModifying] = useState(false);
+
+    // Estimates state
+    const [estimates, setEstimates] = useState<Estimate[]>([]);
+    const [estimatesLoading, setEstimatesLoading] = useState(false);
+    const [expandedEstimateId, setExpandedEstimateId] = useState<string | null>(null);
 
     // Tab state
     const [activeTab, setActiveTab] = useState(0);
@@ -468,6 +861,21 @@ const UnifiedCockpitPage: React.FC = () => {
         const interval = setInterval(updateTimer, 1000);
         return () => clearInterval(interval);
     }, [activeSession, taskId]);
+
+    // ─────────────────────────────────────────────────────────
+    // LOAD ESTIMATES for client
+    // ─────────────────────────────────────────────────────────
+    useEffect(() => {
+        if (!clientId || !userProfile?.companyId) {
+            setEstimates([]);
+            return;
+        }
+        setEstimatesLoading(true);
+        estimatesApi.getClientEstimates(userProfile.companyId, clientId)
+            .then(data => setEstimates(data))
+            .catch(err => console.error('Error loading estimates:', err))
+            .finally(() => setEstimatesLoading(false));
+    }, [clientId, userProfile?.companyId]);
 
     // ─────────────────────────────────────────────────────────
     // HANDLERS
@@ -1037,7 +1445,9 @@ const UnifiedCockpitPage: React.FC = () => {
                                 <Tab icon={<PersonIcon />} label="История" />
                                 <Tab icon={<InventoryIcon />} label="Материалы" />
                                 <Tab icon={<ContactsIcon />} label="Справочник" />
-                                <Tab icon={<BlueprintIcon />} label="Чертежи" />
+                                <Tab icon={<BlueprintsIcon />} label="Blueprints" />
+                                <Tab icon={<EstimateIcon />} label="Estimates" />
+                                <Tab icon={<PercentageIcon />} label="Процентовка" />
                             </Tabs>
 
                             {activeTab === 0 && (
@@ -1085,11 +1495,48 @@ const UnifiedCockpitPage: React.FC = () => {
                             {activeTab === 4 && (
                                 <Box sx={{ py: 2, pr: 1 }}>
                                     {linkedProjectId ? (
-                                        <ProjectFilesTab projectId={linkedProjectId} />
+                                        <BlueprintsTabContent projectId={linkedProjectId} />
                                     ) : (
                                         <Alert severity="info">
                                             Для работы с чертежами необходимо привязать задачу к клиенту с активным проектом.
                                         </Alert>
+                                    )}
+                                </Box>
+                            )}
+
+                            {activeTab === 5 && (
+                                <Box sx={{ py: 2, pr: 1 }}>
+                                    <EstimatesTabContent
+                                        estimates={estimates}
+                                        loading={estimatesLoading}
+                                        expandedId={expandedEstimateId}
+                                        onToggle={(id) => setExpandedEstimateId(prev => prev === id ? null : id)}
+                                    />
+                                </Box>
+                            )}
+
+                            {activeTab === 6 && (
+                                <Box sx={{ py: 2, pr: 1 }}>
+                                    {taskId ? (
+                                        <GTDSubtasksTable
+                                            parentTaskId={taskId}
+                                            allTasks={subtasks}
+                                            onUpdateTask={handleUpdateSubtask}
+                                            onDeleteTask={handleDeleteSubtask}
+                                            onAddSubtask={handleAddSubtask}
+                                            onStartSession={(st) => {
+                                                startSession({
+                                                    id: st.id,
+                                                    title: st.title,
+                                                    clientId: clientId || '',
+                                                    clientName: clientName || '',
+                                                } as GTDTask);
+                                            }}
+                                            onStopSession={() => stopSession()}
+                                            activeSession={activeSession}
+                                        />
+                                    ) : (
+                                        <Alert severity="info">Загрузка задачи...</Alert>
                                     )}
                                 </Box>
                             )}

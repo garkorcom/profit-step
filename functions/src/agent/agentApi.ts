@@ -22,6 +22,8 @@
  * - POST   /api/estimates/:id/convert-to-tasks ← Estimator
  * - POST   /api/projects              ← Estimator
  * - GET    /api/projects/list          ← Estimator
+ * - POST   /api/projects/:id/files    ← File Upload (base64)
+ * - GET    /api/projects/:id/files    ← List project files
  * - GET    /api/finance/context
  * - POST   /api/finance/transactions/batch
  * - POST   /api/finance/transactions/approve
@@ -62,7 +64,7 @@ const Timestamp = admin.firestore.Timestamp;
 
 const app = express();
 app.use(cors({ origin: true }));
-app.use(express.json());
+app.use(express.json({ limit: '60mb' }));
 app.use(requestLogger);
 app.use(authMiddleware);
 app.use(rateLimitMiddleware);
@@ -2337,6 +2339,154 @@ app.get('/api/projects/list', async (req, res, next) => {
   }
 });
 
+// ─── POST /api/projects/:id/files ──────────────────────────────────
+
+const UploadFileSchema = z.object({
+  fileName: z.string().min(1),
+  contentType: z.string().min(1).default('application/octet-stream'),
+  base64Data: z.string().min(1),
+  description: z.string().optional(),
+});
+
+app.post('/api/projects/:id/files', async (req, res, next) => {
+  try {
+    const projectId = req.params.id;
+    const data = UploadFileSchema.parse(req.body);
+    logger.info('📁 files:upload', { projectId, fileName: data.fileName });
+
+    // Validate project exists
+    const projectDoc = await db.collection('projects').doc(projectId).get();
+    if (!projectDoc.exists) {
+      res.status(404).json({ error: `Проект "${projectId}" не найден` });
+      return;
+    }
+
+    // Decode base64
+    const buffer = Buffer.from(data.base64Data, 'base64');
+    const fileSizeBytes = buffer.length;
+
+    // Max 50MB
+    if (fileSizeBytes > 50 * 1024 * 1024) {
+      res.status(400).json({ error: 'Файл слишком большой (максимум 50MB)' });
+      return;
+    }
+
+    // Determine version number — count existing files with same name
+    const existingFilesSnap = await db.collection('projects').doc(projectId)
+      .collection('files')
+      .where('name', '==', data.fileName)
+      .orderBy('version', 'desc')
+      .limit(1)
+      .get();
+
+    const version = existingFilesSnap.empty ? 1 : (existingFilesSnap.docs[0].data().version || 0) + 1;
+
+    // Storage path with version: /projects/{projectId}/blueprints/{version}_{filename}
+    const storagePath = `projects/${projectId}/blueprints/v${version}_${data.fileName}`;
+    const bucket = admin.storage().bucket();
+    const file = bucket.file(storagePath);
+
+    await file.save(buffer, {
+      metadata: {
+        contentType: data.contentType,
+        metadata: {
+          projectId,
+          version: String(version),
+          originalName: data.fileName,
+          uploadedBy: req.agentUserId || 'agent',
+        },
+      },
+    });
+
+    // Generate signed URL (30-day expiry)
+    const [signedUrl] = await file.getSignedUrl({
+      action: 'read',
+      expires: Date.now() + 30 * 24 * 60 * 60 * 1000,
+    });
+
+    // Save metadata to Firestore subcollection
+    const fileDocRef = await db.collection('projects').doc(projectId)
+      .collection('files').add({
+        name: data.fileName,
+        path: storagePath,
+        url: signedUrl,
+        size: fileSizeBytes,
+        contentType: data.contentType,
+        description: data.description || '',
+        version,
+        uploadedBy: req.agentUserId || 'agent',
+        uploadedAt: FieldValue.serverTimestamp(),
+      });
+
+    logger.info('📁 files:uploaded', { projectId, fileId: fileDocRef.id, version, size: fileSizeBytes });
+    await logAgentActivity({
+      userId: req.agentUserId!,
+      action: 'file_uploaded',
+      endpoint: `/api/projects/${projectId}/files`,
+      metadata: { projectId, fileId: fileDocRef.id, fileName: data.fileName, version, size: fileSizeBytes },
+    });
+
+    res.status(201).json({
+      fileId: fileDocRef.id,
+      name: data.fileName,
+      version,
+      url: signedUrl,
+      size: fileSizeBytes,
+      path: storagePath,
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// ─── GET /api/projects/:id/files ───────────────────────────────────
+
+app.get('/api/projects/:id/files', async (req, res, next) => {
+  try {
+    const projectId = req.params.id;
+    logger.info('📁 files:list', { projectId });
+
+    // Validate project exists
+    const projectDoc = await db.collection('projects').doc(projectId).get();
+    if (!projectDoc.exists) {
+      res.status(404).json({ error: `Проект "${projectId}" не найден` });
+      return;
+    }
+
+    const filesSnap = await db.collection('projects').doc(projectId)
+      .collection('files')
+      .orderBy('uploadedAt', 'desc')
+      .get();
+
+    const files = filesSnap.docs.map((d) => {
+      const f = d.data();
+      return {
+        id: d.id,
+        name: f.name,
+        path: f.path,
+        url: f.url,
+        size: f.size,
+        contentType: f.contentType || 'application/octet-stream',
+        description: f.description || '',
+        version: f.version || 1,
+        uploadedBy: f.uploadedBy || 'unknown',
+        uploadedAt: f.uploadedAt?.toDate?.()?.toISOString() || null,
+      };
+    });
+
+    // Group by filename for version view
+    const grouped: Record<string, typeof files> = {};
+    for (const file of files) {
+      if (!grouped[file.name]) grouped[file.name] = [];
+      grouped[file.name].push(file);
+    }
+
+    res.json({ files, grouped, count: files.length });
+  } catch (e) {
+    next(e);
+  }
+});
+
 // ─── Error Handler (must be last) ──────────────────────────────────
 
 app.use(errorHandler);
@@ -2344,5 +2494,5 @@ app.use(errorHandler);
 // ─── Export as Firebase Function ────────────────────────────────────
 
 export const agentApi = functions
-  .runWith({ minInstances: 1, memory: '256MB', timeoutSeconds: 60 })
+  .runWith({ minInstances: 1, memory: '512MB', timeoutSeconds: 120 })
   .https.onRequest(app);

@@ -1,0 +1,985 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Profit Step — AI-Powered CRM for Contractors | Estimates in Minutes, Not Hours</title>
+    <meta name="description" content="The CRM built for electrical, plumbing & HVAC contractors. Upload a blueprint, get an estimate in minutes. Track time, costs, and profit on every project — all from your phone.">
+    <meta name="keywords" content="contractor CRM, electrical estimating software, plumbing CRM, HVAC contractor software, AI blueprint estimator, construction project management">
+    <meta property="og:title" content="Profit Step — AI-Powered CRM for Contractors">
+    <meta property="og:description" content="Upload a blueprint, get an estimate in minutes. Track profit on every project in real time.">
+    <meta property="og:type" content="website">
+    <link rel="icon" href="/favicon.ico">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#e8f5e9',
+                            100: '#c8e6c9',
+                            200: '#a5d6a7',
+                            300: '#81c784',
+                            400: '#66bb6a',
+                            500: '#4caf50',
+                            600: '#43a047',
+                            700: '#388e3c',
+                            800: '#2e7d32',
+                            900: '#1b5e20',
+                        },
+                        dark: {
+                            50: '#f8fafc',
+                            100: '#f1f5f9',
+                            200: '#e2e8f0',
+                            300: '#cbd5e1',
+                            400: '#94a3b8',
+                            500: '#64748b',
+                            600: '#475569',
+                            700: '#334155',
+                            800: '#1e293b',
+                            900: '#0f172a',
+                            950: '#020617',
+                        }
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        /* Scroll animations */
+        .fade-up {
+            opacity: 0;
+            transform: translateY(40px);
+            transition: opacity 0.7s ease-out, transform 0.7s ease-out;
+        }
+        .fade-up.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+        .fade-up-delay-1 { transition-delay: 0.1s; }
+        .fade-up-delay-2 { transition-delay: 0.2s; }
+        .fade-up-delay-3 { transition-delay: 0.3s; }
+        .fade-up-delay-4 { transition-delay: 0.4s; }
+
+        /* Gradient text */
+        .gradient-text {
+            background: linear-gradient(135deg, #4caf50, #81c784, #2e7d32);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        /* Glow effect */
+        .glow-green {
+            box-shadow: 0 0 40px rgba(46, 125, 50, 0.3), 0 0 80px rgba(46, 125, 50, 0.1);
+        }
+
+        /* Grid pattern bg */
+        .grid-bg {
+            background-image: 
+                linear-gradient(rgba(46, 125, 50, 0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(46, 125, 50, 0.03) 1px, transparent 1px);
+            background-size: 60px 60px;
+        }
+
+        /* Floating animation */
+        @keyframes float {
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-20px); }
+        }
+        .float { animation: float 6s ease-in-out infinite; }
+        .float-delay { animation: float 6s ease-in-out 2s infinite; }
+
+        /* Pulse ring */
+        @keyframes pulse-ring {
+            0% { transform: scale(0.8); opacity: 1; }
+            100% { transform: scale(2); opacity: 0; }
+        }
+        .pulse-ring::before {
+            content: '';
+            position: absolute;
+            inset: -8px;
+            border-radius: 50%;
+            border: 2px solid #4caf50;
+            animation: pulse-ring 2s ease-out infinite;
+        }
+
+        /* Custom scrollbar */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #0f172a; }
+        ::-webkit-scrollbar-thumb { background: #2e7d32; border-radius: 4px; }
+
+        /* Table hover */
+        .comparison-row:hover { background: rgba(46, 125, 50, 0.05); }
+
+        /* Mobile menu */
+        .mobile-menu { transform: translateX(100%); transition: transform 0.3s ease; }
+        .mobile-menu.open { transform: translateX(0); }
+
+        /* Hero mockup */
+        .hero-mockup {
+            background: linear-gradient(135deg, #1e293b, #0f172a);
+            border: 1px solid rgba(46, 125, 50, 0.2);
+            border-radius: 16px;
+            overflow: hidden;
+        }
+        .mockup-bar {
+            background: rgba(46, 125, 50, 0.1);
+            padding: 8px 16px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .mockup-dot {
+            width: 10px; height: 10px; border-radius: 50%;
+        }
+
+        /* Pricing card hover */
+        .pricing-card {
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+        .pricing-card:hover {
+            transform: translateY(-8px);
+        }
+        .pricing-popular {
+            border: 2px solid #2e7d32;
+            position: relative;
+        }
+
+        /* Comparison checkmark */
+        .check { color: #4caf50; font-weight: bold; }
+        .cross { color: #ef4444; }
+        .partial { color: #f59e0b; }
+
+        /* Number counter */
+        .counter {
+            font-variant-numeric: tabular-nums;
+        }
+
+        /* Testimonial card */
+        .testimonial-card {
+            background: linear-gradient(135deg, rgba(30, 41, 59, 0.8), rgba(15, 23, 42, 0.9));
+            backdrop-filter: blur(10px);
+        }
+    </style>
+</head>
+<body class="bg-dark-950 text-dark-200 font-sans antialiased">
+
+    <!-- Navigation -->
+    <nav class="fixed top-0 left-0 right-0 z-50 bg-dark-950/80 backdrop-blur-xl border-b border-dark-800/50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex items-center justify-between h-16 lg:h-20">
+                <!-- Logo -->
+                <a href="#" class="flex items-center gap-3">
+                    <div class="w-9 h-9 bg-brand-800 rounded-lg flex items-center justify-center">
+                        <svg class="w-5 h-5 text-brand-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/></svg>
+                    </div>
+                    <span class="text-xl font-bold text-white">Profit<span class="text-brand-500">Step</span></span>
+                </a>
+
+                <!-- Desktop Nav -->
+                <div class="hidden lg:flex items-center gap-8">
+                    <a href="#features" class="text-dark-400 hover:text-white transition-colors text-sm font-medium">Features</a>
+                    <a href="#how-it-works" class="text-dark-400 hover:text-white transition-colors text-sm font-medium">How It Works</a>
+                    <a href="#comparison" class="text-dark-400 hover:text-white transition-colors text-sm font-medium">Compare</a>
+                    <a href="#pricing" class="text-dark-400 hover:text-white transition-colors text-sm font-medium">Pricing</a>
+                    <a href="ru.html" class="text-dark-400 hover:text-white transition-colors text-sm font-medium">🇷🇺 RU</a>
+                </div>
+
+                <!-- CTA Buttons -->
+                <div class="hidden lg:flex items-center gap-3">
+                    <a href="#pricing" class="text-sm font-medium text-dark-300 hover:text-white transition-colors px-4 py-2">Log In</a>
+                    <a href="#pricing" class="text-sm font-semibold bg-brand-800 hover:bg-brand-700 text-white px-5 py-2.5 rounded-lg transition-all hover:shadow-lg hover:shadow-brand-800/25">Start Free Trial</a>
+                </div>
+
+                <!-- Mobile burger -->
+                <button id="mobile-toggle" class="lg:hidden text-dark-400 hover:text-white p-2">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
+                </button>
+            </div>
+        </div>
+
+        <!-- Mobile menu -->
+        <div id="mobile-menu" class="mobile-menu fixed inset-0 top-16 bg-dark-950/98 backdrop-blur-xl lg:hidden z-40">
+            <div class="flex flex-col items-center justify-center h-full gap-8 text-lg">
+                <a href="#features" class="text-dark-300 hover:text-white transition-colors" onclick="closeMobileMenu()">Features</a>
+                <a href="#how-it-works" class="text-dark-300 hover:text-white transition-colors" onclick="closeMobileMenu()">How It Works</a>
+                <a href="#comparison" class="text-dark-300 hover:text-white transition-colors" onclick="closeMobileMenu()">Compare</a>
+                <a href="#pricing" class="text-dark-300 hover:text-white transition-colors" onclick="closeMobileMenu()">Pricing</a>
+                <a href="ru.html" class="text-dark-300 hover:text-white transition-colors" onclick="closeMobileMenu()">🇷🇺 Русский</a>
+                <a href="#pricing" class="bg-brand-800 hover:bg-brand-700 text-white px-8 py-3 rounded-lg font-semibold mt-4">Start Free Trial</a>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Hero Section -->
+    <section class="relative pt-32 lg:pt-40 pb-20 lg:pb-32 overflow-hidden grid-bg">
+        <!-- Background decorations -->
+        <div class="absolute top-20 left-10 w-72 h-72 bg-brand-800/10 rounded-full blur-3xl"></div>
+        <div class="absolute bottom-10 right-10 w-96 h-96 bg-brand-800/5 rounded-full blur-3xl"></div>
+
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="grid lg:grid-cols-2 gap-12 lg:gap-16 items-center">
+                <!-- Hero text -->
+                <div class="fade-up">
+                    <div class="inline-flex items-center gap-2 bg-brand-800/10 border border-brand-800/20 rounded-full px-4 py-1.5 mb-6">
+                        <span class="relative flex h-2 w-2">
+                            <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-brand-400 opacity-75"></span>
+                            <span class="relative inline-flex rounded-full h-2 w-2 bg-brand-500"></span>
+                        </span>
+                        <span class="text-brand-400 text-sm font-medium">AI-Powered for Contractors</span>
+                    </div>
+
+                    <h1 class="text-4xl sm:text-5xl lg:text-6xl font-black text-white leading-tight mb-6">
+                        Stop Guessing.<br>
+                        <span class="gradient-text">Start Profiting.</span>
+                    </h1>
+
+                    <p class="text-lg lg:text-xl text-dark-400 leading-relaxed mb-8 max-w-xl">
+                        Upload a blueprint — get a detailed estimate in minutes. Track every dollar, every hour, every project. The CRM that pays for itself on day one.
+                    </p>
+
+                    <div class="flex flex-col sm:flex-row gap-4 mb-10">
+                        <a href="#pricing" class="inline-flex items-center justify-center gap-2 bg-brand-800 hover:bg-brand-700 text-white font-semibold px-8 py-4 rounded-xl text-lg transition-all hover:shadow-xl hover:shadow-brand-800/25 hover:-translate-y-0.5">
+                            Start Free Trial
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+                        </a>
+                        <a href="#how-it-works" class="inline-flex items-center justify-center gap-2 border border-dark-700 hover:border-dark-500 text-dark-300 hover:text-white font-medium px-8 py-4 rounded-xl text-lg transition-all">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                            See How It Works
+                        </a>
+                    </div>
+
+                    <!-- Stats -->
+                    <div class="grid grid-cols-3 gap-6">
+                        <div>
+                            <div class="text-2xl lg:text-3xl font-bold text-white counter">10x</div>
+                            <div class="text-sm text-dark-500">Cheaper than<br>ServiceTitan</div>
+                        </div>
+                        <div>
+                            <div class="text-2xl lg:text-3xl font-bold text-white counter">10+hrs</div>
+                            <div class="text-sm text-dark-500">Saved per week<br>on estimates</div>
+                        </div>
+                        <div>
+                            <div class="text-2xl lg:text-3xl font-bold text-white counter">3 AI</div>
+                            <div class="text-sm text-dark-500">Models analyze<br>your blueprints</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Hero mockup -->
+                <div class="fade-up fade-up-delay-2 float">
+                    <div class="hero-mockup glow-green">
+                        <div class="mockup-bar">
+                            <div class="mockup-dot bg-red-500/70"></div>
+                            <div class="mockup-dot bg-yellow-500/70"></div>
+                            <div class="mockup-dot bg-green-500/70"></div>
+                            <span class="text-xs text-dark-500 ml-2 font-mono">profit-step.web.app</span>
+                        </div>
+                        <div class="p-6 space-y-4">
+                            <!-- Mock dashboard -->
+                            <div class="flex items-center justify-between">
+                                <div>
+                                    <div class="text-xs text-dark-500 uppercase tracking-wider">Current Project</div>
+                                    <div class="text-white font-semibold">Farmers Milk — Electrical</div>
+                                </div>
+                                <div class="bg-brand-800/20 text-brand-400 px-3 py-1 rounded-full text-sm font-medium">Active</div>
+                            </div>
+                            <div class="grid grid-cols-3 gap-3">
+                                <div class="bg-dark-900/50 rounded-lg p-3">
+                                    <div class="text-xs text-dark-500 mb-1">Revenue</div>
+                                    <div class="text-brand-400 font-bold text-lg">$47,250</div>
+                                </div>
+                                <div class="bg-dark-900/50 rounded-lg p-3">
+                                    <div class="text-xs text-dark-500 mb-1">Costs</div>
+                                    <div class="text-red-400 font-bold text-lg">$31,800</div>
+                                </div>
+                                <div class="bg-dark-900/50 rounded-lg p-3">
+                                    <div class="text-xs text-dark-500 mb-1">Profit</div>
+                                    <div class="text-brand-400 font-bold text-lg">$15,450</div>
+                                </div>
+                            </div>
+                            <!-- Mock chart bars -->
+                            <div class="space-y-2">
+                                <div class="flex items-center gap-2">
+                                    <span class="text-xs text-dark-500 w-16">Labor</span>
+                                    <div class="flex-1 bg-dark-900 rounded-full h-3">
+                                        <div class="bg-brand-700 h-3 rounded-full" style="width: 65%"></div>
+                                    </div>
+                                    <span class="text-xs text-dark-400 w-14 text-right">$20,670</span>
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <span class="text-xs text-dark-500 w-16">Materials</span>
+                                    <div class="flex-1 bg-dark-900 rounded-full h-3">
+                                        <div class="bg-blue-600 h-3 rounded-full" style="width: 28%"></div>
+                                    </div>
+                                    <span class="text-xs text-dark-400 w-14 text-right">$8,900</span>
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <span class="text-xs text-dark-500 w-16">Other</span>
+                                    <div class="flex-1 bg-dark-900 rounded-full h-3">
+                                        <div class="bg-yellow-600 h-3 rounded-full" style="width: 7%"></div>
+                                    </div>
+                                    <span class="text-xs text-dark-400 w-14 text-right">$2,230</span>
+                                </div>
+                            </div>
+                            <!-- Mock activity -->
+                            <div class="border-t border-dark-800 pt-3 space-y-2">
+                                <div class="flex items-center gap-2 text-xs">
+                                    <div class="w-6 h-6 bg-brand-800/30 rounded-full flex items-center justify-center text-brand-400">✓</div>
+                                    <span class="text-dark-400">Invoice #1047 paid — <span class="text-brand-400">$12,500</span></span>
+                                    <span class="text-dark-600 ml-auto">2h ago</span>
+                                </div>
+                                <div class="flex items-center gap-2 text-xs">
+                                    <div class="w-6 h-6 bg-blue-800/30 rounded-full flex items-center justify-center text-blue-400">⏱</div>
+                                    <span class="text-dark-400">Mike clocked in — Panel installation</span>
+                                    <span class="text-dark-600 ml-auto">4h ago</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Pain Points -->
+    <section class="py-20 lg:py-28 relative">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="text-center mb-16 fade-up">
+                <h2 class="text-3xl lg:text-4xl font-bold text-white mb-4">Sound Familiar?</h2>
+                <p class="text-dark-400 text-lg max-w-2xl mx-auto">Every contractor hits these walls. We built Profit Step to knock them down.</p>
+            </div>
+
+            <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-6 lg:gap-8">
+                <div class="fade-up bg-dark-900/50 border border-dark-800 rounded-2xl p-8 hover:border-brand-800/30 transition-colors">
+                    <div class="text-4xl mb-4">📝</div>
+                    <h3 class="text-xl font-semibold text-white mb-3">"I spend all weekend doing estimates"</h3>
+                    <p class="text-dark-400">Manual takeoffs from blueprints eat 10-15 hours a week. That's time you could be on the job site — or with your family.</p>
+                </div>
+                <div class="fade-up fade-up-delay-1 bg-dark-900/50 border border-dark-800 rounded-2xl p-8 hover:border-brand-800/30 transition-colors">
+                    <div class="text-4xl mb-4">💸</div>
+                    <h3 class="text-xl font-semibold text-white mb-3">"I don't know if this project is profitable"</h3>
+                    <p class="text-dark-400">You only find out you lost money after the job is done. By then it's too late. You need real-time visibility into every dollar.</p>
+                </div>
+                <div class="fade-up fade-up-delay-2 bg-dark-900/50 border border-dark-800 rounded-2xl p-8 hover:border-brand-800/30 transition-colors">
+                    <div class="text-4xl mb-4">⏰</div>
+                    <h3 class="text-xl font-semibold text-white mb-3">"My crew can't figure out the app"</h3>
+                    <p class="text-dark-400">Expensive CRMs need training, onboarding, and tech support. Your guys just want to clock in and get to work.</p>
+                </div>
+                <div class="fade-up bg-dark-900/50 border border-dark-800 rounded-2xl p-8 hover:border-brand-800/30 transition-colors">
+                    <div class="text-4xl mb-4">🏦</div>
+                    <h3 class="text-xl font-semibold text-white mb-3">"Reconciling bank statements takes forever"</h3>
+                    <p class="text-dark-400">Matching transactions to projects in Excel is mind-numbing. One misplaced number and your books are off.</p>
+                </div>
+                <div class="fade-up fade-up-delay-1 bg-dark-900/50 border border-dark-800 rounded-2xl p-8 hover:border-brand-800/30 transition-colors">
+                    <div class="text-4xl mb-4">💰</div>
+                    <h3 class="text-xl font-semibold text-white mb-3">"ServiceTitan costs more than my truck"</h3>
+                    <p class="text-dark-400">$5K-$50K setup + $250-400/month? That's insane for a 5-15 person crew. You need power tools, not enterprise bloat.</p>
+                </div>
+                <div class="fade-up fade-up-delay-2 bg-dark-900/50 border border-dark-800 rounded-2xl p-8 hover:border-brand-800/30 transition-colors">
+                    <div class="text-4xl mb-4">📱</div>
+                    <h3 class="text-xl font-semibold text-white mb-3">"I can't run my business from the field"</h3>
+                    <p class="text-dark-400">You're on the job site all day. You need to check project status, approve costs, and send invoices from your phone.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Features -->
+    <section id="features" class="py-20 lg:py-28 relative grid-bg">
+        <div class="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-brand-800/30 to-transparent"></div>
+
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="text-center mb-16 fade-up">
+                <div class="inline-flex items-center gap-2 bg-brand-800/10 border border-brand-800/20 rounded-full px-4 py-1.5 mb-4">
+                    <span class="text-brand-400 text-sm font-medium">10 Killer Features</span>
+                </div>
+                <h2 class="text-3xl lg:text-4xl font-bold text-white mb-4">Everything You Need.<br>Nothing You Don't.</h2>
+                <p class="text-dark-400 text-lg max-w-2xl mx-auto">Built by a contractor, for contractors. Every feature solves a real problem we've faced ourselves.</p>
+            </div>
+
+            <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <!-- Feature 1 - AI Blueprint -->
+                <div class="fade-up group bg-dark-900/30 border border-dark-800 rounded-2xl p-8 hover:border-brand-800/40 transition-all hover:bg-dark-900/60">
+                    <div class="w-12 h-12 bg-brand-800/20 rounded-xl flex items-center justify-center text-2xl mb-5 group-hover:scale-110 transition-transform">🤖</div>
+                    <h3 class="text-lg font-semibold text-white mb-2">AI Blueprint Estimator</h3>
+                    <p class="text-dark-400 text-sm leading-relaxed">Upload a PDF blueprint — get a detailed estimate in minutes. Three AI models analyze simultaneously for accuracy. No more all-night takeoffs.</p>
+                    <div class="mt-4 text-brand-500 text-sm font-medium flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        Save 10+ hours/week
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+                    </div>
+                </div>
+
+                <!-- Feature 2 - Telegram -->
+                <div class="fade-up fade-up-delay-1 group bg-dark-900/30 border border-dark-800 rounded-2xl p-8 hover:border-brand-800/40 transition-all hover:bg-dark-900/60">
+                    <div class="w-12 h-12 bg-blue-800/20 rounded-xl flex items-center justify-center text-2xl mb-5 group-hover:scale-110 transition-transform">💬</div>
+                    <h3 class="text-lg font-semibold text-white mb-2">Telegram AI Assistant</h3>
+                    <p class="text-dark-400 text-sm leading-relaxed">Manage your business by voice. "Hey, what's the profit on the Miller project?" Just text or voice your question — AI handles the rest.</p>
+                    <div class="mt-4 text-brand-500 text-sm font-medium flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        Works from any phone
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+                    </div>
+                </div>
+
+                <!-- Feature 3 - Time Tracking -->
+                <div class="fade-up fade-up-delay-2 group bg-dark-900/30 border border-dark-800 rounded-2xl p-8 hover:border-brand-800/40 transition-all hover:bg-dark-900/60">
+                    <div class="w-12 h-12 bg-yellow-800/20 rounded-xl flex items-center justify-center text-2xl mb-5 group-hover:scale-110 transition-transform">⏱️</div>
+                    <h3 class="text-lg font-semibold text-white mb-2">Smart Time Tracking</h3>
+                    <p class="text-dark-400 text-sm leading-relaxed">Your crew clocks in via Telegram — GPS location + photo proof. No apps to install, no training needed. They already know how to text.</p>
+                    <div class="mt-4 text-brand-500 text-sm font-medium flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        Zero training required
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+                    </div>
+                </div>
+
+                <!-- Feature 4 - Bank Reconciliation -->
+                <div class="fade-up group bg-dark-900/30 border border-dark-800 rounded-2xl p-8 hover:border-brand-800/40 transition-all hover:bg-dark-900/60">
+                    <div class="w-12 h-12 bg-purple-800/20 rounded-xl flex items-center justify-center text-2xl mb-5 group-hover:scale-110 transition-transform">🏦</div>
+                    <h3 class="text-lg font-semibold text-white mb-2">Bank Reconciliation</h3>
+                    <p class="text-dark-400 text-sm leading-relaxed">Upload your bank statement. AI automatically matches transactions to the right projects. What took hours now takes seconds.</p>
+                    <div class="mt-4 text-brand-500 text-sm font-medium flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        AI-powered matching
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+                    </div>
+                </div>
+
+                <!-- Feature 5 - Real-time P&L -->
+                <div class="fade-up fade-up-delay-1 group bg-dark-900/30 border border-dark-800 rounded-2xl p-8 hover:border-brand-800/40 transition-all hover:bg-dark-900/60">
+                    <div class="w-12 h-12 bg-green-800/20 rounded-xl flex items-center justify-center text-2xl mb-5 group-hover:scale-110 transition-transform">📊</div>
+                    <h3 class="text-lg font-semibold text-white mb-2">Real-Time P&L</h3>
+                    <p class="text-dark-400 text-sm leading-relaxed">Know your profit on every project — right now. Not next month. Not after tax time. Revenue, costs, and margin updated live.</p>
+                    <div class="mt-4 text-brand-500 text-sm font-medium flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        Per-project profitability
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+                    </div>
+                </div>
+
+                <!-- Feature 6 - Multi-Discipline -->
+                <div class="fade-up fade-up-delay-2 group bg-dark-900/30 border border-dark-800 rounded-2xl p-8 hover:border-brand-800/40 transition-all hover:bg-dark-900/60">
+                    <div class="w-12 h-12 bg-orange-800/20 rounded-xl flex items-center justify-center text-2xl mb-5 group-hover:scale-110 transition-transform">📐</div>
+                    <h3 class="text-lg font-semibold text-white mb-2">Multi-Discipline Estimating</h3>
+                    <p class="text-dark-400 text-sm leading-relaxed">Electrical, plumbing, HVAC, architectural — all in one place. One blueprint, multiple estimates. Perfect for GCs and multi-trade shops.</p>
+                    <div class="mt-4 text-brand-500 text-sm font-medium flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        4 trades supported
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+                    </div>
+                </div>
+
+                <!-- Feature 7 - Budget Tracking -->
+                <div class="fade-up group bg-dark-900/30 border border-dark-800 rounded-2xl p-8 hover:border-brand-800/40 transition-all hover:bg-dark-900/60">
+                    <div class="w-12 h-12 bg-red-800/20 rounded-xl flex items-center justify-center text-2xl mb-5 group-hover:scale-110 transition-transform">🏗️</div>
+                    <h3 class="text-lg font-semibold text-white mb-2">Budget Tracking</h3>
+                    <p class="text-dark-400 text-sm leading-relaxed">Progress billing with payments and debits. See completion percentage, paid vs. owed, and remaining budget at a glance.</p>
+                    <div class="mt-4 text-brand-500 text-sm font-medium flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        Never overbill again
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+                    </div>
+                </div>
+
+                <!-- Feature 8 - Mobile First -->
+                <div class="fade-up fade-up-delay-1 group bg-dark-900/30 border border-dark-800 rounded-2xl p-8 hover:border-brand-800/40 transition-all hover:bg-dark-900/60">
+                    <div class="w-12 h-12 bg-cyan-800/20 rounded-xl flex items-center justify-center text-2xl mb-5 group-hover:scale-110 transition-transform">📱</div>
+                    <h3 class="text-lg font-semibold text-white mb-2">Mobile-First Design</h3>
+                    <p class="text-dark-400 text-sm leading-relaxed">Built for the job site, not the office. Check project status, approve costs, snap receipt photos — all from your phone.</p>
+                    <div class="mt-4 text-brand-500 text-sm font-medium flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        Works on any device
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+                    </div>
+                </div>
+
+                <!-- Feature 9 - Affordable -->
+                <div class="fade-up fade-up-delay-2 group bg-dark-900/30 border border-dark-800 rounded-2xl p-8 hover:border-brand-800/40 transition-all hover:bg-dark-900/60">
+                    <div class="w-12 h-12 bg-emerald-800/20 rounded-xl flex items-center justify-center text-2xl mb-5 group-hover:scale-110 transition-transform">💲</div>
+                    <h3 class="text-lg font-semibold text-white mb-2">10x More Affordable</h3>
+                    <p class="text-dark-400 text-sm leading-relaxed">Enterprise features at small business prices. No $50K setup fees. No long-term contracts. Start free, upgrade when you're ready.</p>
+                    <div class="mt-4 text-brand-500 text-sm font-medium flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        From $0/month
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+                    </div>
+                </div>
+
+                <!-- Feature 10 - NEC Compliance (spans 3 cols on lg) -->
+                <div class="fade-up md:col-span-2 lg:col-span-3 group bg-gradient-to-r from-dark-900/30 to-brand-900/10 border border-brand-800/20 rounded-2xl p-8 hover:border-brand-800/40 transition-all">
+                    <div class="flex flex-col lg:flex-row items-start lg:items-center gap-6">
+                        <div class="w-12 h-12 bg-brand-800/20 rounded-xl flex items-center justify-center text-2xl flex-shrink-0 group-hover:scale-110 transition-transform">🔧</div>
+                        <div>
+                            <h3 class="text-lg font-semibold text-white mb-2">NEC / Code Compliance</h3>
+                            <p class="text-dark-400 text-sm leading-relaxed">AI automatically checks estimates against Florida building codes and NEC standards. Catch code violations before they cost you on the job site. Stay compliant without memorizing the codebook.</p>
+                        </div>
+                        <div class="lg:ml-auto flex-shrink-0">
+                            <span class="inline-flex items-center bg-brand-800/20 text-brand-400 px-4 py-2 rounded-full text-sm font-medium">
+                                🏛️ Florida Codes Built-In
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- How It Works -->
+    <section id="how-it-works" class="py-20 lg:py-28 relative">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="text-center mb-16 fade-up">
+                <div class="inline-flex items-center gap-2 bg-brand-800/10 border border-brand-800/20 rounded-full px-4 py-1.5 mb-4">
+                    <span class="text-brand-400 text-sm font-medium">How It Works</span>
+                </div>
+                <h2 class="text-3xl lg:text-4xl font-bold text-white mb-4">From Blueprint to Estimate<br>in 3 Steps</h2>
+                <p class="text-dark-400 text-lg max-w-2xl mx-auto">No training. No setup calls. No 90-day implementation. You'll be up and running today.</p>
+            </div>
+
+            <div class="grid md:grid-cols-3 gap-8 lg:gap-12">
+                <!-- Step 1 -->
+                <div class="fade-up text-center relative">
+                    <div class="w-16 h-16 bg-brand-800/20 border-2 border-brand-800/30 rounded-2xl flex items-center justify-center text-3xl mx-auto mb-6 relative pulse-ring">📤</div>
+                    <div class="text-brand-500 text-sm font-bold uppercase tracking-wider mb-2">Step 1</div>
+                    <h3 class="text-xl font-semibold text-white mb-3">Upload Your Blueprint</h3>
+                    <p class="text-dark-400">Drop a PDF blueprint into Profit Step. Residential, commercial, multi-story — it handles them all.</p>
+                    <!-- Connector -->
+                    <div class="hidden md:block absolute top-8 left-[60%] w-[80%] border-t-2 border-dashed border-dark-700"></div>
+                </div>
+
+                <!-- Step 2 -->
+                <div class="fade-up fade-up-delay-1 text-center relative">
+                    <div class="w-16 h-16 bg-brand-800/20 border-2 border-brand-800/30 rounded-2xl flex items-center justify-center text-3xl mx-auto mb-6">🧠</div>
+                    <div class="text-brand-500 text-sm font-bold uppercase tracking-wider mb-2">Step 2</div>
+                    <h3 class="text-xl font-semibold text-white mb-3">AI Analyzes Everything</h3>
+                    <p class="text-dark-400">Three AI models work in parallel — identifying circuits, fixtures, runs, and materials. Cross-checked for accuracy.</p>
+                    <div class="hidden md:block absolute top-8 left-[60%] w-[80%] border-t-2 border-dashed border-dark-700"></div>
+                </div>
+
+                <!-- Step 3 -->
+                <div class="fade-up fade-up-delay-2 text-center">
+                    <div class="w-16 h-16 bg-brand-800/20 border-2 border-brand-800/30 rounded-2xl flex items-center justify-center text-3xl mx-auto mb-6">📋</div>
+                    <div class="text-brand-500 text-sm font-bold uppercase tracking-wider mb-2">Step 3</div>
+                    <h3 class="text-xl font-semibold text-white mb-3">Get Your Estimate</h3>
+                    <p class="text-dark-400">Detailed line items, material lists, labor hours, and total cost. Edit, export, or send to your client — done.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Comparison Table -->
+    <section id="comparison" class="py-20 lg:py-28 relative grid-bg">
+        <div class="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-brand-800/30 to-transparent"></div>
+
+        <div class="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="text-center mb-16 fade-up">
+                <div class="inline-flex items-center gap-2 bg-brand-800/10 border border-brand-800/20 rounded-full px-4 py-1.5 mb-4">
+                    <span class="text-brand-400 text-sm font-medium">Honest Comparison</span>
+                </div>
+                <h2 class="text-3xl lg:text-4xl font-bold text-white mb-4">How We Stack Up</h2>
+                <p class="text-dark-400 text-lg max-w-2xl mx-auto">We're not trying to be everything. We're trying to be exactly what contractors need.</p>
+            </div>
+
+            <div class="fade-up overflow-x-auto">
+                <table class="w-full text-left">
+                    <thead>
+                        <tr class="border-b border-dark-800">
+                            <th class="py-4 px-4 text-sm text-dark-500 font-medium">Feature</th>
+                            <th class="py-4 px-4 text-sm font-semibold text-brand-400 text-center">Profit Step</th>
+                            <th class="py-4 px-4 text-sm text-dark-400 font-medium text-center">ServiceTitan</th>
+                            <th class="py-4 px-4 text-sm text-dark-400 font-medium text-center">Jobber</th>
+                            <th class="py-4 px-4 text-sm text-dark-400 font-medium text-center">Housecall Pro</th>
+                        </tr>
+                    </thead>
+                    <tbody class="text-sm">
+                        <tr class="comparison-row border-b border-dark-800/50">
+                            <td class="py-3.5 px-4 text-dark-300">AI Blueprint Estimating</td>
+                            <td class="py-3.5 px-4 text-center check">✓</td>
+                            <td class="py-3.5 px-4 text-center cross">✗</td>
+                            <td class="py-3.5 px-4 text-center cross">✗</td>
+                            <td class="py-3.5 px-4 text-center cross">✗</td>
+                        </tr>
+                        <tr class="comparison-row border-b border-dark-800/50">
+                            <td class="py-3.5 px-4 text-dark-300">Telegram AI Assistant</td>
+                            <td class="py-3.5 px-4 text-center check">✓</td>
+                            <td class="py-3.5 px-4 text-center cross">✗</td>
+                            <td class="py-3.5 px-4 text-center cross">✗</td>
+                            <td class="py-3.5 px-4 text-center cross">✗</td>
+                        </tr>
+                        <tr class="comparison-row border-b border-dark-800/50">
+                            <td class="py-3.5 px-4 text-dark-300">Time Tracking (GPS + Photo)</td>
+                            <td class="py-3.5 px-4 text-center check">✓</td>
+                            <td class="py-3.5 px-4 text-center check">✓</td>
+                            <td class="py-3.5 px-4 text-center check">✓</td>
+                            <td class="py-3.5 px-4 text-center check">✓</td>
+                        </tr>
+                        <tr class="comparison-row border-b border-dark-800/50">
+                            <td class="py-3.5 px-4 text-dark-300">AI Bank Reconciliation</td>
+                            <td class="py-3.5 px-4 text-center check">✓</td>
+                            <td class="py-3.5 px-4 text-center cross">✗</td>
+                            <td class="py-3.5 px-4 text-center cross">✗</td>
+                            <td class="py-3.5 px-4 text-center cross">✗</td>
+                        </tr>
+                        <tr class="comparison-row border-b border-dark-800/50">
+                            <td class="py-3.5 px-4 text-dark-300">Real-Time P&L per Project</td>
+                            <td class="py-3.5 px-4 text-center check">✓</td>
+                            <td class="py-3.5 px-4 text-center partial">~</td>
+                            <td class="py-3.5 px-4 text-center cross">✗</td>
+                            <td class="py-3.5 px-4 text-center cross">✗</td>
+                        </tr>
+                        <tr class="comparison-row border-b border-dark-800/50">
+                            <td class="py-3.5 px-4 text-dark-300">NEC / Code Compliance Check</td>
+                            <td class="py-3.5 px-4 text-center check">✓</td>
+                            <td class="py-3.5 px-4 text-center cross">✗</td>
+                            <td class="py-3.5 px-4 text-center cross">✗</td>
+                            <td class="py-3.5 px-4 text-center cross">✗</td>
+                        </tr>
+                        <tr class="comparison-row border-b border-dark-800/50">
+                            <td class="py-3.5 px-4 text-dark-300">Multi-Discipline Estimates</td>
+                            <td class="py-3.5 px-4 text-center check">✓</td>
+                            <td class="py-3.5 px-4 text-center cross">✗</td>
+                            <td class="py-3.5 px-4 text-center cross">✗</td>
+                            <td class="py-3.5 px-4 text-center cross">✗</td>
+                        </tr>
+                        <tr class="comparison-row border-b border-dark-800/50">
+                            <td class="py-3.5 px-4 text-dark-300">Setup Fee</td>
+                            <td class="py-3.5 px-4 text-center text-brand-400 font-semibold">$0</td>
+                            <td class="py-3.5 px-4 text-center text-red-400">$5K–$50K</td>
+                            <td class="py-3.5 px-4 text-center text-dark-400">$0</td>
+                            <td class="py-3.5 px-4 text-center text-dark-400">$0</td>
+                        </tr>
+                        <tr class="comparison-row">
+                            <td class="py-3.5 px-4 text-dark-300">Monthly Price</td>
+                            <td class="py-3.5 px-4 text-center text-brand-400 font-semibold">From $29</td>
+                            <td class="py-3.5 px-4 text-center text-red-400">$250–$400</td>
+                            <td class="py-3.5 px-4 text-center text-dark-400">$50–$300</td>
+                            <td class="py-3.5 px-4 text-center text-dark-400">$65–$300</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+
+    <!-- Pricing -->
+    <section id="pricing" class="py-20 lg:py-28 relative">
+        <div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="text-center mb-16 fade-up">
+                <div class="inline-flex items-center gap-2 bg-brand-800/10 border border-brand-800/20 rounded-full px-4 py-1.5 mb-4">
+                    <span class="text-brand-400 text-sm font-medium">Simple Pricing</span>
+                </div>
+                <h2 class="text-3xl lg:text-4xl font-bold text-white mb-4">Start Free. Upgrade When Ready.</h2>
+                <p class="text-dark-400 text-lg max-w-2xl mx-auto">No setup fees. No contracts. No hidden charges. Cancel anytime.</p>
+            </div>
+
+            <div class="grid md:grid-cols-3 gap-8">
+                <!-- Free Plan -->
+                <div class="fade-up pricing-card bg-dark-900/50 border border-dark-800 rounded-2xl p-8">
+                    <div class="text-sm font-medium text-dark-400 mb-2">Starter</div>
+                    <div class="flex items-baseline gap-1 mb-1">
+                        <span class="text-4xl font-bold text-white">$0</span>
+                        <span class="text-dark-500">/month</span>
+                    </div>
+                    <p class="text-dark-500 text-sm mb-8">Perfect for solo contractors just getting started.</p>
+
+                    <ul class="space-y-3 mb-8">
+                        <li class="flex items-start gap-3 text-sm text-dark-300">
+                            <svg class="w-5 h-5 text-brand-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                            Up to 3 active projects
+                        </li>
+                        <li class="flex items-start gap-3 text-sm text-dark-300">
+                            <svg class="w-5 h-5 text-brand-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                            5 AI estimates per month
+                        </li>
+                        <li class="flex items-start gap-3 text-sm text-dark-300">
+                            <svg class="w-5 h-5 text-brand-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                            Time tracking (2 users)
+                        </li>
+                        <li class="flex items-start gap-3 text-sm text-dark-300">
+                            <svg class="w-5 h-5 text-brand-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                            Basic P&L reports
+                        </li>
+                        <li class="flex items-start gap-3 text-sm text-dark-600">
+                            <svg class="w-5 h-5 text-dark-700 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                            Telegram AI Assistant
+                        </li>
+                        <li class="flex items-start gap-3 text-sm text-dark-600">
+                            <svg class="w-5 h-5 text-dark-700 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                            Bank reconciliation
+                        </li>
+                    </ul>
+
+                    <a href="#" class="block text-center border border-dark-700 hover:border-dark-500 text-dark-300 hover:text-white font-medium py-3 rounded-xl transition-all">
+                        Get Started Free
+                    </a>
+                </div>
+
+                <!-- Pro Plan (Popular) -->
+                <div class="fade-up fade-up-delay-1 pricing-card pricing-popular bg-dark-900/80 rounded-2xl p-8 relative">
+                    <div class="absolute -top-3 left-1/2 -translate-x-1/2 bg-brand-800 text-white text-xs font-semibold px-4 py-1 rounded-full">Most Popular</div>
+                    <div class="text-sm font-medium text-brand-400 mb-2">Pro</div>
+                    <div class="flex items-baseline gap-1 mb-1">
+                        <span class="text-4xl font-bold text-white">$29</span>
+                        <span class="text-dark-500">/month</span>
+                    </div>
+                    <p class="text-dark-500 text-sm mb-8">For growing crews who need the full toolkit.</p>
+
+                    <ul class="space-y-3 mb-8">
+                        <li class="flex items-start gap-3 text-sm text-dark-300">
+                            <svg class="w-5 h-5 text-brand-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                            Unlimited projects
+                        </li>
+                        <li class="flex items-start gap-3 text-sm text-dark-300">
+                            <svg class="w-5 h-5 text-brand-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                            50 AI estimates per month
+                        </li>
+                        <li class="flex items-start gap-3 text-sm text-dark-300">
+                            <svg class="w-5 h-5 text-brand-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                            Time tracking (10 users)
+                        </li>
+                        <li class="flex items-start gap-3 text-sm text-dark-300">
+                            <svg class="w-5 h-5 text-brand-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                            Telegram AI Assistant
+                        </li>
+                        <li class="flex items-start gap-3 text-sm text-dark-300">
+                            <svg class="w-5 h-5 text-brand-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                            Bank reconciliation
+                        </li>
+                        <li class="flex items-start gap-3 text-sm text-dark-300">
+                            <svg class="w-5 h-5 text-brand-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                            Real-time P&L + Budget tracking
+                        </li>
+                        <li class="flex items-start gap-3 text-sm text-dark-300">
+                            <svg class="w-5 h-5 text-brand-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                            NEC / Code compliance
+                        </li>
+                    </ul>
+
+                    <a href="#" class="block text-center bg-brand-800 hover:bg-brand-700 text-white font-semibold py-3 rounded-xl transition-all hover:shadow-lg hover:shadow-brand-800/25">
+                        Start 14-Day Free Trial
+                    </a>
+                </div>
+
+                <!-- Enterprise -->
+                <div class="fade-up fade-up-delay-2 pricing-card bg-dark-900/50 border border-dark-800 rounded-2xl p-8">
+                    <div class="text-sm font-medium text-dark-400 mb-2">Enterprise</div>
+                    <div class="flex items-baseline gap-1 mb-1">
+                        <span class="text-4xl font-bold text-white">Custom</span>
+                    </div>
+                    <p class="text-dark-500 text-sm mb-8">For large operations and multi-location shops.</p>
+
+                    <ul class="space-y-3 mb-8">
+                        <li class="flex items-start gap-3 text-sm text-dark-300">
+                            <svg class="w-5 h-5 text-brand-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                            Everything in Pro
+                        </li>
+                        <li class="flex items-start gap-3 text-sm text-dark-300">
+                            <svg class="w-5 h-5 text-brand-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                            Unlimited AI estimates
+                        </li>
+                        <li class="flex items-start gap-3 text-sm text-dark-300">
+                            <svg class="w-5 h-5 text-brand-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                            Unlimited users
+                        </li>
+                        <li class="flex items-start gap-3 text-sm text-dark-300">
+                            <svg class="w-5 h-5 text-brand-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                            Multi-location support
+                        </li>
+                        <li class="flex items-start gap-3 text-sm text-dark-300">
+                            <svg class="w-5 h-5 text-brand-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                            Custom integrations (QuickBooks, etc.)
+                        </li>
+                        <li class="flex items-start gap-3 text-sm text-dark-300">
+                            <svg class="w-5 h-5 text-brand-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                            Dedicated support
+                        </li>
+                        <li class="flex items-start gap-3 text-sm text-dark-300">
+                            <svg class="w-5 h-5 text-brand-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                            White-label option
+                        </li>
+                    </ul>
+
+                    <a href="#" class="block text-center border border-dark-700 hover:border-dark-500 text-dark-300 hover:text-white font-medium py-3 rounded-xl transition-all">
+                        Book a Demo
+                    </a>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Testimonials -->
+    <section class="py-20 lg:py-28 relative grid-bg">
+        <div class="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-brand-800/30 to-transparent"></div>
+
+        <div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="text-center mb-16 fade-up">
+                <h2 class="text-3xl lg:text-4xl font-bold text-white mb-4">Trusted by Contractors</h2>
+                <p class="text-dark-400 text-lg">Real results from real businesses.</p>
+            </div>
+
+            <div class="grid md:grid-cols-3 gap-6 lg:gap-8">
+                <div class="fade-up testimonial-card border border-dark-800/50 rounded-2xl p-8">
+                    <div class="flex items-center gap-1 mb-4">
+                        <span class="text-yellow-500">★★★★★</span>
+                    </div>
+                    <p class="text-dark-300 mb-6 leading-relaxed">"We used to spend entire weekends on estimates. Now I upload the blueprint and have a detailed estimate before lunch. This thing pays for itself every single week."</p>
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 bg-brand-800/30 rounded-full flex items-center justify-center text-brand-400 font-bold">M</div>
+                        <div>
+                            <div class="text-white font-medium text-sm">Mike R.</div>
+                            <div class="text-dark-500 text-xs">Electrical Contractor, Tampa FL</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="fade-up fade-up-delay-1 testimonial-card border border-dark-800/50 rounded-2xl p-8">
+                    <div class="flex items-center gap-1 mb-4">
+                        <span class="text-yellow-500">★★★★★</span>
+                    </div>
+                    <p class="text-dark-300 mb-6 leading-relaxed">"My guys clock in through Telegram — they didn't even need training. I can see who's on which job site, with GPS proof. No more guessing."</p>
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 bg-blue-800/30 rounded-full flex items-center justify-center text-blue-400 font-bold">J</div>
+                        <div>
+                            <div class="text-white font-medium text-sm">James L.</div>
+                            <div class="text-dark-500 text-xs">HVAC Contractor, Miami FL</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="fade-up fade-up-delay-2 testimonial-card border border-dark-800/50 rounded-2xl p-8">
+                    <div class="flex items-center gap-1 mb-4">
+                        <span class="text-yellow-500">★★★★★</span>
+                    </div>
+                    <p class="text-dark-300 mb-6 leading-relaxed">"I switched from Jobber and saved $200/month. But the real value? I finally know which projects make money and which don't. That changed everything."</p>
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 bg-purple-800/30 rounded-full flex items-center justify-center text-purple-400 font-bold">S</div>
+                        <div>
+                            <div class="text-white font-medium text-sm">Sarah K.</div>
+                            <div class="text-dark-500 text-xs">Plumbing Contractor, Fort Lauderdale FL</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Final CTA -->
+    <section class="py-20 lg:py-28 relative">
+        <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+            <div class="fade-up bg-gradient-to-br from-dark-900 to-brand-900/20 border border-brand-800/20 rounded-3xl p-10 lg:p-16 relative overflow-hidden">
+                <!-- Background glow -->
+                <div class="absolute top-0 right-0 w-64 h-64 bg-brand-800/10 rounded-full blur-3xl"></div>
+                <div class="absolute bottom-0 left-0 w-48 h-48 bg-brand-800/5 rounded-full blur-3xl"></div>
+
+                <div class="relative z-10">
+                    <h2 class="text-3xl lg:text-5xl font-bold text-white mb-6">Ready to Know Your Profit<br>on Every Project?</h2>
+                    <p class="text-lg text-dark-400 mb-8 max-w-xl mx-auto">Join contractors across Florida who stopped guessing and started profiting. Free to start, no credit card required.</p>
+                    <div class="flex flex-col sm:flex-row items-center justify-center gap-4">
+                        <a href="#" class="inline-flex items-center gap-2 bg-brand-800 hover:bg-brand-700 text-white font-semibold px-8 py-4 rounded-xl text-lg transition-all hover:shadow-xl hover:shadow-brand-800/25 hover:-translate-y-0.5">
+                            Start Free Trial
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+                        </a>
+                        <a href="#" class="inline-flex items-center gap-2 text-dark-400 hover:text-white font-medium transition-colors">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                            Book a Demo Instead
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="border-t border-dark-800/50 py-12 lg:py-16">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="grid md:grid-cols-4 gap-8 lg:gap-12 mb-12">
+                <!-- Brand -->
+                <div class="md:col-span-2">
+                    <a href="#" class="flex items-center gap-3 mb-4">
+                        <div class="w-9 h-9 bg-brand-800 rounded-lg flex items-center justify-center">
+                            <svg class="w-5 h-5 text-brand-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/></svg>
+                        </div>
+                        <span class="text-xl font-bold text-white">Profit<span class="text-brand-500">Step</span></span>
+                    </a>
+                    <p class="text-dark-500 text-sm max-w-sm mb-4">AI-powered CRM built for electrical, plumbing, and HVAC contractors. Know your profit on every project.</p>
+                    <p class="text-dark-600 text-xs">© 2025 Garkor Corp. All rights reserved.</p>
+                </div>
+
+                <!-- Product -->
+                <div>
+                    <h4 class="text-white font-semibold text-sm mb-4">Product</h4>
+                    <ul class="space-y-2">
+                        <li><a href="#features" class="text-dark-500 hover:text-dark-300 text-sm transition-colors">Features</a></li>
+                        <li><a href="#pricing" class="text-dark-500 hover:text-dark-300 text-sm transition-colors">Pricing</a></li>
+                        <li><a href="#comparison" class="text-dark-500 hover:text-dark-300 text-sm transition-colors">Comparison</a></li>
+                        <li><a href="#how-it-works" class="text-dark-500 hover:text-dark-300 text-sm transition-colors">How It Works</a></li>
+                    </ul>
+                </div>
+
+                <!-- Contact -->
+                <div>
+                    <h4 class="text-white font-semibold text-sm mb-4">Contact</h4>
+                    <ul class="space-y-2">
+                        <li><a href="mailto:garkor.com@gmail.com" class="text-dark-500 hover:text-dark-300 text-sm transition-colors">garkor.com@gmail.com</a></li>
+                        <li><a href="#" class="text-dark-500 hover:text-dark-300 text-sm transition-colors">South Florida</a></li>
+                        <li><a href="ru.html" class="text-dark-500 hover:text-dark-300 text-sm transition-colors">🇷🇺 Русская версия</a></li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="border-t border-dark-800/50 pt-8 flex flex-col md:flex-row items-center justify-between gap-4">
+                <div class="text-dark-600 text-xs">Built with ❤️ in South Florida</div>
+                <div class="flex items-center gap-6">
+                    <a href="#" class="text-dark-600 hover:text-dark-400 text-xs transition-colors">Privacy Policy</a>
+                    <a href="#" class="text-dark-600 hover:text-dark-400 text-xs transition-colors">Terms of Service</a>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Scripts -->
+    <script>
+        // Mobile menu toggle
+        const toggle = document.getElementById('mobile-toggle');
+        const menu = document.getElementById('mobile-menu');
+        toggle.addEventListener('click', () => menu.classList.toggle('open'));
+        function closeMobileMenu() { menu.classList.remove('open'); }
+
+        // Scroll animations
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    entry.target.classList.add('visible');
+                }
+            });
+        }, { threshold: 0.1, rootMargin: '0px 0px -50px 0px' });
+
+        document.querySelectorAll('.fade-up').forEach(el => observer.observe(el));
+
+        // Smooth scroll for anchor links
+        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+            anchor.addEventListener('click', function (e) {
+                e.preventDefault();
+                const target = document.querySelector(this.getAttribute('href'));
+                if (target) {
+                    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    closeMobileMenu();
+                }
+            });
+        });
+
+        // Navbar background on scroll
+        const nav = document.querySelector('nav');
+        window.addEventListener('scroll', () => {
+            if (window.scrollY > 50) {
+                nav.classList.add('bg-dark-950/95');
+                nav.classList.remove('bg-dark-950/80');
+            } else {
+                nav.classList.remove('bg-dark-950/95');
+                nav.classList.add('bg-dark-950/80');
+            }
+        });
+    </script>
+</body>
+</html>

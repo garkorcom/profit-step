@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html lang="ru" class="scroll-smooth">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Profit Step — AI CRM для подрядчиков | Сметы за минуты, не часы</title>
+    <meta name="description" content="CRM для электриков, сантехников и HVAC подрядчиков. Загрузи чертёж — получи смету за минуты. Контролируй время, расходы и прибыль по каждому проекту.">
+    <meta property="og:title" content="Profit Step — AI CRM для подрядчиков">
+    <meta property="og:description" content="Загрузи чертёж — получи смету за минуты. Прибыль по каждому проекту в реальном времени.">
+    <meta property="og:type" content="website">
+    <link rel="icon" href="/favicon.ico">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#e8f5e9', 100: '#c8e6c9', 200: '#a5d6a7', 300: '#81c784',
+                            400: '#66bb6a', 500: '#4caf50', 600: '#43a047', 700: '#388e3c',
+                            800: '#2e7d32', 900: '#1b5e20',
+                        },
+                        dark: {
+                            50: '#f8fafc', 100: '#f1f5f9', 200: '#e2e8f0', 300: '#cbd5e1',
+                            400: '#94a3b8', 500: '#64748b', 600: '#475569', 700: '#334155',
+                            800: '#1e293b', 900: '#0f172a', 950: '#020617',
+                        }
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        .fade-up { opacity: 0; transform: translateY(40px); transition: opacity 0.7s ease-out, transform 0.7s ease-out; }
+        .fade-up.visible { opacity: 1; transform: translateY(0); }
+        .fade-up-delay-1 { transition-delay: 0.1s; }
+        .fade-up-delay-2 { transition-delay: 0.2s; }
+        .gradient-text { background: linear-gradient(135deg, #4caf50, #81c784, #2e7d32); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+        .glow-green { box-shadow: 0 0 40px rgba(46, 125, 50, 0.3), 0 0 80px rgba(46, 125, 50, 0.1); }
+        .grid-bg { background-image: linear-gradient(rgba(46, 125, 50, 0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(46, 125, 50, 0.03) 1px, transparent 1px); background-size: 60px 60px; }
+        @keyframes float { 0%, 100% { transform: translateY(0px); } 50% { transform: translateY(-20px); } }
+        .float { animation: float 6s ease-in-out infinite; }
+        @keyframes pulse-ring { 0% { transform: scale(0.8); opacity: 1; } 100% { transform: scale(2); opacity: 0; } }
+        .pulse-ring::before { content: ''; position: absolute; inset: -8px; border-radius: 50%; border: 2px solid #4caf50; animation: pulse-ring 2s ease-out infinite; }
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #0f172a; }
+        ::-webkit-scrollbar-thumb { background: #2e7d32; border-radius: 4px; }
+        .comparison-row:hover { background: rgba(46, 125, 50, 0.05); }
+        .mobile-menu { transform: translateX(100%); transition: transform 0.3s ease; }
+        .mobile-menu.open { transform: translateX(0); }
+        .hero-mockup { background: linear-gradient(135deg, #1e293b, #0f172a); border: 1px solid rgba(46, 125, 50, 0.2); border-radius: 16px; overflow: hidden; }
+        .mockup-bar { background: rgba(46, 125, 50, 0.1); padding: 8px 16px; display: flex; align-items: center; gap: 6px; }
+        .mockup-dot { width: 10px; height: 10px; border-radius: 50%; }
+        .pricing-card { transition: transform 0.3s ease, box-shadow 0.3s ease; }
+        .pricing-card:hover { transform: translateY(-8px); }
+        .pricing-popular { border: 2px solid #2e7d32; position: relative; }
+        .check { color: #4caf50; font-weight: bold; }
+        .cross { color: #ef4444; }
+        .partial { color: #f59e0b; }
+        .testimonial-card { background: linear-gradient(135deg, rgba(30, 41, 59, 0.8), rgba(15, 23, 42, 0.9)); backdrop-filter: blur(10px); }
+    </style>
+</head>
+<body class="bg-dark-950 text-dark-200 font-sans antialiased">
+
+    <!-- Navigation -->
+    <nav class="fixed top-0 left-0 right-0 z-50 bg-dark-950/80 backdrop-blur-xl border-b border-dark-800/50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex items-center justify-between h-16 lg:h-20">
+                <a href="#" class="flex items-center gap-3">
+                    <div class="w-9 h-9 bg-brand-800 rounded-lg flex items-center justify-center">
+                        <svg class="w-5 h-5 text-brand-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/></svg>
+                    </div>
+                    <span class="text-xl font-bold text-white">Profit<span class="text-brand-500">Step</span></span>
+                </a>
+
+                <div class="hidden lg:flex items-center gap-8">
+                    <a href="#features" class="text-dark-400 hover:text-white transition-colors text-sm font-medium">Возможности</a>
+                    <a href="#how-it-works" class="text-dark-400 hover:text-white transition-colors text-sm font-medium">Как работает</a>
+                    <a href="#comparison" class="text-dark-400 hover:text-white transition-colors text-sm font-medium">Сравнение</a>
+                    <a href="#pricing" class="text-dark-400 hover:text-white transition-colors text-sm font-medium">Цены</a>
+                    <a href="index.html" class="text-dark-400 hover:text-white transition-colors text-sm font-medium">🇺🇸 EN</a>
+                </div>
+
+                <div class="hidden lg:flex items-center gap-3">
+                    <a href="#pricing" class="text-sm font-medium text-dark-300 hover:text-white transition-colors px-4 py-2">Войти</a>
+                    <a href="#pricing" class="text-sm font-semibold bg-brand-800 hover:bg-brand-700 text-white px-5 py-2.5 rounded-lg transition-all hover:shadow-lg hover:shadow-brand-800/25">Попробовать бесплатно</a>
+                </div>
+
+                <button id="mobile-toggle" class="lg:hidden text-dark-400 hover:text-white p-2">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
+                </button>
+            </div>
+        </div>
+        <div id="mobile-menu" class="mobile-menu fixed inset-0 top-16 bg-dark-950/98 backdrop-blur-xl lg:hidden z-40">
+            <div class="flex flex-col items-center justify-center h-full gap-8 text-lg">
+                <a href="#features" class="text-dark-300 hover:text-white" onclick="closeMobileMenu()">Возможности</a>
+                <a href="#how-it-works" class="text-dark-300 hover:text-white" onclick="closeMobileMenu()">Как работает</a>
+                <a href="#comparison" class="text-dark-300 hover:text-white" onclick="closeMobileMenu()">Сравнение</a>
+                <a href="#pricing" class="text-dark-300 hover:text-white" onclick="closeMobileMenu()">Цены</a>
+                <a href="index.html" class="text-dark-300 hover:text-white" onclick="closeMobileMenu()">🇺🇸 English</a>
+                <a href="#pricing" class="bg-brand-800 hover:bg-brand-700 text-white px-8 py-3 rounded-lg font-semibold mt-4">Попробовать бесплатно</a>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Hero -->
+    <section class="relative pt-32 lg:pt-40 pb-20 lg:pb-32 overflow-hidden grid-bg">
+        <div class="absolute top-20 left-10 w-72 h-72 bg-brand-800/10 rounded-full blur-3xl"></div>
+        <div class="absolute bottom-10 right-10 w-96 h-96 bg-brand-800/5 rounded-full blur-3xl"></div>
+
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="grid lg:grid-cols-2 gap-12 lg:gap-16 items-center">
+                <div class="fade-up">
+                    <div class="inline-flex items-center gap-2 bg-brand-800/10 border border-brand-800/20 rounded-full px-4 py-1.5 mb-6">
+                        <span class="relative flex h-2 w-2">
+                            <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-brand-400 opacity-75"></span>
+                            <span class="relative inline-flex rounded-full h-2 w-2 bg-brand-500"></span>
+                        </span>
+                        <span class="text-brand-400 text-sm font-medium">AI-Powered для подрядчиков</span>
+                    </div>
+
+                    <h1 class="text-4xl sm:text-5xl lg:text-6xl font-black text-white leading-tight mb-6">
+                        Хватит гадать.<br>
+                        <span class="gradient-text">Начни зарабатывать.</span>
+                    </h1>
+
+                    <p class="text-lg lg:text-xl text-dark-400 leading-relaxed mb-8 max-w-xl">
+                        Загрузи чертёж — получи детальную смету за минуты. Контролируй каждый доллар, каждый час, каждый проект. CRM, которая окупается с первого дня.
+                    </p>
+
+                    <div class="flex flex-col sm:flex-row gap-4 mb-10">
+                        <a href="#pricing" class="inline-flex items-center justify-center gap-2 bg-brand-800 hover:bg-brand-700 text-white font-semibold px-8 py-4 rounded-xl text-lg transition-all hover:shadow-xl hover:shadow-brand-800/25 hover:-translate-y-0.5">
+                            Попробовать бесплатно
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+                        </a>
+                        <a href="#how-it-works" class="inline-flex items-center justify-center gap-2 border border-dark-700 hover:border-dark-500 text-dark-300 hover:text-white font-medium px-8 py-4 rounded-xl text-lg transition-all">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                            Как это работает
+                        </a>
+                    </div>
+
+                    <div class="grid grid-cols-3 gap-6">
+                        <div>
+                            <div class="text-2xl lg:text-3xl font-bold text-white">В 10 раз</div>
+                            <div class="text-sm text-dark-500">дешевле<br>ServiceTitan</div>
+                        </div>
+                        <div>
+                            <div class="text-2xl lg:text-3xl font-bold text-white">10+ ч</div>
+                            <div class="text-sm text-dark-500">экономии в неделю<br>на сметах</div>
+                        </div>
+                        <div>
+                            <div class="text-2xl lg:text-3xl font-bold text-white">3 AI</div>
+                            <div class="text-sm text-dark-500">модели анализируют<br>чертежи</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="fade-up fade-up-delay-2 float">
+                    <div class="hero-mockup glow-green">
+                        <div class="mockup-bar">
+                            <div class="mockup-dot bg-red-500/70"></div>
+                            <div class="mockup-dot bg-yellow-500/70"></div>
+                            <div class="mockup-dot bg-green-500/70"></div>
+                            <span class="text-xs text-dark-500 ml-2 font-mono">profit-step.web.app</span>
+                        </div>
+                        <div class="p-6 space-y-4">
+                            <div class="flex items-center justify-between">
+                                <div>
+                                    <div class="text-xs text-dark-500 uppercase tracking-wider">Текущий проект</div>
+                                    <div class="text-white font-semibold">Farmers Milk — Электрика</div>
+                                </div>
+                                <div class="bg-brand-800/20 text-brand-400 px-3 py-1 rounded-full text-sm font-medium">Активный</div>
+                            </div>
+                            <div class="grid grid-cols-3 gap-3">
+                                <div class="bg-dark-900/50 rounded-lg p-3">
+                                    <div class="text-xs text-dark-500 mb-1">Выручка</div>
+                                    <div class="text-brand-400 font-bold text-lg">$47,250</div>
+                                </div>
+                                <div class="bg-dark-900/50 rounded-lg p-3">
+                                    <div class="text-xs text-dark-500 mb-1">Расходы</div>
+                                    <div class="text-red-400 font-bold text-lg">$31,800</div>
+                                </div>
+                                <div class="bg-dark-900/50 rounded-lg p-3">
+                                    <div class="text-xs text-dark-500 mb-1">Прибыль</div>
+                                    <div class="text-brand-400 font-bold text-lg">$15,450</div>
+                                </div>
+                            </div>
+                            <div class="space-y-2">
+                                <div class="flex items-center gap-2">
+                                    <span class="text-xs text-dark-500 w-20">Работа</span>
+                                    <div class="flex-1 bg-dark-900 rounded-full h-3"><div class="bg-brand-700 h-3 rounded-full" style="width: 65%"></div></div>
+                                    <span class="text-xs text-dark-400 w-14 text-right">$20,670</span>
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <span class="text-xs text-dark-500 w-20">Материалы</span>
+                                    <div class="flex-1 bg-dark-900 rounded-full h-3"><div class="bg-blue-600 h-3 rounded-full" style="width: 28%"></div></div>
+                                    <span class="text-xs text-dark-400 w-14 text-right">$8,900</span>
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <span class="text-xs text-dark-500 w-20">Прочее</span>
+                                    <div class="flex-1 bg-dark-900 rounded-full h-3"><div class="bg-yellow-600 h-3 rounded-full" style="width: 7%"></div></div>
+                                    <span class="text-xs text-dark-400 w-14 text-right">$2,230</span>
+                                </div>
+                            </div>
+                            <div class="border-t border-dark-800 pt-3 space-y-2">
+                                <div class="flex items-center gap-2 text-xs">
+                                    <div class="w-6 h-6 bg-brand-800/30 rounded-full flex items-center justify-center text-brand-400">✓</div>
+                                    <span class="text-dark-400">Счёт #1047 оплачен — <span class="text-brand-400">$12,500</span></span>
+                                    <span class="text-dark-600 ml-auto">2ч назад</span>
+                                </div>
+                                <div class="flex items-center gap-2 text-xs">
+                                    <div class="w-6 h-6 bg-blue-800/30 rounded-full flex items-center justify-center text-blue-400">⏱</div>
+                                    <span class="text-dark-400">Миша отметился — Монтаж щита</span>
+                                    <span class="text-dark-600 ml-auto">4ч назад</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Pain Points -->
+    <section class="py-20 lg:py-28 relative">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="text-center mb-16 fade-up">
+                <h2 class="text-3xl lg:text-4xl font-bold text-white mb-4">Знакомо?</h2>
+                <p class="text-dark-400 text-lg max-w-2xl mx-auto">Каждый подрядчик сталкивается с этими проблемами. Мы создали Profit Step, чтобы их решить.</p>
+            </div>
+            <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-6 lg:gap-8">
+                <div class="fade-up bg-dark-900/50 border border-dark-800 rounded-2xl p-8 hover:border-brand-800/30 transition-colors">
+                    <div class="text-4xl mb-4">📝</div>
+                    <h3 class="text-xl font-semibold text-white mb-3">«Все выходные делаю сметы»</h3>
+                    <p class="text-dark-400">Ручной подсчёт по чертежам отнимает 10-15 часов в неделю. Это время, которое можно провести на объекте — или с семьёй.</p>
+                </div>
+                <div class="fade-up fade-up-delay-1 bg-dark-900/50 border border-dark-800 rounded-2xl p-8 hover:border-brand-800/30 transition-colors">
+                    <div class="text-4xl mb-4">💸</div>
+                    <h3 class="text-xl font-semibold text-white mb-3">«Не знаю, прибыльный ли проект»</h3>
+                    <p class="text-dark-400">Узнаёшь, что ушёл в минус, только когда работа закончена. К тому моменту уже поздно. Нужна видимость каждого доллара в реальном времени.</p>
+                </div>
+                <div class="fade-up fade-up-delay-2 bg-dark-900/50 border border-dark-800 rounded-2xl p-8 hover:border-brand-800/30 transition-colors">
+                    <div class="text-4xl mb-4">⏰</div>
+                    <h3 class="text-xl font-semibold text-white mb-3">«Ребята не могут разобраться в приложении»</h3>
+                    <p class="text-dark-400">Дорогие CRM требуют обучения и тех-поддержки. Твоим парням нужно просто отметиться и идти работать.</p>
+                </div>
+                <div class="fade-up bg-dark-900/50 border border-dark-800 rounded-2xl p-8 hover:border-brand-800/30 transition-colors">
+                    <div class="text-4xl mb-4">🏦</div>
+                    <h3 class="text-xl font-semibold text-white mb-3">«Сверка выписок — это кошмар»</h3>
+                    <p class="text-dark-400">Разносить транзакции по проектам в Excel — это адская рутина. Одна ошибка — и бухгалтерия поехала.</p>
+                </div>
+                <div class="fade-up fade-up-delay-1 bg-dark-900/50 border border-dark-800 rounded-2xl p-8 hover:border-brand-800/30 transition-colors">
+                    <div class="text-4xl mb-4">💰</div>
+                    <h3 class="text-xl font-semibold text-white mb-3">«ServiceTitan стоит дороже моего грузовика»</h3>
+                    <p class="text-dark-400">$5K-$50K за подключение + $250-400/мес? Для бригады в 5-15 человек это безумие. Нужны инструменты, а не корпоративный софт.</p>
+                </div>
+                <div class="fade-up fade-up-delay-2 bg-dark-900/50 border border-dark-800 rounded-2xl p-8 hover:border-brand-800/30 transition-colors">
+                    <div class="text-4xl mb-4">📱</div>
+                    <h3 class="text-xl font-semibold text-white mb-3">«Не могу управлять бизнесом с объекта»</h3>
+                    <p class="text-dark-400">Ты весь день на стройке. Нужно проверить статус, утвердить расход, выставить счёт — и всё это с телефона.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Features -->
+    <section id="features" class="py-20 lg:py-28 relative grid-bg">
+        <div class="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-brand-800/30 to-transparent"></div>
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="text-center mb-16 fade-up">
+                <div class="inline-flex items-center gap-2 bg-brand-800/10 border border-brand-800/20 rounded-full px-4 py-1.5 mb-4">
+                    <span class="text-brand-400 text-sm font-medium">10 убойных функций</span>
+                </div>
+                <h2 class="text-3xl lg:text-4xl font-bold text-white mb-4">Всё что нужно.<br>Ничего лишнего.</h2>
+                <p class="text-dark-400 text-lg max-w-2xl mx-auto">Создано подрядчиком для подрядчиков. Каждая функция решает реальную проблему.</p>
+            </div>
+
+            <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <div class="fade-up group bg-dark-900/30 border border-dark-800 rounded-2xl p-8 hover:border-brand-800/40 transition-all hover:bg-dark-900/60">
+                    <div class="w-12 h-12 bg-brand-800/20 rounded-xl flex items-center justify-center text-2xl mb-5 group-hover:scale-110 transition-transform">🤖</div>
+                    <h3 class="text-lg font-semibold text-white mb-2">AI-сметчик по чертежам</h3>
+                    <p class="text-dark-400 text-sm leading-relaxed">Загрузи PDF чертёж — получи детальную смету за минуты. Три AI модели работают параллельно для точности. Больше никаких ночных подсчётов.</p>
+                    <div class="mt-4 text-brand-500 text-sm font-medium opacity-0 group-hover:opacity-100 transition-opacity">Экономия 10+ часов/неделю →</div>
+                </div>
+                <div class="fade-up fade-up-delay-1 group bg-dark-900/30 border border-dark-800 rounded-2xl p-8 hover:border-brand-800/40 transition-all hover:bg-dark-900/60">
+                    <div class="w-12 h-12 bg-blue-800/20 rounded-xl flex items-center justify-center text-2xl mb-5 group-hover:scale-110 transition-transform">💬</div>
+                    <h3 class="text-lg font-semibold text-white mb-2">Telegram AI-ассистент</h3>
+                    <p class="text-dark-400 text-sm leading-relaxed">Управляй бизнесом голосом. «Какая прибыль по проекту Миллер?» Просто напиши или скажи — AI ответит.</p>
+                    <div class="mt-4 text-brand-500 text-sm font-medium opacity-0 group-hover:opacity-100 transition-opacity">Работает с любого телефона →</div>
+                </div>
+                <div class="fade-up fade-up-delay-2 group bg-dark-900/30 border border-dark-800 rounded-2xl p-8 hover:border-brand-800/40 transition-all hover:bg-dark-900/60">
+                    <div class="w-12 h-12 bg-yellow-800/20 rounded-xl flex items-center justify-center text-2xl mb-5 group-hover:scale-110 transition-transform">⏱️</div>
+                    <h3 class="text-lg font-semibold text-white mb-2">Умный учёт времени</h3>
+                    <p class="text-dark-400 text-sm leading-relaxed">Бригада отмечается через Telegram — GPS + фото. Никаких приложений для установки, никакого обучения. Они уже умеют писать в чат.</p>
+                    <div class="mt-4 text-brand-500 text-sm font-medium opacity-0 group-hover:opacity-100 transition-opacity">Нулевое обучение →</div>
+                </div>
+                <div class="fade-up group bg-dark-900/30 border border-dark-800 rounded-2xl p-8 hover:border-brand-800/40 transition-all hover:bg-dark-900/60">
+                    <div class="w-12 h-12 bg-purple-800/20 rounded-xl flex items-center justify-center text-2xl mb-5 group-hover:scale-110 transition-transform">🏦</div>
+                    <h3 class="text-lg font-semibold text-white mb-2">Сверка банковских выписок</h3>
+                    <p class="text-dark-400 text-sm leading-relaxed">Загрузи выписку. AI автоматически разнесёт транзакции по проектам. То, что занимало часы — теперь секунды.</p>
+                    <div class="mt-4 text-brand-500 text-sm font-medium opacity-0 group-hover:opacity-100 transition-opacity">AI-распознавание →</div>
+                </div>
+                <div class="fade-up fade-up-delay-1 group bg-dark-900/30 border border-dark-800 rounded-2xl p-8 hover:border-brand-800/40 transition-all hover:bg-dark-900/60">
+                    <div class="w-12 h-12 bg-green-800/20 rounded-xl flex items-center justify-center text-2xl mb-5 group-hover:scale-110 transition-transform">📊</div>
+                    <h3 class="text-lg font-semibold text-white mb-2">P&L в реальном времени</h3>
+                    <p class="text-dark-400 text-sm leading-relaxed">Знай свою прибыль по каждому проекту — прямо сейчас. Не в следующем месяце. Выручка, расходы и маржа обновляются в реальном времени.</p>
+                    <div class="mt-4 text-brand-500 text-sm font-medium opacity-0 group-hover:opacity-100 transition-opacity">Прибыль по проектам →</div>
+                </div>
+                <div class="fade-up fade-up-delay-2 group bg-dark-900/30 border border-dark-800 rounded-2xl p-8 hover:border-brand-800/40 transition-all hover:bg-dark-900/60">
+                    <div class="w-12 h-12 bg-orange-800/20 rounded-xl flex items-center justify-center text-2xl mb-5 group-hover:scale-110 transition-transform">📐</div>
+                    <h3 class="text-lg font-semibold text-white mb-2">Мульти-дисциплинарные сметы</h3>
+                    <p class="text-dark-400 text-sm leading-relaxed">Электрика, сантехника, HVAC, архитектура — всё в одном месте. Один чертёж, несколько смет. Идеально для генподрядчиков.</p>
+                    <div class="mt-4 text-brand-500 text-sm font-medium opacity-0 group-hover:opacity-100 transition-opacity">4 направления →</div>
+                </div>
+                <div class="fade-up group bg-dark-900/30 border border-dark-800 rounded-2xl p-8 hover:border-brand-800/40 transition-all hover:bg-dark-900/60">
+                    <div class="w-12 h-12 bg-red-800/20 rounded-xl flex items-center justify-center text-2xl mb-5 group-hover:scale-110 transition-transform">🏗️</div>
+                    <h3 class="text-lg font-semibold text-white mb-2">Контроль бюджета</h3>
+                    <p class="text-dark-400 text-sm leading-relaxed">Процентовка с оплатами и дебетом. Видишь процент выполнения, оплачено vs задолженность, остаток бюджета — одним взглядом.</p>
+                    <div class="mt-4 text-brand-500 text-sm font-medium opacity-0 group-hover:opacity-100 transition-opacity">Полный контроль →</div>
+                </div>
+                <div class="fade-up fade-up-delay-1 group bg-dark-900/30 border border-dark-800 rounded-2xl p-8 hover:border-brand-800/40 transition-all hover:bg-dark-900/60">
+                    <div class="w-12 h-12 bg-cyan-800/20 rounded-xl flex items-center justify-center text-2xl mb-5 group-hover:scale-110 transition-transform">📱</div>
+                    <h3 class="text-lg font-semibold text-white mb-2">Mobile-First дизайн</h3>
+                    <p class="text-dark-400 text-sm leading-relaxed">Создано для стройки, не для офиса. Проверь статус, утверди расход, сфоткай чек — всё с телефона.</p>
+                    <div class="mt-4 text-brand-500 text-sm font-medium opacity-0 group-hover:opacity-100 transition-opacity">Любое устройство →</div>
+                </div>
+                <div class="fade-up fade-up-delay-2 group bg-dark-900/30 border border-dark-800 rounded-2xl p-8 hover:border-brand-800/40 transition-all hover:bg-dark-900/60">
+                    <div class="w-12 h-12 bg-emerald-800/20 rounded-xl flex items-center justify-center text-2xl mb-5 group-hover:scale-110 transition-transform">💲</div>
+                    <h3 class="text-lg font-semibold text-white mb-2">В 10 раз доступнее</h3>
+                    <p class="text-dark-400 text-sm leading-relaxed">Функции уровня Enterprise по ценам малого бизнеса. Без setup-fees за $50K. Без долгосрочных контрактов. Начни бесплатно.</p>
+                    <div class="mt-4 text-brand-500 text-sm font-medium opacity-0 group-hover:opacity-100 transition-opacity">От $0/мес →</div>
+                </div>
+                <div class="fade-up md:col-span-2 lg:col-span-3 group bg-gradient-to-r from-dark-900/30 to-brand-900/10 border border-brand-800/20 rounded-2xl p-8 hover:border-brand-800/40 transition-all">
+                    <div class="flex flex-col lg:flex-row items-start lg:items-center gap-6">
+                        <div class="w-12 h-12 bg-brand-800/20 rounded-xl flex items-center justify-center text-2xl flex-shrink-0 group-hover:scale-110 transition-transform">🔧</div>
+                        <div>
+                            <h3 class="text-lg font-semibold text-white mb-2">NEC / Нормы Florida</h3>
+                            <p class="text-dark-400 text-sm leading-relaxed">AI автоматически проверяет сметы на соответствие строительным нормам Флориды и стандартам NEC. Поймай нарушения до того, как они обойдутся на объекте. Соблюдай нормы, не зубря кодекс.</p>
+                        </div>
+                        <div class="lg:ml-auto flex-shrink-0">
+                            <span class="inline-flex items-center bg-brand-800/20 text-brand-400 px-4 py-2 rounded-full text-sm font-medium">🏛️ Нормы Florida встроены</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- How It Works -->
+    <section id="how-it-works" class="py-20 lg:py-28 relative">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="text-center mb-16 fade-up">
+                <div class="inline-flex items-center gap-2 bg-brand-800/10 border border-brand-800/20 rounded-full px-4 py-1.5 mb-4">
+                    <span class="text-brand-400 text-sm font-medium">Как это работает</span>
+                </div>
+                <h2 class="text-3xl lg:text-4xl font-bold text-white mb-4">От чертежа до сметы<br>за 3 шага</h2>
+                <p class="text-dark-400 text-lg max-w-2xl mx-auto">Без обучения. Без звонков в поддержку. Без 90-дневного внедрения. Начнёшь работать сегодня.</p>
+            </div>
+            <div class="grid md:grid-cols-3 gap-8 lg:gap-12">
+                <div class="fade-up text-center relative">
+                    <div class="w-16 h-16 bg-brand-800/20 border-2 border-brand-800/30 rounded-2xl flex items-center justify-center text-3xl mx-auto mb-6 relative pulse-ring">📤</div>
+                    <div class="text-brand-500 text-sm font-bold uppercase tracking-wider mb-2">Шаг 1</div>
+                    <h3 class="text-xl font-semibold text-white mb-3">Загрузи чертёж</h3>
+                    <p class="text-dark-400">Перетащи PDF чертёж в Profit Step. Жилые, коммерческие, многоэтажные — справится с любым.</p>
+                    <div class="hidden md:block absolute top-8 left-[60%] w-[80%] border-t-2 border-dashed border-dark-700"></div>
+                </div>
+                <div class="fade-up fade-up-delay-1 text-center relative">
+                    <div class="w-16 h-16 bg-brand-800/20 border-2 border-brand-800/30 rounded-2xl flex items-center justify-center text-3xl mx-auto mb-6">🧠</div>
+                    <div class="text-brand-500 text-sm font-bold uppercase tracking-wider mb-2">Шаг 2</div>
+                    <h3 class="text-xl font-semibold text-white mb-3">AI всё анализирует</h3>
+                    <p class="text-dark-400">Три AI модели работают параллельно — определяют цепи, приборы, трассы и материалы. Перекрёстная проверка для точности.</p>
+                    <div class="hidden md:block absolute top-8 left-[60%] w-[80%] border-t-2 border-dashed border-dark-700"></div>
+                </div>
+                <div class="fade-up fade-up-delay-2 text-center">
+                    <div class="w-16 h-16 bg-brand-800/20 border-2 border-brand-800/30 rounded-2xl flex items-center justify-center text-3xl mx-auto mb-6">📋</div>
+                    <div class="text-brand-500 text-sm font-bold uppercase tracking-wider mb-2">Шаг 3</div>
+                    <h3 class="text-xl font-semibold text-white mb-3">Получи смету</h3>
+                    <p class="text-dark-400">Детальные позиции, список материалов, трудозатраты и итого. Редактируй, экспортируй или отправь клиенту — готово.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Comparison -->
+    <section id="comparison" class="py-20 lg:py-28 relative grid-bg">
+        <div class="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-brand-800/30 to-transparent"></div>
+        <div class="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="text-center mb-16 fade-up">
+                <div class="inline-flex items-center gap-2 bg-brand-800/10 border border-brand-800/20 rounded-full px-4 py-1.5 mb-4">
+                    <span class="text-brand-400 text-sm font-medium">Честное сравнение</span>
+                </div>
+                <h2 class="text-3xl lg:text-4xl font-bold text-white mb-4">Как мы выглядим на фоне конкурентов</h2>
+                <p class="text-dark-400 text-lg max-w-2xl mx-auto">Мы не пытаемся быть всем. Мы делаем именно то, что нужно подрядчикам.</p>
+            </div>
+            <div class="fade-up overflow-x-auto">
+                <table class="w-full text-left">
+                    <thead>
+                        <tr class="border-b border-dark-800">
+                            <th class="py-4 px-4 text-sm text-dark-500 font-medium">Функция</th>
+                            <th class="py-4 px-4 text-sm font-semibold text-brand-400 text-center">Profit Step</th>
+                            <th class="py-4 px-4 text-sm text-dark-400 font-medium text-center">ServiceTitan</th>
+                            <th class="py-4 px-4 text-sm text-dark-400 font-medium text-center">Jobber</th>
+                            <th class="py-4 px-4 text-sm text-dark-400 font-medium text-center">Housecall Pro</th>
+                        </tr>
+                    </thead>
+                    <tbody class="text-sm">
+                        <tr class="comparison-row border-b border-dark-800/50"><td class="py-3.5 px-4 text-dark-300">AI-сметы по чертежам</td><td class="py-3.5 px-4 text-center check">✓</td><td class="py-3.5 px-4 text-center cross">✗</td><td class="py-3.5 px-4 text-center cross">✗</td><td class="py-3.5 px-4 text-center cross">✗</td></tr>
+                        <tr class="comparison-row border-b border-dark-800/50"><td class="py-3.5 px-4 text-dark-300">Telegram AI-ассистент</td><td class="py-3.5 px-4 text-center check">✓</td><td class="py-3.5 px-4 text-center cross">✗</td><td class="py-3.5 px-4 text-center cross">✗</td><td class="py-3.5 px-4 text-center cross">✗</td></tr>
+                        <tr class="comparison-row border-b border-dark-800/50"><td class="py-3.5 px-4 text-dark-300">Учёт времени (GPS + фото)</td><td class="py-3.5 px-4 text-center check">✓</td><td class="py-3.5 px-4 text-center check">✓</td><td class="py-3.5 px-4 text-center check">✓</td><td class="py-3.5 px-4 text-center check">✓</td></tr>
+                        <tr class="comparison-row border-b border-dark-800/50"><td class="py-3.5 px-4 text-dark-300">AI-сверка выписок</td><td class="py-3.5 px-4 text-center check">✓</td><td class="py-3.5 px-4 text-center cross">✗</td><td class="py-3.5 px-4 text-center cross">✗</td><td class="py-3.5 px-4 text-center cross">✗</td></tr>
+                        <tr class="comparison-row border-b border-dark-800/50"><td class="py-3.5 px-4 text-dark-300">P&L по проектам в реальном времени</td><td class="py-3.5 px-4 text-center check">✓</td><td class="py-3.5 px-4 text-center partial">~</td><td class="py-3.5 px-4 text-center cross">✗</td><td class="py-3.5 px-4 text-center cross">✗</td></tr>
+                        <tr class="comparison-row border-b border-dark-800/50"><td class="py-3.5 px-4 text-dark-300">Проверка NEC / норм</td><td class="py-3.5 px-4 text-center check">✓</td><td class="py-3.5 px-4 text-center cross">✗</td><td class="py-3.5 px-4 text-center cross">✗</td><td class="py-3.5 px-4 text-center cross">✗</td></tr>
+                        <tr class="comparison-row border-b border-dark-800/50"><td class="py-3.5 px-4 text-dark-300">Мульти-дисциплинарные сметы</td><td class="py-3.5 px-4 text-center check">✓</td><td class="py-3.5 px-4 text-center cross">✗</td><td class="py-3.5 px-4 text-center cross">✗</td><td class="py-3.5 px-4 text-center cross">✗</td></tr>
+                        <tr class="comparison-row border-b border-dark-800/50"><td class="py-3.5 px-4 text-dark-300">Стоимость подключения</td><td class="py-3.5 px-4 text-center text-brand-400 font-semibold">$0</td><td class="py-3.5 px-4 text-center text-red-400">$5K–$50K</td><td class="py-3.5 px-4 text-center text-dark-400">$0</td><td class="py-3.5 px-4 text-center text-dark-400">$0</td></tr>
+                        <tr class="comparison-row"><td class="py-3.5 px-4 text-dark-300">Цена в месяц</td><td class="py-3.5 px-4 text-center text-brand-400 font-semibold">От $29</td><td class="py-3.5 px-4 text-center text-red-400">$250–$400</td><td class="py-3.5 px-4 text-center text-dark-400">$50–$300</td><td class="py-3.5 px-4 text-center text-dark-400">$65–$300</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+
+    <!-- Pricing -->
+    <section id="pricing" class="py-20 lg:py-28 relative">
+        <div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="text-center mb-16 fade-up">
+                <div class="inline-flex items-center gap-2 bg-brand-800/10 border border-brand-800/20 rounded-full px-4 py-1.5 mb-4">
+                    <span class="text-brand-400 text-sm font-medium">Простые цены</span>
+                </div>
+                <h2 class="text-3xl lg:text-4xl font-bold text-white mb-4">Начни бесплатно. Обновись когда готов.</h2>
+                <p class="text-dark-400 text-lg max-w-2xl mx-auto">Без setup-fees. Без контрактов. Без скрытых платежей. Отмени когда угодно.</p>
+            </div>
+            <div class="grid md:grid-cols-3 gap-8">
+                <!-- Starter -->
+                <div class="fade-up pricing-card bg-dark-900/50 border border-dark-800 rounded-2xl p-8">
+                    <div class="text-sm font-medium text-dark-400 mb-2">Стартовый</div>
+                    <div class="flex items-baseline gap-1 mb-1"><span class="text-4xl font-bold text-white">$0</span><span class="text-dark-500">/мес</span></div>
+                    <p class="text-dark-500 text-sm mb-8">Для самозанятых подрядчиков, которые только начинают.</p>
+                    <ul class="space-y-3 mb-8">
+                        <li class="flex items-start gap-3 text-sm text-dark-300"><svg class="w-5 h-5 text-brand-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>До 3 активных проектов</li>
+                        <li class="flex items-start gap-3 text-sm text-dark-300"><svg class="w-5 h-5 text-brand-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>5 AI-смет в месяц</li>
+                        <li class="flex items-start gap-3 text-sm text-dark-300"><svg class="w-5 h-5 text-brand-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>Учёт времени (2 пользователя)</li>
+                        <li class="flex items-start gap-3 text-sm text-dark-300"><svg class="w-5 h-5 text-brand-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>Базовые отчёты P&L</li>
+                        <li class="flex items-start gap-3 text-sm text-dark-600"><svg class="w-5 h-5 text-dark-700 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>Telegram AI-ассистент</li>
+                        <li class="flex items-start gap-3 text-sm text-dark-600"><svg class="w-5 h-5 text-dark-700 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>Сверка выписок</li>
+                    </ul>
+                    <a href="#" class="block text-center border border-dark-700 hover:border-dark-500 text-dark-300 hover:text-white font-medium py-3 rounded-xl transition-all">Начать бесплатно</a>
+                </div>
+                <!-- Pro -->
+                <div class="fade-up fade-up-delay-1 pricing-card pricing-popular bg-dark-900/80 rounded-2xl p-8 relative">
+                    <div class="absolute -top-3 left-1/2 -translate-x-1/2 bg-brand-800 text-white text-xs font-semibold px-4 py-1 rounded-full">Популярный</div>
+                    <div class="text-sm font-medium text-brand-400 mb-2">Pro</div>
+                    <div class="flex items-baseline gap-1 mb-1"><span class="text-4xl font-bold text-white">$29</span><span class="text-dark-500">/мес</span></div>
+                    <p class="text-dark-500 text-sm mb-8">Для растущих бригад, которым нужен полный набор инструментов.</p>
+                    <ul class="space-y-3 mb-8">
+                        <li class="flex items-start gap-3 text-sm text-dark-300"><svg class="w-5 h-5 text-brand-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>Безлимит проектов</li>
+                        <li class="flex items-start gap-3 text-sm text-dark-300"><svg class="w-5 h-5 text-brand-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>50 AI-смет в месяц</li>
+                        <li class="flex items-start gap-3 text-sm text-dark-300"><svg class="w-5 h-5 text-brand-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>Учёт времени (10 пользователей)</li>
+                        <li class="flex items-start gap-3 text-sm text-dark-300"><svg class="w-5 h-5 text-brand-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>Telegram AI-ассистент</li>
+                        <li class="flex items-start gap-3 text-sm text-dark-300"><svg class="w-5 h-5 text-brand-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>Сверка банковских выписок</li>
+                        <li class="flex items-start gap-3 text-sm text-dark-300"><svg class="w-5 h-5 text-brand-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>P&L + Бюджетирование</li>
+                        <li class="flex items-start gap-3 text-sm text-dark-300"><svg class="w-5 h-5 text-brand-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>Проверка NEC / нормы</li>
+                    </ul>
+                    <a href="#" class="block text-center bg-brand-800 hover:bg-brand-700 text-white font-semibold py-3 rounded-xl transition-all hover:shadow-lg hover:shadow-brand-800/25">14 дней бесплатно</a>
+                </div>
+                <!-- Enterprise -->
+                <div class="fade-up fade-up-delay-2 pricing-card bg-dark-900/50 border border-dark-800 rounded-2xl p-8">
+                    <div class="text-sm font-medium text-dark-400 mb-2">Enterprise</div>
+                    <div class="flex items-baseline gap-1 mb-1"><span class="text-4xl font-bold text-white">По запросу</span></div>
+                    <p class="text-dark-500 text-sm mb-8">Для крупных компаний и мульти-филиальных операций.</p>
+                    <ul class="space-y-3 mb-8">
+                        <li class="flex items-start gap-3 text-sm text-dark-300"><svg class="w-5 h-5 text-brand-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>Всё из Pro</li>
+                        <li class="flex items-start gap-3 text-sm text-dark-300"><svg class="w-5 h-5 text-brand-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>Безлимит AI-смет</li>
+                        <li class="flex items-start gap-3 text-sm text-dark-300"><svg class="w-5 h-5 text-brand-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>Безлимит пользователей</li>
+                        <li class="flex items-start gap-3 text-sm text-dark-300"><svg class="w-5 h-5 text-brand-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>Мульти-филиальная поддержка</li>
+                        <li class="flex items-start gap-3 text-sm text-dark-300"><svg class="w-5 h-5 text-brand-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>Интеграции (QuickBooks и др.)</li>
+                        <li class="flex items-start gap-3 text-sm text-dark-300"><svg class="w-5 h-5 text-brand-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>Выделенная поддержка</li>
+                        <li class="flex items-start gap-3 text-sm text-dark-300"><svg class="w-5 h-5 text-brand-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>White-label вариант</li>
+                    </ul>
+                    <a href="#" class="block text-center border border-dark-700 hover:border-dark-500 text-dark-300 hover:text-white font-medium py-3 rounded-xl transition-all">Заказать демо</a>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Testimonials -->
+    <section class="py-20 lg:py-28 relative grid-bg">
+        <div class="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-brand-800/30 to-transparent"></div>
+        <div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="text-center mb-16 fade-up">
+                <h2 class="text-3xl lg:text-4xl font-bold text-white mb-4">Нам доверяют подрядчики</h2>
+                <p class="text-dark-400 text-lg">Реальные результаты реальных бизнесов.</p>
+            </div>
+            <div class="grid md:grid-cols-3 gap-6 lg:gap-8">
+                <div class="fade-up testimonial-card border border-dark-800/50 rounded-2xl p-8">
+                    <div class="flex items-center gap-1 mb-4"><span class="text-yellow-500">★★★★★</span></div>
+                    <p class="text-dark-300 mb-6 leading-relaxed">«Раньше тратил все выходные на сметы. Теперь загружаю чертёж и к обеду уже имею детальную смету. Эта штука окупает себя каждую неделю.»</p>
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 bg-brand-800/30 rounded-full flex items-center justify-center text-brand-400 font-bold">М</div>
+                        <div><div class="text-white font-medium text-sm">Михаил Р.</div><div class="text-dark-500 text-xs">Электрик, Tampa FL</div></div>
+                    </div>
+                </div>
+                <div class="fade-up fade-up-delay-1 testimonial-card border border-dark-800/50 rounded-2xl p-8">
+                    <div class="flex items-center gap-1 mb-4"><span class="text-yellow-500">★★★★★</span></div>
+                    <p class="text-dark-300 mb-6 leading-relaxed">«Мои ребята отмечаются через Telegram — даже учить не пришлось. Вижу, кто на каком объекте, с GPS подтверждением. Никаких догадок.»</p>
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 bg-blue-800/30 rounded-full flex items-center justify-center text-blue-400 font-bold">Д</div>
+                        <div><div class="text-white font-medium text-sm">Дмитрий Л.</div><div class="text-dark-500 text-xs">HVAC подрядчик, Miami FL</div></div>
+                    </div>
+                </div>
+                <div class="fade-up fade-up-delay-2 testimonial-card border border-dark-800/50 rounded-2xl p-8">
+                    <div class="flex items-center gap-1 mb-4"><span class="text-yellow-500">★★★★★</span></div>
+                    <p class="text-dark-300 mb-6 leading-relaxed">«Перешёл с Jobber и экономлю $200/мес. Но главная ценность? Наконец-то знаю, какие проекты приносят деньги, а какие нет. Это изменило всё.»</p>
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 bg-purple-800/30 rounded-full flex items-center justify-center text-purple-400 font-bold">С</div>
+                        <div><div class="text-white font-medium text-sm">Сергей К.</div><div class="text-dark-500 text-xs">Сантехник, Fort Lauderdale FL</div></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Final CTA -->
+    <section class="py-20 lg:py-28 relative">
+        <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+            <div class="fade-up bg-gradient-to-br from-dark-900 to-brand-900/20 border border-brand-800/20 rounded-3xl p-10 lg:p-16 relative overflow-hidden">
+                <div class="absolute top-0 right-0 w-64 h-64 bg-brand-800/10 rounded-full blur-3xl"></div>
+                <div class="absolute bottom-0 left-0 w-48 h-48 bg-brand-800/5 rounded-full blur-3xl"></div>
+                <div class="relative z-10">
+                    <h2 class="text-3xl lg:text-5xl font-bold text-white mb-6">Готов знать свою прибыль<br>по каждому проекту?</h2>
+                    <p class="text-lg text-dark-400 mb-8 max-w-xl mx-auto">Присоединяйся к подрядчикам Флориды, которые перестали гадать и начали зарабатывать. Бесплатный старт, без карты.</p>
+                    <div class="flex flex-col sm:flex-row items-center justify-center gap-4">
+                        <a href="#" class="inline-flex items-center gap-2 bg-brand-800 hover:bg-brand-700 text-white font-semibold px-8 py-4 rounded-xl text-lg transition-all hover:shadow-xl hover:shadow-brand-800/25 hover:-translate-y-0.5">
+                            Попробовать бесплатно
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+                        </a>
+                        <a href="#" class="inline-flex items-center gap-2 text-dark-400 hover:text-white font-medium transition-colors">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                            Заказать демо
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="border-t border-dark-800/50 py-12 lg:py-16">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="grid md:grid-cols-4 gap-8 lg:gap-12 mb-12">
+                <div class="md:col-span-2">
+                    <a href="#" class="flex items-center gap-3 mb-4">
+                        <div class="w-9 h-9 bg-brand-800 rounded-lg flex items-center justify-center"><svg class="w-5 h-5 text-brand-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/></svg></div>
+                        <span class="text-xl font-bold text-white">Profit<span class="text-brand-500">Step</span></span>
+                    </a>
+                    <p class="text-dark-500 text-sm max-w-sm mb-4">AI CRM для электриков, сантехников и HVAC подрядчиков. Знай свою прибыль по каждому проекту.</p>
+                    <p class="text-dark-600 text-xs">© 2025 Garkor Corp. Все права защищены.</p>
+                </div>
+                <div>
+                    <h4 class="text-white font-semibold text-sm mb-4">Продукт</h4>
+                    <ul class="space-y-2">
+                        <li><a href="#features" class="text-dark-500 hover:text-dark-300 text-sm transition-colors">Возможности</a></li>
+                        <li><a href="#pricing" class="text-dark-500 hover:text-dark-300 text-sm transition-colors">Цены</a></li>
+                        <li><a href="#comparison" class="text-dark-500 hover:text-dark-300 text-sm transition-colors">Сравнение</a></li>
+                        <li><a href="#how-it-works" class="text-dark-500 hover:text-dark-300 text-sm transition-colors">Как работает</a></li>
+                    </ul>
+                </div>
+                <div>
+                    <h4 class="text-white font-semibold text-sm mb-4">Контакты</h4>
+                    <ul class="space-y-2">
+                        <li><a href="mailto:garkor.com@gmail.com" class="text-dark-500 hover:text-dark-300 text-sm transition-colors">garkor.com@gmail.com</a></li>
+                        <li><a href="#" class="text-dark-500 hover:text-dark-300 text-sm transition-colors">South Florida</a></li>
+                        <li><a href="index.html" class="text-dark-500 hover:text-dark-300 text-sm transition-colors">🇺🇸 English version</a></li>
+                    </ul>
+                </div>
+            </div>
+            <div class="border-t border-dark-800/50 pt-8 flex flex-col md:flex-row items-center justify-between gap-4">
+                <div class="text-dark-600 text-xs">Сделано с ❤️ в Южной Флориде</div>
+                <div class="flex items-center gap-6">
+                    <a href="#" class="text-dark-600 hover:text-dark-400 text-xs transition-colors">Политика конфиденциальности</a>
+                    <a href="#" class="text-dark-600 hover:text-dark-400 text-xs transition-colors">Условия использования</a>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        const toggle = document.getElementById('mobile-toggle');
+        const menu = document.getElementById('mobile-menu');
+        toggle.addEventListener('click', () => menu.classList.toggle('open'));
+        function closeMobileMenu() { menu.classList.remove('open'); }
+
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => { if (entry.isIntersecting) entry.target.classList.add('visible'); });
+        }, { threshold: 0.1, rootMargin: '0px 0px -50px 0px' });
+        document.querySelectorAll('.fade-up').forEach(el => observer.observe(el));
+
+        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+            anchor.addEventListener('click', function (e) {
+                e.preventDefault();
+                const target = document.querySelector(this.getAttribute('href'));
+                if (target) { target.scrollIntoView({ behavior: 'smooth', block: 'start' }); closeMobileMenu(); }
+            });
+        });
+
+        const nav = document.querySelector('nav');
+        window.addEventListener('scroll', () => {
+            nav.classList.toggle('bg-dark-950/95', window.scrollY > 50);
+            nav.classList.toggle('bg-dark-950/80', window.scrollY <= 50);
+        });
+    </script>
+</body>
+</html>

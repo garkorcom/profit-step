@@ -184,8 +184,8 @@ const ContactsPage: React.FC = () => {
                 const refreshed = await contactsService.getContacts();
                 setContacts(refreshed);
 
-                // Update roles
-                const newRoles = new Set<string>();
+                // Update roles (merge preset + dynamic)
+                const newRoles = new Set<string>(PRESET_ROLES);
                 refreshed.forEach(c => c.roles?.forEach(r => newRoles.add(r)));
                 setAllRoles(Array.from(newRoles).sort());
 

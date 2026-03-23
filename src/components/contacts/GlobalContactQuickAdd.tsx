@@ -14,6 +14,20 @@ import { Contact, ContactPhone } from '../../types/contact.types';
 import { contactsService } from '../../services/contactsService';
 import { useAuth } from '../../auth/AuthContext';
 
+// Preset roles for quick selection
+const ROLE_PRESETS = [
+    'Inspector',
+    'Building Inspector',
+    'Electrical Inspector',
+    'Mechanical Inspector',
+    'Landlord',
+    'Owner',
+    'Designer/Architect',
+    'Worker',
+    'Subcontractor',
+    'Supplier',
+] as const;
+
 interface GlobalContactQuickAddProps {
     open: boolean;
     onClose: () => void;
@@ -216,24 +230,46 @@ const GlobalContactQuickAdd: React.FC<GlobalContactQuickAddProps> = ({
                         <Typography variant="subtitle2" color="text.secondary" gutterBottom>
                             Роли / Специализация
                         </Typography>
+                        {/* Preset role chips */}
+                        <Box display="flex" flexWrap="wrap" gap={0.5} mb={1.5}>
+                            {ROLE_PRESETS.map(preset => (
+                                <Chip
+                                    key={preset}
+                                    label={preset}
+                                    size="small"
+                                    variant={roles.includes(preset) ? 'filled' : 'outlined'}
+                                    color={roles.includes(preset) ? 'primary' : 'default'}
+                                    onClick={() => {
+                                        if (roles.includes(preset)) {
+                                            setRoles(roles.filter(r => r !== preset));
+                                        } else {
+                                            setRoles([...roles, preset]);
+                                        }
+                                    }}
+                                    sx={{ cursor: 'pointer' }}
+                                />
+                            ))}
+                        </Box>
                         <Box display="flex" gap={1} mb={1}>
                             <TextField
                                 fullWidth
                                 size="small"
-                                placeholder="Например: Инспектор, Электрик..."
+                                placeholder="Или введите свою роль..."
                                 value={newRole}
                                 onChange={(e) => setNewRole(e.target.value)}
                                 onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddRole())}
                             />
                             <Button variant="outlined" onClick={handleAddRole} disabled={!newRole.trim()}>Добавить</Button>
                         </Box>
+                        {/* Show custom (non-preset) roles */}
                         <Box display="flex" flexWrap="wrap" gap={0.5}>
-                            {roles.map(r => (
+                            {roles.filter(r => !ROLE_PRESETS.includes(r as any)).map(r => (
                                 <Chip
                                     key={r}
                                     label={r}
                                     onDelete={() => setRoles(roles.filter(role => role !== r))}
                                     size="small"
+                                    color="secondary"
                                 />
                             ))}
                         </Box>

@@ -145,12 +145,17 @@ export const estimatesApi = {
 
             const estimate = estimateSnap.data() as Estimate;
 
-            // 2. Build items summary for description
+            // 2. Check if already converted (prevent duplicate conversions)
+            if (estimate.status === 'converted') {
+                throw new Error('Смета уже конвертирована (Already converted)');
+            }
+
+            // 3. Build items summary for description
             const itemsSummary = estimate.items
                 .map(item => `• ${item.description}: ${item.quantity} × $${item.unitPrice} = $${item.total}`)
                 .join('\n');
 
-            // 3. Create GTD task in root `gtd_tasks` collection (matches agentApi pattern)
+            // 4. Create GTD task in root `gtd_tasks` collection (matches agentApi pattern)
             const taskData = {
                 ownerId: userId,
                 title: `${estimate.number}: ${estimate.clientName} — Electrical`,
@@ -170,7 +175,7 @@ export const estimatesApi = {
 
             const taskRef = await addDoc(collection(db, 'gtd_tasks'), taskData);
 
-            // 4. Update Estimate status
+            // 5. Update Estimate status
             await updateDoc(estimateRef, {
                 status: 'converted',
                 convertedToTaskId: taskRef.id,

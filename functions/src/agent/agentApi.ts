@@ -1771,6 +1771,7 @@ app.get('/api/contacts/search', async (req, res, next) => {
 const CreateEstimateSchema = z.object({
   clientId: z.string().min(1),
   clientName: z.string().min(1),
+  idempotencyKey: z.string().min(1).optional(),
   items: z.array(z.object({
     id: z.string().min(1),
     description: z.string().min(1),
@@ -1836,7 +1837,25 @@ const ListProjectsQuerySchema = z.object({
 app.post('/api/estimates', async (req, res, next) => {
   try {
     const data = CreateEstimateSchema.parse(req.body);
-    logger.info('📐 estimates:create', { clientId: data.clientId, itemCount: data.items.length });
+    logger.info('📐 estimates:create', { clientId: data.clientId, itemCount: data.items.length, key: data.idempotencyKey });
+
+    // Dedup check via _idempotency collection
+    if (data.idempotencyKey) {
+      const keyDoc = await db.doc(`_idempotency/${data.idempotencyKey}`).get();
+      if (keyDoc.exists) {
+        const existing = keyDoc.data()!;
+        logger.info('📐 estimates:deduplicated', { estimateId: existing.entityId });
+        res.status(200).json({ estimateId: existing.entityId, deduplicated: true });
+        return;
+      }
+    }
+
+    // Validate clientId exists in Firestore
+    const clientDoc = await db.collection('clients').doc(data.clientId).get();
+    if (!clientDoc.exists) {
+      res.status(400).json({ error: `Клиент с ID "${data.clientId}" не найден` });
+      return;
+    }
 
     const companyId = await resolveOwnerCompanyId();
 
@@ -1867,6 +1886,16 @@ app.post('/api/estimates', async (req, res, next) => {
       createdAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
     });
+
+    // Store idempotency key with 24h TTL
+    if (data.idempotencyKey) {
+      await db.doc(`_idempotency/${data.idempotencyKey}`).set({
+        entityId: docRef.id,
+        collection: 'estimates',
+        expiresAt: Date.now() + 24 * 3600_000,
+        createdAt: FieldValue.serverTimestamp(),
+      });
+    }
 
     logger.info('📐 estimates:created', { estimateId: docRef.id, number, total });
     await logAgentActivity({
@@ -2017,114 +2046,131 @@ app.patch('/api/estimates/:id', async (req, res, next) => {
 app.post('/api/estimates/:id/convert-to-tasks', async (req, res, next) => {
   try {
     const estimateId = req.params.id;
+    const agentUserId = req.agentUserId;
     logger.info('📐 estimates:convert-to-tasks', { estimateId });
 
-    const estimateRef = db.collection('estimates').doc(estimateId);
-    const estimateDoc = await estimateRef.get();
+    // Atomic transaction: read estimate + check status + create tasks + update status
+    const result = await db.runTransaction(async (tx) => {
+      const estimateRef = db.collection('estimates').doc(estimateId);
+      const estimateDoc = await tx.get(estimateRef);
 
-    if (!estimateDoc.exists) {
-      res.status(404).json({ error: 'Смета не найдена' });
-      return;
-    }
+      if (!estimateDoc.exists) {
+        return { error: 'not_found' } as const;
+      }
 
-    const estimate = estimateDoc.data()!;
+      const estimate = estimateDoc.data()!;
 
-    if (estimate.status === 'converted') {
-      res.status(400).json({ error: 'Смета уже конвертирована', taskId: estimate.convertedToTaskId });
-      return;
-    }
+      if (estimate.status === 'converted') {
+        return { error: 'already_converted', taskId: estimate.convertedToTaskId } as const;
+      }
 
-    // Group items by type for sub-tasks
-    const byType: Record<string, { items: any[]; total: number }> = {};
-    for (const item of (estimate.items || [])) {
-      const type = item.type || 'other';
-      if (!byType[type]) byType[type] = { items: [], total: 0 };
-      byType[type].items.push(item);
-      byType[type].total += item.total || 0;
-    }
+      // Group items by type for sub-tasks
+      const byType: Record<string, { items: any[]; total: number }> = {};
+      for (const item of (estimate.items || [])) {
+        const type = item.type || 'other';
+        if (!byType[type]) byType[type] = { items: [], total: 0 };
+        byType[type].items.push(item);
+        byType[type].total += item.total || 0;
+      }
 
-    const batch = db.batch();
-    const createdTaskIds: string[] = [];
+      const createdTaskIds: string[] = [];
 
-    // Parent task
-    const parentRef = db.collection('gtd_tasks').doc();
-    const itemsSummary = (estimate.items || [])
-      .map((i: any) => `• ${i.description}: ${i.quantity} × $${i.unitPrice} = $${i.total}`)
-      .join('\n');
+      // Parent task
+      const parentRef = db.collection('gtd_tasks').doc();
+      const itemsSummary = (estimate.items || [])
+        .map((i: any) => `• ${i.description}: ${i.quantity} × $${i.unitPrice} = $${i.total}`)
+        .join('\n');
 
-    batch.set(parentRef, {
-      ownerId: req.agentUserId,
-      title: `${estimate.number}: ${estimate.clientName} — Electrical`,
-      description: `Converted from estimate ${estimate.number}.\n${estimate.notes || ''}\n\nItems:\n${itemsSummary}\n\nTotal: $${estimate.total}`,
-      status: 'next_action',
-      priority: 'high',
-      context: '@office',
-      clientId: estimate.clientId,
-      clientName: estimate.clientName,
-      budgetAmount: estimate.total,
-      taskType: 'estimate_conversion',
-      source: `estimate:${estimateId}`,
-      estimateId,
-      createdAt: FieldValue.serverTimestamp(),
-      updatedAt: FieldValue.serverTimestamp(),
-    });
-    createdTaskIds.push(parentRef.id);
-
-    // Sub-tasks by category
-    const typeLabels: Record<string, string> = {
-      material: 'Materials',
-      labor: 'Labor',
-      service: 'Services',
-      other: 'Other',
-    };
-
-    for (const [type, group] of Object.entries(byType)) {
-      const subRef = db.collection('gtd_tasks').doc();
-      const label = typeLabels[type] || type;
-      batch.set(subRef, {
-        ownerId: req.agentUserId,
-        title: `${estimate.number}: ${label} — $${group.total.toFixed(2)}`,
-        description: group.items.map((i: any) => `• ${i.description}: $${i.total}`).join('\n'),
+      tx.set(parentRef, {
+        ownerId: agentUserId,
+        title: `${estimate.number}: ${estimate.clientName} — Electrical`,
+        description: `Converted from estimate ${estimate.number}.\n${estimate.notes || ''}\n\nItems:\n${itemsSummary}\n\nTotal: $${estimate.total}`,
         status: 'next_action',
-        priority: 'medium',
+        priority: 'high',
         context: '@office',
         clientId: estimate.clientId,
         clientName: estimate.clientName,
-        parentTaskId: parentRef.id,
-        isSubtask: true,
-        budgetAmount: +group.total.toFixed(2),
-        budgetCategory: type,
+        budgetAmount: estimate.total,
         taskType: 'estimate_conversion',
         source: `estimate:${estimateId}`,
         estimateId,
         createdAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
       });
-      createdTaskIds.push(subRef.id);
-    }
+      createdTaskIds.push(parentRef.id);
 
-    // Update estimate status
-    batch.update(estimateRef, {
-      status: 'converted',
-      convertedToTaskId: parentRef.id,
-      updatedAt: FieldValue.serverTimestamp(),
+      // Sub-tasks by category
+      const typeLabels: Record<string, string> = {
+        material: 'Materials',
+        labor: 'Labor',
+        service: 'Services',
+        other: 'Other',
+      };
+
+      for (const [type, group] of Object.entries(byType)) {
+        const subRef = db.collection('gtd_tasks').doc();
+        const label = typeLabels[type] || type;
+        tx.set(subRef, {
+          ownerId: agentUserId,
+          title: `${estimate.number}: ${label} — $${group.total.toFixed(2)}`,
+          description: group.items.map((i: any) => `• ${i.description}: $${i.total}`).join('\n'),
+          status: 'next_action',
+          priority: 'medium',
+          context: '@office',
+          clientId: estimate.clientId,
+          clientName: estimate.clientName,
+          parentTaskId: parentRef.id,
+          isSubtask: true,
+          budgetAmount: +group.total.toFixed(2),
+          budgetCategory: type,
+          taskType: 'estimate_conversion',
+          source: `estimate:${estimateId}`,
+          estimateId,
+          createdAt: FieldValue.serverTimestamp(),
+          updatedAt: FieldValue.serverTimestamp(),
+        });
+        createdTaskIds.push(subRef.id);
+      }
+
+      // Update estimate status atomically
+      tx.update(estimateRef, {
+        status: 'converted',
+        convertedToTaskId: parentRef.id,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+
+      return {
+        error: null,
+        parentTaskId: parentRef.id,
+        createdTaskIds,
+        estimateNumber: estimate.number,
+      } as const;
     });
 
-    await batch.commit();
+    // Handle transaction results
+    if (result.error === 'not_found') {
+      res.status(404).json({ error: 'Смета не найдена' });
+      return;
+    }
 
-    logger.info('📐 estimates:converted', { estimateId, taskCount: createdTaskIds.length });
+    if (result.error === 'already_converted') {
+      res.status(409).json({ error: 'Смета уже конвертирована', taskId: result.taskId });
+      return;
+    }
+
+    logger.info('📐 estimates:converted', { estimateId, taskCount: result.createdTaskIds.length });
     await logAgentActivity({
       userId: req.agentUserId!,
       action: 'estimate_converted',
       endpoint: `/api/estimates/${estimateId}/convert-to-tasks`,
-      metadata: { estimateId, parentTaskId: parentRef.id, taskCount: createdTaskIds.length },
+      metadata: { estimateId, parentTaskId: result.parentTaskId, taskCount: result.createdTaskIds.length },
     });
 
     res.status(201).json({
-      parentTaskId: parentRef.id,
-      taskIds: createdTaskIds,
-      taskCount: createdTaskIds.length,
-      message: `Создано ${createdTaskIds.length} задач из сметы ${estimate.number}`,
+      parentTaskId: result.parentTaskId,
+      taskIds: result.createdTaskIds,
+      taskCount: result.createdTaskIds.length,
+      message: `Создано ${result.createdTaskIds.length} задач из сметы ${result.estimateNumber}`,
     });
   } catch (e) {
     next(e);

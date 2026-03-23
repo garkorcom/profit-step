@@ -32,6 +32,9 @@
  * - POST   /api/blueprint/split           ← Estimator V3 Phase 2
  * - POST   /api/blackboard                ← Estimator V3 Phase 3
  * - GET    /api/blackboard/:projectId     ← Estimator V3 Phase 3
+ * - POST   /api/sites                     ← Sites Phase 1
+ * - GET    /api/sites                     ← Sites Phase 1
+ * - PATCH  /api/sites/:id                 ← Sites Phase 1
  */
 
 import * as admin from 'firebase-admin';
@@ -90,6 +93,7 @@ const CreateGTDTaskSchema = z.object({
   dueDate: z.string().optional(),
   estimatedDurationMinutes: z.number().optional(),
   taskType: z.string().optional(),
+  siteId: z.string().optional(),
 });
 
 const CreateCostSchema = z.object({
@@ -100,6 +104,7 @@ const CreateCostSchema = z.object({
   description: z.string().optional(),
   idempotencyKey: z.string().min(1).optional(),
   taskId: z.string().optional(),
+  siteId: z.string().optional(),
 });
 
 const TimeTrackingSchema = z.discriminatedUnion('action', [
@@ -110,6 +115,7 @@ const TimeTrackingSchema = z.discriminatedUnion('action', [
     clientId: z.string().optional(),
     clientName: z.string().optional(),
     startTime: z.string().optional(), // ISO string — manual override ("забыл отметиться утром в 7")
+    siteId: z.string().optional(),
   }),
   z.object({
     action: z.literal('stop'),
@@ -336,6 +342,7 @@ app.post('/api/gtd-tasks', async (req, res, next) => {
       dueDate: data.dueDate ? Timestamp.fromDate(new Date(data.dueDate)) : null,
       taskType: data.taskType || null,
       estimatedDurationMinutes: data.estimatedDurationMinutes || null,
+      siteId: data.siteId || null,
       source: 'openclaw',
       createdAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
@@ -401,6 +408,7 @@ app.post('/api/costs', async (req, res, next) => {
       status: 'confirmed',
       source: 'openclaw',
       taskId: data.taskId || null,
+      siteId: data.siteId || null,
       createdAt: FieldValue.serverTimestamp(),
     });
 
@@ -572,6 +580,7 @@ app.post('/api/time-tracking', async (req, res, next) => {
             relatedTaskId: data.taskId || null,
             relatedTaskTitle: data.taskTitle,
             hourlyRate,
+            siteId: data.siteId || null,
             source: 'openclaw',
           });
           tx.update(userRef, { activeSessionId: newRef.id });
@@ -1857,6 +1866,7 @@ const CreateEstimateSchema = z.object({
   clientName: z.string().min(1).optional(),
   address: z.string().min(1).optional(),
   idempotencyKey: z.string().min(1).optional(),
+  siteId: z.string().optional(),
   items: z.array(z.object({
     id: z.string().min(1),
     description: z.string().min(1),
@@ -1981,6 +1991,7 @@ app.post('/api/estimates', async (req, res, next) => {
       companyId,
       clientId,
       clientName: clientName || '',
+      siteId: data.siteId || null,
       number,
       status: 'draft',
       items: data.items,
@@ -2831,6 +2842,181 @@ app.get('/api/blackboard/:projectId', async (req, res, next) => {
       createdAt: data.createdAt?.toDate?.()?.toISOString() || null,
       updatedAt: data.updatedAt?.toDate?.()?.toISOString() || null,
     });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// SITES — Phase 1 Foundation
+// ═══════════════════════════════════════════════════════════════════
+
+const CreateSiteSchema = z.object({
+  clientId: z.string().min(1),
+  name: z.string().min(1),
+  address: z.string().min(1),
+  city: z.string().optional(),
+  state: z.string().optional(),
+  zip: z.string().optional(),
+  geo: z.object({
+    lat: z.number(),
+    lng: z.number(),
+  }).optional(),
+  sqft: z.number().optional(),
+  type: z.enum(['residential', 'commercial', 'industrial']).optional(),
+  permitNumber: z.string().optional(),
+  status: z.enum(['active', 'completed', 'on_hold']).default('active'),
+});
+
+const UpdateSiteSchema = z.object({
+  name: z.string().min(1).optional(),
+  address: z.string().min(1).optional(),
+  city: z.string().optional(),
+  state: z.string().optional(),
+  zip: z.string().optional(),
+  geo: z.object({
+    lat: z.number(),
+    lng: z.number(),
+  }).optional(),
+  sqft: z.number().optional(),
+  type: z.enum(['residential', 'commercial', 'industrial']).optional(),
+  permitNumber: z.string().optional(),
+  status: z.enum(['active', 'completed', 'on_hold']).optional(),
+}).refine(data => Object.keys(data).length > 0, {
+  message: 'At least one field must be provided',
+});
+
+// ─── POST /api/sites ────────────────────────────────────────────────
+
+app.post('/api/sites', async (req, res, next) => {
+  try {
+    const data = CreateSiteSchema.parse(req.body);
+    logger.info('🏗️ sites:create', { clientId: data.clientId, name: data.name });
+
+    // Validate client exists
+    const clientDoc = await db.collection('clients').doc(data.clientId).get();
+    if (!clientDoc.exists) {
+      res.status(400).json({ error: `Клиент с ID "${data.clientId}" не найден` });
+      return;
+    }
+
+    const docRef = await db.collection('sites').add({
+      clientId: data.clientId,
+      name: data.name,
+      address: data.address,
+      city: data.city || null,
+      state: data.state || null,
+      zip: data.zip || null,
+      geo: data.geo || null,
+      sqft: data.sqft || null,
+      type: data.type || null,
+      permitNumber: data.permitNumber || null,
+      status: data.status,
+      createdBy: req.agentUserId || 'system',
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+
+    logger.info('🏗️ sites:created', { siteId: docRef.id });
+    await logAgentActivity({
+      userId: req.agentUserId!,
+      action: 'site_created',
+      endpoint: '/api/sites',
+      metadata: { siteId: docRef.id, name: data.name, clientId: data.clientId },
+    });
+
+    res.status(201).json({ siteId: docRef.id, name: data.name });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// ─── GET /api/sites ─────────────────────────────────────────────────
+
+app.get('/api/sites', async (req, res, next) => {
+  try {
+    const clientId = req.query.clientId as string;
+    if (!clientId) {
+      res.status(400).json({ error: 'clientId query parameter is required' });
+      return;
+    }
+
+    logger.info('🏗️ sites:list', { clientId });
+
+    const snap = await db.collection('sites')
+      .where('clientId', '==', clientId)
+      .orderBy('createdAt', 'desc')
+      .get();
+
+    const sites = snap.docs.map((d) => {
+      const s = d.data();
+      return {
+        id: d.id,
+        clientId: s.clientId,
+        name: s.name,
+        address: s.address,
+        city: s.city || null,
+        state: s.state || null,
+        zip: s.zip || null,
+        geo: s.geo || null,
+        sqft: s.sqft || null,
+        type: s.type || null,
+        permitNumber: s.permitNumber || null,
+        status: s.status,
+        createdAt: s.createdAt?.toDate?.()?.toISOString() || null,
+        updatedAt: s.updatedAt?.toDate?.()?.toISOString() || null,
+      };
+    });
+
+    res.json({ sites, count: sites.length });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// ─── PATCH /api/sites/:id ───────────────────────────────────────────
+
+app.patch('/api/sites/:id', async (req, res, next) => {
+  try {
+    const siteId = req.params.id;
+    const data = UpdateSiteSchema.parse(req.body);
+
+    logger.info('🏗️ sites:update', { siteId, fields: Object.keys(data) });
+
+    const siteRef = db.collection('sites').doc(siteId);
+    const siteDoc = await siteRef.get();
+
+    if (!siteDoc.exists) {
+      res.status(404).json({ error: 'Site не найден' });
+      return;
+    }
+
+    const updatePayload: Record<string, any> = {
+      updatedAt: FieldValue.serverTimestamp(),
+    };
+
+    if (data.name !== undefined) updatePayload.name = data.name;
+    if (data.address !== undefined) updatePayload.address = data.address;
+    if (data.city !== undefined) updatePayload.city = data.city;
+    if (data.state !== undefined) updatePayload.state = data.state;
+    if (data.zip !== undefined) updatePayload.zip = data.zip;
+    if (data.geo !== undefined) updatePayload.geo = data.geo;
+    if (data.sqft !== undefined) updatePayload.sqft = data.sqft;
+    if (data.type !== undefined) updatePayload.type = data.type;
+    if (data.permitNumber !== undefined) updatePayload.permitNumber = data.permitNumber;
+    if (data.status !== undefined) updatePayload.status = data.status;
+
+    await siteRef.update(updatePayload);
+
+    logger.info('🏗️ sites:updated', { siteId });
+    await logAgentActivity({
+      userId: req.agentUserId!,
+      action: 'site_updated',
+      endpoint: `/api/sites/${siteId}`,
+      metadata: { siteId, fields: Object.keys(data) },
+    });
+
+    res.json({ siteId, updated: true });
   } catch (e) {
     next(e);
   }

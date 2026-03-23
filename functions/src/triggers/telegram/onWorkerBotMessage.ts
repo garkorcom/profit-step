@@ -236,20 +236,40 @@ async function handleMessage(message: any) {
 📎 Геолокация — Начать/Завершить смену
 ⏹️ Finish Work - Завершить работу  
 ☕ Break - Перерыв`);
-    } else if (text === '▶️ Start Work') {
-        // Fix 1: Block old Start Work button — redirect to location hint
-        await sendMessage(chatId, "📎 *Новый способ старта!*\n\nЧтобы начать смену, нажми 📎 (скрепку) и отправь свою *Геолокацию*.\nБот автоматически определит объект.");
-        await sendMainMenu(chatId, userId);
-    } else if (text === '⏹️ Finish Work') {
+    } else if (text === '▶️ Начать смену') {
+        // V2: Start shift button → photo instruction
+        const activeSession = await getActiveSession(userId);
+        if (activeSession) {
+            const sd = activeSession.data();
+            const now = Date.now();
+            const startMs = sd.startTime?.toMillis?.() || now;
+            const elapsed = Math.floor((now - startMs) / 60000);
+            const h = Math.floor(elapsed / 60);
+            const m = elapsed % 60;
+            await sendMessage(chatId, `⚠️ Ты уже на смене!\n\n🏢 Объект: *${sd.clientName}*\nВремя: ${h}ч ${m}мин.`);
+            await sendMainMenu(chatId, userId);
+        } else {
+            await sendMessage(chatId, `📸 *Для начала смены:*\n\n1️⃣ Нажми 📎 (скрепку) внизу\n2️⃣ Выбери 📷 *Камера*\n3️⃣ Сделай селфи на объекте\n4️⃣ Отправь фото\n\nЗатем отправь 📍 *геолокацию* (📎 → Геопозиция).`);
+            await sendMainMenu(chatId, userId);
+        }
+    } else if (text === '⏹ Завершить смену' || text === '⏹️ Finish Work') {
         await handleFinishWorkRequest(chatId, userId);
-    } else if (text === '⚠️ Finish Late') {
-        await handleFinishLateRequest(chatId, userId);
-    } else if (text === '☕ Break') {
+    } else if (text === '⏸ Перерыв' || text === '☕ Break') {
         await logBotAction(userId, userId, 'break_started');
         await pauseWorkSession(chatId, userId);
-    } else if (text === '▶️ Resume Work') {
+    } else if (text === '▶️ Продолжить работу' || text === '▶️ Resume Work') {
         await logBotAction(userId, userId, 'break_ended');
         await resumeWorkSession(chatId, userId);
+    } else if (text === '📊 Мой статус') {
+        await handleStatusRequest(chatId, userId);
+    } else if (text === '❓ Помощь') {
+        await handleHelpRequest(chatId, userId);
+    } else if (text === '▶️ Start Work') {
+        // Backward compat: old Start Work button → redirect
+        await sendMessage(chatId, "📎 *Новый способ старта!*\n\nЧтобы начать смену, нажми 📎 (скрепку) и отправь свою *Геолокацию*.\nБот автоматически определит объект.");
+        await sendMainMenu(chatId, userId);
+    } else if (text === '⚠️ Finish Late') {
+        await handleFinishLateRequest(chatId, userId);
     } else if (text === '❌ Cancel' || text === '/cancel') {
         await logBotAction(userId, userId, 'cancel_action');
         await handleCancel(chatId, userId);
@@ -470,6 +490,7 @@ async function handleMessage(message: any) {
 
         if (aiResponse.intent === 'chat') {
             await sendMessage(chatId, aiResponse.reply);
+            await sendMainMenu(chatId, userId);
         } else {
             // Note intent -> Save to Inbox AND send the AI's custom reply (suppressing default 'Saved' msg)
             await InboxHandler.handleInboxText({
@@ -478,6 +499,7 @@ async function handleMessage(message: any) {
             }, text, true); // suppressReply = true
             
             await sendMessage(chatId, aiResponse.reply);
+            await sendMainMenu(chatId, userId);
         }
     } else {
         await sendMessage(chatId, "I didn't understand that. Please use the menu or type /help.");
@@ -1198,7 +1220,7 @@ async function handleLocationNewClient(chatId: number, userId: number, clientId:
 async function pauseWorkSession(chatId: number, userId: number) {
     const activeSession = await getActiveSession(userId);
     if (!activeSession) {
-        await sendMessage(chatId, "No active session to pause.");
+        await sendMessage(chatId, "⚠️ Нет активной смены для паузы.");
         await sendMainMenu(chatId, userId);
         return;
     }
@@ -1210,7 +1232,7 @@ async function pauseWorkSession(chatId: number, userId: number) {
         lastBreakStart: now
     });
 
-    await sendMessage(chatId, "☕ Session paused. Enjoy your break! Press 'Resume' when back.");
+    await sendMessage(chatId, "☕ Перерыв начат! Нажми «▶️ Продолжить работу» когда вернёшься.");
     await sendMainMenu(chatId, userId); // Update buttons
 }
 
@@ -1222,7 +1244,7 @@ async function resumeWorkSession(chatId: number, userId: number) {
         .get();
 
     if (sessionSnapshot.empty) {
-        await sendMessage(chatId, "No paused session found.");
+        await sendMessage(chatId, "⚠️ Нет смены на паузе.");
         await sendMainMenu(chatId, userId);
         return;
     }
@@ -1283,7 +1305,7 @@ async function handleFinishWorkRequest(chatId: number, userId: number) {
     const activeSession = await getActiveSession(userId);
 
     if (!activeSession) {
-        await sendMessage(chatId, "⚠️ You don't have an active work session.");
+        await sendMessage(chatId, "⚠️ Нет активной смены для завершения.");
         await sendMainMenu(chatId, userId);
         return;
     }
@@ -1805,8 +1827,10 @@ async function finalizeSession(chatId: number, userId: number, activeSession: an
         throw txError; // Re-throw unexpected errors
     }
 
-    // "Rest up!" removed. Rate line added.
-    await sendMessage(chatId, `🏁 Work finished!\n\n⏱ Session: ${Math.floor(totalMinutes / 60)}h ${totalMinutes % 60}m\n💰 Earned: $${sessionEarnings}\nRate: $${hourlyRate}/hr\n📅 **Today Total: ${dailyHours}h ${dailyMins}m ($${dailyStats.earnings.toFixed(2)})**\n📍 Client: ${sessionData.clientName}\n📝 Desc: ${description}${extraMessage}`);
+    // V2: Time-of-day flavor + Russian
+    const finishHour = new Date().getHours();
+    const finishGreeting = finishHour >= 17 ? '🌙 Отличная работа!' : '🏁 Смена завершена!';
+    await sendMessage(chatId, `${finishGreeting}\n\n⏱ Сессия: ${Math.floor(totalMinutes / 60)}ч ${totalMinutes % 60}мин\n💰 Заработано: $${sessionEarnings}\n💵 Ставка: $${hourlyRate}/ч\n📅 *За сегодня: ${dailyHours}ч ${dailyMins}мин ($${dailyStats.earnings.toFixed(2)})*\n📍 Объект: ${sessionData.clientName}\n📝 ${description}${extraMessage}`);
 
     // Fix 8 (Wave 2): Sanitize user-generated text in admin notifications
     const sanitizedDesc = safeDescription.replace(/[*_`\[\]()~>#+\-=|{}.!]/g, '').substring(0, 500);
@@ -2080,6 +2104,88 @@ async function handleVoiceMessage(chatId: number, userId: number, message: any) 
         logger.error('Error transcribing voice:', error);
         await sendMessage(chatId, `⚠️ Ошибка расшифровки: ${error.message}. Попробуй ещё раз или напиши текстом.`);
     }
+}
+
+/**
+ * 📊 Мой статус — show current session details + daily/weekly stats
+ */
+async function handleStatusRequest(chatId: number, userId: number) {
+    const activeSession = await getActiveSession(userId);
+    const { hourlyRate, employeeName } = await resolveHourlyRate(userId);
+    const now = Date.now();
+
+    let statusMsg = `📊 *Статус: ${employeeName}*\n\n`;
+
+    if (activeSession) {
+        const sd = activeSession.data();
+        const startMs = sd.startTime?.toMillis?.() || now;
+        const totalBreaks = sd.totalBreakMinutes || 0;
+        let ongoingBreak = 0;
+        if (sd.status === 'paused' && sd.lastBreakStart) {
+            ongoingBreak = Math.floor((now - sd.lastBreakStart.toMillis()) / 60000);
+        }
+        const elapsedTotal = Math.floor((now - startMs) / 60000);
+        const workMinutes = Math.max(0, elapsedTotal - totalBreaks - ongoingBreak);
+        const h = Math.floor(workMinutes / 60);
+        const m = workMinutes % 60;
+        const rate = sd.hourlyRate || hourlyRate || 0;
+        const earned = ((workMinutes / 60) * rate).toFixed(2);
+
+        statusMsg += `🏢 Объект: *${sd.clientName}*\n`;
+        statusMsg += sd.status === 'paused' ? `☕ Статус: На перерыве\n` : `✅ Статус: Работает\n`;
+        statusMsg += `⏱ Время работы: ${h}ч ${m}мин\n`;
+        statusMsg += `💰 Заработано: $${earned}\n`;
+        statusMsg += `💵 Ставка: $${rate}/ч\n`;
+        if (totalBreaks > 0 || ongoingBreak > 0) {
+            statusMsg += `☕ Перерывы: ${totalBreaks + ongoingBreak} мин\n`;
+        }
+    } else {
+        statusMsg += `📭 Нет активной смены.\n`;
+    }
+
+    // Daily stats
+    const dailyStats = await calculateDailyStats(userId);
+    const dH = Math.floor(dailyStats.minutes / 60);
+    const dM = dailyStats.minutes % 60;
+    statusMsg += `\n📅 *Сегодня:* ${dH}ч ${dM}мин | $${dailyStats.earnings.toFixed(2)}`;
+
+    await sendMessage(chatId, statusMsg);
+    await sendMainMenu(chatId, userId);
+}
+
+/**
+ * ❓ Помощь — user-friendly instructions
+ */
+async function handleHelpRequest(chatId: number, userId: number) {
+    await sendMessage(chatId, `❓ *Как пользоваться ботом*
+
+*📍 Начать смену:*
+1. Нажми 📎 (скрепку) внизу
+2. Отправь 📍 Геопозицию
+3. Бот определит объект автоматически
+4. Сделай 📸 селфи на объекте
+5. Запиши 🎙 голосовое (план работ)
+
+*⏹ Завершить смену:*
+1. Нажми "⏹ Завершить смену"
+2. Отправь 📍 геопозицию
+3. Сделай 📸 фото результата
+4. Запиши 🎙 голосовое (что сделал)
+
+*☕ Перерыв:*
+Нажми "⏸ Перерыв" → "▶️ Продолжить работу"
+
+*📊 Статус:*
+Нажми "📊 Мой статус" — время, заработок
+
+*📋 Задачи / 🛒 Закупки:*
+Доступны через меню
+
+*💡 Подсказки:*
+• Можно отправить голосовое в любой момент
+• Текст сохраняется в Inbox
+• Фото пропускается кнопкой "Пропустить"`);
+    await sendMainMenu(chatId, userId);
 }
 
 async function handleMe(chatId: number, userId: number) {

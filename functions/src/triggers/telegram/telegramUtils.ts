@@ -141,32 +141,99 @@ export async function getActiveSessionStrict(userId: number) {
     return !qs.empty ? qs.docs[0] : null;
 }
 
-export async function sendMainMenu(chatId: number, userId: number = chatId) {
-    // Check if session is paused or active to decide generic menu
-    const activeSession = await getActiveSession(userId);
+/**
+ * Build the persistent reply keyboard and status message based on current session state.
+ * Returns { message, keyboard } without sending — useful for composing with other messages.
+ */
+export function buildStatusAndKeyboard(
+    activeSession: FirebaseFirestore.QueryDocumentSnapshot | null,
+    employeeName: string
+): { message: string; keyboard: any[][] } {
+    if (!activeSession) {
+        // --- NOT WORKING ---
+        const hour = new Date().getHours();
+        let greeting = '👋';
+        if (hour >= 5 && hour < 12) greeting = '🌅 Доброе утро';
+        else if (hour >= 12 && hour < 18) greeting = '👋 Привет';
+        else greeting = '🌙 Добрый вечер';
 
-    let keyboard;
-    if (activeSession && activeSession.data().status === 'paused') {
-        keyboard = [
-            [{ text: "▶️ Resume Work" }, { text: "⏹️ Finish Work" }]
-        ];
-    } else if (activeSession && activeSession.data().status === 'active') {
-        keyboard = [
-            [{ text: "☕ Break" }, { text: "⏹️ Finish Work" }],
-            [{ text: "⚠️ Finish Late" }] // New Button
-        ];
-    } else {
-        keyboard = [
-            [{ text: "🛒 Shopping" }, { text: "📥 Inbox" }],
-            [{ text: "📋 Tasks" }]
-        ];
+        return {
+            message: `${greeting}, ${employeeName}! Ты сейчас не на смене.`,
+            keyboard: [
+                [{ text: '▶️ Начать смену' }],
+                [{ text: '📊 Мой статус' }, { text: '❓ Помощь' }],
+                [{ text: '🛒 Shopping' }, { text: '📥 Inbox' }],
+                [{ text: '📋 Tasks' }]
+            ]
+        };
     }
 
-    const hintMsg = (activeSession)
-        ? "👷‍♂️ *Worker Panel*\nSelect an action:"
-        : "👷‍♂️ *Worker Panel*\n📎 *To start a shift, tap the attachment icon and send your Live Location.*";
+    const data = activeSession.data();
+    const now = Date.now();
+    const startMs = data.startTime?.toMillis?.() || now;
+    const totalBreaks = data.totalBreakMinutes || 0;
 
-    await sendMessage(chatId, hintMsg, {
+    if (data.status === 'paused') {
+        // --- ON BREAK ---
+        let breakMin = 0;
+        if (data.lastBreakStart) {
+            breakMin = Math.floor((now - data.lastBreakStart.toMillis()) / 60000);
+        }
+        let msg = `☕ ${employeeName}, перерыв ${breakMin} мин.`;
+        if (breakMin > 60) {
+            msg += `\n⚠️ Перерыв длится уже больше часа. Продолжить работу?`;
+        }
+        return {
+            message: msg,
+            keyboard: [
+                [{ text: '▶️ Продолжить работу' }],
+                [{ text: '⏹ Завершить смену' }],
+                [{ text: '📊 Мой статус' }, { text: '❓ Помощь' }]
+            ]
+        };
+    }
+
+    // --- WORKING ---
+    let ongoingBreak = 0;
+    const elapsedTotal = Math.floor((now - startMs) / 60000);
+    const workMinutes = Math.max(0, elapsedTotal - totalBreaks - ongoingBreak);
+    const hours = Math.floor(workMinutes / 60);
+    const mins = workMinutes % 60;
+    const hourlyRate = data.hourlyRate || 0;
+    const earned = ((workMinutes / 60) * hourlyRate).toFixed(2);
+    const clientName = data.clientName || 'Неизвестный объект';
+
+    let msg = `👷 ${employeeName}, ты на *${clientName}*.\nВремя: ${hours}ч ${mins}мин. Заработано: $${earned}`;
+
+    // Forgotten timer warning
+    if (elapsedTotal > 720) { // > 12 hours
+        const longHours = Math.floor(elapsedTotal / 60);
+        msg += `\n\n⚠️ Смена длится уже ${longHours}ч! Забыли завершить?`;
+    }
+
+    return {
+        message: msg,
+        keyboard: [
+            [{ text: '⏹ Завершить смену' }, { text: '⏸ Перерыв' }],
+            [{ text: '📊 Мой статус' }, { text: '❓ Помощь' }],
+            [{ text: '🛒 Shopping' }, { text: '📥 Inbox' }]
+        ]
+    };
+}
+
+export async function sendMainMenu(chatId: number, userId: number = chatId) {
+    const activeSession = await getActiveSession(userId);
+
+    // Resolve employee name
+    let employeeName = 'Работник';
+    try {
+        const empDoc = await db.collection('employees').doc(String(userId)).get();
+        if (empDoc.exists) employeeName = empDoc.data()?.name || employeeName;
+    } catch (_) { /* ignore */ }
+
+    const { message, keyboard } = buildStatusAndKeyboard(activeSession, employeeName);
+
+    await sendMessage(chatId, message, {
         keyboard: keyboard,
         resize_keyboard: true,
         one_time_keyboard: false

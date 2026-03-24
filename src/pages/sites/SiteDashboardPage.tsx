@@ -25,6 +25,7 @@ import {
   TableContainer,
   TableHead,
   TableRow,
+  TablePagination,
   List,
   ListItem,
   ListItemAvatar,
@@ -36,6 +37,10 @@ import {
   InputLabel,
   Select,
   MenuItem,
+  LinearProgress,
+  Link,
+  Collapse,
+  InputAdornment,
 } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import EditIcon from '@mui/icons-material/Edit';
@@ -45,6 +50,10 @@ import LocationOnIcon from '@mui/icons-material/LocationOn';
 import PersonIcon from '@mui/icons-material/Person';
 import AttachMoneyIcon from '@mui/icons-material/AttachMoney';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
+import AddIcon from '@mui/icons-material/Add';
+import SearchIcon from '@mui/icons-material/Search';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 
 import { collection, query, where, getDocs, orderBy } from 'firebase/firestore';
 import { db } from '../../firebase/firebase';
@@ -96,8 +105,17 @@ const typeLabels: Record<string, string> = {
 const priorityColors: Record<string, string> = {
   urgent: '#f44336',
   high: '#ff9800',
+  medium: '#ff9800',
   normal: '#2196f3',
   low: '#9e9e9e',
+};
+
+const estimateStatusColors: Record<string, 'success' | 'primary' | 'error' | 'warning' | 'info' | 'default'> = {
+  approved: 'success',
+  sent: 'primary',
+  rejected: 'error',
+  draft: 'warning',
+  converted: 'info',
 };
 
 // ═══════════════════════════════════════════════════════════════════
@@ -128,6 +146,16 @@ const SiteDashboardPage: React.FC = () => {
   const [editForm, setEditForm] = useState<Partial<SiteData>>({});
   const [saving, setSaving] = useState(false);
   const [snackbar, setSnackbar] = useState('');
+
+  // Tasks pagination
+  const [tasksPage, setTasksPage] = useState(0);
+  const [tasksRowsPerPage, setTasksRowsPerPage] = useState(20);
+
+  // Estimates expand
+  const [expandedEstimate, setExpandedEstimate] = useState<string | null>(null);
+
+  // Contacts search
+  const [contactSearch, setContactSearch] = useState('');
 
   // ─── Load site + client ────────────────────────────────────────
 
@@ -231,8 +259,7 @@ const SiteDashboardPage: React.FC = () => {
     if (!site) return;
     const q = query(
       collection(db, 'work_sessions'),
-      where('clientId', '==', site.clientId),
-      where('status', '==', 'completed')
+      where('clientId', '==', site.clientId)
     );
     const snap = await getDocs(q);
     setSessions(snap.docs.map(d => ({ id: d.id, ...d.data() })));
@@ -598,6 +625,15 @@ const SiteDashboardPage: React.FC = () => {
 
       {/* ═══ TAB 1: TASKS ═════════════════════════════════════════ */}
       <TabPanel value={tabValue} index={1}>
+        <Box display="flex" justifyContent="flex-end" mb={2}>
+          <Button
+            variant="contained"
+            startIcon={<AddIcon />}
+            onClick={() => navigate(`/crm/gtd/new?clientId=${site.clientId}&siteId=${siteId}`)}
+          >
+            Создать задачу
+          </Button>
+        </Box>
         {tasks.length === 0 ? (
           <Paper sx={{ p: 4, textAlign: 'center' }}>
             <Typography color="text.secondary">No tasks found for this site</Typography>
@@ -615,12 +651,14 @@ const SiteDashboardPage: React.FC = () => {
                 </TableRow>
               </TableHead>
               <TableBody>
-                {tasks.map(task => (
+                {tasks
+                  .slice(tasksPage * tasksRowsPerPage, tasksPage * tasksRowsPerPage + tasksRowsPerPage)
+                  .map(task => (
                   <TableRow
                     key={task.id}
                     hover
                     sx={{ cursor: 'pointer' }}
-                    onClick={() => navigate(`/crm/cockpit/${task.id}`)}
+                    onClick={() => navigate(`/crm/gtd/${task.id}`)}
                   >
                     <TableCell>
                       <Typography variant="body2" fontWeight={600}>
@@ -639,8 +677,8 @@ const SiteDashboardPage: React.FC = () => {
                         label={task.priority || 'normal'}
                         size="small"
                         sx={{
-                          bgcolor: priorityColors[task.priority || 'normal'] + '22',
-                          color: priorityColors[task.priority || 'normal'],
+                          bgcolor: (priorityColors[task.priority || 'normal'] || '#9e9e9e') + '22',
+                          color: priorityColors[task.priority || 'normal'] || '#9e9e9e',
                           fontWeight: 600,
                         }}
                       />
@@ -661,12 +699,32 @@ const SiteDashboardPage: React.FC = () => {
                 ))}
               </TableBody>
             </Table>
+            {tasks.length > 20 && (
+              <TablePagination
+                component="div"
+                count={tasks.length}
+                page={tasksPage}
+                onPageChange={(_, p) => setTasksPage(p)}
+                rowsPerPage={tasksRowsPerPage}
+                onRowsPerPageChange={e => { setTasksRowsPerPage(parseInt(e.target.value, 10)); setTasksPage(0); }}
+                rowsPerPageOptions={[20, 50, 100]}
+              />
+            )}
           </TableContainer>
         )}
       </TabPanel>
 
       {/* ═══ TAB 2: ESTIMATES ═════════════════════════════════════ */}
       <TabPanel value={tabValue} index={2}>
+        <Box display="flex" justifyContent="flex-end" mb={2}>
+          <Button
+            variant="contained"
+            startIcon={<AddIcon />}
+            onClick={() => navigate(`/crm/estimates/new?clientId=${site.clientId}&siteId=${siteId}`)}
+          >
+            Создать estimate
+          </Button>
+        </Box>
         {estimates.length === 0 ? (
           <Paper sx={{ p: 4, textAlign: 'center' }}>
             <Typography color="text.secondary">No estimates found</Typography>
@@ -676,6 +734,7 @@ const SiteDashboardPage: React.FC = () => {
             <Table size="small">
               <TableHead>
                 <TableRow>
+                  <TableCell width={40} />
                   <TableCell>Number</TableCell>
                   <TableCell>Status</TableCell>
                   <TableCell align="right">Total</TableCell>
@@ -684,32 +743,81 @@ const SiteDashboardPage: React.FC = () => {
               </TableHead>
               <TableBody>
                 {estimates.map(est => (
-                  <TableRow key={est.id} hover>
-                    <TableCell>
-                      <Typography variant="body2" fontWeight={600}>
-                        {est.number || est.id.slice(0, 8)}
-                      </Typography>
-                    </TableCell>
-                    <TableCell>
-                      <Chip
-                        label={est.status}
-                        size="small"
-                        color={
-                          est.status === 'approved' ? 'success' :
-                          est.status === 'sent' ? 'primary' :
-                          est.status === 'rejected' ? 'error' : 'default'
-                        }
-                      />
-                    </TableCell>
-                    <TableCell align="right">
-                      <Typography variant="body2" fontWeight={600}>
-                        ${est.total?.toLocaleString() || '0'}
-                      </Typography>
-                    </TableCell>
-                    <TableCell>
-                      {est.createdAt?.toDate?.()?.toLocaleDateString() || '—'}
-                    </TableCell>
-                  </TableRow>
+                  <React.Fragment key={est.id}>
+                    <TableRow
+                      hover
+                      sx={{ cursor: 'pointer' }}
+                      onClick={() => setExpandedEstimate(expandedEstimate === est.id ? null : est.id)}
+                    >
+                      <TableCell>
+                        {expandedEstimate === est.id ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="body2" fontWeight={600}>
+                          {est.number || est.id.slice(0, 8)}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Chip
+                          label={est.status}
+                          size="small"
+                          color={estimateStatusColors[est.status] || 'default'}
+                        />
+                      </TableCell>
+                      <TableCell align="right">
+                        <Typography variant="body2" fontWeight={600}>
+                          ${est.total?.toLocaleString() || '0'}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        {est.createdAt?.toDate?.()?.toLocaleDateString() || '—'}
+                      </TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell colSpan={5} sx={{ p: 0, border: expandedEstimate === est.id ? undefined : 'none' }}>
+                        <Collapse in={expandedEstimate === est.id} timeout="auto" unmountOnExit>
+                          <Box sx={{ p: 2, bgcolor: 'action.hover' }}>
+                            <Grid container spacing={2}>
+                              <Grid size={{ xs: 12, sm: 6 }}>
+                                <Typography variant="caption" color="text.secondary">Description</Typography>
+                                <Typography variant="body2">{(est as any).description || '—'}</Typography>
+                              </Grid>
+                              <Grid size={{ xs: 12, sm: 3 }}>
+                                <Typography variant="caption" color="text.secondary">Valid Until</Typography>
+                                <Typography variant="body2">{(est as any).validUntil?.toDate?.()?.toLocaleDateString() || '—'}</Typography>
+                              </Grid>
+                              <Grid size={{ xs: 12, sm: 3 }}>
+                                <Typography variant="caption" color="text.secondary">Items</Typography>
+                                <Typography variant="body2">{(est as any).items?.length || 0} line items</Typography>
+                              </Grid>
+                            </Grid>
+                            {(est as any).items && (est as any).items.length > 0 && (
+                              <Table size="small" sx={{ mt: 1 }}>
+                                <TableHead>
+                                  <TableRow>
+                                    <TableCell>Item</TableCell>
+                                    <TableCell align="right">Qty</TableCell>
+                                    <TableCell align="right">Rate</TableCell>
+                                    <TableCell align="right">Amount</TableCell>
+                                  </TableRow>
+                                </TableHead>
+                                <TableBody>
+                                  {(est as any).items.map((item: any, idx: number) => (
+                                    <TableRow key={idx}>
+                                      <TableCell>{item.description || item.name || '—'}</TableCell>
+                                      <TableCell align="right">{item.quantity || 1}</TableCell>
+                                      <TableCell align="right">${(item.rate || item.unitPrice || 0).toLocaleString()}</TableCell>
+                                      <TableCell align="right">${(item.amount || (item.quantity || 1) * (item.rate || item.unitPrice || 0)).toLocaleString()}</TableCell>
+                                    </TableRow>
+                                  ))}
+                                </TableBody>
+                              </Table>
+                            )}
+                          </Box>
+                        </Collapse>
+                      </TableCell>
+                    </TableRow>
+                  </React.Fragment>
                 ))}
               </TableBody>
             </Table>
@@ -731,13 +839,48 @@ const SiteDashboardPage: React.FC = () => {
             );
           }
 
+          // Grand totals
+          let grandBudget = 0;
+          let grandSpent = 0;
+          parentTasks.forEach(task => {
+            const children = subtasks.filter(st => (st as any).parentTaskId === task.id);
+            grandBudget += children.reduce((s, c) => s + ((c as any).budgetAmount || 0), 0);
+            grandSpent += children.reduce((s, c) => s + ((c as any).totalEarnings || 0), 0);
+          });
+          const grandDebt = grandBudget - grandSpent;
+          const grandPercent = grandBudget > 0 ? Math.min(100, Math.round((grandSpent / grandBudget) * 100)) : 0;
+
           return (
             <Box>
               <Typography variant="h6" gutterBottom>Budget Breakdown (Процентовка)</Typography>
+
+              {/* Overall progress bar */}
+              <Paper sx={{ p: 2, mb: 3 }}>
+                <Box display="flex" justifyContent="space-between" alignItems="center" mb={1}>
+                  <Typography variant="subtitle2">Общий прогресс</Typography>
+                  <Typography variant="subtitle2" fontWeight={700}>{grandPercent}%</Typography>
+                </Box>
+                <LinearProgress
+                  variant="determinate"
+                  value={grandPercent}
+                  sx={{
+                    height: 10,
+                    borderRadius: 5,
+                    bgcolor: '#e0e0e0',
+                    '& .MuiLinearProgress-bar': {
+                      bgcolor: grandPercent >= 100 ? '#4caf50' : grandPercent >= 75 ? '#ff9800' : '#2196f3',
+                      borderRadius: 5,
+                    },
+                  }}
+                />
+              </Paper>
+
               {parentTasks.map(task => {
                 const children = subtasks.filter(st => (st as any).parentTaskId === task.id);
                 const totalBudget = children.reduce((s, c) => s + ((c as any).budgetAmount || 0), 0);
                 const totalSpent = children.reduce((s, c) => s + ((c as any).totalEarnings || 0), 0);
+                const totalDebt = totalBudget - totalSpent;
+                const percent = totalBudget > 0 ? Math.min(100, Math.round((totalSpent / totalBudget) * 100)) : 0;
 
                 return (
                   <Paper key={task.id} sx={{ p: 2, mb: 2 }}>
@@ -749,11 +892,28 @@ const SiteDashboardPage: React.FC = () => {
                         <Typography variant="body2" color="text.secondary">
                           Budget: <strong>${totalBudget.toLocaleString()}</strong>
                         </Typography>
-                        <Typography variant="body2" color="text.secondary">
-                          Spent: <strong>${totalSpent.toLocaleString()}</strong>
+                        <Typography variant="body2" sx={{ color: totalSpent >= totalBudget ? '#4caf50' : 'text.secondary' }}>
+                          Paid: <strong>${totalSpent.toLocaleString()}</strong>
+                        </Typography>
+                        <Typography variant="body2" sx={{ color: totalDebt > 0 ? '#f44336' : '#4caf50', fontWeight: 700 }}>
+                          {totalDebt > 0 ? `Debt: $${totalDebt.toLocaleString()}` : 'Оплачено ✓'}
                         </Typography>
                       </Box>
                     </Box>
+                    <LinearProgress
+                      variant="determinate"
+                      value={percent}
+                      sx={{
+                        height: 6,
+                        borderRadius: 3,
+                        mb: 1,
+                        bgcolor: '#e0e0e0',
+                        '& .MuiLinearProgress-bar': {
+                          bgcolor: percent >= 100 ? '#4caf50' : '#2196f3',
+                          borderRadius: 3,
+                        },
+                      }}
+                    />
                     {children.length > 0 ? (
                       <TableContainer>
                         <Table size="small">
@@ -762,24 +922,35 @@ const SiteDashboardPage: React.FC = () => {
                               <TableCell>Subtask</TableCell>
                               <TableCell>Category</TableCell>
                               <TableCell align="right">Budget</TableCell>
-                              <TableCell align="right">Spent</TableCell>
+                              <TableCell align="right">Paid</TableCell>
+                              <TableCell align="right">Debt</TableCell>
                               <TableCell>Status</TableCell>
                             </TableRow>
                           </TableHead>
                           <TableBody>
-                            {children.map(st => (
-                              <TableRow key={st.id}>
-                                <TableCell>{st.title}</TableCell>
-                                <TableCell>
-                                  <Chip label={(st as any).budgetCategory || '—'} size="small" variant="outlined" />
-                                </TableCell>
-                                <TableCell align="right">${((st as any).budgetAmount || 0).toLocaleString()}</TableCell>
-                                <TableCell align="right">${((st as any).totalEarnings || 0).toLocaleString()}</TableCell>
-                                <TableCell>
-                                  <Chip label={st.status} size="small" color={st.status === 'done' ? 'success' : 'default'} />
-                                </TableCell>
-                              </TableRow>
-                            ))}
+                            {children.map(st => {
+                              const stBudget = (st as any).budgetAmount || 0;
+                              const stPaid = (st as any).totalEarnings || 0;
+                              const stDebt = stBudget - stPaid;
+                              return (
+                                <TableRow key={st.id}>
+                                  <TableCell>{st.title}</TableCell>
+                                  <TableCell>
+                                    <Chip label={(st as any).budgetCategory || '—'} size="small" variant="outlined" />
+                                  </TableCell>
+                                  <TableCell align="right">${stBudget.toLocaleString()}</TableCell>
+                                  <TableCell align="right" sx={{ color: stPaid >= stBudget && stBudget > 0 ? '#4caf50' : undefined, fontWeight: stPaid >= stBudget && stBudget > 0 ? 700 : undefined }}>
+                                    ${stPaid.toLocaleString()}
+                                  </TableCell>
+                                  <TableCell align="right" sx={{ color: stDebt > 0 ? '#f44336' : '#4caf50', fontWeight: 700 }}>
+                                    {stDebt > 0 ? `$${stDebt.toLocaleString()}` : '✓'}
+                                  </TableCell>
+                                  <TableCell>
+                                    <Chip label={st.status} size="small" color={st.status === 'done' ? 'success' : 'default'} />
+                                  </TableCell>
+                                </TableRow>
+                              );
+                            })}
                           </TableBody>
                         </Table>
                       </TableContainer>
@@ -789,6 +960,29 @@ const SiteDashboardPage: React.FC = () => {
                   </Paper>
                 );
               })}
+
+              {/* ИТОГО row */}
+              <Paper sx={{ p: 2, bgcolor: 'action.hover' }}>
+                <Grid container spacing={2} alignItems="center">
+                  <Grid size={{ xs: 12, sm: 3 }}>
+                    <Typography variant="h6" fontWeight={700}>ИТОГО</Typography>
+                  </Grid>
+                  <Grid size={{ xs: 4, sm: 3 }}>
+                    <Typography variant="body2" color="text.secondary">Budget</Typography>
+                    <Typography variant="h6" fontWeight={700}>${grandBudget.toLocaleString()}</Typography>
+                  </Grid>
+                  <Grid size={{ xs: 4, sm: 3 }}>
+                    <Typography variant="body2" color="text.secondary">Paid</Typography>
+                    <Typography variant="h6" fontWeight={700} sx={{ color: '#4caf50' }}>${grandSpent.toLocaleString()}</Typography>
+                  </Grid>
+                  <Grid size={{ xs: 4, sm: 3 }}>
+                    <Typography variant="body2" color="text.secondary">Debt</Typography>
+                    <Typography variant="h6" fontWeight={700} sx={{ color: grandDebt > 0 ? '#f44336' : '#4caf50' }}>
+                      {grandDebt > 0 ? `$${grandDebt.toLocaleString()}` : 'Оплачено ✓'}
+                    </Typography>
+                  </Grid>
+                </Grid>
+              </Paper>
             </Box>
           );
         })()}
@@ -933,6 +1127,22 @@ const SiteDashboardPage: React.FC = () => {
           </Paper>
         )}
 
+        {/* Active Sessions */}
+        {sessions.filter(s => s.status !== 'completed').length > 0 && (
+          <Paper sx={{ p: 2, mb: 3 }}>
+            <Typography variant="subtitle2" gutterBottom>🟢 В процессе</Typography>
+            {sessions.filter(s => s.status !== 'completed').map(s => (
+              <Box key={s.id} display="flex" alignItems="center" gap={2} sx={{ py: 0.5 }}>
+                <Chip label="In Progress" size="small" color="success" variant="outlined" />
+                <Typography variant="body2">{s.employeeName || 'Unknown'}</Typography>
+                <Typography variant="caption" color="text.secondary">
+                  Started: {s.startTime?.toDate?.()?.toLocaleString() || '—'}
+                </Typography>
+              </Box>
+            ))}
+          </Paper>
+        )}
+
         {sessions.length === 0 && (
           <Paper sx={{ p: 4, textAlign: 'center' }}>
             <Typography color="text.secondary">No time tracking sessions found</Typography>
@@ -942,58 +1152,101 @@ const SiteDashboardPage: React.FC = () => {
 
       {/* ═══ TAB 6: CONTACTS ══════════════════════════════════════ */}
       <TabPanel value={tabValue} index={6}>
-        {contacts.length === 0 ? (
-          <Paper sx={{ p: 4, textAlign: 'center' }}>
-            <Typography color="text.secondary">No contacts linked to this project</Typography>
-          </Paper>
-        ) : (
-          <List>
-            {contacts.map(c => (
-              <ListItem
-                key={c.id}
-                sx={{
-                  bgcolor: 'background.default',
-                  mb: 1,
-                  borderRadius: 1,
-                  border: '1px solid',
-                  borderColor: 'divider',
-                }}
-              >
-                <ListItemAvatar>
-                  <Avatar sx={{ bgcolor: 'secondary.main' }}>
-                    <PersonIcon />
-                  </Avatar>
-                </ListItemAvatar>
-                <ListItemText
-                  primary={
-                    <Typography variant="body2" fontWeight={700}>
-                      {c.name}
-                    </Typography>
-                  }
-                  secondary={
-                    <Box>
-                      {c.roles && c.roles.length > 0 && (
-                        <Typography variant="caption" color="text.secondary" display="block">
-                          {c.roles.join(', ')}
-                        </Typography>
-                      )}
-                      {c.phones && c.phones.length > 0 && (
-                        <Typography variant="caption" color="text.secondary" display="block">
-                          📞 {c.phones.map((p: any) => p.number || p).join(', ')}
-                        </Typography>
-                      )}
-                      {c.emails && c.emails.length > 0 && (
-                        <Typography variant="caption" color="text.secondary" display="block">
-                          ✉️ {c.emails.map((e: any) => e.address || e).join(', ')}
-                        </Typography>
-                      )}
-                    </Box>
-                  }
-                />
-              </ListItem>
-            ))}
-          </List>
-        )}
+        <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
+          <TextField
+            placeholder="Поиск по имени..."
+            size="small"
+            value={contactSearch}
+            onChange={e => setContactSearch(e.target.value)}
+            InputProps={{
+              startAdornment: (
+                <InputAdornment position="start">
+                  <SearchIcon fontSize="small" />
+                </InputAdornment>
+              ),
+            }}
+            sx={{ minWidth: 250 }}
+          />
+          <Button
+            variant="contained"
+            startIcon={<AddIcon />}
+            onClick={() => navigate(`/crm/contacts/new?linkedProject=${site.clientId}`)}
+          >
+            Добавить контакт
+          </Button>
+        </Box>
+        {(() => {
+          const filteredContacts = contacts.filter(c =>
+            c.name.toLowerCase().includes(contactSearch.toLowerCase())
+          );
+          if (filteredContacts.length === 0) {
+            return (
+              <Paper sx={{ p: 4, textAlign: 'center' }}>
+                <Typography color="text.secondary">
+                  {contactSearch ? 'No contacts match your search' : 'No contacts linked to this project'}
+                </Typography>
+              </Paper>
+            );
+          }
+          return (
+            <List>
+              {filteredContacts.map(c => (
+                <ListItem
+                  key={c.id}
+                  sx={{
+                    bgcolor: 'background.default',
+                    mb: 1,
+                    borderRadius: 1,
+                    border: '1px solid',
+                    borderColor: 'divider',
+                  }}
+                >
+                  <ListItemAvatar>
+                    <Avatar sx={{ bgcolor: 'secondary.main' }}>
+                      <PersonIcon />
+                    </Avatar>
+                  </ListItemAvatar>
+                  <ListItemText
+                    primary={
+                      <Typography variant="body2" fontWeight={700}>
+                        {c.name}
+                      </Typography>
+                    }
+                    secondary={
+                      <Box>
+                        {c.roles && c.roles.length > 0 && (
+                          <Typography variant="caption" color="text.secondary" display="block">
+                            {c.roles.join(', ')}
+                          </Typography>
+                        )}
+                        {c.phones && c.phones.length > 0 && (
+                          <Typography variant="caption" display="block">
+                            📞 {c.phones.map((p: any, idx: number) => {
+                              const phone = p.number || p;
+                              return (
+                                <React.Fragment key={idx}>
+                                  {idx > 0 && ', '}
+                                  <Link href={`tel:${phone}`} color="primary" underline="hover">
+                                    {phone}
+                                  </Link>
+                                </React.Fragment>
+                              );
+                            })}
+                          </Typography>
+                        )}
+                        {c.emails && c.emails.length > 0 && (
+                          <Typography variant="caption" color="text.secondary" display="block">
+                            ✉️ {c.emails.map((e: any) => e.address || e).join(', ')}
+                          </Typography>
+                        )}
+                      </Box>
+                    }
+                  />
+                </ListItem>
+              ))}
+            </List>
+          );
+        })()}
       </TabPanel>
 
       {/* Snackbar */}

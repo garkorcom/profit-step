@@ -55,6 +55,20 @@ import SearchIcon from '@mui/icons-material/Search';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import VerifiedIcon from '@mui/icons-material/Verified';
+import BuildCircleIcon from '@mui/icons-material/BuildCircle';
+import WarningAmberIcon from '@mui/icons-material/WarningAmber';
+import GavelIcon from '@mui/icons-material/Gavel';
+import PaymentIcon from '@mui/icons-material/Payment';
+import StarIcon from '@mui/icons-material/Star';
+import TimelineIcon from '@mui/icons-material/Timeline';
+import Tooltip from '@mui/material/Tooltip';
+import Dialog from '@mui/material/Dialog';
+import DialogTitle from '@mui/material/DialogTitle';
+import DialogContent from '@mui/material/DialogContent';
+import DialogActions from '@mui/material/DialogActions';
+
 import { collection, query, where, getDocs, orderBy } from 'firebase/firestore';
 import { db } from '../../firebase/firebase';
 import { useAuth } from '../../auth/AuthContext';
@@ -64,6 +78,8 @@ import { Client } from '../../types/crm.types';
 import { GTDTask } from '../../types/gtd.types';
 import { Estimate } from '../../types/estimate.types';
 import { Contact } from '../../types/contact.types';
+import { punchListApi, workActsApi, paymentScheduleApi, warrantyApi, npsApi, planVsFactApi } from '../../api/erpV4Api';
+import type { PunchList, WorkAct, PaymentSchedule, WarrantyTask, NpsRequest, PlanVsFactResponse } from '../../types/erp.types';
 // GTDSubtasksTable requires full task management callbacks — we show a simplified budget view instead
 
 // ─── Tab Panel ─────────────────────────────────────────────────────
@@ -141,6 +157,16 @@ const SiteDashboardPage: React.FC = () => {
   const [sessions, setSessions] = useState<any[]>([]);
   const [contacts, setContacts] = useState<Contact[]>([]);
 
+  // ERP V4 data
+  const [punchLists, setPunchLists] = useState<any[]>([]);
+  const [workActs, setWorkActs] = useState<any[]>([]);
+  const [paymentSchedules, setPaymentSchedules] = useState<any[]>([]);
+  const [warrantyTasks, setWarrantyTasks] = useState<any[]>([]);
+  const [npsRequests, setNpsRequests] = useState<any[]>([]);
+  const [planVsFact, setPlanVsFact] = useState<any>(null);
+  const [purchaseOrders, setPurchaseOrders] = useState<any[]>([]);
+  const [changeOrders, setChangeOrders] = useState<any[]>([]);
+
   // Edit mode for INFO tab
   const [editing, setEditing] = useState(false);
   const [editForm, setEditForm] = useState<Partial<SiteData>>({});
@@ -192,6 +218,10 @@ const SiteDashboardPage: React.FC = () => {
     const loadTabData = async () => {
       try {
         switch (tabValue) {
+          case 0: // INFO — also load payment schedule + NPS
+            await loadPaymentSchedules();
+            await loadNpsRequests();
+            break;
           case 1: // TASKS
             await loadTasks();
             break;
@@ -201,13 +231,20 @@ const SiteDashboardPage: React.FC = () => {
           case 3: // ПРОЦЕНТОВКА — uses tasks already
             if (tasks.length === 0) await loadTasks();
             break;
-          case 4: // FINANCE
+          case 4: // FINANCE (enhanced)
             await loadCosts();
+            await loadPlanVsFact();
+            await loadPurchaseOrders();
+            await loadChangeOrders();
             break;
-          case 5: // TIME TRACKING
+          case 5: // QUALITY (new)
+            await loadPunchLists();
+            await loadWorkActs();
+            break;
+          case 6: // TIME TRACKING
             await loadSessions();
             break;
-          case 6: // CONTACTS
+          case 7: // CONTACTS
             await loadContacts();
             break;
         }
@@ -273,6 +310,104 @@ const SiteDashboardPage: React.FC = () => {
     );
     const snap = await getDocs(q);
     setContacts(snap.docs.map(d => ({ id: d.id, ...d.data() } as Contact)));
+  };
+
+  // ─── ERP V4 Loaders ──────────────────────────────────────────
+
+  const loadPunchLists = async () => {
+    if (!site) return;
+    try {
+      const result = await punchListApi.getByProject(site.clientId);
+      setPunchLists(result?.data || []);
+    } catch (e) {
+      console.error('Error loading punch lists:', e);
+      setPunchLists([]);
+    }
+  };
+
+  const loadWorkActs = async () => {
+    if (!site) return;
+    try {
+      const result = await workActsApi.getByProject(site.clientId);
+      setWorkActs(result?.data || []);
+    } catch (e) {
+      console.error('Error loading work acts:', e);
+      setWorkActs([]);
+    }
+  };
+
+  const loadPaymentSchedules = async () => {
+    if (!site) return;
+    try {
+      const result = await paymentScheduleApi.getByProject(site.clientId);
+      setPaymentSchedules(result?.data || []);
+    } catch (e) {
+      console.error('Error loading payment schedules:', e);
+      setPaymentSchedules([]);
+    }
+  };
+
+  const loadWarrantyTasks = async () => {
+    if (!site) return;
+    try {
+      const result = await warrantyApi.getByProject(site.clientId);
+      setWarrantyTasks(result?.data || []);
+    } catch (e) {
+      console.error('Error loading warranty tasks:', e);
+      setWarrantyTasks([]);
+    }
+  };
+
+  const loadNpsRequests = async () => {
+    if (!site) return;
+    try {
+      const result = await npsApi.getStatus(site.clientId);
+      setNpsRequests(result?.data || []);
+    } catch (e) {
+      console.error('Error loading NPS:', e);
+      setNpsRequests([]);
+    }
+  };
+
+  const loadPlanVsFact = async () => {
+    if (!site) return;
+    try {
+      const result = await planVsFactApi.get({ clientId: site.clientId });
+      setPlanVsFact(result?.data || null);
+    } catch (e) {
+      console.error('Error loading plan vs fact:', e);
+      setPlanVsFact(null);
+    }
+  };
+
+  const loadPurchaseOrders = async () => {
+    if (!site || !userProfile?.companyId) return;
+    try {
+      const q = query(
+        collection(db, `companies/${userProfile.companyId}/purchase_orders`),
+        where('projectId', '==', site.clientId)
+      );
+      const snap = await getDocs(q);
+      setPurchaseOrders(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    } catch (e) {
+      console.error('Error loading purchase orders:', e);
+      setPurchaseOrders([]);
+    }
+  };
+
+  const loadChangeOrders = async () => {
+    if (!site || !userProfile?.companyId) return;
+    try {
+      const q = query(
+        collection(db, `companies/${userProfile.companyId}/change_orders`),
+        where('projectId', '==', site.clientId)
+      );
+      const snap = await getDocs(q);
+      setChangeOrders(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    } catch (e) {
+      console.error('Error loading change orders:', e);
+      setChangeOrders([]);
+    }
   };
 
   // ─── Edit handlers ─────────────────────────────────────────────
@@ -420,6 +555,7 @@ const SiteDashboardPage: React.FC = () => {
           <Tab label={`📐 Estimates (${estimates.length})`} />
           <Tab label="📊 Процентовка" />
           <Tab label="💰 Finance" />
+          <Tab label="🔍 Quality" />
           <Tab label="⏱️ Time" />
           <Tab label="👥 Contacts" />
         </Tabs>
@@ -621,6 +757,95 @@ const SiteDashboardPage: React.FC = () => {
             </Grid>
           )}
         </Paper>
+        {/* ── Payment Schedule ─────────────────────────── */}
+        {paymentSchedules.length > 0 && (
+          <Paper sx={{ p: 3, mt: 3 }}>
+            <Typography variant="h6" gutterBottom>
+              💳 Payment Schedule
+            </Typography>
+            {paymentSchedules.map((ps: any) => (
+              <Box key={ps.id} sx={{ mb: 2 }}>
+                <Box display="flex" justifyContent="space-between" mb={1}>
+                  <Typography variant="body2" color="text.secondary">
+                    Total: ${(ps.totalAmount || 0).toLocaleString()} | Paid: ${(ps.totalPaid || 0).toLocaleString()} | Pending: ${(ps.totalPending || 0).toLocaleString()}
+                  </Typography>
+                </Box>
+                <LinearProgress
+                  variant="determinate"
+                  value={ps.totalAmount > 0 ? Math.min(100, Math.round((ps.totalPaid / ps.totalAmount) * 100)) : 0}
+                  sx={{
+                    height: 8, borderRadius: 4, mb: 2, bgcolor: '#e0e0e0',
+                    '& .MuiLinearProgress-bar': { bgcolor: '#4caf50', borderRadius: 4 },
+                  }}
+                />
+                {ps.milestones && ps.milestones.length > 0 && (
+                  <Table size="small">
+                    <TableHead>
+                      <TableRow>
+                        <TableCell>Milestone</TableCell>
+                        <TableCell align="right">Amount</TableCell>
+                        <TableCell align="right">Paid</TableCell>
+                        <TableCell>Status</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {ps.milestones.map((ms: any) => (
+                        <TableRow key={ms.id}>
+                          <TableCell>{ms.milestoneName}</TableCell>
+                          <TableCell align="right">${(ms.amount || 0).toLocaleString()}</TableCell>
+                          <TableCell align="right">${(ms.paidAmount || 0).toLocaleString()}</TableCell>
+                          <TableCell>
+                            <Chip
+                              label={ms.status?.replace(/_/g, ' ')}
+                              size="small"
+                              color={
+                                ms.status === 'paid' ? 'success' :
+                                ms.status === 'overdue' ? 'error' :
+                                ms.status === 'invoiced' ? 'info' :
+                                ms.status === 'partially_paid' ? 'warning' : 'default'
+                              }
+                            />
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+              </Box>
+            ))}
+          </Paper>
+        )}
+
+        {/* ── NPS / Project Lifecycle ─────────────────────── */}
+        {npsRequests.length > 0 && (
+          <Paper sx={{ p: 3, mt: 3 }}>
+            <Typography variant="h6" gutterBottom>
+              ⭐ NPS & Reviews
+            </Typography>
+            {npsRequests.map((nps: any) => (
+              <Box key={nps.id} display="flex" alignItems="center" gap={2} sx={{ py: 1 }}>
+                <Chip
+                  label={nps.status}
+                  size="small"
+                  color={nps.status === 'responded' ? 'success' : nps.status === 'sent' ? 'info' : 'default'}
+                />
+                {nps.score !== undefined && (
+                  <Typography variant="body1" fontWeight={700}>
+                    Score: {nps.score}/10
+                  </Typography>
+                )}
+                {nps.reviewText && (
+                  <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic' }}>
+                    "{nps.reviewText}"
+                  </Typography>
+                )}
+                <Typography variant="caption" color="text.secondary">
+                  Channel: {nps.channel}
+                </Typography>
+              </Box>
+            ))}
+          </Paper>
+        )}
       </TabPanel>
 
       {/* ═══ TAB 1: TASKS ═════════════════════════════════════════ */}
@@ -990,6 +1215,140 @@ const SiteDashboardPage: React.FC = () => {
 
       {/* ═══ TAB 4: FINANCE ═══════════════════════════════════════ */}
       <TabPanel value={tabValue} index={4}>
+        {/* ── Plan vs Fact Widget ────────────────────────── */}
+        {planVsFact && (
+          <Paper sx={{ p: 3, mb: 3 }}>
+            <Typography variant="h6" gutterBottom>📊 Plan vs Fact</Typography>
+            <Grid container spacing={2}>
+              <Grid size={{ xs: 12, sm: 4 }}>
+                <Card variant="outlined">
+                  <CardContent>
+                    <Typography variant="body2" color="text.secondary">Planned (Estimates)</Typography>
+                    <Typography variant="h5" fontWeight={700}>
+                      ${(planVsFact.planned?.total || 0).toLocaleString()}
+                    </Typography>
+                  </CardContent>
+                </Card>
+              </Grid>
+              <Grid size={{ xs: 12, sm: 4 }}>
+                <Card variant="outlined">
+                  <CardContent>
+                    <Typography variant="body2" color="text.secondary">Actual (Costs)</Typography>
+                    <Typography variant="h5" fontWeight={700} sx={{ color: (planVsFact.actual?.total || 0) > (planVsFact.planned?.total || 0) ? '#f44336' : '#4caf50' }}>
+                      ${(planVsFact.actual?.total || 0).toLocaleString()}
+                    </Typography>
+                  </CardContent>
+                </Card>
+              </Grid>
+              <Grid size={{ xs: 12, sm: 4 }}>
+                <Card variant="outlined">
+                  <CardContent>
+                    <Typography variant="body2" color="text.secondary">Variance</Typography>
+                    <Typography variant="h5" fontWeight={700} sx={{ color: (planVsFact.variance?.total || 0) >= 0 ? '#4caf50' : '#f44336' }}>
+                      ${(planVsFact.variance?.total || 0).toLocaleString()}
+                    </Typography>
+                  </CardContent>
+                </Card>
+              </Grid>
+            </Grid>
+            {planVsFact.alerts && planVsFact.alerts.length > 0 && (
+              <Box sx={{ mt: 2 }}>
+                {planVsFact.alerts.map((alert: string, idx: number) => (
+                  <Alert key={idx} severity={alert.includes('🚨') ? 'error' : 'warning'} sx={{ mb: 1 }}>
+                    {alert}
+                  </Alert>
+                ))}
+              </Box>
+            )}
+            {/* Margin bar */}
+            <Box sx={{ mt: 2 }}>
+              <Box display="flex" justifyContent="space-between" mb={0.5}>
+                <Typography variant="body2">Budget Consumption</Typography>
+                <Typography variant="body2" fontWeight={700}>{planVsFact.margin?.actual || 0}%</Typography>
+              </Box>
+              <LinearProgress
+                variant="determinate"
+                value={Math.min(100, planVsFact.margin?.actual || 0)}
+                sx={{
+                  height: 8, borderRadius: 4, bgcolor: '#e0e0e0',
+                  '& .MuiLinearProgress-bar': {
+                    bgcolor: (planVsFact.margin?.actual || 0) > 100 ? '#f44336' : (planVsFact.margin?.actual || 0) > 90 ? '#ff9800' : '#4caf50',
+                    borderRadius: 4,
+                  },
+                }}
+              />
+            </Box>
+          </Paper>
+        )}
+
+        {/* ── Purchase Orders ────────────────────────────── */}
+        {purchaseOrders.length > 0 && (
+          <Paper sx={{ p: 3, mb: 3 }}>
+            <Typography variant="h6" gutterBottom>🛒 Purchase Orders ({purchaseOrders.length})</Typography>
+            <TableContainer>
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell>Vendor</TableCell>
+                    <TableCell>Category</TableCell>
+                    <TableCell>Status</TableCell>
+                    <TableCell align="right">Total</TableCell>
+                    <TableCell align="right">Variance</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {purchaseOrders.map((po: any) => (
+                    <TableRow key={po.id}>
+                      <TableCell><Typography variant="body2" fontWeight={600}>{po.vendor}</Typography></TableCell>
+                      <TableCell><Chip label={po.category || 'Other'} size="small" variant="outlined" /></TableCell>
+                      <TableCell>
+                        <Chip label={po.status} size="small" color={po.status === 'received' ? 'success' : po.status === 'approved' ? 'info' : 'default'} />
+                      </TableCell>
+                      <TableCell align="right">${(po.total || 0).toLocaleString()}</TableCell>
+                      <TableCell align="right" sx={{ color: (po.variancePercent || 0) > 0 ? '#f44336' : '#4caf50' }}>
+                        {po.variancePercent ? `${po.variancePercent > 0 ? '+' : ''}${po.variancePercent.toFixed(1)}%` : '—'}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          </Paper>
+        )}
+
+        {/* ── Change Orders ──────────────────────────────── */}
+        {changeOrders.length > 0 && (
+          <Paper sx={{ p: 3, mb: 3 }}>
+            <Typography variant="h6" gutterBottom>📝 Change Orders ({changeOrders.length})</Typography>
+            <TableContainer>
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell>#</TableCell>
+                    <TableCell>Title</TableCell>
+                    <TableCell>Status</TableCell>
+                    <TableCell align="right">Internal</TableCell>
+                    <TableCell align="right">Client</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {changeOrders.map((co: any) => (
+                    <TableRow key={co.id}>
+                      <TableCell><Typography variant="body2" fontWeight={600}>{co.number}</Typography></TableCell>
+                      <TableCell>{co.title}</TableCell>
+                      <TableCell>
+                        <Chip label={co.status} size="small" color={co.status === 'approved' ? 'success' : co.status === 'rejected' ? 'error' : 'default'} />
+                      </TableCell>
+                      <TableCell align="right">${(co.internalTotal || 0).toLocaleString()}</TableCell>
+                      <TableCell align="right">${(co.clientTotal || 0).toLocaleString()}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          </Paper>
+        )}
+
         {/* Summary Cards */}
         <Grid container spacing={2} sx={{ mb: 3 }}>
           <Grid size={{ xs: 12, sm: 4 }}>
@@ -1059,8 +1418,200 @@ const SiteDashboardPage: React.FC = () => {
         )}
       </TabPanel>
 
-      {/* ═══ TAB 5: TIME TRACKING ═════════════════════════════════ */}
+      {/* ═══ TAB 5: QUALITY ══════════════════════════════════════ */}
       <TabPanel value={tabValue} index={5}>
+        {/* ── Work Acts Progress ──────────────────────────── */}
+        <Paper sx={{ p: 3, mb: 3 }}>
+          <Typography variant="h6" gutterBottom>
+            📝 Work Acts
+          </Typography>
+          {workActs.length === 0 ? (
+            <Typography color="text.secondary">No work acts created yet</Typography>
+          ) : (
+            <>
+              {/* Progress bar: signed / total */}
+              {(() => {
+                const signed = workActs.filter((a: any) => a.status === 'signed').length;
+                const total = workActs.length;
+                const pct = total > 0 ? Math.round((signed / total) * 100) : 0;
+                return (
+                  <Box sx={{ mb: 2 }}>
+                    <Box display="flex" justifyContent="space-between" mb={0.5}>
+                      <Typography variant="body2">
+                        Signed: {signed} / {total}
+                      </Typography>
+                      <Typography variant="body2" fontWeight={700}>{pct}%</Typography>
+                    </Box>
+                    <LinearProgress
+                      variant="determinate"
+                      value={pct}
+                      sx={{
+                        height: 10, borderRadius: 5, bgcolor: '#e0e0e0',
+                        '& .MuiLinearProgress-bar': {
+                          bgcolor: pct >= 100 ? '#4caf50' : pct >= 50 ? '#ff9800' : '#2196f3',
+                          borderRadius: 5,
+                        },
+                      }}
+                    />
+                  </Box>
+                );
+              })()}
+              <TableContainer>
+                <Table size="small">
+                  <TableHead>
+                    <TableRow>
+                      <TableCell>#</TableCell>
+                      <TableCell>Phase</TableCell>
+                      <TableCell align="right">Planned</TableCell>
+                      <TableCell align="right">Actual</TableCell>
+                      <TableCell>Status</TableCell>
+                      <TableCell>Punch List</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {workActs.map((act: any) => (
+                      <TableRow key={act.id}>
+                        <TableCell><Typography variant="body2" fontWeight={600}>{act.number}</Typography></TableCell>
+                        <TableCell>{act.phaseName}</TableCell>
+                        <TableCell align="right">${(act.plannedAmount || 0).toLocaleString()}</TableCell>
+                        <TableCell align="right">${(act.actualAmount || 0).toLocaleString()}</TableCell>
+                        <TableCell>
+                          <Chip
+                            label={act.status?.replace(/_/g, ' ')}
+                            size="small"
+                            color={
+                              act.status === 'signed' ? 'success' :
+                              act.status === 'ready_to_sign' ? 'info' :
+                              act.status === 'punch_list' ? 'warning' :
+                              act.status === 'disputed' ? 'error' : 'default'
+                            }
+                          />
+                        </TableCell>
+                        <TableCell>
+                          {act.blockedByPunchList ? (
+                            <Chip label="🚫 Blocked" size="small" color="error" variant="outlined" />
+                          ) : act.punchListId ? (
+                            <Chip label="✅ Resolved" size="small" color="success" variant="outlined" />
+                          ) : (
+                            <Typography variant="caption" color="text.secondary">—</Typography>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            </>
+          )}
+        </Paper>
+
+        {/* ── Punch Lists ────────────────────────────────── */}
+        <Paper sx={{ p: 3, mb: 3 }}>
+          <Typography variant="h6" gutterBottom>
+            📌 Punch Lists
+          </Typography>
+          {punchLists.length === 0 ? (
+            <Typography color="text.secondary">No punch lists created yet</Typography>
+          ) : (
+            punchLists.map((pl: any) => (
+              <Paper key={pl.id} variant="outlined" sx={{ p: 2, mb: 2 }}>
+                <Box display="flex" justifyContent="space-between" alignItems="center" mb={1}>
+                  <Typography variant="subtitle1" fontWeight={700}>
+                    {pl.title}
+                  </Typography>
+                  <Box display="flex" gap={1}>
+                    <Chip label={`Open: ${pl.openItems || 0}`} size="small" color="error" variant="outlined" />
+                    <Chip label={`Fixed: ${pl.fixedItems || 0}`} size="small" color="warning" variant="outlined" />
+                    <Chip label={`Verified: ${pl.verifiedItems || 0}`} size="small" color="success" variant="outlined" />
+                  </Box>
+                </Box>
+                {pl.isResolved && (
+                  <Chip label="✅ All Resolved" size="small" color="success" sx={{ mb: 1 }} />
+                )}
+                {pl.items && pl.items.length > 0 && (
+                  <Table size="small">
+                    <TableHead>
+                      <TableRow>
+                        <TableCell>Description</TableCell>
+                        <TableCell>Location</TableCell>
+                        <TableCell>Priority</TableCell>
+                        <TableCell>Status</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {pl.items.map((item: any) => (
+                        <TableRow key={item.id}>
+                          <TableCell>{item.description}</TableCell>
+                          <TableCell>{item.location || '—'}</TableCell>
+                          <TableCell>
+                            <Chip
+                              label={item.priority}
+                              size="small"
+                              color={
+                                item.priority === 'critical' ? 'error' :
+                                item.priority === 'major' ? 'warning' : 'default'
+                              }
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <Chip
+                              label={item.status?.replace(/_/g, ' ')}
+                              size="small"
+                              color={
+                                item.status === 'verified' ? 'success' :
+                                item.status === 'fixed' ? 'info' :
+                                item.status === 'open' ? 'error' : 'default'
+                              }
+                            />
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+              </Paper>
+            ))
+          )}
+        </Paper>
+
+        {/* ── Warranty Tasks ──────────────────────────────── */}
+        <Paper sx={{ p: 3 }}>
+          <Typography variant="h6" gutterBottom>
+            🛡️ Warranty Tasks
+          </Typography>
+          {warrantyTasks.length === 0 ? (
+            <Typography color="text.secondary">No warranty tasks</Typography>
+          ) : (
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell>Description</TableCell>
+                  <TableCell>Priority</TableCell>
+                  <TableCell>Status</TableCell>
+                  <TableCell align="right">Cost</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {warrantyTasks.map((wt: any) => (
+                  <TableRow key={wt.id}>
+                    <TableCell>{wt.description}</TableCell>
+                    <TableCell>
+                      <Chip label={wt.priority} size="small" color={wt.priority === 'urgent' ? 'error' : wt.priority === 'high' ? 'warning' : 'default'} />
+                    </TableCell>
+                    <TableCell>
+                      <Chip label={wt.status} size="small" color={wt.status === 'resolved' ? 'success' : wt.status === 'in_progress' ? 'info' : 'default'} />
+                    </TableCell>
+                    <TableCell align="right">${(wt.cost || 0).toLocaleString()}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </Paper>
+      </TabPanel>
+
+      {/* ═══ TAB 6: TIME TRACKING ═════════════════════════════════ */}
+      <TabPanel value={tabValue} index={6}>
         {/* Summary Cards */}
         <Grid container spacing={2} sx={{ mb: 3 }}>
           <Grid size={{ xs: 12, sm: 4 }}>
@@ -1150,8 +1701,8 @@ const SiteDashboardPage: React.FC = () => {
         )}
       </TabPanel>
 
-      {/* ═══ TAB 6: CONTACTS ══════════════════════════════════════ */}
-      <TabPanel value={tabValue} index={6}>
+      {/* ═══ TAB 7: CONTACTS ══════════════════════════════════════ */}
+      <TabPanel value={tabValue} index={7}>
         <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
           <TextField
             placeholder="Поиск по имени..."

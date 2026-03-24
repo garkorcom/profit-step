@@ -10,7 +10,7 @@
  */
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.analyzeBlueprintV3Callable = exports.extractBuildingContextCallable = exports.auditBlueprintTakeoff = exports.refineAnalysisCallable = exports.analyzePageCallable = exports.onBlueprintBatchCreated = exports.onBlueprintJobCreated = exports.onNoteCreated = exports.onReceiptUpdate = exports.onWorkSessionUpdate = exports.onWorkSessionCreate = exports.generateDailyPayroll = exports.closePayrollPeriod = exports.forceFinishAllSessions = exports.sendDeadlineReminders = exports.autoCloseStaleSessions = exports.finalizeExpiredSessions = exports.onCostsBotMessage = exports.onWorkerBotMessage = exports.parseClientWebsite = exports.parseSmartInput = exports.estimateTask = exports.generateLeadSummary = exports.sendWorkerMessage = exports.sendMessage = exports.onTelegramMessage = exports.onWhatsAppMessage = exports.onLeadCreate = exports.updateCompanyMemberCount_v2 = exports.trackUserActivation_v2 = exports.logUserUpdates_v2 = exports.incrementLoginCount_v2 = exports.inviteUser = exports.adminDeleteUser = exports.onUserDelete = exports.onUserCreate = exports.admin_manageUser = exports.admin_createUserWithPassword = exports.logPaginationMetrics = exports.diagnoseBot = exports.logInvitationAccepted = exports.logInvitationSent = exports.logUserDeleted = exports.logUserCreated = exports.brevoWebhookHandler = exports.trackFirstInvite = exports.initializeUserActivation = exports.aggregateEngagementMetrics = exports.aggregateGrowthMetrics = exports.processAvatar = void 0;
-exports.cleanupIdempotencyKeys = exports.invalidateClientCache = exports.agentApi = exports.modifyAiTask = exports.confirmAiTask = exports.generateAiTask = exports.categorizeBankTransactions = exports.uploadBankStatement = exports.onCostUpdate = exports.onCostCreated = exports.onTaskCreate = exports.onTaskUpdate = exports.moveGtdTask = exports.scheduledDayPlan = exports.generateDayPlan = exports.generatePriceEstimate = exports.syncActiveTimer = exports.onSessionChangeUpdateCost = exports.verifyTask = exports.submitForReview = exports.checkLongBreaks = exports.updateWorkSession = exports.mergeNotes = exports.splitChecklistItem = exports.verifyEstimatePlausibilityCallable = void 0;
+exports.getPlanVsFact = exports.getNpsStatus = exports.triggerNps = exports.getWarrantyTasks = exports.createWarrantyTask = exports.updatePaymentMilestone = exports.getPaymentSchedule = exports.createPaymentSchedule = exports.updateWorkAct = exports.getWorkActs = exports.createWorkAct = exports.updatePunchListItem = exports.getPunchLists = exports.createPunchList = exports.cleanupIdempotencyKeys = exports.invalidateClientCache = exports.agentApi = exports.modifyAiTask = exports.confirmAiTask = exports.generateAiTask = exports.categorizeBankTransactions = exports.uploadBankStatement = exports.onCostUpdate = exports.onCostCreated = exports.onTaskCreate = exports.onTaskUpdate = exports.moveGtdTask = exports.scheduledDayPlan = exports.generateDayPlan = exports.generatePriceEstimate = exports.syncActiveTimer = exports.onSessionChangeUpdateCost = exports.verifyTask = exports.submitForReview = exports.checkLongBreaks = exports.updateWorkSession = exports.mergeNotes = exports.splitChecklistItem = exports.verifyEstimatePlausibilityCallable = void 0;
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 const crypto = require("crypto");
@@ -549,4 +549,23 @@ Object.defineProperty(exports, "agentApi", { enumerable: true, get: function () 
 var agentScheduled_1 = require("./agent/agentScheduled");
 Object.defineProperty(exports, "invalidateClientCache", { enumerable: true, get: function () { return agentScheduled_1.invalidateClientCache; } });
 Object.defineProperty(exports, "cleanupIdempotencyKeys", { enumerable: true, get: function () { return agentScheduled_1.cleanupIdempotencyKeys; } });
+// ========================================
+// ERP V4.0 — Phase 2 API Endpoints
+// Punch List, Work Acts, Payment Schedule, Warranty, NPS, Plan vs Fact
+// ========================================
+var erpV4Api_1 = require("./api/erpV4Api");
+Object.defineProperty(exports, "createPunchList", { enumerable: true, get: function () { return erpV4Api_1.createPunchList; } });
+Object.defineProperty(exports, "getPunchLists", { enumerable: true, get: function () { return erpV4Api_1.getPunchLists; } });
+Object.defineProperty(exports, "updatePunchListItem", { enumerable: true, get: function () { return erpV4Api_1.updatePunchListItem; } });
+Object.defineProperty(exports, "createWorkAct", { enumerable: true, get: function () { return erpV4Api_1.createWorkAct; } });
+Object.defineProperty(exports, "getWorkActs", { enumerable: true, get: function () { return erpV4Api_1.getWorkActs; } });
+Object.defineProperty(exports, "updateWorkAct", { enumerable: true, get: function () { return erpV4Api_1.updateWorkAct; } });
+Object.defineProperty(exports, "createPaymentSchedule", { enumerable: true, get: function () { return erpV4Api_1.createPaymentSchedule; } });
+Object.defineProperty(exports, "getPaymentSchedule", { enumerable: true, get: function () { return erpV4Api_1.getPaymentSchedule; } });
+Object.defineProperty(exports, "updatePaymentMilestone", { enumerable: true, get: function () { return erpV4Api_1.updatePaymentMilestone; } });
+Object.defineProperty(exports, "createWarrantyTask", { enumerable: true, get: function () { return erpV4Api_1.createWarrantyTask; } });
+Object.defineProperty(exports, "getWarrantyTasks", { enumerable: true, get: function () { return erpV4Api_1.getWarrantyTasks; } });
+Object.defineProperty(exports, "triggerNps", { enumerable: true, get: function () { return erpV4Api_1.triggerNps; } });
+Object.defineProperty(exports, "getNpsStatus", { enumerable: true, get: function () { return erpV4Api_1.getNpsStatus; } });
+Object.defineProperty(exports, "getPlanVsFact", { enumerable: true, get: function () { return erpV4Api_1.getPlanVsFact; } });
 //# sourceMappingURL=index.js.map

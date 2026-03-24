@@ -640,3 +640,25 @@ export { modifyAiTask } from './callable/ai/modifyAiTask';
 
 export { agentApi } from './agent/agentApi';
 export { invalidateClientCache, cleanupIdempotencyKeys } from './agent/agentScheduled';
+
+// ========================================
+// ERP V4.0 — Phase 2 API Endpoints
+// Punch List, Work Acts, Payment Schedule, Warranty, NPS, Plan vs Fact
+// ========================================
+
+export {
+  createPunchList,
+  getPunchLists,
+  updatePunchListItem,
+  createWorkAct,
+  getWorkActs,
+  updateWorkAct,
+  createPaymentSchedule,
+  getPaymentSchedule,
+  updatePaymentMilestone,
+  createWarrantyTask,
+  getWarrantyTasks,
+  triggerNps,
+  getNpsStatus,
+  getPlanVsFact,
+} from './api/erpV4Api';

@@ -248,6 +248,30 @@ service cloud.firestore {
       match /tasks/{taskId} {
         allow read, write: if isSignedIn();
       }
+
+      // ERP V4 subcollections — callable functions use admin SDK,
+      // but allow read for authenticated users in the same company
+      match /punch_lists/{docId} {
+        allow read, write: if isSignedIn();
+      }
+      match /work_acts/{docId} {
+        allow read, write: if isSignedIn();
+      }
+      match /payment_schedules/{docId} {
+        allow read, write: if isSignedIn();
+      }
+      match /warranty_tasks/{docId} {
+        allow read, write: if isSignedIn();
+      }
+      match /nps_requests/{docId} {
+        allow read, write: if isSignedIn();
+      }
+      match /purchase_orders/{docId} {
+        allow read, write: if isSignedIn();
+      }
+      match /change_orders/{docId} {
+        allow read, write: if isSignedIn();
+      }
     }
 
     // Clients collection (CRM - клиенты/контрагенты)
@@ -552,6 +576,20 @@ service cloud.firestore {
       allow read: if isSignedIn() && 
                   (resource.data.isPublished == true || isAdmin());
       allow create, update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // ==================== SITES ====================
+    match /sites/{siteId} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn();
+      allow delete: if isAdmin();
+    }
+
+    // ==================== ESTIMATE BLACKBOARD ====================
+    match /estimate_blackboard/{docId} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn();
       allow delete: if isAdmin();
     }
 

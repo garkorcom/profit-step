@@ -57,6 +57,7 @@ const CodeDocumentationPage = React.lazy(() => import('../pages/CodeDocumentatio
 const DevLogCreatePage = React.lazy(() => import('../pages/admin/DevLogCreatePage'));
 const DevLogBlogPage = React.lazy(() => import('../pages/DevLogBlogPage'));
 const ContactsPage = React.lazy(() => import('../pages/crm/ContactsPage'));
+const SiteDashboardPage = React.lazy(() => import('../pages/sites/SiteDashboardPage'));
 
 // Loading fallback component
 const PageLoader = () => (
@@ -218,6 +219,9 @@ const AppRouter: React.FC = () => {
           <Route path="/crm/inventory" element={<InventoryPage />} />
           <Route path="/crm/payroll-periods" element={<PayrollPeriodsPage />} />
           <Route path="/crm/contacts" element={<ContactsPage />} />
+
+          {/* Sites Dashboard */}
+          <Route path="/sites/:siteId" element={<SiteDashboardPage />} />
           <Route path="/reports" element={<div>Reports Hub (Coming Soon)</div>} />
           <Route path="/ai-reports" element={<AIReportsPage />} />
 

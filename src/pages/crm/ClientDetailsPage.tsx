@@ -34,6 +34,7 @@ import { collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../../firebase/firebase';
 import { crmApi } from '../../api/crmApi';
 import { projectsApi } from '../../api/projectsApi';
+import { sitesApi, SiteData } from '../../api/sitesApi';
 import { Client } from '../../types/crm.types';
 import { Contact } from '../../types/contact.types';
 import { Project } from '../../types/project.types';
@@ -76,6 +77,7 @@ const ClientDetailsPage: React.FC = () => {
 
     const [client, setClient] = useState<Client | null>(null);
     const [projects, setProjects] = useState<Project[]>([]);
+    const [sites, setSites] = useState<SiteData[]>([]);
     const [linkedContacts, setLinkedContacts] = useState<Contact[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -113,6 +115,14 @@ const ClientDetailsPage: React.FC = () => {
                     setProjects(projectsData);
                 } catch (projErr: any) {
                     console.error('Error loading projects:', projErr);
+                }
+
+                // Fetch Sites
+                try {
+                    const sitesData = await sitesApi.getSitesByClient(id);
+                    setSites(sitesData);
+                } catch (sitesErr: any) {
+                    console.error('Error loading sites:', sitesErr);
                 }
 
                 // Fetch Linked Global Contacts
@@ -230,7 +240,7 @@ const getStatusColor = (status: string) => {
             <Paper sx={{ width: '100%', mb: 2 }}>
                 <Tabs value={tabValue} onChange={handleTabChange} aria-label="client tabs">
                     <Tab label="Details" />
-                    <Tab label={`Проекты (${projects.length})`} />
+                    <Tab label={`Проекты (${projects.length + sites.length})`} />
                     <Tab label="💰 Finance" />
                     <Tab label="Tasks" />
                 </Tabs>
@@ -375,12 +385,79 @@ const getStatusColor = (status: string) => {
                     </Button>
                 </Box>
 
-                {projects.length === 0 ? (
+                {/* ── Sites Cards ── */}
+                {sites.length > 0 && (
+                    <Box sx={{ mb: 3 }}>
+                        <Typography variant="subtitle2" color="text.secondary" gutterBottom sx={{ mb: 1 }}>
+                            🏗️ Объекты (Sites)
+                        </Typography>
+                        <Grid container spacing={2}>
+                            {sites.map(site => (
+                                <Grid size={{ xs: 12, sm: 6, md: 4 }} key={site.id}>
+                                    <Paper
+                                        elevation={0}
+                                        sx={{
+                                            p: 2.5, borderRadius: 3,
+                                            border: '1px solid', borderColor: 'divider',
+                                            cursor: 'pointer',
+                                            transition: 'all 0.2s ease',
+                                            '&:hover': {
+                                                transform: 'translateY(-2px)',
+                                                boxShadow: '0 8px 24px rgba(0,0,0,0.1)',
+                                                borderColor: 'warning.light',
+                                            },
+                                            position: 'relative',
+                                            overflow: 'hidden',
+                                            '&::before': {
+                                                content: '""', position: 'absolute',
+                                                top: 0, left: 0, right: 0, height: 3,
+                                                background: 'linear-gradient(90deg, #ff9800, #ffb74d)',
+                                            }
+                                        }}
+                                        onClick={() => navigate(`/sites/${site.id}`)}
+                                    >
+                                        <Box display="flex" justifyContent="space-between" alignItems="flex-start" mb={1}>
+                                            <Typography variant="subtitle2" fontWeight={700} noWrap sx={{ flex: 1, mr: 1 }}>
+                                                {site.name}
+                                            </Typography>
+                                            <Chip
+                                                label={site.status === 'active' ? '🟢 Active' : site.status === 'completed' ? '✅ Done' : '⏸️ Hold'}
+                                                size="small"
+                                                sx={{ fontSize: '0.65rem', height: 20 }}
+                                            />
+                                        </Box>
+                                        <Typography variant="caption" color="text.secondary" display="block" mb={0.5}>
+                                            📍 {site.address}{site.city ? `, ${site.city}` : ''}
+                                        </Typography>
+                                        <Box display="flex" alignItems="center" gap={1}>
+                                            {site.type && (
+                                                <Chip
+                                                    label={site.type}
+                                                    size="small"
+                                                    variant="outlined"
+                                                    sx={{ fontSize: '0.6rem', height: 18 }}
+                                                />
+                                            )}
+                                            {site.sqft && (
+                                                <Typography variant="caption" color="text.secondary">
+                                                    {site.sqft.toLocaleString()} sqft
+                                                </Typography>
+                                            )}
+                                        </Box>
+                                    </Paper>
+                                </Grid>
+                            ))}
+                        </Grid>
+                    </Box>
+                )}
+
+                {/* ── Projects Cards ── */}
+                {projects.length === 0 && sites.length === 0 ? (
                     <Paper sx={{ p: 4, textAlign: 'center', borderRadius: 2 }}>
                         <FolderIcon sx={{ fontSize: 48, color: 'text.disabled', mb: 1 }} />
                         <Typography color="text.secondary">Нет проектов для этого клиента</Typography>
                     </Paper>
-                ) : (
+                ) : projects.length === 0 ? null : (
                     <Grid container spacing={2}>
                         {projects.map(proj => (
                             <Grid size={{ xs: 12, sm: 6, md: 4 }} key={proj.id}>

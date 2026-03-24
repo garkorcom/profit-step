@@ -23,12 +23,13 @@ import { useAuth } from '../../auth/AuthContext';
 import { estimatesApi } from '../../api/estimatesApi';
 import { Estimate, EstimateStatus } from '../../types/estimate.types';
 
-const statusColors: Record<EstimateStatus, 'default' | 'primary' | 'secondary' | 'error' | 'info' | 'success' | 'warning'> = {
+const statusColors: Record<string, 'default' | 'primary' | 'secondary' | 'error' | 'info' | 'success' | 'warning'> = {
     draft: 'default',
     sent: 'info',
     approved: 'success',
     rejected: 'error',
-    converted: 'primary'
+    converted: 'primary',
+    locked: 'warning',
 };
 
 const EstimatesPage: React.FC = () => {

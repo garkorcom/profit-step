@@ -247,20 +247,22 @@ const WorkSessionsList: React.FC<{ taskId: string }> = ({ taskId }) => {
 // ESTIMATES TAB CONTENT
 // ═══════════════════════════════════════════════════════════
 
-const STATUS_COLORS: Record<EstimateStatus, string> = {
+const STATUS_COLORS: Record<string, string> = {
     draft: '#9e9e9e',
     sent: '#2196f3',
     approved: '#4caf50',
     rejected: '#f44336',
     converted: '#ff9800',
+    locked: '#795548',
 };
 
-const STATUS_LABELS: Record<EstimateStatus, string> = {
+const STATUS_LABELS: Record<string, string> = {
     draft: 'Черновик',
     sent: 'Отправлено',
     approved: 'Одобрено',
     rejected: 'Отклонено',
     converted: 'Конвертировано',
+    locked: 'Заблокировано',
 };
 
 const EstimatesTabContent: React.FC<{

@@ -43,7 +43,7 @@ const EstimateBuilderPage: React.FC = () => {
     ]);
     const [notes, setNotes] = useState('');
     const [taxRate, setTaxRate] = useState(0);
-    const [status, setStatus] = useState<EstimateStatus>('draft');
+    const [status, setStatus] = useState<EstimateStatus | 'locked'>('draft');
     const [estimateNumber, setEstimateNumber] = useState('');
 
     // Load Clients on Mount

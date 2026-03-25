@@ -238,7 +238,12 @@ export type ActivityType =
   | 'call_log'
   | 'status_change'
   | 'deal_stage_change'
-  | 'task_completed';
+  | 'task_completed'
+  // --- Time-Lapse & Media Updates ---
+  | 'media_added'
+  | 'voice_report'
+  | 'location_checkin'
+  | 'task_status_changed';
 
 export interface ActivityLog {
   id: string;
@@ -248,10 +253,11 @@ export interface ActivityLog {
   clientId?: string;
   dealId?: string;
   taskId?: string;
+  projectId?: string; // --- Project Time-Lapse Context ---
 
   type: ActivityType;
   content: string; // Description or message body
-  metadata?: Record<string, any>; // Extra data (e.g., oldStage -> newStage)
+  metadata?: Record<string, any>; // Extra data (e.g., photoUrls?: string[], audioUrl?: string)
 
   performedBy: string; // User ID
   performedAt: Timestamp;

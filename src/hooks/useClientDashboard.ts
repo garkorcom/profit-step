@@ -17,7 +17,7 @@ import { projectsApi } from '../api/projectsApi';
 // ═══════════════════════════════════════
 
 export type HealthStatus = 'green' | 'yellow' | 'red';
-export type SortField = 'name' | 'createdAt' | 'balance' | 'health' | 'status';
+export type SortField = 'name' | 'createdAt' | 'updatedAt' | 'balance' | 'health' | 'status';
 export type SortDir = 'asc' | 'desc';
 
 export interface TaskStats {
@@ -44,6 +44,7 @@ export interface DashboardFilters {
     status: ClientStatus | null;
     sortField: SortField;
     sortDir: SortDir;
+    modifiedToday?: boolean;
 }
 
 // ═══════════════════════════════════════
@@ -84,8 +85,9 @@ export function useClientDashboard(companyId: string | undefined) {
         search: '',
         createdBy: null,
         status: null,
-        sortField: 'name',
-        sortDir: 'asc',
+        sortField: 'updatedAt',
+        sortDir: 'desc',
+        modifiedToday: false,
     });
 
     // ── Load all data in parallel ──
@@ -142,6 +144,23 @@ export function useClientDashboard(companyId: string | undefined) {
         loadData();
     }, [loadData]);
 
+    const updateClientStatus = useCallback(async (clientId: string, newStatus: ClientStatus) => {
+        // Optimistic UI update
+        setClients(prev => prev.map(c => {
+            if (c.id === clientId) {
+                return { ...c, status: newStatus, updatedAt: Timestamp.now() } as ClientRow;
+            }
+            return c;
+        }));
+        
+        try {
+            await crmApi.updateClient(clientId, { status: newStatus });
+        } catch (err) {
+            console.error('Failed to update status:', err);
+            loadData(); // revert
+        }
+    }, [loadData]);
+
     // ── Filter + Sort (client-side) ──
     const filteredClients = useMemo(() => {
         let result = [...clients];
@@ -166,6 +185,16 @@ export function useClientDashboard(companyId: string | undefined) {
             result = result.filter(c => c.status === filters.status);
         }
 
+        // Modified today filter
+        if (filters.modifiedToday) {
+            const todayStart = new Date();
+            todayStart.setHours(0, 0, 0, 0);
+            result = result.filter(c => {
+                const updated = c.updatedAt?.seconds ? c.updatedAt.seconds * 1000 : (c.createdAt?.seconds ? c.createdAt.seconds * 1000 : 0);
+                return updated >= todayStart.getTime();
+            });
+        }
+
         // Sort
         const dir = filters.sortDir === 'asc' ? 1 : -1;
         result.sort((a, b) => {
@@ -175,6 +204,11 @@ export function useClientDashboard(companyId: string | undefined) {
                 case 'createdAt': {
                     const ta = a.createdAt?.seconds || 0;
                     const tb = b.createdAt?.seconds || 0;
+                    return dir * (ta - tb);
+                }
+                case 'updatedAt': {
+                    const ta = a.updatedAt?.seconds || a.createdAt?.seconds || 0;
+                    const tb = b.updatedAt?.seconds || b.createdAt?.seconds || 0;
                     return dir * (ta - tb);
                 }
                 case 'balance':
@@ -201,6 +235,33 @@ export function useClientDashboard(companyId: string | undefined) {
         red: clients.filter(c => c.health === 'red').length,
     }), [clients]);
 
+    // ── Pre-computed Dashboard Clusters ──
+    const dashboardClusters = useMemo(() => {
+        const todayStart = new Date();
+        todayStart.setHours(0, 0, 0, 0);
+        const todayMs = todayStart.getTime();
+
+        const recentActivity = filteredClients.filter(c => {
+            const ms = c.updatedAt?.seconds ? c.updatedAt.seconds * 1000 : (c.createdAt?.seconds ? c.createdAt.seconds * 1000 : 0);
+            return ms >= todayMs;
+        });
+
+        // "Требуют внимания" (Red health, not done/churned)
+        const needsAttention = filteredClients.filter(c => 
+            c.health === 'red' && c.status !== 'done' && c.status !== 'churned'
+        ).slice(0, 8); // top 8 max
+
+        // Kanban Board columns
+        const board = {
+            new: filteredClients.filter(c => c.status === 'new'),
+            contacted: filteredClients.filter(c => c.status === 'contacted'),
+            qualified: filteredClients.filter(c => c.status === 'qualified'),
+            customer: filteredClients.filter(c => c.status === 'customer'),
+        };
+
+        return { recentActivity, needsAttention, board };
+    }, [filteredClients]);
+
     return {
         clients: filteredClients,
         allClients: clients,
@@ -210,6 +271,8 @@ export function useClientDashboard(companyId: string | undefined) {
         filters,
         setFilters,
         stats,
+        dashboardClusters,
+        updateClientStatus,
         refresh: loadData,
     };
 }

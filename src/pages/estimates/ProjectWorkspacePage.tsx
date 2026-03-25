@@ -15,6 +15,8 @@ import { projectsApi } from '../../api/projectsApi';
 import { savedEstimateApi } from '../../api/savedEstimateApi';
 import { Project } from '../../types/project.types';
 import { SavedEstimate } from '../../types/savedEstimate.types';
+import { ProjectGanttChart } from '../../components/projects/ProjectGanttChart';
+import { ProjectTimeLapse } from '../../components/projects/ProjectTimeLapse';
 
 /**
  * PROJECT WORKSPACE PAGE
@@ -119,6 +121,8 @@ const ProjectWorkspacePage: React.FC = () => {
                     <Tab label={`Оценки ИИ (${versions.length})`} sx={{ fontWeight: 600 }} />
                     <Tab label="Сравнение (QA)" sx={{ fontWeight: 600 }} disabled={versions.length < 2} />
                     <Tab label={`Файлы (${project.files?.length || 0})`} sx={{ fontWeight: 600 }} />
+                    <Tab label="График (Gantt)" sx={{ fontWeight: 600 }} />
+                    <Tab label="Хроника (Time-Lapse)" sx={{ fontWeight: 600 }} />
                 </Tabs>
             </Paper>
 
@@ -305,6 +309,20 @@ const ProjectWorkspacePage: React.FC = () => {
                             ))
                         )}
                     </Grid>
+                </Box>
+            )}
+
+            {/* TAB 4: Gantt Chart */}
+            {tabIndex === 3 && (
+                <Box>
+                    <ProjectGanttChart projectId={project.id} />
+                </Box>
+            )}
+
+            {/* TAB 5: Time-Lapse */}
+            {tabIndex === 4 && (
+                <Box>
+                    <ProjectTimeLapse projectId={project.id} companyId={project.companyId} />
                 </Box>
             )}
         </Container>

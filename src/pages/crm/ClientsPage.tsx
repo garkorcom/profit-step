@@ -10,7 +10,7 @@
  * - Skeleton loading + styled empty state
  */
 
-import React, { useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
     Box,
@@ -49,6 +49,9 @@ import {
     FavoriteBorder as HeartIcon,
     Warning as WarningIcon,
     CheckCircleOutline as CheckCircleIcon,
+    ViewList as ViewListIcon,
+    Dashboard as DashboardIcon,
+    AccessTime as TimeIcon,
 } from '@mui/icons-material';
 import { useAuth } from '../../auth/AuthContext';
 import {
@@ -58,6 +61,23 @@ import {
     SortField,
 } from '../../hooks/useClientDashboard';
 import { ClientStatus } from '../../types/crm.types';
+import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
+
+const formatSmartDate = (timestampSecs?: number) => {
+    if (!timestampSecs) return '';
+    const date = new Date(timestampSecs * 1000);
+    const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    
+    if (date.toDateString() === today.toDateString()) {
+        return `Сегодня ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+    }
+    if (date.toDateString() === yesterday.toDateString()) {
+        return `Вчера ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+    }
+    return date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
+};
 
 // ═══════════════════════════════════════
 // DESIGN TOKENS
@@ -108,6 +128,8 @@ const ClientsPage: React.FC = () => {
     const { currentUser, userProfile } = useAuth();
     const isMobile = useMediaQuery(theme.breakpoints.down('md'));
 
+    const [viewMode, setViewMode] = useState<'list' | 'board'>('list');
+
     const {
         clients,
         users,
@@ -116,8 +138,18 @@ const ClientsPage: React.FC = () => {
         filters,
         setFilters,
         stats,
+        dashboardClusters,
+        updateClientStatus,
         refresh,
     } = useClientDashboard(userProfile?.companyId);
+
+    const onDragEnd = (result: DropResult) => {
+        if (!result.destination) return;
+        const sourceStatus = result.source.droppableId as ClientStatus;
+        const destStatus = result.destination.droppableId as ClientStatus;
+        if (sourceStatus === destStatus) return; // Handled sorting locally if needed, but DB status is unchanged
+        updateClientStatus(result.draggableId, destStatus);
+    };
 
     const ownerOptions = useMemo(() => {
         const map = new Map<string, string>();
@@ -479,7 +511,7 @@ const ClientsPage: React.FC = () => {
                 </FormControl>
 
                 {/* Status Filter — Gradient Chips */}
-                <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
+                <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', flex: 1 }}>
                     <Chip
                         label="Все"
                         size="small"
@@ -523,11 +555,116 @@ const ClientsPage: React.FC = () => {
                             />
                         );
                     })}
+                    
+                    <Divider orientation="vertical" flexItem sx={{ mx: 0.5, my: 0.5 }} />
+
+                    {/* NEW: Modified Today Quick Filter */}
+                    <Chip
+                        icon={<TimeIcon sx={{ fontSize: '14px !important', color: filters.modifiedToday ? 'white !important' : 'inherit' }} />}
+                        label="Изменено сегодня"
+                        size="small"
+                        variant={filters.modifiedToday ? 'filled' : 'outlined'}
+                        onClick={() => setFilters(prev => ({ ...prev, modifiedToday: !prev.modifiedToday }))}
+                        sx={{
+                            fontWeight: filters.modifiedToday ? 700 : 500,
+                            borderRadius: 2,
+                            transition: 'all 0.2s ease',
+                            ...(filters.modifiedToday && {
+                                bgcolor: '#1e293b',
+                                color: 'white',
+                                border: 'none',
+                                '&:hover': { bgcolor: '#0f172a' },
+                            }),
+                        }}
+                    />
                 </Box>
+
+                {/* List / Board Toggle */}
+                {!isMobile && (
+                    <Box sx={{ display: 'flex', bgcolor: alpha(theme.palette.background.default, 0.6), borderRadius: 2, p: 0.5 }}>
+                        <Button
+                            size="small"
+                            onClick={() => setViewMode('list')}
+                            sx={{
+                                minWidth: 40, px: 1, borderRadius: 1.5,
+                                color: viewMode === 'list' ? 'primary.main' : 'text.secondary',
+                                bgcolor: viewMode === 'list' ? 'background.paper' : 'transparent',
+                                boxShadow: viewMode === 'list' ? `0 2px 8px ${alpha(theme.palette.common.black, 0.05)}` : 'none',
+                            }}
+                        >
+                            <ViewListIcon fontSize="small" />
+                        </Button>
+                        <Button
+                            size="small"
+                            onClick={() => setViewMode('board')}
+                            sx={{
+                                minWidth: 40, px: 1, borderRadius: 1.5,
+                                color: viewMode === 'board' ? 'primary.main' : 'text.secondary',
+                                bgcolor: viewMode === 'board' ? 'background.paper' : 'transparent',
+                                boxShadow: viewMode === 'board' ? `0 2px 8px ${alpha(theme.palette.common.black, 0.05)}` : 'none',
+                            }}
+                        >
+                            <DashboardIcon fontSize="small" />
+                        </Button>
+                    </Box>
+                )}
             </Paper>
 
             {/* ═══════════════════════════════════════
-                CONTENT
+                DASHBOARD CLUSTERS (HORIZONTAL STRIPS)
+            ═══════════════════════════════════════ */}
+            {/* Needs Attention Panel */}
+            {dashboardClusters?.needsAttention?.length > 0 && !filters.search && !filters.status && (
+                <Box sx={{ mb: 4 }}>
+                    <Typography variant="subtitle2" fontWeight={700} color="error.main" sx={{ mb: 1.5, display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <WarningIcon fontSize="small" /> ТРЕБУЮТ ВНИМАНИЯ (Красная зона)
+                    </Typography>
+                    <Box sx={{
+                        display: 'flex', gap: 1.5, overflowX: 'auto', pb: 1,
+                        '&::-webkit-scrollbar': { height: 6 },
+                        '&::-webkit-scrollbar-thumb': { bgcolor: alpha(theme.palette.error.main, 0.3), borderRadius: 3 },
+                    }}>
+                        {dashboardClusters.needsAttention.map(client => (
+                            <DashboardCard
+                                key={client.id}
+                                client={client}
+                                ownerName={ownerOptions.get(client.createdBy)}
+                                onNavigate={(id) => navigate(`/crm/clients/${id}`)}
+                            />
+                        ))}
+                    </Box>
+                </Box>
+            )}
+
+            {/* Recent Activity Panel */}
+            {dashboardClusters?.recentActivity?.length > 0 && !filters.search && !filters.status && (
+                <Box sx={{ mb: 4 }}>
+                    <Typography variant="subtitle2" fontWeight={700} color="primary.main" sx={{ mb: 1.5, display: 'flex', alignItems: 'center', gap: 1 }}>
+                        🔥 АКТИВНОСТЬ СЕГОДНЯ
+                    </Typography>
+                    <Box sx={{
+                        display: 'flex', gap: 1.5, overflowX: 'auto', pb: 1,
+                        '&::-webkit-scrollbar': { height: 4 },
+                        '&::-webkit-scrollbar-thumb': { bgcolor: alpha(theme.palette.primary.main, 0.2), borderRadius: 3 },
+                    }}>
+                        {dashboardClusters.recentActivity.map(client => (
+                            <DashboardCard
+                                key={client.id}
+                                client={client}
+                                ownerName={ownerOptions.get(client.createdBy)}
+                                onNavigate={(id) => navigate(`/crm/clients/${id}`)}
+                            />
+                        ))}
+                    </Box>
+                </Box>
+            )}
+
+            <Typography variant="subtitle2" fontWeight={700} color="text.secondary" sx={{ mb: 1.5 }}>
+                ОСНОВНАЯ БАЗА
+            </Typography>
+
+            {/* ═══════════════════════════════════════
+                CONTENT (LIST OR KANBAN)
             ═══════════════════════════════════════ */}
             {clients.length === 0 ? (
                 /* ═══════ STYLED EMPTY STATE ═══════ */
@@ -550,16 +687,16 @@ const ClientsPage: React.FC = () => {
                         <PeopleIcon sx={{ fontSize: 40, color: 'white' }} />
                     </Box>
                     <Typography variant="h6" fontWeight={700} gutterBottom>
-                        {filters.search || filters.createdBy || filters.status
+                        {filters.search || filters.createdBy || filters.status || filters.modifiedToday
                             ? 'Нет клиентов по фильтрам'
                             : 'Добавьте первого клиента'}
                     </Typography>
                     <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-                        {filters.search || filters.createdBy || filters.status
+                        {filters.search || filters.createdBy || filters.status || filters.modifiedToday
                             ? 'Попробуйте изменить параметры поиска'
                             : 'Начните работу с клиентской базой'}
                     </Typography>
-                    {!(filters.search || filters.createdBy || filters.status) && (
+                    {!(filters.search || filters.createdBy || filters.status || filters.modifiedToday) && (
                         <Button
                             variant="contained"
                             startIcon={<AddIcon />}
@@ -589,6 +726,24 @@ const ClientsPage: React.FC = () => {
                         />
                     ))}
                 </Box>
+            ) : viewMode === 'board' && dashboardClusters?.board ? (
+                /* ═══════ KANBAN BOARD VIEW ═══════ */
+                <DragDropContext onDragEnd={onDragEnd}>
+                    <Box sx={{
+                        display: 'grid',
+                        gridTemplateColumns: { xs: 'repeat(4, minmax(280px, 1fr))', md: 'repeat(4, 1fr)' },
+                        gap: 2,
+                        alignItems: 'start',
+                        minHeight: 500,
+                        overflowX: 'auto',
+                        pb: 2
+                    }}>
+                        <KanbanColumn statusId="new" title="Новые" clients={dashboardClusters.board.new} ownerMap={ownerOptions} />
+                        <KanbanColumn statusId="contacted" title="В работе" clients={dashboardClusters.board.contacted} ownerMap={ownerOptions} />
+                        <KanbanColumn statusId="qualified" title="Квалифицированы" clients={dashboardClusters.board.qualified} ownerMap={ownerOptions} />
+                        <KanbanColumn statusId="customer" title="Клиенты" clients={dashboardClusters.board.customer} ownerMap={ownerOptions} />
+                    </Box>
+                </DragDropContext>
             ) : (
                 /* ═══════ PREMIUM DESKTOP TABLE ═══════ */
                 <Paper
@@ -1076,6 +1231,129 @@ const MobileClientCard: React.FC<{
                 </Box>
             </Box>
         </Paper>
+    );
+};
+
+/** Dashboard Card for Horizontal Strips (Recent Activity & Needs Attention) */
+const DashboardCard: React.FC<{ client: ClientRow; ownerName?: string; onNavigate: (id: string) => void }> = ({ client, ownerName, onNavigate }) => {
+    const theme = useTheme();
+    const navigate = useNavigate();
+    const healthCfg = HEALTH_CONFIG[client.health];
+    const statusCfg = STATUS_CONFIG[client.status] || STATUS_CONFIG.new;
+
+    return (
+        <Paper
+            onClick={() => onNavigate(client.id)}
+            elevation={0}
+            sx={{
+                minWidth: 260, maxWidth: 300, flexShrink: 0,
+                p: 2,
+                borderRadius: 3,
+                border: `1px solid ${alpha(theme.palette.divider, 0.4)}`,
+                bgcolor: alpha(theme.palette.background.paper, 0.8),
+                backdropFilter: 'blur(8px)',
+                cursor: 'pointer',
+                position: 'relative',
+                overflow: 'hidden',
+                transition: 'all 0.2s ease',
+                '&:hover': {
+                    transform: 'translateY(-2px)',
+                    boxShadow: `0 8px 24px ${alpha(theme.palette.common.black, 0.08)}`,
+                    borderColor: healthCfg.color,
+                },
+                // Top accent stripe
+                '&::before': {
+                    content: '""', position: 'absolute', top: 0, left: 0, right: 0, height: 4,
+                    background: healthCfg.color,
+                }
+            }}
+        >
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                <Chip label={statusCfg.label} size="small" sx={{ background: statusCfg.gradient, color: 'white', fontWeight: 600, height: 20, fontSize: '0.65rem' }} />
+                <Typography variant="caption" color="text.secondary" fontWeight={600}>
+                    {ownerName || '—'}
+                </Typography>
+            </Box>
+            <Typography variant="subtitle2" fontWeight={700} noWrap gutterBottom>
+                {client.name}
+            </Typography>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                 <Typography variant="caption" color="text.secondary">
+                    {formatSmartDate(client.updatedAt?.seconds || client.createdAt?.seconds)}
+                 </Typography>
+                 <Box sx={{ display: 'flex', gap: 0.5 }} onClick={e => e.stopPropagation()}>
+                    {client.contacts?.[0]?.phone && (
+                        <IconButton size="small" component="a" href={`tel:${client.contacts[0].phone}`} sx={{ p: 0.5, color: '#22c55e' }}>
+                            <PhoneIcon sx={{ fontSize: 14 }} />
+                        </IconButton>
+                    )}
+                    <IconButton size="small" onClick={() => navigate(`/crm/gtd/new?clientId=${client.id}`)} sx={{ p: 0.5, color: '#8b5cf6' }}>
+                        <TaskIcon sx={{ fontSize: 14 }} />
+                    </IconButton>
+                 </Box>
+                 {client.balance !== 0 && (
+                    <Typography variant="caption" fontWeight={700} color={client.balance > 0 ? 'error.main' : 'success.main'}>
+                        {client.balance > 0 ? '-' : '+'}${Math.abs(client.balance)}
+                    </Typography>
+                 )}
+            </Box>
+        </Paper>
+    );
+};
+
+/** Kanban Column & Cards */
+const KanbanColumn: React.FC<{ statusId: string; title: string; clients: ClientRow[]; ownerMap: Map<string, string> }> = ({ statusId, title, clients, ownerMap }) => {
+    const theme = useTheme();
+    const navigate = useNavigate();
+    return (
+        <Box sx={{
+            bgcolor: alpha(theme.palette.background.paper, 0.4),
+            borderRadius: 3,
+            border: `1px solid ${alpha(theme.palette.divider, 0.2)}`,
+            p: 1.5,
+            display: 'flex', flexDirection: 'column', gap: 1.5,
+            minHeight: 200,
+        }}>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', px: 1 }}>
+                <Typography variant="subtitle2" fontWeight={700} color="text.secondary">{title}</Typography>
+                <Chip label={clients.length} size="small" sx={{ height: 20, fontSize: '0.7rem', fontWeight: 700 }} />
+            </Box>
+            <Droppable droppableId={statusId}>
+                {(provided, snapshot) => (
+                    <Box
+                        ref={provided.innerRef}
+                        {...provided.droppableProps}
+                        sx={{
+                            display: 'flex', flexDirection: 'column', gap: 1.5,
+                            minHeight: 150,
+                            bgcolor: snapshot.isDraggingOver ? alpha(theme.palette.primary.main, 0.05) : 'transparent',
+                            borderRadius: 2,
+                            transition: 'background-color 0.2s ease',
+                        }}
+                    >
+                        {clients.map((client, index) => (
+                            <Draggable key={client.id} draggableId={client.id} index={index}>
+                                {(provided, snapshot) => (
+                                    <div
+                                        ref={provided.innerRef}
+                                        {...provided.draggableProps}
+                                        {...provided.dragHandleProps}
+                                        style={{
+                                            ...provided.draggableProps.style,
+                                            boxShadow: snapshot.isDragging ? `0 12px 24px ${alpha(theme.palette.common.black, 0.15)}` : 'none',
+                                            borderRadius: 12,
+                                        }}
+                                    >
+                                        <DashboardCard client={client} ownerName={ownerMap.get(client.createdBy)} onNavigate={(id) => navigate(`/crm/clients/${id}`)}/>
+                                    </div>
+                                )}
+                            </Draggable>
+                        ))}
+                        {provided.placeholder}
+                    </Box>
+                )}
+            </Droppable>
+        </Box>
     );
 };
 

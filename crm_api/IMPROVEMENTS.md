@@ -254,11 +254,11 @@ GET /api/health  →  { status: 'ok', uptime, firestore: 'connected', version: '
 - [x] Refactor transaction → reads-before-writes (start + admin-stop)
 - [x] 2 ранее skipped теста теперь проходят (92/93 pass)
 
-### Фаза 3: API Extension (в работе)
-- [ ] `GET /api/clients/:id` — полный профиль с агрегацией
-- [ ] `GET /api/dashboard` — сводная панель
-- [ ] Batch-update tasks
-- [ ] API versioning `/api/v1/*`
+### Фаза 3: API Extension ✅ DONE
+- [x] `GET /api/clients/:id` — полный профиль с 6 параллельных агрегаций
+- [x] `GET /api/dashboard` — активные сессии, задачи, расходы, сметы
+- [x] `POST /api/gtd-tasks/batch-update` — обновление до 50 задач
+- [ ] API versioning `/api/v1/*` (отложено)
 
 ### Фаза 4: Масштабирование (по мере роста)
 - [5] Split `agentApi.ts` на модули

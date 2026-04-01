@@ -25,7 +25,8 @@ import {
   Launch as LaunchIcon,
   AccessTime as AccessTimeIcon,
   MenuBook as MenuBookIcon,
-  Edit as EditIcon
+  Edit as EditIcon,
+  SmartToy as SmartToyIcon
 } from '@mui/icons-material';
 import { useAuth } from '../../auth/AuthContext';
 import { Link, useNavigate } from 'react-router-dom';
@@ -271,6 +272,15 @@ const CompanyDashboard: React.FC = () => {
           </Typography>
         </Box>
         <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+          <Button
+            variant="contained"
+            startIcon={<SmartToyIcon />}
+            component={Link}
+            to="/admin/infra-map"
+            sx={{ bgcolor: '#0288d1', '&:hover': { bgcolor: '#0277bd' } }}
+          >
+            AI Инфраструктура
+          </Button>
           <Button
             variant="outlined"
             startIcon={<MenuBookIcon />}

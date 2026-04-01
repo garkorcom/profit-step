@@ -315,7 +315,7 @@ const ProjectWorkspacePage: React.FC = () => {
             {/* TAB 4: Gantt Chart */}
             {tabIndex === 3 && (
                 <Box>
-                    <ProjectGanttChart projectId={project.id} />
+                    <ProjectGanttChart projectId={project.id} companyId={project.companyId} />
                 </Box>
             )}
 

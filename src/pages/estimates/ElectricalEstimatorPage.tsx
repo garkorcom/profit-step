@@ -21,6 +21,7 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 
+import { generateProjectOverview, type ProjectOverview } from '../../utils/estimateValidation';
 import { AiMappingDialog } from '../../components/estimates/AiMappingDialog';
 import { V3PipelineContainer } from '../../components/estimates/pipeline/V3PipelineContainer';
 import { V3VisualProofStep } from '../../components/estimates/pipeline/V3VisualProofStep';
@@ -659,6 +660,26 @@ export default function ElectricalEstimatorPage() {
         };
     }, [quantities, gearQty, poolQty, genQty, landQty, wireQty, equipmentPrices, laborRate, overheadPct, profitPct, storyMult, typeMult, devicesData, gearData, poolData, genData, landData, wireRatesData]);
 
+    // ===== PROJECT OVERVIEW with QA Validation =====
+    const overview: ProjectOverview = useMemo(() => {
+        // Merge all quantity maps for total device count
+        const allQty: Record<string, number> = {};
+        [quantities, gearQty, poolQty, genQty, landQty, wireQty].forEach(map => {
+            Object.entries(map).forEach(([k, v]: [string, any]) => { if (v > 0) allQty[k] = (allQty[k] || 0) + v; });
+        });
+
+        // Room/file count: use electricalCount from current estimate if available, else count active sections
+        const roomCount = currentEstimateData?.electricalCount || 
+            (currentEstimateData?.filesCount || Object.keys(allQty).length > 0 ? 1 : 0);
+
+        return generateProjectOverview({
+            areaSqft: sqft,
+            roomCount,
+            quantities: allQty,
+            totalBomCost: calc.materialsBase,
+        });
+    }, [sqft, quantities, gearQty, poolQty, genQty, landQty, wireQty, calc.materialsBase, currentEstimateData]);
+
     const fmt = (v: number) => '$' + v.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
     const fmtHr = (v: number) => v.toFixed(1) + ' hr';
 
@@ -706,8 +727,36 @@ export default function ElectricalEstimatorPage() {
                 pdf.text(`Project: ${projectName} | ${projectType} | ${sqft} sq ft | ${stories} story`, 14, 28);
                 pdf.text(`Date: ${new Date().toLocaleDateString()} | Overhead: ${overheadPct}% | Profit: ${profitPct}%`, 14, 34);
 
+                // PROJECT OVERVIEW in PDF
+                const ovBgColor: [number, number, number] = overview.hasWarnings ? [255, 243, 224] : [232, 245, 233];
+                pdf.setFillColor(...ovBgColor);
+                pdf.roundedRect(14, 38, 182, 28, 2, 2, 'F');
+                pdf.setFontSize(9);
+                pdf.setTextColor(33, 33, 33);
+                pdf.text('📋 PROJECT OVERVIEW', 18, 44);
+                pdf.setFontSize(8);
+                pdf.setTextColor(80);
+                pdf.text(`Area: ${overview.areaSqft > 0 ? overview.areaSqft.toLocaleString() + ' sq ft' : '—'}   |   Devices: ${overview.totalDevices.toLocaleString()}   |   BOM Cost: ${fmt(overview.totalBomCost)}`, 18, 50);
+                const costStatus = overview.costValidation.status === 'ok' ? '✓' : '⚠';
+                const roomStatus = overview.roomValidation.status === 'ok' ? '✓' : '⚠';
+                pdf.text(`Cost/sq.ft: $${overview.costValidation.costPerSqft.toFixed(2)} ${costStatus}   |   Files: ${overview.roomCount} ${roomStatus}`, 18, 56);
+                if (overview.hasWarnings) {
+                    pdf.setTextColor(211, 84, 0);
+                    pdf.setFontSize(7);
+                    let warnY = 62;
+                    if (overview.costValidation.status !== 'ok') {
+                        pdf.text(overview.costValidation.message, 18, warnY);
+                        warnY += 4;
+                    }
+                    if (overview.roomValidation.status !== 'ok') {
+                        pdf.text(overview.roomValidation.message, 18, warnY);
+                    }
+                }
+
                 // Use either custom AI map or the state maps
                 const getCustomQty = aiQtyMap ? (id: string) => aiQtyMap[id] || 0 : null;
+
+                let startY = overview.hasWarnings ? 72 : 68;
 
                 // Gather all items with qty > 0
                 const sections: { name: string; items: any[]; qtyMap: any }[] = [
@@ -719,7 +768,6 @@ export default function ElectricalEstimatorPage() {
                     { name: 'Landscape', items: landData, qtyMap: getCustomQty ? aiQtyMap : landQty },
                 ];
 
-                let startY = 42;
                 sections.forEach(sec => {
                     const rows = sec.items.filter(item => (getCustomQty ? getCustomQty(item.id) : (sec.qtyMap[item.id] || 0)) > 0)
                         .map(item => {
@@ -963,6 +1011,15 @@ export default function ElectricalEstimatorPage() {
 
         // Sheet 3: Summary
         const summaryData: any[][] = [
+            ['📋 PROJECT OVERVIEW'],
+            ['Area (sq ft)', overview.areaSqft > 0 ? overview.areaSqft : '—'],
+            ['Total Devices', overview.totalDevices],
+            ['BOM Cost (Base Materials)', overview.totalBomCost],
+            ['Cost/sq.ft', overview.costValidation.costPerSqft > 0 ? `$${overview.costValidation.costPerSqft.toFixed(2)}` : '—'],
+            ['Cost Validation', overview.costValidation.status === 'ok' ? 'Normal range' : 'WARNING — check estimate'],
+            ['Files/Rooms', overview.roomCount],
+            ['Room Validation', overview.roomValidation.status === 'ok' ? 'Normal' : 'WARNING — possible duplication'],
+            [],
             ['SUMMARY'],
             [],
             ['Parameter', 'Value'],
@@ -1000,6 +1057,8 @@ export default function ElectricalEstimatorPage() {
 
     const generatePrintContent = () => {
         const date = new Date().toLocaleDateString();
+        const costTag = overview.costValidation.status === 'ok' ? 'Normal' : 'WARNING';
+        const roomTag = overview.roomValidation.status === 'ok' ? 'Normal' : 'WARNING';
         return `
 ELECTRICAL ESTIMATE
 ==========================================
@@ -1007,6 +1066,14 @@ Project: ${projectName}
 Date: ${date}
 Type: ${projectType === 'commercial' ? 'Commercial' : 'Residential'}
 Size: ${sqft} sq ft | ${stories} story
+
+📋 PROJECT OVERVIEW
+• Area: ${overview.areaSqft > 0 ? overview.areaSqft.toLocaleString() : '—'} sq ft
+• Devices: ${overview.totalDevices.toLocaleString()}
+• BOM Cost: ${fmt(overview.totalBomCost)}
+• Cost/sq.ft: $${overview.costValidation.costPerSqft.toFixed(2)} [${costTag}]
+• Room validation: ${overview.roomCount} files [${roomTag}]
+──────────────────
 
 SUMMARY
 ------------------------------------------
@@ -1519,6 +1586,60 @@ Notes: ${notes || 'N/A'}
 
                     {/* Sidebar Summary */}
                     <Grid size={{ xs: 12, lg: 3 }}>
+                        {/* PROJECT OVERVIEW — QA Validation Card */}
+                        <Paper sx={{ p: 2, mb: 2, bgcolor: overview.hasWarnings ? 'warning.50' : 'success.50', border: 1, borderColor: overview.hasWarnings ? 'warning.main' : 'success.main' }}>
+                            <Typography variant="subtitle2" fontWeight="bold" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                📋 PROJECT OVERVIEW
+                            </Typography>
+                            <Box sx={{ fontSize: '0.85rem' }}>
+                                <Box display="flex" justifyContent="space-between" mb={0.5}>
+                                    <Typography variant="body2" color="text.secondary">Area</Typography>
+                                    <Typography variant="body2" fontWeight="medium">{overview.areaSqft > 0 ? `${overview.areaSqft.toLocaleString()} sq ft` : '—'}</Typography>
+                                </Box>
+                                <Box display="flex" justifyContent="space-between" mb={0.5}>
+                                    <Typography variant="body2" color="text.secondary">Devices</Typography>
+                                    <Typography variant="body2" fontWeight="medium">{overview.totalDevices.toLocaleString()}</Typography>
+                                </Box>
+                                <Box display="flex" justifyContent="space-between" mb={0.5}>
+                                    <Typography variant="body2" color="text.secondary">BOM Cost</Typography>
+                                    <Typography variant="body2" fontWeight="medium">{fmt(overview.totalBomCost)}</Typography>
+                                </Box>
+                                <Divider sx={{ my: 1 }} />
+                                <Box mb={0.5}>
+                                    <Chip
+                                        size="small"
+                                        label={overview.costValidation.status === 'ok'
+                                            ? `$${overview.costValidation.costPerSqft.toFixed(2)}/sq.ft ✅`
+                                            : `$${overview.costValidation.costPerSqft.toFixed(2)}/sq.ft ⚠️`
+                                        }
+                                        color={overview.costValidation.status === 'ok' ? 'success' : 'warning'}
+                                        sx={{ fontSize: '0.75rem', mb: 0.5 }}
+                                    />
+                                    {overview.costValidation.status !== 'ok' && (
+                                        <Typography variant="caption" display="block" color="warning.dark">
+                                            {overview.costValidation.message}
+                                        </Typography>
+                                    )}
+                                </Box>
+                                <Box>
+                                    <Chip
+                                        size="small"
+                                        label={overview.roomValidation.status === 'ok'
+                                            ? `${overview.roomCount} files ✅`
+                                            : `${overview.roomCount} files ⚠️`
+                                        }
+                                        color={overview.roomValidation.status === 'ok' ? 'success' : 'warning'}
+                                        sx={{ fontSize: '0.75rem', mb: 0.5 }}
+                                    />
+                                    {overview.roomValidation.status !== 'ok' && (
+                                        <Typography variant="caption" display="block" color="warning.dark">
+                                            {overview.roomValidation.message}
+                                        </Typography>
+                                    )}
+                                </Box>
+                            </Box>
+                        </Paper>
+
                         <Paper sx={{ p: 2, position: 'sticky', top: 20 }}>
                             <Typography variant="h6" gutterBottom>Estimate Summary</Typography>
                             <Divider sx={{ mb: 2 }} />

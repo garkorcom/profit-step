@@ -1,0 +1,4 @@
+🚀 Starting Super-Estimator for: /Users/denysharbuzov/Downloads/ELECTRICAL.pdf
+📤 Uploading PDF... Chat ID mapped to: 249539345
+❌ Flask API Error: write EPIPE
+�❌ Telegram Notify Error: Bad Request: chat not found

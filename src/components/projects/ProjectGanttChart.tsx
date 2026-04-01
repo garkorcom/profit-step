@@ -2,15 +2,16 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { Box, Typography, CircularProgress, Select, MenuItem, FormControl, InputLabel, Paper } from '@mui/material';
 import { Gantt, Task as GanttTask, ViewMode } from 'gantt-task-react';
 import "gantt-task-react/dist/index.css";
-import { collection, query, where, onSnapshot, doc, updateDoc, Timestamp } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, doc, updateDoc, Timestamp, addDoc } from 'firebase/firestore';
 import { db } from '../../firebase/firebase'; // Assuming standard firebase config location
 import { GTDTask } from '../../types/gtd.types';
 
 interface ProjectGanttChartProps {
     projectId: string;
+    companyId: string;
 }
 
-export const ProjectGanttChart: React.FC<ProjectGanttChartProps> = ({ projectId }) => {
+export const ProjectGanttChart: React.FC<ProjectGanttChartProps> = ({ projectId, companyId }) => {
     const [tasks, setTasks] = useState<GTDTask[]>([]);
     const [loading, setLoading] = useState(true);
     const [viewMode, setViewMode] = useState<ViewMode>(ViewMode.Day);
@@ -41,55 +42,105 @@ export const ProjectGanttChart: React.FC<ProjectGanttChartProps> = ({ projectId 
     const ganttTasks: GanttTask[] | null = useMemo(() => {
         if (!tasks.length) return null;
 
-        const gTasks: GanttTask[] = tasks.map(t => {
-            // Provide sensible defaults if dates are missing
-            const start = t.startDate?.toDate() || t.createdAt?.toDate() || new Date();
-            let end = t.dueDate?.toDate();
-            if (!end) {
-                end = new Date(start);
-                end.setDate(end.getDate() + 1); // default 1 day duration
+        const gTasks: GanttTask[] = [];
+
+        tasks.forEach(t => {
+            // 1. Определение фактических дат
+            const actualStart = t.actualStartDate?.toDate() || t.startDate?.toDate() || t.createdAt?.toDate() || new Date();
+            let actualEnd = t.actualEndDate?.toDate() || t.dueDate?.toDate();
+            if (!actualEnd) {
+                actualEnd = new Date(actualStart);
+                actualEnd.setDate(actualEnd.getDate() + 1); // default 1 day duration
             }
 
-            return {
+            // 2. Рендер изначального плана (Теневая задача)
+            if (t.plannedStartDate && t.plannedEndDate) {
+                gTasks.push({
+                    id: t.id + '_plan',
+                    name: `[План] ${t.title}`,
+                    start: t.plannedStartDate.toDate(),
+                    end: t.plannedEndDate.toDate(),
+                    progress: 100,
+                    type: t.isMilestone ? 'milestone' : 'task',
+                    project: t.parentTaskId || undefined,
+                    isDisabled: true, // Блокируем drag-n-drop
+                    styles: {
+                        progressColor: '#e0e0e0',
+                        progressSelectedColor: '#d5d5d5',
+                        backgroundColor: '#f5f5f5',
+                        backgroundSelectedColor: '#f0f0f0',
+                    }
+                });
+            }
+
+            // 3. Рендер фактической задачи
+            gTasks.push({
                 id: t.id,
                 name: t.title,
-                start,
-                end,
+                start: actualStart,
+                end: actualEnd,
                 progress: t.progressPercentage || 0,
                 type: t.isMilestone ? 'milestone' : (t.parentTaskId ? 'task' : 'project'),
                 project: t.parentTaskId || undefined,
                 dependencies: t.dependsOn || undefined,
+                isDisabled: false,
                 styles: {
                     progressColor: t.ganttColor || '#ffbb54',
                     progressSelectedColor: '#ff9e0d',
                 }
-            };
+            });
         });
 
-        // Ensure parent and children are correctly linked and children are after parents in the array 
-        // Although gantt-task-react usually handles flat structures, it's safer.
         return gTasks.sort((a, b) => a.start.getTime() - b.start.getTime());
-
     }, [tasks]);
 
     const handleTaskChange = async (task: GanttTask) => {
+        if (task.id.endsWith('_plan')) return; // Игнорируем фоновые бары
+
         try {
             const taskRef = doc(db, 'gtd_tasks', task.id);
             await updateDoc(taskRef, {
-                startDate: Timestamp.fromDate(task.start),
-                dueDate: Timestamp.fromDate(task.end)
+                actualStartDate: Timestamp.fromDate(task.start),
+                actualEndDate: Timestamp.fromDate(task.end),
+                startDate: Timestamp.fromDate(task.start), // Legacy sync
+                dueDate: Timestamp.fromDate(task.end)      // Legacy sync
             });
-            // State will update via onSnapshot
+
+            // Автоматическая запись в Time-Lapse
+            await addDoc(collection(db, 'activity_logs'), {
+                companyId,
+                projectId,
+                taskId: task.id,
+                type: 'task_status_changed',
+                content: `Сроки задачи "${task.name}" изменены на Диаграмме Ганта.`,
+                performedBy: 'Пользователь',
+                performedAt: Timestamp.now(),
+                isInternalOnly: false
+            });
         } catch (err) {
             console.error("Failed to update task dates", err);
         }
     };
 
     const handleProgressChange = async (task: GanttTask) => {
+        if (task.id.endsWith('_plan')) return;
+
         try {
             const taskRef = doc(db, 'gtd_tasks', task.id);
             await updateDoc(taskRef, {
                 progressPercentage: task.progress
+            });
+
+            // Автоматическая запись в Time-Lapse
+            await addDoc(collection(db, 'activity_logs'), {
+                companyId,
+                projectId,
+                taskId: task.id,
+                type: 'task_status_changed',
+                content: `Прогресс по задаче "${task.name}" изменен на ${Math.round(task.progress)}%.`,
+                performedBy: 'Пользователь',
+                performedAt: Timestamp.now(),
+                isInternalOnly: false
             });
         } catch (err) {
             console.error("Failed to update task progress", err);

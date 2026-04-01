@@ -1,0 +1,24 @@
+{
+  "$schema": "./node_modules/oxfmt/configuration_schema.json",
+  // Сортировка импортов
+  "experimentalSortImports": {
+    "newlinesBetween": true
+  },
+  // Основные настройки форматирования
+  "tabWidth": 2,
+  "useTabs": false,
+  // Исключения
+  "ignorePatterns": [
+    "build/",
+    "coverage/",
+    "node_modules/",
+    "public/",
+    "functions/",
+    "openclaw-zero-token/",
+    "super-estimator/",
+    "_archived/",
+    "_old_estimator_backup/",
+    "backups/",
+    "*.d.ts"
+  ]
+}

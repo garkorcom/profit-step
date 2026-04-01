@@ -1,7 +1,9 @@
 /**
  * Agent API — Express Application
  *
- * 29 endpoints for OpenClaw agent integration:
+ * 30 endpoints for OpenClaw agent integration:
+ * - POST   /api/clients                ← Create client
+ * - PATCH  /api/clients/:id            ← Update client (nearbyStores, address, etc.)
  * - GET    /api/clients/search
  * - POST   /api/gtd-tasks
  * - GET    /api/gtd-tasks/list
@@ -81,6 +83,22 @@ const app = express();
 app.use(cors({ origin: true }));
 app.use(express.json({ limit: '60mb' }));
 app.use(requestLogger);
+
+// ─── Health Check (before auth — public endpoint) ───────────────────
+
+const API_VERSION = '4.1.0';
+const startedAt = Date.now();
+
+app.get('/api/health', (_req, res) => {
+  res.json({
+    status: 'ok',
+    version: API_VERSION,
+    uptime: Math.round((Date.now() - startedAt) / 1000),
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV || 'production',
+  });
+});
+
 app.use(authMiddleware);
 app.use(rateLimitMiddleware);
 
@@ -100,6 +118,7 @@ const CreateGTDTaskSchema = z.object({
   estimatedDurationMinutes: z.number().optional(),
   taskType: z.string().optional(),
   siteId: z.string().optional(),
+  projectId: z.string().optional(),
 });
 
 const CreateCostSchema = z.object({
@@ -387,6 +406,156 @@ const PlanVsFactQuerySchema = z.object({
   message: 'Requires clientId, clientName, or projectId',
 });
 
+// ─── Zod: Create Client ─────────────────────────────────────────────
+
+const CreateClientSchema = z.object({
+  name: z.string().min(1),
+  address: z.string().optional(),
+  contactPerson: z.string().optional(),
+  phone: z.string().optional(),
+  email: z.string().email().optional().or(z.literal('')),
+  notes: z.string().optional(),
+  type: z.enum(['residential', 'commercial', 'industrial']).optional(),
+  company: z.string().optional(),
+  geo: z.object({
+    lat: z.number(),
+    lng: z.number(),
+  }).optional(),
+  idempotencyKey: z.string().min(1).optional(),
+});
+
+// ─── POST /api/clients ──────────────────────────────────────────────
+
+app.post('/api/clients', async (req, res, next) => {
+  try {
+    const data = CreateClientSchema.parse(req.body);
+    logger.info('👤 clients:create', { name: data.name, type: data.type });
+
+    // Dedup check
+    if (data.idempotencyKey) {
+      const keyDoc = await db.doc(`_idempotency/${data.idempotencyKey}`).get();
+      if (keyDoc.exists) {
+        const existing = keyDoc.data()!;
+        logger.info('👤 clients:deduplicated', { clientId: existing.entityId });
+        res.status(200).json({ clientId: existing.entityId, deduplicated: true });
+        return;
+      }
+    }
+
+    const docRef = db.collection('clients').doc();
+    await docRef.set({
+      name: data.name,
+      address: data.address || '',
+      contactPerson: data.contactPerson || '',
+      phone: data.phone || '',
+      email: data.email || '',
+      notes: data.notes || '',
+      type: data.type || null,
+      company: data.company || null,
+      geo: data.geo || null,
+      status: 'active',
+      source: 'openclaw',
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+
+    // Store idempotency key
+    if (data.idempotencyKey) {
+      await db.doc(`_idempotency/${data.idempotencyKey}`).set({
+        entityId: docRef.id,
+        collection: 'clients',
+        expiresAt: Date.now() + 24 * 3600_000,
+        createdAt: FieldValue.serverTimestamp(),
+      });
+    }
+
+    // Invalidate client cache
+    await db.doc('_cache/active_clients').update({ stale: true }).catch(() => {});
+
+    logger.info('👤 clients:created', { clientId: docRef.id });
+    await logAgentActivity({
+      userId: req.agentUserId!,
+      action: 'client_created',
+      endpoint: '/api/clients',
+      metadata: { clientId: docRef.id, name: data.name, type: data.type },
+    });
+
+    res.status(201).json({ clientId: docRef.id, name: data.name });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// ─── Zod: Update Client ─────────────────────────────────────────────
+
+const UpdateClientSchema = z.object({
+  name: z.string().min(1).optional(),
+  address: z.string().optional(),
+  contactPerson: z.string().optional(),
+  phone: z.string().optional(),
+  email: z.string().email().optional().or(z.literal('')),
+  notes: z.string().optional(),
+  type: z.enum(['residential', 'commercial', 'industrial']).optional(),
+  company: z.string().optional(),
+  geo: z.object({
+    lat: z.number(),
+    lng: z.number(),
+  }).optional(),
+  nearbyStores: z.array(z.string()).optional(),
+}).refine(data => Object.keys(data).length > 0, {
+  message: 'At least one field must be provided',
+});
+
+// ─── PATCH /api/clients/:id ─────────────────────────────────────────
+
+app.patch('/api/clients/:id', async (req, res, next) => {
+  try {
+    const clientId = req.params.id;
+    const data = UpdateClientSchema.parse(req.body);
+    logger.info('👤 clients:update', { clientId, fields: Object.keys(data) });
+
+    // Verify client exists
+    const clientRef = db.collection('clients').doc(clientId);
+    const clientDoc = await clientRef.get();
+    if (!clientDoc.exists) {
+      res.status(404).json({ error: 'Client not found' });
+      return;
+    }
+
+    // Build update payload (only provided fields)
+    const updatePayload: Record<string, any> = {
+      updatedAt: FieldValue.serverTimestamp(),
+    };
+    if (data.name !== undefined) updatePayload.name = data.name;
+    if (data.address !== undefined) updatePayload.address = data.address;
+    if (data.contactPerson !== undefined) updatePayload.contactPerson = data.contactPerson;
+    if (data.phone !== undefined) updatePayload.phone = data.phone;
+    if (data.email !== undefined) updatePayload.email = data.email;
+    if (data.notes !== undefined) updatePayload.notes = data.notes;
+    if (data.type !== undefined) updatePayload.type = data.type;
+    if (data.company !== undefined) updatePayload.company = data.company;
+    if (data.geo !== undefined) updatePayload.geo = data.geo;
+    if (data.nearbyStores !== undefined) updatePayload.nearbyStores = data.nearbyStores;
+
+    await clientRef.update(updatePayload);
+
+    // Invalidate client cache
+    await db.doc('_cache/active_clients').update({ stale: true }).catch(() => {});
+
+    logger.info('👤 clients:updated', { clientId, updatedFields: Object.keys(updatePayload) });
+    await logAgentActivity({
+      userId: req.agentUserId!,
+      action: 'client_updated',
+      endpoint: `/api/clients/${clientId}`,
+      metadata: { clientId, updatedFields: Object.keys(data) },
+    });
+
+    res.json({ clientId, updated: true });
+  } catch (e) {
+    next(e);
+  }
+});
+
 // ─── GET /api/clients/search ────────────────────────────────────────
 
 app.get('/api/clients/search', async (req, res, next) => {
@@ -448,6 +617,7 @@ app.post('/api/gtd-tasks', async (req, res, next) => {
       taskType: data.taskType || null,
       estimatedDurationMinutes: data.estimatedDurationMinutes || null,
       siteId: data.siteId || null,
+      projectId: data.projectId || null,
       source: 'openclaw',
       createdAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
@@ -589,14 +759,52 @@ app.post('/api/time-tracking', async (req, res, next) => {
         logger.info('⏱️ timer:start — cross-lookup IDs', { userId, telegramId, allEmployeeIds });
 
         const result = await db.runTransaction(async (tx) => {
-          // 1. Get user doc → activeSessionId pointer
+          // ═══════════════════════════════════════════════════════════
+          // PHASE 1: ALL READS (before any writes — Firestore requirement)
+          // ═══════════════════════════════════════════════════════════
+
+          // 1. Get user doc → activeSessionId pointer + hourlyRate
           const userRef = db.collection('users').doc(userId);
           const userDoc = await tx.get(userRef);
           const activeSessionId = userDoc.data()?.activeSessionId as string | undefined;
 
+          // 2a. Read pointed-to session (if exists)
+          let pointerSessionDoc: admin.firestore.DocumentSnapshot | null = null;
+          if (activeSessionId) {
+            pointerSessionDoc = await tx.get(
+              db.collection('work_sessions').doc(activeSessionId)
+            );
+          }
+
+          // 2b. Cross-platform scan: find ANY active sessions for ALL employee IDs
+          const crossPlatformDocs: admin.firestore.DocumentSnapshot[] = [];
+          for (const empId of allEmployeeIds) {
+            const activeSnap = await tx.get(
+              db.collection('work_sessions')
+                .where('employeeId', '==', empId)
+                .where('status', 'in', ['active', 'paused'])
+                .limit(5)
+            );
+            crossPlatformDocs.push(...activeSnap.docs);
+          }
+
+          // 3. hourlyRate cascade: task → user → 0
+          let hourlyRate = 0;
+          if (data.taskId) {
+            const taskDoc = await tx.get(db.collection('gtd_tasks').doc(data.taskId));
+            hourlyRate = taskDoc.data()?.hourlyRate || 0;
+          }
+          if (!hourlyRate) {
+            hourlyRate = userDoc.data()?.hourlyRate || 0;
+          }
+
+          // ═══════════════════════════════════════════════════════════
+          // PHASE 2: ALL WRITES (after all reads are complete)
+          // ═══════════════════════════════════════════════════════════
+
           const closedSessions: { id: string; mins: number; earn: number }[] = [];
 
-          // Helper: close an active/paused session
+          // Helper: compute duration & earnings for a session, then write updates
           const closeSession = (
             sessionRef: admin.firestore.DocumentReference,
             sessionDoc: admin.firestore.DocumentSnapshot,
@@ -630,44 +838,24 @@ app.post('/api/time-tracking', async (req, res, next) => {
             logger.info('⏱️ timer:start — closed session', { id: sessionDoc.id, mins, earn });
           };
 
-          // 2a. Close session via activeSessionId pointer (fast path)
-          const closedPointerSessionId = new Set<string>();
-          if (activeSessionId) {
-            const oldRef = db.collection('work_sessions').doc(activeSessionId);
-            const oldDoc = await tx.get(oldRef);
-
-            if (oldDoc.exists && ['active', 'paused'].includes(oldDoc.data()!.status)) {
-              closeSession(oldRef, oldDoc);
-              closedPointerSessionId.add(activeSessionId);
-            } else {
-              logger.warn('⏱️ auto-heal: stale activeSessionId', { activeSessionId });
-            }
+          // Close pointer session
+          const closedIds = new Set<string>();
+          if (pointerSessionDoc && pointerSessionDoc.exists &&
+              ['active', 'paused'].includes(pointerSessionDoc.data()!.status)) {
+            closeSession(pointerSessionDoc.ref, pointerSessionDoc);
+            closedIds.add(pointerSessionDoc.id);
+          } else if (activeSessionId) {
+            logger.warn('⏱️ auto-heal: stale activeSessionId', { activeSessionId });
           }
 
-          // 2b. Cross-platform scan: find ANY active sessions for ALL employee IDs
-          // This catches Telegram Bot sessions that use numeric telegramId as employeeId
-          for (const empId of allEmployeeIds) {
-            const activeSnap = await tx.get(
-              db.collection('work_sessions')
-                .where('employeeId', '==', empId)
-                .where('status', 'in', ['active', 'paused'])
-                .limit(5)
-            );
-            for (const doc of activeSnap.docs) {
-              if (!closedPointerSessionId.has(doc.id) && !closedSessions.some(cs => cs.id === doc.id)) {
+          // Close cross-platform sessions (deduplicated)
+          for (const doc of crossPlatformDocs) {
+            if (!closedIds.has(doc.id) && !closedSessions.some(cs => cs.id === doc.id)) {
+              if (['active', 'paused'].includes(doc.data()!.status)) {
                 closeSession(doc.ref, doc);
+                closedIds.add(doc.id);
               }
             }
-          }
-
-          // 3. hourlyRate cascade: task → user → 0
-          let hourlyRate = 0;
-          if (data.taskId) {
-            const taskDoc = await tx.get(db.collection('gtd_tasks').doc(data.taskId));
-            hourlyRate = taskDoc.data()?.hourlyRate || 0;
-          }
-          if (!hourlyRate) {
-            hourlyRate = userDoc.data()?.hourlyRate || 0;
           }
 
           // 4. Create new session + update pointer
@@ -1705,6 +1893,12 @@ app.post('/api/time-tracking/admin-stop', async (req, res, next) => {
       const mins = Math.max(0, Math.round(diff / 60000));
       const earn = +((mins / 60) * (s.hourlyRate || 0)).toFixed(2);
 
+      // READ employee doc BEFORE any writes (Firestore requirement)
+      const employeeRef = db.collection('users').doc(s.employeeId);
+      const employeeDoc = await tx.get(employeeRef);
+
+      // === ALL WRITES below ===
+
       tx.update(sessionRef, {
         status: 'completed',
         endTime,
@@ -1713,8 +1907,6 @@ app.post('/api/time-tracking/admin-stop', async (req, res, next) => {
       });
 
       // Clear activeSessionId pointer on the employee
-      const employeeRef = db.collection('users').doc(s.employeeId);
-      const employeeDoc = await tx.get(employeeRef);
       if (employeeDoc.exists && employeeDoc.data()?.activeSessionId === data.sessionId) {
         tx.update(employeeRef, { activeSessionId: null });
       }
@@ -2537,6 +2729,25 @@ app.get('/api/projects/list', async (req, res, next) => {
 
 // ─── POST /api/projects/:id/files ──────────────────────────────────
 
+// Allowed MIME types for file upload security
+const ALLOWED_MIME_TYPES = new Set([
+  'application/pdf',
+  'image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif',
+  'image/gif', 'image/svg+xml', 'image/tiff',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
+  'application/vnd.ms-excel', // .xls
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // .docx
+  'application/msword', // .doc
+  'text/csv', 'text/plain',
+  'application/json',
+  'application/zip',
+]);
+
+const ALLOWED_EXTENSIONS = new Set([
+  '.pdf', '.jpg', '.jpeg', '.png', '.webp', '.heic', '.heif', '.gif', '.svg', '.tiff',
+  '.xlsx', '.xls', '.docx', '.doc', '.csv', '.txt', '.json', '.zip',
+]);
+
 const UploadFileSchema = z.object({
   fileName: z.string().min(1),
   contentType: z.string().min(1).default('application/octet-stream'),
@@ -2549,6 +2760,25 @@ app.post('/api/projects/:id/files', async (req, res, next) => {
     const projectId = req.params.id;
     const data = UploadFileSchema.parse(req.body);
     logger.info('📁 files:upload', { projectId, fileName: data.fileName });
+
+    // Validate MIME type
+    if (!ALLOWED_MIME_TYPES.has(data.contentType)) {
+      res.status(400).json({
+        error: `Тип файла "${data.contentType}" не разрешён`,
+        allowedTypes: Array.from(ALLOWED_MIME_TYPES),
+      });
+      return;
+    }
+
+    // Validate file extension
+    const ext = data.fileName.substring(data.fileName.lastIndexOf('.')).toLowerCase();
+    if (ext && !ALLOWED_EXTENSIONS.has(ext)) {
+      res.status(400).json({
+        error: `Расширение файла "${ext}" не разрешено`,
+        allowedExtensions: Array.from(ALLOWED_EXTENSIONS),
+      });
+      return;
+    }
 
     // Validate project exists
     const projectDoc = await db.collection('projects').doc(projectId).get();
@@ -3760,6 +3990,10 @@ app.get('/api/plan-vs-fact', async (req, res, next) => {
 // ─── Error Handler (must be last) ──────────────────────────────────
 
 app.use(errorHandler);
+
+// ─── Export Express app for testing ─────────────────────────────────
+
+export { app as agentApp };
 
 // ─── Export as Firebase Function ────────────────────────────────────
 

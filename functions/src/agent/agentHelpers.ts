@@ -131,21 +131,17 @@ export async function resolveOwnerCompanyId(): Promise<string> {
 /**
  * Search for a client by address (exact or fuzzy).
  * First tries exact match, then fuzzy with threshold 0.3.
- * Searches ALL clients (not just cached active ones).
+ * Uses the cached active clients list (5-min TTL) instead of
+ * scanning the entire clients collection.
  */
 export async function searchClientByAddress(address: string): Promise<ClientItem | null> {
   const normalized = address.trim().toLowerCase();
   if (!normalized) return null;
 
-  // 1. Try exact match in Firestore (case-insensitive via all clients scan)
-  const snap = await db.collection('clients').get();
-  const allClients: ClientItem[] = snap.docs.map((d) => ({
-    id: d.id,
-    name: d.data().name || '',
-    address: d.data().address || null,
-  }));
+  // Use cached clients instead of full collection scan
+  const allClients = await getCachedClients();
 
-  // Exact address match (case-insensitive)
+  // 1. Exact address match (case-insensitive)
   const exact = allClients.find(
     (c) => c.address && c.address.trim().toLowerCase() === normalized
   );

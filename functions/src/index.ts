@@ -599,6 +599,8 @@ export { onSessionChangeUpdateCost, syncActiveTimer } from './triggers/firestore
 // Cockpit View: AI Price Estimate
 export { generatePriceEstimate } from './callable/notes/generatePriceEstimate';
 
+export { generateProjectDigest } from './exports/generateProjectDigest';
+
 // GTD: AI Day Planner
 export { generateDayPlan } from './callable/gtd/generateDayPlan';
 export { scheduledDayPlan } from './scheduled/scheduledDayPlan';

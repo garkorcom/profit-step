@@ -2,6 +2,7 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { BlueprintAgentResult } from '../types/blueprint.types';
 import { ITEM_NAMES } from '../constants/electricalDevices';
+import { validateRoomCount, countTotalDevices } from './estimateValidation';
 
 export interface PageResult {
     fileIndex: number;
@@ -33,11 +34,21 @@ export const exportBlueprintPdf = (
     pdf.text(`Analyzed Pages: ${pageResults.length} | Date: ${dateStr}`, 14, 36);
     pdf.text(`AI Agents Used: ${selectedAgents.map(a => a.charAt(0).toUpperCase() + a.slice(1)).join(', ')}`, 14, 42);
 
+    // PROJECT OVERVIEW — quick validation
+    const totalDevices = countTotalDevices(globalMerged);
+    const roomVal = validateRoomCount(pageResults.length);
+    const overviewBg: [number, number, number] = roomVal.status !== 'ok' ? [255, 243, 224] : [232, 245, 233];
+    pdf.setFillColor(...overviewBg);
+    pdf.roundedRect(14, 46, 182, 14, 2, 2, 'F');
+    pdf.setFontSize(8);
+    pdf.setTextColor(33, 33, 33);
+    pdf.text(`📋 OVERVIEW: ${pageResults.length} pages | ${Object.keys(globalMerged).length} device types | ${totalDevices} total devices | ${roomVal.message}`, 18, 54);
+
     pdf.setFontSize(9);
     pdf.setTextColor(211, 47, 47); // Warning red color
-    pdf.text('* Note: This report reflects RAW visual data prior to the Master Electrician Smart Auditor review.', 14, 48);
+    pdf.text('* Note: This report reflects RAW visual data prior to the Master Electrician Smart Auditor review.', 14, 66);
 
-    let currentY = 56;
+    let currentY = 72;
 
     // Helper to render a table
     const renderTable = (result: BlueprintAgentResult, title: string, pageRes?: PageResult) => {

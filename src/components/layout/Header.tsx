@@ -51,6 +51,7 @@ import {
   TouchApp as TouchBoardIcon,
   Info as InfoIcon,
   Folder as FolderIcon,
+  Dns as DnsIcon,
 } from '@mui/icons-material';
 import { useActiveSession } from '../../hooks/useActiveSession';
 import ActiveSessionIndicator from './ActiveSessionIndicator';
@@ -165,6 +166,7 @@ const Header: React.FC = () => {
     const operationsLinks = [
       { path: '/crm/inventory', label: 'Inventory', icon: <InventoryIcon sx={{ mr: 0.5 }} /> },
       { path: '/ai-reports', label: 'AI Reports', icon: <AIIcon sx={{ mr: 0.5 }} /> },
+      { path: 'EXTERNAL:http://192.168.86.32:8001', label: 'Server Dashboard', icon: <DnsIcon sx={{ mr: 0.5 }} /> },
     ];
 
     const crmLinks = [
@@ -257,18 +259,37 @@ const Header: React.FC = () => {
           open={Boolean(anchorEl)}
           onClose={onClose}
         >
-          {items.map((item) => (
-            <MenuItem
-              key={item.path}
-              component={Link}
-              to={item.path}
-              onClick={onClose}
-              selected={isActive(item.path)}
-            >
-              {item.icon}
-              {item.label}
-            </MenuItem>
-          ))}
+          {items.map((item) => {
+            if (item.path.startsWith('EXTERNAL:')) {
+              const url = item.path.replace('EXTERNAL:', '');
+              return (
+                <MenuItem
+                  key={item.path}
+                  component="a"
+                  href={url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={onClose}
+                >
+                  {item.icon}
+                  {item.label}
+                  <span style={{ marginLeft: 'auto', opacity: 0.5, fontSize: '0.8em', paddingLeft: 8 }}>↗</span>
+                </MenuItem>
+              );
+            }
+            return (
+              <MenuItem
+                key={item.path}
+                component={Link}
+                to={item.path}
+                onClick={onClose}
+                selected={isActive(item.path)}
+              >
+                {item.icon}
+                {item.label}
+              </MenuItem>
+            );
+          })}
         </Menu>
       </>
     );

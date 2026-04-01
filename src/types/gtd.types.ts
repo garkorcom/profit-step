@@ -289,6 +289,15 @@ export interface GTDTask {
     /** Первоначально запланированная дата окончания (для план-факт анализа) */
     plannedEndDate?: Timestamp;
 
+    /** Фактическая дата начала (двигается пользователем на Ганте) */
+    actualStartDate?: Timestamp;
+
+    /** Фактическая дата окончания (двигается пользователем на Ганте) */
+    actualEndDate?: Timestamp;
+
+    /** Задача заморожена до аппрува клиентом */
+    clientApprovalRequired?: boolean;
+
     /** Флаг напоминания (для будущих уведомлений) */
     reminderEnabled?: boolean;
     reminderTime?: Timestamp;

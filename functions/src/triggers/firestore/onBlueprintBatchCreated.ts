@@ -12,6 +12,7 @@ import {
     extractBlueprintMetadata
 } from '../../services/blueprintAIService';
 import { BlueprintBatchJob, BlueprintFileEntry } from '../../types/blueprint.types';
+import { generateBatchValidation, formatBatchValidationLog } from '../../utils/estimateValidation';
 
 if (admin.apps.length === 0) {
     admin.initializeApp();
@@ -330,11 +331,33 @@ export const onBlueprintBatchCreated = functions
 
             const totalTime = Math.round((Date.now() - (batch.createdAt?.toMillis?.() || Date.now())) / 1000);
 
+            // ===== VALIDATION: Project Overview + QA Warnings =====
+            const batchMetadata = (await snap.ref.get()).data()?.metadata;
+            const areaSqft = batchMetadata?.areaSqft || 0;
+            const validation = generateBatchValidation({
+                areaSqft,
+                fileCount: files.length,
+                electricalCount: analyzableFiles.length,
+                finalResult: finalMerged,
+            });
+            const validationLog = formatBatchValidationLog(validation);
+            logger.info(validationLog);
+
+            const validationLogs: any[] = [
+                createLog(validationLog, 'info'),
+            ];
+            if (validation.hasWarnings) {
+                if (validation.roomValidation.status !== 'ok') {
+                    validationLogs.push(createLog(validation.roomValidation.message, 'error'));
+                }
+            }
+
             await snap.ref.update({
                 status: 'completed',
                 progress: 100,
                 files: cleanFiles(files),
                 finalResult: finalMerged,
+                validation,
                 stageTimings,
                 message: `Готово! ${completedCount} файлов → ${totalTypes} типов, ${totalDevices} устройств (${totalTime}s)`,
                 updatedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -342,11 +365,12 @@ export const onBlueprintBatchCreated = functions
                     createLog(
                         `🏁 Итого: ${completedCount}/${files.length} файлов обработано. ${totalTypes} типов, ${totalDevices} устройств. Время: ${totalTime}s${totalFailed > 0 ? ` ⚠️ ${totalFailed} файлов с ошибками.` : ''}`,
                         'success'
-                    )
+                    ),
+                    ...validationLogs
                 )
             });
 
-            logger.info(`✅ Batch Job completed: ${batchId}`, { totalDevices, totalTypes });
+            logger.info(`✅ Batch Job completed: ${batchId}`, { totalDevices, totalTypes, validation });
             return null;
 
         } catch (error: any) {

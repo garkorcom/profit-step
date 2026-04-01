@@ -243,7 +243,9 @@ export type ActivityType =
   | 'media_added'
   | 'voice_report'
   | 'location_checkin'
-  | 'task_status_changed';
+  | 'task_status_changed'
+  | 'document_uploaded'
+  | 'ai_summary';
 
 export interface ActivityLog {
   id: string;
@@ -252,12 +254,19 @@ export interface ActivityLog {
   // Context
   clientId?: string;
   dealId?: string;
-  taskId?: string;
+  taskId?: string; // Direct link to Gantt task
   projectId?: string; // --- Project Time-Lapse Context ---
 
+  // Visibility & Environment
+  isInternalOnly?: boolean; // Hidden from client portal
+  location?: { lat: number; lng: number }; // GPS Checkin
+  weatherData?: string; // Snapshot of weather
+
   type: ActivityType;
-  content: string; // Description or message body
-  metadata?: Record<string, any>; // Extra data (e.g., photoUrls?: string[], audioUrl?: string)
+  content: string; // Description, message body, or AI transcription
+  
+  // Extra data: photoUrls, audioUrl, fileUrls, aiTranslation, sentiment
+  metadata?: Record<string, any>; 
 
   performedBy: string; // User ID
   performedAt: Timestamp;

@@ -1,0 +1,70 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["react", "react-hooks", "typescript", "unicorn", "oxc"],
+  "categories": {
+    "correctness": "error",
+    "perf": "warn",
+    "suspicious": "warn",
+    "style": "off"
+  },
+  "rules": {
+    // ─── Стиль: curly брекеты (слишком шумно для legacy) ───
+    "curly": "off",
+
+    // ─── Console: оставим warn, но можно отключить если мешает ───
+    "no-console": "off",
+
+    // ─── React ───
+    "react/jsx-no-duplicate-props": "error",
+    "react/jsx-no-undef": "error",
+    "react/no-children-prop": "error",
+    "react/no-danger-with-children": "error",
+    "react/no-direct-mutation-state": "error",
+    "react/no-unknown-property": "error",
+    "react/require-render-return": "error",
+    "react/no-array-index-key": "off",
+
+    // ─── React Hooks (ВАЖНОЕ) ───
+    "react-hooks/rules-of-hooks": "error",
+    "react-hooks/exhaustive-deps": "warn",
+
+    // ─── TypeScript ───
+    "typescript/no-explicit-any": "warn",
+    "typescript/no-non-null-assertion": "off",
+    "typescript/no-extraneous-class": "off",
+    "typescript/no-unsafe-type-assertion": "off",
+
+    // ─── Unicorn ───
+    "unicorn/consistent-function-scoping": "off",
+    "unicorn/prefer-array-find": "off",
+    "unicorn/no-array-sort": "off",
+    "unicorn/prefer-add-event-listener": "off",
+    "unicorn/require-post-message-target-origin": "off",
+
+    // ─── Oxc ───
+    "oxc/no-accumulating-spread": "warn",
+    "oxc/no-async-endpoint-handlers": "off",
+    "oxc/no-map-spread": "off",
+
+    // ─── ESLint ───
+    "eslint/no-await-in-loop": "off",
+    "eslint/no-shadow": "off"
+  },
+  "ignorePatterns": [
+    "build/",
+    "coverage/",
+    "node_modules/",
+    "public/",
+    "functions/",
+    "openclaw-zero-token/",
+    "super-estimator/",
+    "_archived/",
+    "_old_estimator_backup/",
+    "backups/",
+    "cypress/",
+    "scripts/",
+    "*.test.ts",
+    "*.test.tsx",
+    "*.d.ts"
+  ]
+}

@@ -916,14 +916,23 @@ async function handleLocation(chatId: number, userId: number, location: any) {
                 if (clientData?.workLocation?.latitude && clientData?.workLocation?.longitude) {
                     const targetLat = clientData.workLocation.latitude;
                     const targetLng = clientData.workLocation.longitude;
-                    const radiusRadius = clientData.workLocation.radius || 500;
+                    const radiusRadius = clientData.workLocation.radius || 150; // Changed default from 500m to 150m for tighter audit
 
                     locationDistanceMeters = calculateDistanceMeters(latitude, longitude, targetLat, targetLng);
                     if (locationDistanceMeters > radiusRadius) {
                         locationMismatch = true;
-                        await sendMessage(chatId, `⚠️ *Внимание:* Вы находитесь в ${locationDistanceMeters}м от гео-зоны объекта.\nСистема зафиксировала отклонение.`);
+                        // Soft Geofencing: Do not notify user about error, just log it internally
+                        await db.collection('activity_logs').add({
+                            companyId: sessionData.companyId || 'system',
+                            projectId: clientId,
+                            type: 'note',
+                            content: `🔴 Аудит Локации: Смена начата вне объекта (отклонение ${Math.round(locationDistanceMeters)}м от гео-зоны).`,
+                            performedBy: 'Система Контроля',
+                            performedAt: admin.firestore.FieldValue.serverTimestamp(),
+                            isInternalOnly: true
+                        });
                     } else {
-                        await sendMessage(chatId, `✅ Локация подтверждена (внутри гео-зоны объекта).`);
+                        await sendMessage(chatId, `✅ Локация подтверждена.`);
                     }
                 }
             }
@@ -933,7 +942,10 @@ async function handleLocation(chatId: number, userId: number, location: any) {
                 awaitingLocation: false,
                 awaitingStartPhoto: true
             };
-            if (locationMismatch) updatePayload.locationMismatch = true;
+            if (locationMismatch) {
+                updatePayload.locationMismatch = true;
+                updatePayload.outOfBounds = true; // Phase 2: Soft geofencing flag
+            }
             if (locationDistanceMeters !== null) updatePayload.locationDistanceMeters = locationDistanceMeters;
 
             await activeSession.ref.update(updatePayload);
@@ -1493,6 +1505,20 @@ async function handleMediaUpload(chatId: number, userId: number, message: any) {
             }).catch(e => console.error("Face verification background task failed", e));
         }
 
+        // --- NEW: Time-Lapse Activity Log (Start Photo/Video) ---
+        if (sessionData.clientId && sessionData.clientId !== 'no_project') {
+            await db.collection('activity_logs').add({
+                companyId: sessionData.companyId || 'system',
+                projectId: sessionData.clientId,
+                type: message.video ? 'video' : (message.document ? 'document' : 'photo'),
+                content: 'Медиа начала смены',
+                mediaUrl: url,
+                performedBy: sessionData.employeeName || 'Сотрудник',
+                performedAt: admin.firestore.FieldValue.serverTimestamp(),
+                isInternalOnly: false
+            });
+        }
+
         await sendMessage(chatId,
             "🎙 Запиши голосовое: что планируешь сегодня делать?",
             {
@@ -1513,6 +1539,20 @@ async function handleMediaUpload(chatId: number, userId: number, message: any) {
             awaitingEndPhoto: false,
             awaitingEndVoice: true  // NEW: Ask for voice about results
         });
+
+        // --- NEW: Time-Lapse Activity Log (End Photo/Video) ---
+        if (sessionData.clientId && sessionData.clientId !== 'no_project') {
+            await db.collection('activity_logs').add({
+                companyId: sessionData.companyId || 'system',
+                projectId: sessionData.clientId,
+                type: message.video ? 'video' : (message.document ? 'document' : 'photo'),
+                content: 'Медиа окончания смены',
+                mediaUrl: url,
+                performedBy: sessionData.employeeName || 'Сотрудник',
+                performedAt: admin.firestore.FieldValue.serverTimestamp(),
+                isInternalOnly: false
+            });
+        }
 
         await sendMessage(chatId,
             "📸 Фото принято!\n\n🎙 Запиши голосовое: Что успел сделать?",
@@ -1949,12 +1989,32 @@ async function handleVoiceMessage(chatId: number, userId: number, message: any) 
         const userTimezone = empDoc.data()?.timezone || 'America/New_York';
         const currentDate = new Date().toLocaleDateString('ru-RU', { timeZone: userTimezone });
 
+        // --- FETCH ACTIVE TASKS FOR CONTEXT ---
+        let activeTasksContext = 'Нет активных задач для загрузки.';
+        if (sessionData.clientId && sessionData.clientId !== 'no_project') {
+            const tasksSnap = await db.collection('gtd_tasks')
+                .where('projectId', '==', sessionData.clientId)
+                .where('status', 'in', ['todo', 'in_progress'])
+                .get();
+            
+            if (!tasksSnap.empty) {
+                const tasksList = tasksSnap.docs.map(doc => {
+                    const data = doc.data();
+                    return `- [ID: ${doc.id}] ${data.title} (Текущий прогресс: ${data.progressPercentage || 0}%)`;
+                });
+                activeTasksContext = tasksList.join('\n');
+            }
+        }
+
         const systemPrompt = `
 Ты — опытный прораб-секретарь на стройке. Слушай голосовые сообщения рабочих и превращай их в структурированный отчет JSON.
 
 Контекст: "${context}"
 Язык: Русский
 Текущая дата: ${currentDate} (Часовой пояс: ${userTimezone})
+
+Активные задачи проекта (ID, Название, Прогресс):
+${activeTasksContext}
 
 ИНСТРУКЦИИ:
 1. Убери слова-паразиты.
@@ -1964,6 +2024,9 @@ async function handleVoiceMessage(chatId: number, userId: number, message: any) 
 5. Если MID_SHIFT: Если рабочий ПРОСИТ ЗАКРЫТЬ СМЕНУ ("я закончил", "вырубай", "закрывай сессию") -> верни intent: "CLOSE_SESSION". 
    Если он ПРОСТО Диктует рабочую заметку или задачу -> верни intent: "NOTE", summary и description.
 6. ВАЖНО: Если слышишь намерения на будущее ("надо купить", "завтра сделаю", "нужно"), ОБЯЗАТЕЛЬНО извлеки это в массив tasks.
+7. ВАЖНО: Если рабочий сообщает о прогрессе выполнения конкретной работы (например, "половина стяжки готова" или "закончил плитку"), найди наиболее подходящую задачу из списка "Активные задачи проекта".
+   В ответе JSON добавь массив "taskUpdates":
+   [{ "taskId": "ID_задачи", "progressPercentage": 100 }] (в процентах от 1 до 100).
 
 ФОРМАТ JSON:
 {
@@ -1977,7 +2040,13 @@ async function handleVoiceMessage(chatId: number, userId: number, message: any) 
       "title": "Название задачи",
       "dueDate": "YYYY-MM-DD" (или null),
       "priority": "high" | "medium" | "low",
-      "estimatedDurationMinutes": "number (минуты)" (например, 120 для 2 часов)
+      "estimatedDurationMinutes": "number (минуты)"
+    }
+  ],
+  "taskUpdates": [
+    {
+      "taskId": "ID",
+      "progressPercentage": 100
     }
   ]
 }`;
@@ -2004,6 +2073,34 @@ async function handleVoiceMessage(chatId: number, userId: number, message: any) 
         const updates: Record<string, any> = {
             aiTranscribedAt: admin.firestore.FieldValue.serverTimestamp(),
         };
+
+        // --- PROCESS TASK UPDATES (Phase 2) ---
+        let updatedTasksCount = 0;
+        if (aiData.taskUpdates && Array.isArray(aiData.taskUpdates)) {
+            for (const upd of aiData.taskUpdates) {
+                if (upd.taskId && typeof upd.progressPercentage === 'number') {
+                    await db.collection('gtd_tasks').doc(upd.taskId).update({
+                        progressPercentage: upd.progressPercentage,
+                        status: upd.progressPercentage === 100 ? 'done' : 'in_progress',
+                        ...(upd.progressPercentage === 100 ? { actualEndDate: admin.firestore.FieldValue.serverTimestamp() } : {})
+                    });
+                    
+                    if (sessionData.clientId && sessionData.clientId !== 'no_project') {
+                        await db.collection('activity_logs').add({
+                            companyId: sessionData.companyId || 'system',
+                            projectId: sessionData.clientId,
+                            type: 'ai_action',
+                            content: `🤖 ИИ обновил статус задачи на ${upd.progressPercentage}% на основе аудио-отчета.`,
+                            taskId: upd.taskId,
+                            performedBy: 'AI Assistant',
+                            performedAt: admin.firestore.FieldValue.serverTimestamp(),
+                            isInternalOnly: false
+                        });
+                    }
+                    updatedTasksCount++;
+                }
+            }
+        }
 
         if (context === 'START_SHIFT') {
             updates.plannedTaskSummary = aiData.summary;
@@ -2049,6 +2146,9 @@ async function handleVoiceMessage(chatId: number, userId: number, message: any) 
             if (newTasksCount > 0) {
                 responseMsg += `\n📥 Создано задач: ${newTasksCount}`;
             }
+            if (updatedTasksCount > 0) {
+                responseMsg += `\n🤖 Обновлен прогресс у ${updatedTasksCount} задач.`;
+            }
             if (aiData.issues) {
                 responseMsg += `\n⚠️ Проблема: ${aiData.issues}`;
             }
@@ -2058,6 +2158,20 @@ async function handleVoiceMessage(chatId: number, userId: number, message: any) 
 
             // IMPORTANT: Persist updates BEFORE sending prompts to avoid race condition
             await activeSession.ref.update(updates);
+
+            // --- NEW: Time-Lapse Activity Log (End Voice) ---
+            if (sessionData.clientId && sessionData.clientId !== 'no_project') {
+                await db.collection('activity_logs').add({
+                    companyId: sessionData.companyId || 'system',
+                    projectId: sessionData.clientId,
+                    type: 'audio',
+                    content: `Голосовой отчет: ${aiData.summary}\n${aiData.description}`,
+                    mediaUrl: voiceUrl,
+                    performedBy: sessionData.employeeName || 'Сотрудник',
+                    performedAt: admin.firestore.FieldValue.serverTimestamp(),
+                    isInternalOnly: false
+                });
+            }
 
             await sendMessage(chatId, responseMsg);
             await sendMessage(chatId, "📝 Хочешь добавить текстовое описание? (Или напиши 'Skip')");

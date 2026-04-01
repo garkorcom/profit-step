@@ -11,6 +11,7 @@ import {
   Work as WorkIcon,
   Task as TaskIcon,
   Folder as FolderIcon,
+  MonitorHeart as MonitorIcon,
 } from '@mui/icons-material';
 import { useAuth } from '../auth/AuthContext';
 import { useNavigate } from 'react-router-dom';
@@ -58,6 +59,13 @@ const DashboardPage: React.FC = () => {
       icon: <FolderIcon sx={{ fontSize: 60 }} />,
       color: '#9c27b0',
       path: '/documents',
+    },
+    {
+      title: 'Мониторинг',
+      description: 'Серверы, агенты, каналы связи',
+      icon: <MonitorIcon sx={{ fontSize: 60 }} />,
+      color: '#00897b',
+      path: '__external__http://206.81.8.2:8000',
     },
   ];
 
@@ -125,7 +133,7 @@ const DashboardPage: React.FC = () => {
                   transform: 'translateY(-4px)',
                 },
               }}
-              onClick={() => navigate(module.path)}
+              onClick={() => module.path.startsWith('__external__') ? window.open(module.path.replace('__external__', ''), '_blank') : navigate(module.path)}
             >
               <Box sx={{ color: module.color, mb: 2 }}>
                 {module.icon}

@@ -583,6 +583,188 @@ app.get('/api/clients/search', async (req, res, next) => {
   }
 });
 
+// ─── GET /api/clients/:id ──────────────────────────────────────────
+
+app.get('/api/clients/:id', async (req, res, next) => {
+  try {
+    const clientId = req.params.id;
+    logger.info('👤 clients:profile', { clientId });
+
+    const clientDoc = await db.collection('clients').doc(clientId).get();
+    if (!clientDoc.exists) {
+      res.status(404).json({ error: `Клиент "${clientId}" не найден` });
+      return;
+    }
+
+    const client = { id: clientDoc.id, ...clientDoc.data() };
+
+    const [projectsSnap, tasksSnap, costsSnap, sessionsSnap, estimatesSnap, sitesSnap] = await Promise.all([
+      db.collection('projects').where('clientId', '==', clientId).get(),
+      db.collection('gtd_tasks').where('clientId', '==', clientId).limit(50).get(),
+      db.collection('costs').where('clientId', '==', clientId).where('status', '==', 'confirmed').get(),
+      db.collection('work_sessions').where('clientId', '==', clientId).where('status', '==', 'completed').get(),
+      db.collection('estimates').where('clientId', '==', clientId).limit(20).get(),
+      db.collection('sites').where('clientId', '==', clientId).get(),
+    ]);
+
+    const projects = projectsSnap.docs.map(d => ({ id: d.id, name: d.data().name, status: d.data().status }));
+
+    const tasks = {
+      total: tasksSnap.size,
+      byStatus: {} as Record<string, number>,
+      items: tasksSnap.docs.slice(0, 10).map(d => ({
+        id: d.id, title: d.data().title, status: d.data().status, priority: d.data().priority,
+      })),
+    };
+    tasksSnap.docs.forEach(d => {
+      const s = d.data().status || 'unknown';
+      tasks.byStatus[s] = (tasks.byStatus[s] || 0) + 1;
+    });
+
+    let costsTotal = 0;
+    const costsByCategory: Record<string, number> = {};
+    costsSnap.docs.forEach(d => {
+      const c = d.data();
+      costsTotal += c.amount || 0;
+      costsByCategory[c.category] = (costsByCategory[c.category] || 0) + (c.amount || 0);
+    });
+
+    let totalTimeMinutes = 0;
+    let totalEarnings = 0;
+    sessionsSnap.docs.forEach(d => {
+      totalTimeMinutes += d.data().durationMinutes || 0;
+      totalEarnings += d.data().sessionEarnings || 0;
+    });
+
+    const estimates = estimatesSnap.docs.map(d => ({
+      id: d.id, status: d.data().status, total: d.data().total,
+    }));
+
+    const sites = sitesSnap.docs.map(d => ({
+      id: d.id, address: d.data().address, status: d.data().status,
+    }));
+
+    res.json({
+      client,
+      projects,
+      tasks,
+      costs: { total: +costsTotal.toFixed(2), count: costsSnap.size, byCategory: costsByCategory },
+      timeTracking: {
+        totalMinutes: totalTimeMinutes,
+        totalHours: +(totalTimeMinutes / 60).toFixed(1),
+        totalEarnings: +totalEarnings.toFixed(2),
+        sessionCount: sessionsSnap.size,
+      },
+      estimates,
+      sites,
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// ─── GET /api/dashboard ────────────────────────────────────────────
+
+app.get('/api/dashboard', async (req, res, next) => {
+  try {
+    logger.info('📊 dashboard:fetch');
+
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const todayEnd = new Date(todayStart.getTime() + 24 * 3600_000);
+
+    const [activeSessionsSnap, tasksDueTodaySnap, recentCostsSnap, openEstimatesSnap, clientsCache] = await Promise.all([
+      db.collection('work_sessions').where('status', 'in', ['active', 'paused']).get(),
+      db.collection('gtd_tasks')
+        .where('dueDate', '>=', Timestamp.fromDate(todayStart))
+        .where('dueDate', '<=', Timestamp.fromDate(todayEnd))
+        .limit(20).get(),
+      db.collection('costs').where('status', '==', 'confirmed').orderBy('createdAt', 'desc').limit(10).get(),
+      db.collection('estimates').where('status', 'in', ['draft', 'sent']).get(),
+      getCachedClients(),
+    ]);
+
+    const activeSessions = activeSessionsSnap.docs.map(d => ({
+      id: d.id, employeeName: d.data().employeeName,
+      task: d.data().relatedTaskTitle || d.data().description,
+      startTime: d.data().startTime?.toDate?.()?.toISOString() || null,
+      status: d.data().status, clientName: d.data().clientName,
+    }));
+
+    const tasksDueToday = tasksDueTodaySnap.docs.map(d => ({
+      id: d.id, title: d.data().title, status: d.data().status,
+      priority: d.data().priority, clientName: d.data().clientName, assigneeName: d.data().assigneeName,
+    }));
+
+    const recentCosts = recentCostsSnap.docs.map(d => ({
+      id: d.id, amount: d.data().amount, category: d.data().category,
+      description: d.data().description, clientName: d.data().clientName,
+      createdAt: d.data().createdAt?.toDate?.()?.toISOString() || null,
+    }));
+
+    let estimatesTotal = 0;
+    openEstimatesSnap.docs.forEach(d => { estimatesTotal += d.data().total || 0; });
+
+    res.json({
+      activeSessions, activeSessionCount: activeSessions.length,
+      tasksDueToday, tasksDueTodayCount: tasksDueToday.length,
+      recentCosts,
+      openEstimates: { count: openEstimatesSnap.size, totalValue: +estimatesTotal.toFixed(2) },
+      totalClients: clientsCache.length,
+      generatedAt: new Date().toISOString(),
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// ─── POST /api/gtd-tasks/batch-update ──────────────────────────────
+
+const BatchUpdateTasksSchema = z.object({
+  taskIds: z.array(z.string().min(1)).min(1).max(50),
+  update: z.object({
+    status: z.enum(['inbox', 'next_action', 'waiting', 'projects', 'estimate', 'someday', 'completed', 'archived']).optional(),
+    priority: z.enum(['high', 'medium', 'low', 'none']).optional(),
+    assigneeId: z.string().optional(),
+    assigneeName: z.string().optional(),
+  }).refine(data => Object.keys(data).length > 0, {
+    message: 'At least one update field required',
+  }),
+});
+
+app.post('/api/gtd-tasks/batch-update', async (req, res, next) => {
+  try {
+    const data = BatchUpdateTasksSchema.parse(req.body);
+    logger.info('📋 tasks:batch-update', { count: data.taskIds.length, fields: Object.keys(data.update) });
+
+    const batch = db.batch();
+    const updatePayload: Record<string, any> = { updatedAt: FieldValue.serverTimestamp() };
+    Object.entries(data.update).forEach(([k, v]) => { if (v !== undefined) updatePayload[k] = v; });
+
+    let updatedCount = 0;
+    const notFound: string[] = [];
+
+    for (const taskId of data.taskIds) {
+      const ref = db.collection('gtd_tasks').doc(taskId);
+      const doc = await ref.get();
+      if (doc.exists) { batch.update(ref, updatePayload); updatedCount++; }
+      else { notFound.push(taskId); }
+    }
+
+    if (updatedCount > 0) await batch.commit();
+
+    await logAgentActivity({
+      userId: req.agentUserId!, action: 'tasks_batch_updated',
+      endpoint: '/api/gtd-tasks/batch-update',
+      metadata: { updatedCount, notFoundCount: notFound.length, fields: Object.keys(data.update) },
+    });
+
+    res.json({ updated: updatedCount, notFound: notFound.length > 0 ? notFound : undefined });
+  } catch (e) {
+    next(e);
+  }
+});
+
 // ─── POST /api/gtd-tasks ───────────────────────────────────────────
 
 app.post('/api/gtd-tasks', async (req, res, next) => {

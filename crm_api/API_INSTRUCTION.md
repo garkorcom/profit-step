@@ -1,8 +1,8 @@
 # Profit Step CRM — API Reference
 
 > Полная документация по REST API для интеграции с CRM Profit Step.
-> Сверена с исходным кодом `functions/src/agent/agentApi.ts` (~4200 строк, 48 эндпоинтов).
-> Фазы 1–3 ✅ | Последнее обновление: **2026-04-02**
+> **v4.2.0** | Модульная архитектура: `agentApi.ts` (86 строк) + 11 route modules + 9 schema modules.
+> Фазы 1–4 ✅ | Последнее обновление: **2026-04-02**
 
 ---
 

@@ -2,9 +2,7 @@
  * Agent API — Express Application
  *
  * 48 endpoints for OpenClaw agent integration.
- * Routes are modularized into:
- *   - routes/clients.ts     — Client CRUD + search
- *   - routes/allRoutes.ts   — All remaining domain routes
+ * Routes are modularized into domain-specific modules in ./routes/
  */
 
 import * as functions from 'firebase-functions';
@@ -18,6 +16,20 @@ import {
   errorHandler,
 } from './agentMiddleware';
 
+// ─── Route Modules ──────────────────────────────────────────────────
+
+import clientRoutes from './routes/clients';
+import dashboardRoutes from './routes/dashboard';
+import taskRoutes from './routes/tasks';
+import costRoutes from './routes/costs';
+import timeTrackingRoutes from './routes/timeTracking';
+import financeRoutes from './routes/finance';
+import userRoutes from './routes/users';
+import estimateRoutes from './routes/estimates';
+import projectRoutes from './routes/projects';
+import siteRoutes from './routes/sites';
+import erpRoutes from './routes/erp';
+
 // ─── Express App ────────────────────────────────────────────────────
 
 const app = express();
@@ -27,7 +39,7 @@ app.use(requestLogger);
 
 // ─── Health Check (before auth — public endpoint) ───────────────────
 
-const API_VERSION = '4.1.0';
+const API_VERSION = '4.2.0';
 const startedAt = Date.now();
 
 app.get('/api/health', (_req, res) => {
@@ -45,13 +57,19 @@ app.get('/api/health', (_req, res) => {
 app.use(authMiddleware);
 app.use(rateLimitMiddleware);
 
-// ─── Route Modules ──────────────────────────────────────────────────
-
-import clientRoutes from './routes/clients';
-import allRoutes from './routes/allRoutes';
+// ─── Register Domain Routes ────────────────────────────────────────
 
 app.use(clientRoutes);
-app.use(allRoutes);
+app.use(dashboardRoutes);
+app.use(taskRoutes);
+app.use(costRoutes);
+app.use(timeTrackingRoutes);
+app.use(financeRoutes);
+app.use(userRoutes);
+app.use(estimateRoutes);
+app.use(projectRoutes);
+app.use(siteRoutes);
+app.use(erpRoutes);
 
 // ─── Error Handler (must be last) ──────────────────────────────────
 

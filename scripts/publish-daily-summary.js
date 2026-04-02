@@ -28,30 +28,122 @@ const Timestamp = admin.firestore.Timestamp;
 // =====================================================
 
 const DAILY_SUMMARY = {
-    date: '2026-03-17',
-    title: '🤖 Multi-Agent AI Estimator: Детерминистические Инструменты заменяют LLM-математику',
-    emoji: '🤖',
-    featureId: 'deterministic-circuit-tools',
-    featureTitle: 'Multi-Agent AI Estimator — Phase 9',
-    type: 'feature',
-    timeSpentMinutes: 240,
+    date: '2026-04-02',
+    title: '\u{1F3D7}\uFE0F API Modularization: 4227 \u2192 71 \u0441\u0442\u0440\u043E\u043A\u0430 \u2014 \u043A\u0430\u043A \u0440\u0430\u0437\u043E\u0431\u0440\u0430\u0442\u044C \u043C\u043E\u043D\u043E\u043B\u0438\u0442 \u0431\u0435\u0437 \u0435\u0434\u0438\u043D\u043E\u0433\u043E \u0441\u043B\u043E\u043C\u0430\u043D\u043D\u043E\u0433\u043E \u0442\u0435\u0441\u0442\u0430',
+    emoji: '\u{1F3D7}\uFE0F',
+    featureId: 'agent-api-modularization-v4',
+    featureTitle: 'Agent API Modularization \u2014 Phase 4',
+    type: 'refactor',
+    timeSpentMinutes: 180,
 
-    tldr: 'Построена мультиагентная система оценки строительных смет на LangGraph. 4 агента (Circuit Designer, Panel Builder, Code Inspector, Pricing RAG) работают в связке React - Flask - LangGraph - Qdrant. Ключевое: вся математика (Manhattan distance, daisy-chaining, подбор автоматов) переведена на детерминистический Python — ноль галлюцинаций LLM, 100% воспроизводимый результат.',
+    tldr: '\u041C\u043E\u043D\u043E\u043B\u0438\u0442\u043D\u044B\u0439 agentApi.ts (4227 \u0441\u0442\u0440\u043E\u043A, 48 \u044D\u043D\u0434\u043F\u043E\u0438\u043D\u0442\u043E\u0432) \u0440\u0430\u0437\u043E\u0431\u0440\u0430\u043D \u043D\u0430 \u043C\u043E\u0434\u0443\u043B\u044C\u043D\u0443\u044E \u0430\u0440\u0445\u0438\u0442\u0435\u043A\u0442\u0443\u0440\u0443: 11 domain-specific \u0440\u043E\u0443\u0442\u0435\u0440\u043E\u0432 + 9 schema \u043C\u043E\u0434\u0443\u043B\u0435\u0439. \u0420\u0435\u0437\u0443\u043B\u044C\u0442\u0430\u0442: \u043E\u0441\u043D\u043E\u0432\u043D\u043E\u0439 \u0444\u0430\u0439\u043B \u0441\u0436\u0430\u043B\u0441\u044F \u0434\u043E 71 \u0441\u0442\u0440\u043E\u043A\u0438 (-98%), \u043F\u0440\u0438 \u044D\u0442\u043E\u043C \u0432\u0441\u0435 99 \u0438\u043D\u0442\u0435\u0433\u0440\u0430\u0446\u0438\u043E\u043D\u043D\u044B\u0445 \u0442\u0435\u0441\u0442\u043E\u0432 \u043F\u0440\u043E\u0448\u043B\u0438 \u043D\u0430 \u043A\u0430\u0436\u0434\u043E\u043C \u0448\u0430\u0433\u0435. \u0412\u0435\u0440\u0441\u0438\u044F API \u043E\u0431\u043D\u043E\u0432\u043B\u0435\u043D\u0430 \u0434\u043E 4.2.0, \u0437\u0430\u0434\u0435\u043F\u043B\u043E\u0435\u043D\u0430 \u0432 production.',
 
-    storyMarkdown: '## \uD83C\uDDF7\uD83C\uDDFA Мультиагентный ИИ Сметчик — как 4 агента считают смету за 3 секунды\n\n### Проблема\nРучной подсчёт строительной сметы — это 2-4 часа на один чертёж. Даже с помощью ChatGPT результаты нестабильны: LLM может «забыть» добавить 15% запас кабеля или неправильно подобрать автомат для влажной зоны.\n\n### Решение: Мультиагентный пайплайн\n\nМы построили конвейер из **4 специализированных агентов**, каждый из которых решает свою задачу:\n\n| Агент | Задача | Технология |\n|-------|--------|-----------|\n| \uD83D\uDD0C **Circuit Designer** | Группировка устройств в цепи, расчёт кабеля | Manhattan Distance + Daisy-Chain |\n| ⚡ **Panel Builder** | Подбор автоматов и сборка щита | NEC/IEC таблицы + RCBO для влажных зон |\n| \uD83E\uDDD0 **Code Inspector** | Проверка на пожарную безопасность | 4 детерминистические проверки |\n| \uD83D\uDCB0 **Pricing RAG** | Поиск цен в базе материалов | Qdrant Vector DB (semantic search) |\n\n### Как считается каждый метр кабеля\n\nФормула длины провода для одной цепи:\n\n```\nTotal = HomeRun + DaisyChain + Drops + 15% Waste\n```\n\n- **Home Run** — Manhattan расстояние от щитка до первого устройства\n- **Daisy Chain** — Manhattan расстояние между устройствами в шлейфе\n- **Drops** — 4ft вниз + 4ft вверх на каждое устройство\n- **+15% Waste** — запас на повороты и обрезки\n\n### Пример: Квартира «Kitchen + Bedroom»\n\n| Цепь | Комната | Автомат | Длина кабеля |\n|------|---------|---------|-------------|\n| C1 | Кухня \uD83D\uDFE6WET | **20A RCBO/GFCI** | 508.9 ft |\n| C2 \uD83D\uDFE7DEDICATED | Кухня (духовка) | **40A Double-Pole** | 537.4 ft |\n| C3 | Спальня | 16A Single-Pole | 848.5 ft |\n\n> Кухня — влажная зона (wet zone). Система автоматически ставит RCBO/GFCI вместо обычного автомата. Духовка >20A — выделенная линия.\n\n### Human-in-the-Loop\n\nПайплайн **останавливается** перед финальной оценкой. Человек видит:\n- ⚡ Таблицу маршрутизации цепей (HomeRun / Chain / Drops / Waste / Total)\n- \uD83D\uDD0C Расписание щита (тип автомата, ампераж, полюсов)\n- \uD83D\uDCCB Полный BOM (Bill of Materials)\n\nТолько после нажатия **«Looks Good, Get Prices»** система запрашивает цены из Qdrant и считает итого.\n\n---\n\n## \uD83C\uDDEC\uD83C\uDDE7 Multi-Agent AI Estimator: How 4 Agents Build a Quote in 3 Seconds\n\n### The Problem\nManual takeoff from a blueprint takes 2-4 hours. Even with ChatGPT, results are inconsistent — LLMs hallucinate wire lengths and forget NEC code requirements.\n\n### The Solution: Deterministic Tool Calls\n\nWe built a **LangGraph pipeline** with 4 specialized agents. The critical insight: instead of asking an LLM to calculate wire lengths (unreliable), we use **deterministic Python functions** that the LLM agents call as tools:\n\n- **Manhattan Distance** — calculates wire routing along walls, not straight lines\n- **Daisy-Chain Optimization** — groups sockets into circuits, connects them in series\n- **NEC/IEC Compliance** — automatically selects RCBO/GFCI breakers for wet zones\n- **Panel Sizing** — picks the right enclosure (12/24/36-way) based on pole count + 20% reserve\n\n### The Pipeline\n\n```\nReact UI -> Flask API -> LangGraph Orchestrator\n    -> Circuit Designer (geometry_tools.py)\n    -> Panel Builder (breaker selection)\n    -> Code Inspector (4 NEC checks, reject -> retry loop)\n    -> Human Review\n    -> Pricing RAG (Qdrant Vector DB)\n    -> $$ Final Estimate\n```\n\n### Key Innovation: JSON 2.0 Input Format\n\nInstead of flat device lists, the system now accepts **room-based structured input** with zone types and scale multipliers. This enables the deterministic tools to make precise calculations based on real-world geometry, replacing LLM guesswork with reproducible Python math.',
+    storyMarkdown: `## \u{1F1F7}\u{1F1FA} \u041C\u043E\u0434\u0443\u043B\u044F\u0440\u0438\u0437\u0430\u0446\u0438\u044F API: \u0445\u0438\u0440\u0443\u0440\u0433\u0438\u0447\u0435\u0441\u043A\u0430\u044F \u043E\u043F\u0435\u0440\u0430\u0446\u0438\u044F \u043D\u0430 \u0436\u0438\u0432\u043E\u043C \u0441\u0435\u0440\u0432\u0435\u0440\u0435
 
-    technicalMarkdown: '### Architecture: React - Flask - LangGraph - Qdrant\n\n| File | Role |\n|------|------|\n| `geometry_tools.py` | Deterministic math: Manhattan distance, daisy-chain, wire gauge selection, breaker sizing, NEC compliance |\n| `langgraph_orchestrator.py` | StateGraph pipeline: orchestrator -> circuit_designer -> panel_builder -> qa -> human_review -> pricing |\n| `estimator_api.py` | Flask API bridge (port 8000) — exposes /api/estimate and /api/estimate/resume |\n| `EstimatorLangGraphUI.tsx` | React frontend: Accordion UI for circuits, panel schedule, BOM, human approval |\n\n### Wire Gauge Selection Table (NEC/IEC)\n| Device Type | Wire Gauge | Breaker |\n|-------------|-----------|---------|\n| Lighting / Switches | 1.5 mm2 (14/2 AWG) | 16A |\n| Standard Sockets | 2.5 mm2 (12/2 AWG) | 20A |\n| Ovens / HVAC | 6.0 mm2 (10/2 AWG) | 40A 2P |\n| EV Chargers | 10.0 mm2 (8/3 AWG) | 50A 2P |\n\n### Code Compliance Checks\n1. **Overload** — max 8 devices per 20A circuit\n2. **Wire/Breaker Mismatch** — 40A breaker on 2.5mm2 wire -> REJECT\n3. **Wet Zone Protection** — kitchen/bathroom without RCBO -> REJECT\n4. **Dedicated Lines** — oven sharing circuit with sockets -> REJECT',
+### \u041F\u0440\u043E\u0431\u043B\u0435\u043C\u0430
+\u0424\u0430\u0439\u043B \`agentApi.ts\` \u0432\u044B\u0440\u043E\u0441 \u0434\u043E **4227 \u0441\u0442\u0440\u043E\u043A** \u2014 48 \u044D\u043D\u0434\u043F\u043E\u0438\u043D\u0442\u043E\u0432, 37 Zod-\u0441\u0445\u0435\u043C, \u0438 \u0432\u0441\u044F \u0431\u0438\u0437\u043D\u0435\u0441-\u043B\u043E\u0433\u0438\u043A\u0430 \u0432 \u043E\u0434\u043D\u043E\u043C \u0444\u0430\u0439\u043B\u0435. \u041B\u044E\u0431\u043E\u0435 \u0438\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u0435 \u0442\u0440\u0435\u0431\u043E\u0432\u0430\u043B\u043E \u043F\u0440\u043E\u043A\u0440\u0443\u0442\u043A\u0438 \u0442\u044B\u0441\u044F\u0447 \u0441\u0442\u0440\u043E\u043A. Code review \u043F\u0440\u0435\u0432\u0440\u0430\u0442\u0438\u043B\u0441\u044F \u0432 \u043A\u043E\u0448\u043C\u0430\u0440.
+
+### \u0421\u0442\u0440\u0430\u0442\u0435\u0433\u0438\u044F: Schema-First \u2192 Route-First
+
+\u0420\u0430\u0437\u0431\u0438\u043B\u0438 \u043D\u0430 2 \u0444\u0430\u0437\u044B:
+
+**\u0424\u0430\u0437\u0430 1 \u2014 \u0421\u0445\u0435\u043C\u044B (\u0431\u0435\u0437\u043E\u043F\u0430\u0441\u043D\u0430\u044F).** \u0418\u0437\u0432\u043B\u0435\u043A\u043B\u0438 \u0432\u0441\u0435 37 Zod-\u0441\u0445\u0435\u043C \u0432 9 domain-\u0444\u0430\u0439\u043B\u043E\u0432.
+
+**\u0424\u0430\u0437\u0430 2 \u2014 \u041C\u0430\u0440\u0448\u0440\u0443\u0442\u044B (\u043E\u043F\u0430\u0441\u043D\u0430\u044F).** \u0418\u0437\u0432\u043B\u0435\u043A\u043B\u0438 \u0432\u0441\u0435 48 route handlers \u0432 11 Express Router \u043C\u043E\u0434\u0443\u043B\u0435\u0439:
+
+| \u041C\u043E\u0434\u0443\u043B\u044C | \u0421\u0442\u0440\u043E\u043A\u0438 | \u042D\u043D\u0434\u043F\u043E\u0438\u043D\u0442\u043E\u0432 |
+|--------|--------|-----------|
+| clients.ts | 260 | 5 |
+| dashboard.ts | 67 | 1 |
+| tasks.ts | 326 | 5 |
+| costs.ts | 224 | 3 |
+| timeTracking.ts | 691 | 4 |
+| finance.ts | 263 | 5 |
+| users.ts | 203 | 4 |
+| estimates.ts | 397 | 4 |
+| projects.ts | 589 | 8 |
+| sites.ts | 154 | 3 |
+| erp.ts | 651 | 5 |
+
+### \u0411\u0435\u0437\u043E\u043F\u0430\u0441\u043D\u043E\u0441\u0442\u044C: \u0442\u0435\u0441\u0442\u044B \u043D\u0430 \u043A\u0430\u0436\u0434\u043E\u043C \u0448\u0430\u0433\u0435
+
+\u041A\u043B\u044E\u0447\u0435\u0432\u043E\u0435 \u043F\u0440\u0430\u0432\u0438\u043B\u043E: **\u043D\u0438 \u043E\u0434\u043D\u0430 \u043F\u0440\u043E\u043C\u0435\u0436\u0443\u0442\u043E\u0447\u043D\u0430\u044F \u0441\u0442\u0430\u0434\u0438\u044F \u043D\u0435 \u043B\u043E\u043C\u0430\u0435\u0442 \u0442\u0435\u0441\u0442\u044B.**
+
+### \u0420\u0435\u0437\u0443\u043B\u044C\u0442\u0430\u0442
+
+\`\`\`
+agentApi.ts: 4227 \u0441\u0442\u0440\u043E\u043A \u2192 71 \u0441\u0442\u0440\u043E\u043A\u0430 (-98%)
+routes/: 11 \u0444\u0430\u0439\u043B\u043E\u0432, 3839 \u0441\u0442\u0440\u043E\u043A
+schemas/: 9 \u0444\u0430\u0439\u043B\u043E\u0432, 478 \u0441\u0442\u0440\u043E\u043A
+\`\`\`
+
+---
+
+## \u{1F1EC}\u{1F1E7} API Modularization: Surgery on a Live Server
+
+### The Problem
+\`agentApi.ts\` grew to **4227 lines** \u2014 48 endpoints, 37 validation schemas, all business logic in a single file.
+
+### The Strategy: Schema-First \u2192 Route-First
+
+1. **Schemas** \u2014 Safe extraction of 37 Zod schemas into 9 domain files
+2. **Routes** \u2014 Surgical extraction of 48 handlers into 11 Express Router modules
+
+### Key Constraint: Zero Test Failures
+
+Every intermediate step had to pass all 99 integration tests. This forced us to fix import mismatches immediately.
+
+### The Result
+
+| Metric | Before | After |
+|--------|--------|-------|
+| agentApi.ts | 4227 lines | **71 lines** |
+| Route modules | 0 | **11** |
+| Schema modules | 0 | **9** |
+| Tests passing | 99 | **99** \u2705 |`,
+
+    technicalMarkdown: `### Architecture v4.2.0
+
+\`\`\`
+src/agent/
+\u251C\u2500\u2500 agentApi.ts              \u2190 71 lines (Express + middleware + router array)
+\u251C\u2500\u2500 agentMiddleware.ts       \u2190 auth, rate-limit, error handler
+\u251C\u2500\u2500 agentHelpers.ts          \u2190 cache, fuzzy search, auto-create
+\u251C\u2500\u2500 routeContext.ts          \u2190 barrel export for shared deps
+\u251C\u2500\u2500 schemas/                 \u2190 9 files, 37 Zod schemas
+\u2514\u2500\u2500 routes/                  \u2190 11 domain routers (clients, tasks, costs, etc.)
+\`\`\`
+
+### Key Patterns
+
+| Pattern | Implementation |
+|---------|---------------|
+| routeContext.ts | Centralized re-export of db, FieldValue, Timestamp, logger, helpers |
+| Barrel exports | routes/index.ts and schemas/index.ts for clean imports |
+| Router array | routes.forEach(r => app.use(r)) \u2014 no repetitive app.use() calls |
+| Domain isolation | Each route file imports only the schemas and helpers it needs |
+
+### Commits
+
+| SHA | Description |
+|-----|------------|
+| 3ac4272 | Extract 26 Zod schemas |
+| 8da3794 | Extract remaining 11 schemas |
+| 4d14b91 | Extract client routes |
+| ed904bc | Extract ALL routes to allRoutes.ts |
+| 7e77537 | Split into 10 domain routers |
+| bd43ece | Barrel export + final cleanup |`,
 
     keyTakeaways: [
-        'Deterministic Python tools eliminate LLM math hallucinations — wire lengths are 100% reproducible across runs.',
-        'Manhattan distance + daisy-chain routing produces ~15% waste margin estimates, close to real-world electrician practice.',
-        'Room-based JSON 2.0 input with zone types enables automatic NEC/IEC code compliance without human intervention.',
-        'Human-in-the-Loop at the right point (after design, before pricing) builds trust without slowing down the pipeline.',
-        'LangGraph StateGraph with SqliteSaver enables pause/resume workflows — critical for construction approval processes.'
+        'Schema-First extraction is the safest starting point \u2014 schemas have no side effects and breaking the import is immediately caught by TypeScript.',
+        'routeContext.ts as a dependency barrel ensures route modules can import db/logger/helpers without coupling to the main app.',
+        'Running tests after EVERY extraction step (not just at the end) caught 3 import bugs that would have been much harder to debug in aggregate.',
+        'The largest route file (timeTracking.ts, 691 lines) is still a candidate for further splitting.',
+        'API version bump (4.1.0 \u2192 4.2.0) at the modularization boundary creates a clean rollback point in case of production issues.'
     ],
 
-    seoKeywords: ['AI Estimator', 'Multi-Agent System', 'LangGraph', 'Construction Takeoff', 'NEC Compliance', 'Deterministic Tools', 'Circuit Design', 'Manhattan Distance', 'Qdrant RAG', 'Bill of Materials'],
-    seoDescription: 'Multi-Agent AI Estimator pipeline using LangGraph with deterministic geometry tools for circuit design, NEC code compliance, and automated pricing via Qdrant Vector DB. Zero LLM math errors.',
+    seoKeywords: ['API Modularization', 'Express Router', 'TypeScript Refactoring', 'Zod Schemas', 'Monolith to Modules', 'Firebase Functions', 'Integration Testing', 'Code Architecture'],
+    seoDescription: 'How we modularized a 4227-line Express API monolith into 11 domain-specific routers and 9 schema modules \u2014 with zero test failures at every step.',
 };
 
 // =====================================================
@@ -100,7 +192,7 @@ async function publishDailySummary() {
         createdAt: Timestamp.now(),
     };
 
-    console.log(`\n📝 Publishing: "${s.title}"`);
+    console.log(`\n\u{1F4DD} Publishing: "${s.title}"`);
     console.log(`   Slug: ${slug} `);
     console.log(`   Feature: ${s.featureTitle} `);
     console.log(`   Type: ${s.type} `);
@@ -108,10 +200,10 @@ async function publishDailySummary() {
 
     try {
         const docRef = await db.collection('dev_logs').add(article);
-        console.log(`✅ Published to dev_logs / ${docRef.id} `);
-        console.log(`🌐 View at: https://profit-step.web.app/blog`);
+        console.log(`\u2705 Published to dev_logs / ${docRef.id} `);
+        console.log(`\u{1F310} View at: https://profit-step.web.app/blog`);
     } catch (e) {
-        console.error('❌ Failed:', e.message);
+        console.error('\u274C Failed:', e.message);
     }
 
     process.exit(0);

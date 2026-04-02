@@ -152,6 +152,105 @@ router.get('/api/projects/list', async (req, res, next) => {
   }
 });
 
+// ─── GET /api/projects/:id/dashboard ───────────────────────────────
+
+router.get('/api/projects/:id/dashboard', async (req, res, next) => {
+  try {
+    const projectId = req.params.id;
+    logger.info('📊 projects:dashboard', { projectId });
+
+    const companyId = await resolveOwnerCompanyId();
+
+    // Parallel queries: project info + tasks + recent sessions + costs total + files count
+    const [projectDoc, tasksSnap, sessionsSnap, costsSnap, filesSnap] = await Promise.all([
+      db.collection('projects').doc(projectId).get(),
+      db.collection('gtd_tasks').where('projectId', '==', projectId)
+        .orderBy('createdAt', 'desc').limit(50).get(),
+      db.collection('work_sessions').where('clientId', '==', projectId)
+        .where('status', '==', 'completed')
+        .orderBy('startTime', 'desc').limit(10).get(),
+      db.collection('costs').where('clientId', '==', projectId).get(),
+      db.collection('projects').doc(projectId).collection('files').get(),
+    ]);
+
+    // Check if project exists
+    if (!projectDoc.exists) {
+      res.status(404).json({ error: `Проект "${projectId}" не найден` });
+      return;
+    }
+
+    const projectData = projectDoc.data()!;
+
+    // Verify project belongs to the company
+    if (projectData.companyId !== companyId) {
+      res.status(403).json({ error: 'Доступ запрещен' });
+      return;
+    }
+
+    // Process project info
+    const project = {
+      id: projectDoc.id,
+      name: projectData.name,
+      clientId: projectData.clientId,
+      clientName: projectData.clientName,
+      status: projectData.status,
+      type: projectData.type || 'other',
+      address: projectData.address || null,
+      totalDebit: projectData.totalDebit || 0,
+      totalCredit: projectData.totalCredit || 0,
+      balance: projectData.balance || 0,
+      createdAt: projectData.createdAt?.toDate?.()?.toISOString() || null,
+      updatedAt: projectData.updatedAt?.toDate?.()?.toISOString() || null,
+    };
+
+    // Process tasks
+    const tasks = tasksSnap.docs.map(d => {
+      const t = d.data();
+      return {
+        id: d.id,
+        title: t.title,
+        status: t.status,
+        priority: t.priority,
+        estimatedDurationMinutes: t.estimatedDurationMinutes,
+        createdAt: t.createdAt?.toDate?.()?.toISOString() || null,
+      };
+    });
+
+    // Process recent sessions
+    const sessions = sessionsSnap.docs.map(d => {
+      const s = d.data();
+      const startTime = s.startTime?.toDate?.() || new Date(s.startTime);
+      const endTime = s.endTime?.toDate?.() || new Date(s.endTime);
+      const durationMinutes = Math.round((endTime.getTime() - startTime.getTime()) / (1000 * 60));
+
+      return {
+        id: d.id,
+        employeeName: s.employeeName || `Employee ${s.employeeId}`,
+        durationMinutes,
+        sessionEarnings: s.sessionEarnings || 0,
+        startTime: startTime.toISOString(),
+        endTime: endTime.toISOString(),
+      };
+    });
+
+    // Calculate costs total
+    const costsTotal = costsSnap.docs.reduce((sum, d) => sum + (d.data().amount || 0), 0);
+
+    // Files count
+    const filesCount = filesSnap.size;
+
+    res.json({
+      project,
+      tasks: { items: tasks, count: tasks.length },
+      sessions: { items: sessions, count: sessions.length },
+      costs: { total: Math.round(costsTotal * 100) / 100, count: costsSnap.size },
+      files: { count: filesCount },
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
 // ─── POST /api/projects/:id/files ──────────────────────────────────
 
 // Allowed MIME types for file upload security

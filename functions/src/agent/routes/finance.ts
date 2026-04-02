@@ -30,6 +30,11 @@ router.get('/api/projects/status', async (req, res, next) => {
       clientId = match.id;
     }
 
+    if (!clientId) {
+      res.status(400).json({ error: 'Необходим clientId или clientName' });
+      return;
+    }
+
     logger.info('📊 projects:status', { clientId });
 
     // Parallel queries: count() for totals + limited reads for aggregation

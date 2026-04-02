@@ -697,3 +697,78 @@ router.post('/api/time-tracking/admin-stop', async (req, res, next) => {
 
 
 export default router;
+
+// ─── POST /api/time-tracking/admin-start ─────────────────────────────
+
+import { AdminStartSchema } from '../schemas/timeTrackingSchemas';
+
+router.post('/api/time-tracking/admin-start', async (req, res, next) => {
+  try {
+    if (req.agentUserId !== process.env.OWNER_UID) {
+      res.status(403).json({ error: 'Только владелец может запускать чужие сессии' });
+      return;
+    }
+
+    const data = AdminStartSchema.parse(req.body);
+    logger.info('⏱️ timer:admin-start', { employeeId: data.employeeId, taskTitle: data.taskTitle });
+
+    let manualStartTime: admin.firestore.Timestamp | null = null;
+    if (data.startTime) {
+      const parsed = new Date(data.startTime);
+      if (isNaN(parsed.getTime())) {
+        res.status(400).json({ error: 'Invalid startTime format' });
+        return;
+      }
+      manualStartTime = Timestamp.fromDate(parsed);
+    }
+
+    // Resolve client name
+    let resolvedClientName = data.clientName || '';
+    if (!resolvedClientName && data.clientId) {
+      const clientDoc = await db.collection('clients').doc(data.clientId).get();
+      if (clientDoc.exists) resolvedClientName = clientDoc.data()?.name || '';
+    }
+
+    // Resolve projectId from task
+    let resolvedProjectId = data.projectId || null;
+    if (!resolvedProjectId && data.taskId) {
+      const taskDoc = await db.collection('gtd_tasks').doc(data.taskId).get();
+      if (taskDoc.exists) resolvedProjectId = taskDoc.data()?.projectId || null;
+    }
+
+    // Get hourly rate
+    const userDoc = await db.collection('users').doc(data.employeeId).get();
+    const hourlyRate = userDoc.exists ? (userDoc.data()?.hourlyRate || 0) : 0;
+    const employeeName = userDoc.exists ? (userDoc.data()?.displayName || 'Unknown') : 'Unknown';
+
+    const effectiveStartTime = manualStartTime || Timestamp.now();
+    const newRef = db.collection('work_sessions').doc();
+    await newRef.set({
+      employeeId: data.employeeId,
+      employeeName,
+      startTime: effectiveStartTime,
+      status: 'active',
+      description: data.taskTitle,
+      clientId: data.clientId || '',
+      clientName: resolvedClientName,
+      projectId: resolvedProjectId,
+      type: 'regular',
+      relatedTaskId: data.taskId || null,
+      relatedTaskTitle: data.taskTitle,
+      hourlyRate,
+      source: 'openclaw',
+    });
+
+    // Update user pointer
+    await db.collection('users').doc(data.employeeId).update({ activeSessionId: newRef.id });
+
+    res.status(201).json({
+      sessionId: newRef.id,
+      employeeName,
+      hourlyRate,
+      message: `Таймер запущен для ${employeeName}`,
+    });
+  } catch (e) {
+    next(e);
+  }
+});

@@ -32,3 +32,13 @@ export const AdminStopSchema = z.object({
   sessionId: z.string().min(1),
   endTime: z.string().optional(),
 });
+
+export const AdminStartSchema = z.object({
+  employeeId: z.string().min(1),
+  taskTitle: z.string().min(1),
+  clientId: z.string().optional(),
+  clientName: z.string().optional(),
+  projectId: z.string().optional(),
+  taskId: z.string().optional(),
+  startTime: z.string().optional(),
+});

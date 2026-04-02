@@ -1,8 +1,8 @@
 # Profit Step API — Инструкции по тестированию и результаты
 
 > Полное руководство по запуску, структуре и анализу результатов Agent API тестов.
-> **Версия API:** 4.1.0 | **Последний прогон:** 2026-04-02 | **Результат:** 98/99 ✅
-> **48 эндпоинтов | 13 test suites | Фазы 1–3 ✅**
+> **Версия API:** 4.2.0 | **Последний прогон:** 2026-04-02 | **Результат:** 98/99 ✅
+> **48 эндпоинтов | 13 test suites | Фазы 1–4 ✅ | Модульная архитектура**
 
 ---
 
@@ -39,9 +39,12 @@ npm run test:api -- --verbose
 functions/
 ├── jest.agentApi.config.js          ← Jest config (maxWorkers:1, forceExit)
 ├── src/agent/
-│   ├── agentApi.ts                  ← 48 endpoints (Express app)
+│   ├── agentApi.ts                  ← 86 строк (Express skeleton + router wiring)
 │   ├── agentMiddleware.ts           ← Auth, Rate Limit, Logger, ErrorHandler
-│   └── agentHelpers.ts              ← Cache, Fuzzy Search, Auto-Create
+│   ├── agentHelpers.ts              ← Cache, Fuzzy Search, Auto-Create
+│   ├── routeContext.ts              ← Barrel export для shared deps
+│   ├── schemas/                     ← 9 files, 37 Zod schemas
+│   └── routes/                      ← 11 domain router modules
 ├── test/agentApi/
 │   ├── jest.env.ts                  ← AGENT_API_KEY, OWNER_UID, Emulator
 │   ├── testSetup.ts                 ← Seed/cleanup helpers + app import
@@ -246,6 +249,7 @@ clearAll()                 // Очистка 16 коллекций
 | 2026-04-01 v2 | 4.1 | 90/93 | +health-check, +MIME validation, +5 tests |
 | 2026-04-01 v3 | 4.1 | 92/93 | Refactored tx reads-before-writes, unskipped 2 tests |
 | 2026-04-02 v4 | 4.1 | 98/99 | +Phase 3: client profile, dashboard, batch-update (+6 tests) |
+| 2026-04-02 v5 | 4.2 | 98/99 | Phase 4: modularization — agentApi.ts 4227→86 lines, 11 route modules, 9 schema modules |
 
 ---
 

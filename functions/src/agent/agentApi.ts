@@ -1,5 +1,5 @@
 /**
- * Agent API — Express Application
+ * Agent API — Express Application (v4.2.0)
  *
  * 48 endpoints for OpenClaw agent integration.
  * Routes are modularized into domain-specific modules in ./routes/
@@ -16,19 +16,11 @@ import {
   errorHandler,
 } from './agentMiddleware';
 
-// ─── Route Modules ──────────────────────────────────────────────────
-
-import clientRoutes from './routes/clients';
-import dashboardRoutes from './routes/dashboard';
-import taskRoutes from './routes/tasks';
-import costRoutes from './routes/costs';
-import timeTrackingRoutes from './routes/timeTracking';
-import financeRoutes from './routes/finance';
-import userRoutes from './routes/users';
-import estimateRoutes from './routes/estimates';
-import projectRoutes from './routes/projects';
-import siteRoutes from './routes/sites';
-import erpRoutes from './routes/erp';
+import {
+  clientRoutes, dashboardRoutes, taskRoutes, costRoutes,
+  timeTrackingRoutes, financeRoutes, userRoutes,
+  estimateRoutes, projectRoutes, siteRoutes, erpRoutes,
+} from './routes';
 
 // ─── Express App ────────────────────────────────────────────────────
 
@@ -59,27 +51,20 @@ app.use(rateLimitMiddleware);
 
 // ─── Register Domain Routes ────────────────────────────────────────
 
-app.use(clientRoutes);
-app.use(dashboardRoutes);
-app.use(taskRoutes);
-app.use(costRoutes);
-app.use(timeTrackingRoutes);
-app.use(financeRoutes);
-app.use(userRoutes);
-app.use(estimateRoutes);
-app.use(projectRoutes);
-app.use(siteRoutes);
-app.use(erpRoutes);
+const routes = [
+  clientRoutes, dashboardRoutes, taskRoutes, costRoutes,
+  timeTrackingRoutes, financeRoutes, userRoutes,
+  estimateRoutes, projectRoutes, siteRoutes, erpRoutes,
+];
+routes.forEach(r => app.use(r));
 
 // ─── Error Handler (must be last) ──────────────────────────────────
 
 app.use(errorHandler);
 
-// ─── Export Express app for testing ─────────────────────────────────
+// ─── Export ─────────────────────────────────────────────────────────
 
 export { app as agentApp };
-
-// ─── Export as Firebase Function ────────────────────────────────────
 
 export const agentApi = functions
   .runWith({ minInstances: 1, memory: '512MB', timeoutSeconds: 120 })

@@ -1,7 +1,8 @@
 # Profit Step API — Инструкции по тестированию и результаты
 
 > Полное руководство по запуску, структуре и анализу результатов Agent API тестов.
-> **Версия API:** 4.1.0 | **Последний прогон:** 2026-04-01 | **Результат:** 92/93 ✅
+> **Версия API:** 4.1.0 | **Последний прогон:** 2026-04-02 | **Результат:** 98/99 ✅
+> **48 эндпоинтов | 13 test suites | Фазы 1–3 ✅**
 
 ---
 
@@ -38,7 +39,7 @@ npm run test:api -- --verbose
 functions/
 ├── jest.agentApi.config.js          ← Jest config (maxWorkers:1, forceExit)
 ├── src/agent/
-│   ├── agentApi.ts                  ← 40+ endpoints (Express app)
+│   ├── agentApi.ts                  ← 48 endpoints (Express app)
 │   ├── agentMiddleware.ts           ← Auth, Rate Limit, Logger, ErrorHandler
 │   └── agentHelpers.ts              ← Cache, Fuzzy Search, Auto-Create
 ├── test/agentApi/
@@ -55,7 +56,8 @@ functions/
 │   ├── finance.test.ts              ← 5 тестов
 │   ├── erp.test.ts                  ← 7 тестов
 │   ├── blackboard.test.ts           ← 4 тестов
-│   └── health-and-validation.test.ts← 5 тестов
+│   ├── health-and-validation.test.ts← 5 тестов
+│   └── phase3.test.ts               ← 6 тестов (client profile, dashboard, batch)
 ```
 
 ---
@@ -65,9 +67,9 @@ functions/
 ### Финальная статистика
 
 ```
-Test Suites:  12 passed, 12 total      ✅ 100%
-Tests:        92 passed, 1 skipped, 93 total
-Time:         6.4 s
+Test Suites:  13 passed, 13 total      ✅ 100%
+Tests:        98 passed, 1 skipped, 99 total
+Time:         ~10 s
 ```
 
 ### Детальные результаты
@@ -86,7 +88,8 @@ Time:         6.4 s
 | 10 | `erp.test.ts` | 7 ✅ | 0 | CO/PO/Plan-vs-Fact |
 | 11 | `blackboard.test.ts` | 4 ✅ | 0 | POST upsert + GET latest/version |
 | 12 | `health-and-validation.test.ts` | 5 ✅ | 0 | Health check + MIME validation |
-| | **ИТОГО** | **92** | **1** | **40+ эндпоинтов** |
+| 13 | `phase3.test.ts` | 6 ✅ | 0 | Client profile + Dashboard + Batch update |
+| | **ИТОГО** | **98** | **1** | **48 эндпоинтов** |
 
 ### 1 Skipped тест
 
@@ -183,6 +186,17 @@ Time:         6.4 s
 | Valid PDF upload → 201 | ✅ |
 | Valid image upload → 201 | ✅ |
 
+### Phase 3: Client Profile + Dashboard + Batch — 6 тестов
+
+| Что проверяется | Статус |
+|---|---|
+| `GET /api/clients/:id` полный профиль + агрегация | ✅ |
+| `GET /api/clients/:id` несуществующий → 404 | ✅ |
+| `GET /api/dashboard` сводка | ✅ |
+| `POST /api/gtd-tasks/batch-update` обновление 3 задач | ✅ |
+| Batch update с not-found ID | ✅ |
+| Batch update пустой update → 400 | ✅ |
+
 ---
 
 ## 🏗️ Архитектура
@@ -231,6 +245,7 @@ clearAll()                 // Очистка 16 коллекций
 | 2026-04-01 v1 | 4.0 | 85/88 | Первый прогон, 3 skip (emulator tx) |
 | 2026-04-01 v2 | 4.1 | 90/93 | +health-check, +MIME validation, +5 tests |
 | 2026-04-01 v3 | 4.1 | 92/93 | Refactored tx reads-before-writes, unskipped 2 tests |
+| 2026-04-02 v4 | 4.1 | 98/99 | +Phase 3: client profile, dashboard, batch-update (+6 tests) |
 
 ---
 

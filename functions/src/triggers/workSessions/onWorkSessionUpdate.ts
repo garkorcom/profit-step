@@ -62,8 +62,8 @@ export const onWorkSessionUpdate = functions.firestore
         // Notify user via Telegram about session closure
         // ═══════════════════════════════════════════════════
         try {
-            // 🛡️ ЗАЩИТА ОТ ЭХА
-            if (after.updatedBySource === 'telegram_bot' || after.updatedBySource === 'openclaw') {
+            // 🛡️ ЗАЩИТА ОТ ЭХА — telegram_bot пропускаем, openclaw показываем с пометкой
+            if (after.updatedBySource === 'telegram_bot') {
                 console.log(`⏭️ Stopped via ${after.updatedBySource}, skipping echo notification.`);
             } else {
                 const userDoc = await db.collection('users').doc(after.employeeId).get();
@@ -73,8 +73,9 @@ export const onWorkSessionUpdate = functions.firestore
                     const telegramId = userData?.telegramId;
 
                     if (telegramChatId) {
-                        const earnedStr = after.sessionEarnings ? `$${after.sessionEarnings}` : 'N/A';
-                        let msg = `⏹️ <b>Рабочая смена завершена (Web CRM) 💻</b>\n\n🏢 Объект: ${after.clientName || 'Не указан'}\n⏱ Время: ${actualMinutes} мин.\n💰 Заработано: ${earnedStr}`;
+                        const earnedStr = after.sessionEarnings != null ? `$${after.sessionEarnings}` : 'N/A';
+                        const sourceLabel = after.updatedBySource === 'openclaw' ? 'Jarvis 🤖' : 'Web CRM 💻';
+                        let msg = `⏹️ <b>Рабочая смена завершена (${sourceLabel})</b>\n\n🏢 Объект: ${after.clientName || 'Не указан'}\n⏱ Время: ${actualMinutes} мин.\n💰 Заработано: ${earnedStr}`;
 
                         if (after.autoClosed) {
                             msg = `⚠️ <b>Ваша смена длилась слишком долго и была автоматически закрыта</b>\n\n⏱ Учтено: ${actualMinutes} мин\n💰 Заработано: ${earnedStr}\n\nПожалуйста, свяжитесь с администратором для корректировки времени.`;
@@ -82,7 +83,17 @@ export const onWorkSessionUpdate = functions.firestore
 
                         // Send text and force update keyboard to default
                         await sendMessage(telegramChatId, msg, { parse_mode: 'HTML' });
-                        if (telegramId) await sendMainMenu(telegramChatId, telegramId);
+                        if (telegramId) {
+                            // Wait 2 seconds before sending main menu to avoid race condition
+                            // where new session might be starting immediately after stop
+                            setTimeout(async () => {
+                                try {
+                                    await sendMainMenu(telegramChatId, telegramId);
+                                } catch (error) {
+                                    console.error('Error sending delayed main menu:', error);
+                                }
+                            }, 2000);
+                        }
                         console.log(`✅ Session close notification sent to Telegram ID ${telegramChatId}`);
                     }
                 }

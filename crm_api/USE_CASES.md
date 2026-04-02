@@ -231,6 +231,37 @@ PDF → ИИ парсит → `POST /api/finance/transactions/batch` `{ transact
 
 ---
 
+## 🎯 Сводка и массовые операции (Phase 3)
+
+**Бонус: Утренний обзор одним запросом**
+Прораб: «Что у нас сегодня?»
+→ `GET /api/dashboard`
+Ответ: активные сессии, задачи на сегодня, последние расходы, открытые сметы, всего клиентов.
+
+**Бонус: Полная карточка клиента**
+Менеджер: «Покажи всё по Стиву»
+→ `GET /api/clients/:id`
+Ответ: профиль + проекты + задачи (с разбивкой по статусам) + расходы + время + сметы + объекты.
+
+**Бонус: Список всех клиентов**
+→ `GET /api/clients/list?limit=100&status=customer`
+Ответ: массив клиентов с контактами, статус-фильтрация.
+
+**Бонус: Массовое закрытие задач по проекту**
+Проект завершён — закрыть все задачи одним вызовом:
+→ `POST /api/gtd-tasks/batch-update` `{ taskIds: ["t1", "t2", "t3", ...], update: { status: "completed" } }`
+До 50 задач за раз, отчёт о не-найденных ID.
+
+**Бонус: Массовое переназначение**
+Олег уходит в отпуск — все его задачи переходят Ивану:
+→ `POST /api/gtd-tasks/batch-update` `{ taskIds: [...], update: { assigneeId: "ivan-id", assigneeName: "Иван" } }`
+
+**Бонус: Health Check для мониторинга**
+→ `GET /api/health` (без авторизации)
+Ответ: status, version, uptime, environment. Для UptimeRobot / Grafana.
+
+---
+
 ## Паттерны комбинирования
 
 ### Полный цикл нового объекта (7 вызовов):
@@ -251,9 +282,21 @@ POST /api/costs             → фиксация закупки
 POST /api/time-tracking     → { action: "stop" }
 ```
 
+### Утренний обзор прораба (1 вызов вместо 5):
+```
+GET /api/dashboard          → activeSessions + tasksDueToday + recentCosts + openEstimates
+```
+> Раньше для этого нужно было 5 отдельных запросов!
+
 ### Еженедельный отчёт прораба (3 вызова):
 ```
 GET /api/time-tracking/summary  → зарплаты
 GET /api/costs/list             → расходы
 GET /api/plan-vs-fact           → бюджет vs факт
+```
+
+### Закрытие проекта (2 вызова):
+```
+POST /api/gtd-tasks/batch-update → { taskIds: [...], update: { status: "completed" } }
+GET  /api/clients/:id            → финальная проверка: все задачи закрыты?
 ```

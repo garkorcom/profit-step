@@ -16,8 +16,8 @@ export const onWorkSessionCreate = functions.firestore
             return;
         }
 
-        // 🛡️ ЗАЩИТА ОТ ЭХА: Уведомляем, ТОЛЬКО если источник НЕ Jarvis и НЕ обычный TG-бот.
-        if (sessionData.source === 'openclaw' || sessionData.source === 'telegram_bot') {
+        // 🛡️ ЗАЩИТА ОТ ЭХА: telegram_bot пропускаем, openclaw показываем с пометкой Jarvis
+        if (sessionData.source === 'telegram_bot') {
             console.log(`⏭️ Source is ${sessionData.source}, skipping echo notification.`);
             return;
         }
@@ -40,7 +40,8 @@ export const onWorkSessionCreate = functions.firestore
             }
 
             // 3. Send Message
-            const msg = `▶️ <b>Рабочая сессия начата (Web CRM) 💻</b>\n` +
+            const startSourceLabel = sessionData.source === 'openclaw' ? 'Jarvis 🤖' : 'Web CRM 💻';
+            const msg = `▶️ <b>Рабочая сессия начата (${startSourceLabel})</b>\n` +
                         `🏢 Объект: ${sessionData.clientName || 'Не указан'}\n` +
                         `📝 Задача: ${sessionData.relatedTaskTitle || description}`;
 

@@ -556,6 +556,37 @@ app.patch('/api/clients/:id', async (req, res, next) => {
   }
 });
 
+// ─── GET /api/clients/list ───────────────────────────────────────────
+
+app.get('/api/clients/list', async (req, res, next) => {
+  try {
+    const limitParam = Math.min(parseInt(req.query.limit as string) || 50, 200);
+    const status = req.query.status as string;
+
+    logger.info('👤 clients:list', { limit: limitParam, status });
+    const clients = await getCachedClients();
+
+    let filtered = clients;
+    if (status) {
+      filtered = clients.filter((c: any) => c.status === status);
+    }
+
+    const result = filtered.slice(0, limitParam).map((c: any) => ({
+      clientId: c.id,
+      name: c.name,
+      address: c.address || null,
+      phone: c.phone || null,
+      email: c.email || null,
+      status: c.status || null,
+      type: c.type || null,
+    }));
+
+    res.json({ clients: result, count: result.length, total: filtered.length });
+  } catch (e) {
+    next(e);
+  }
+});
+
 // ─── GET /api/clients/search ────────────────────────────────────────
 
 app.get('/api/clients/search', async (req, res, next) => {
@@ -950,6 +981,13 @@ app.post('/api/time-tracking', async (req, res, next) => {
           const userDoc = await tx.get(userRef);
           const activeSessionId = userDoc.data()?.activeSessionId as string | undefined;
 
+          // 1b. Resolve clientName from clientId if not provided
+          let resolvedClientName = data.clientName || '';
+          let clientDoc: admin.firestore.DocumentSnapshot | null = null;
+          if (!resolvedClientName && data.clientId) {
+            clientDoc = await tx.get(db.collection('clients').doc(data.clientId));
+          }
+
           // 2a. Read pointed-to session (if exists)
           let pointerSessionDoc: admin.firestore.DocumentSnapshot | null = null;
           if (activeSessionId) {
@@ -1042,6 +1080,9 @@ app.post('/api/time-tracking', async (req, res, next) => {
 
           // 4. Create new session + update pointer
           const effectiveStartTime = manualStartTime || Timestamp.now();
+          if (!resolvedClientName && clientDoc && clientDoc.exists) {
+            resolvedClientName = clientDoc.data()?.name || '';
+          }
           const newRef = db.collection('work_sessions').doc();
           tx.set(newRef, {
             employeeId: userId,
@@ -1050,7 +1091,7 @@ app.post('/api/time-tracking', async (req, res, next) => {
             status: 'active',
             description: data.taskTitle,
             clientId: data.clientId || '',
-            clientName: data.clientName || '',
+            clientName: resolvedClientName || '',
             type: 'regular',
             relatedTaskId: data.taskId || null,
             relatedTaskTitle: data.taskTitle,
@@ -1202,6 +1243,7 @@ app.post('/api/time-tracking', async (req, res, next) => {
             endTime,
             durationMinutes: mins,
             sessionEarnings: earn,
+            updatedBySource: 'openclaw',
           });
           tx.update(userRef, { activeSessionId: null });
 

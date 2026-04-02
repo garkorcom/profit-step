@@ -100,7 +100,7 @@ export async function showDraftConfirmation(
 }
 
 export async function getActiveSession(userId: number) {
-    // Check for active sessions first
+    // Check for active sessions first (search by telegramId)
     let qs = await admin.firestore().collection('work_sessions')
         .where('employeeId', '==', userId)
         .where('status', '==', 'active')
@@ -112,7 +112,7 @@ export async function getActiveSession(userId: number) {
         return qs.docs[0];
     }
 
-    // Check for paused sessions if no active found
+    // Check for paused sessions if no active found (search by telegramId)
     qs = await admin.firestore().collection('work_sessions')
         .where('employeeId', '==', userId)
         .where('status', '==', 'paused')
@@ -124,6 +124,44 @@ export async function getActiveSession(userId: number) {
         return qs.docs[0];
     }
 
+    // Cross-lookup: search by Firebase UID if telegramId didn't match
+    try {
+        const userSnap = await admin.firestore().collection('users')
+            .where('telegramId', '==', String(userId))
+            .limit(1)
+            .get();
+
+        if (!userSnap.empty) {
+            const firebaseUid = userSnap.docs[0].id;
+
+            // Search active sessions by Firebase UID
+            qs = await admin.firestore().collection('work_sessions')
+                .where('employeeId', '==', firebaseUid)
+                .where('status', '==', 'active')
+                .orderBy('startTime', 'desc')
+                .limit(1)
+                .get();
+
+            if (!qs.empty) {
+                return qs.docs[0];
+            }
+
+            // Search paused sessions by Firebase UID
+            qs = await admin.firestore().collection('work_sessions')
+                .where('employeeId', '==', firebaseUid)
+                .where('status', '==', 'paused')
+                .orderBy('startTime', 'desc')
+                .limit(1)
+                .get();
+
+            if (!qs.empty) {
+                return qs.docs[0];
+            }
+        }
+    } catch (error) {
+        console.error('Error in cross-lookup for getActiveSession:', error);
+    }
+
     return null;
 }
 
@@ -131,14 +169,45 @@ export async function getActiveSession(userId: number) {
  * Get ONLY active session (not paused). Use when you need strictly running sessions.
  */
 export async function getActiveSessionStrict(userId: number) {
-    const qs = await admin.firestore().collection('work_sessions')
+    // Search by telegramId first
+    let qs = await admin.firestore().collection('work_sessions')
         .where('employeeId', '==', userId)
         .where('status', '==', 'active')
         .orderBy('startTime', 'desc')
         .limit(1)
         .get();
 
-    return !qs.empty ? qs.docs[0] : null;
+    if (!qs.empty) {
+        return qs.docs[0];
+    }
+
+    // Cross-lookup: search by Firebase UID if telegramId didn't match
+    try {
+        const userSnap = await admin.firestore().collection('users')
+            .where('telegramId', '==', String(userId))
+            .limit(1)
+            .get();
+
+        if (!userSnap.empty) {
+            const firebaseUid = userSnap.docs[0].id;
+
+            // Search active sessions by Firebase UID
+            qs = await admin.firestore().collection('work_sessions')
+                .where('employeeId', '==', firebaseUid)
+                .where('status', '==', 'active')
+                .orderBy('startTime', 'desc')
+                .limit(1)
+                .get();
+
+            if (!qs.empty) {
+                return qs.docs[0];
+            }
+        }
+    } catch (error) {
+        console.error('Error in cross-lookup for getActiveSessionStrict:', error);
+    }
+
+    return null;
 }
 
 /**

@@ -20,6 +20,10 @@ export interface ClientItem {
   id: string;
   name: string;
   address: string | null;
+  phone?: string | null;
+  email?: string | null;
+  status?: string | null;
+  type?: string | null;
 }
 
 // ─── Cost Categories ────────────────────────────────────────────────
@@ -65,13 +69,20 @@ export async function getCachedClients(): Promise<ClientItem[]> {
 async function refreshClientCache(): Promise<ClientItem[]> {
   logger.info('🔍 clients:cache MISS — refreshing');
   const snap = await db.collection('clients')
-    .where('status', '==', 'active').get();
+    .where('status', 'in', ['new', 'contacted', 'qualified', 'customer', 'active']).get();
 
-  const clients: ClientItem[] = snap.docs.map((d) => ({
-    id: d.id,
-    name: d.data().name || '',
-    address: d.data().address || null,
-  }));
+  const clients: ClientItem[] = snap.docs.map((d) => {
+    const data = d.data();
+    return {
+      id: d.id,
+      name: data.name || '',
+      address: data.address || null,
+      phone: data.phone || data.contacts?.[0]?.phone || null,
+      email: data.email || data.contacts?.[0]?.email || null,
+      status: data.status || null,
+      type: data.type || null,
+    };
+  });
 
   await db.doc(CACHE_DOC_PATH).set({
     clients,

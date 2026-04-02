@@ -8,9 +8,7 @@
 import { logger } from 'firebase-functions';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import axios from 'axios';
-import { safeConfig } from '../utils/safeConfig';
-
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || safeConfig().gemini?.api_key;
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
 const MODEL_NAME = 'gemini-2.0-flash';
 
 export interface FaceVerificationResult {

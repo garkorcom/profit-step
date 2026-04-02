@@ -10,7 +10,6 @@ import * as InboxHandler from './handlers/inboxHandler';
 import * as GtdHandler from './handlers/gtdHandler';
 import { sendMessage, getActiveSession, getActiveSessionStrict, sendMainMenu, findPlatformUser, logBotAction, calculateDistanceMeters } from './telegramUtils';
 import { resolveHourlyRate } from './rateUtils';
-import { safeConfig } from '../../utils/safeConfig';
 import { verifyEmployeeFace } from '../../services/faceVerificationService';
 import { generateConversationalReply } from '../../services/telegramAIAssistant';
 
@@ -24,9 +23,9 @@ const db = admin.firestore();
 // Configuration
 // SECURITY: Prefer environment variable, fallback to config, then hardcoded (for dev/ref)
 // Ideally: firebase functions:config:set worker_bot.token="..." worker_bot.password="..."
-const WORKER_BOT_TOKEN = process.env.WORKER_BOT_TOKEN || safeConfig().worker_bot?.token;
-const WORKER_PASSWORD = process.env.WORKER_PASSWORD || safeConfig().worker_bot?.password || '9846';
-const ADMIN_GROUP_ID = process.env.ADMIN_GROUP_ID || safeConfig().worker_bot?.admin_group_id;
+const WORKER_BOT_TOKEN = process.env.WORKER_BOT_TOKEN || '';
+const WORKER_PASSWORD = process.env.WORKER_PASSWORD || '9846' || '9846';
+const ADMIN_GROUP_ID = process.env.ADMIN_GROUP_ID || '';
 
 // Types
 interface TelegramUpdate {
@@ -1886,7 +1885,7 @@ async function finalizeSession(chatId: number, userId: number, activeSession: an
  */
 async function transcribeAudioWithRetry(audioBase64: string, systemPrompt: string): Promise<string> {
     // Get API key from Firebase config or environment
-    const apiKey = process.env.GEMINI_API_KEY || safeConfig().gemini?.api_key;
+    const apiKey = process.env.GEMINI_API_KEY || '';
 
     if (!apiKey) {
         throw new Error('GEMINI_API_KEY not configured. Set it via: firebase functions:config:set gemini.api_key="YOUR_KEY"');

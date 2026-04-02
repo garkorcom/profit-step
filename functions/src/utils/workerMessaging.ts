@@ -1,6 +1,4 @@
 import * as admin from 'firebase-admin';
-import { safeConfig } from './safeConfig';
-
 /**
  * Utility to find a user's Telegram ID from either 'employees' or 'users' collection 
  * and send them a message via the Worker Bot.
@@ -28,7 +26,7 @@ export async function sendMessageToWorker(userIdOrEmployeeId: string, text: stri
         }
 
         // 3. Send via Telegram API
-        const token = process.env.WORKER_BOT_TOKEN || safeConfig().worker_bot?.token;
+        const token = process.env.WORKER_BOT_TOKEN || '';
         if (!token) {
             console.error(`[sendMessageToWorker] Missing WORKER_BOT_TOKEN`);
             return false;

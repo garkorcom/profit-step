@@ -2,12 +2,11 @@ import * as functions from 'firebase-functions';
 import { logger } from 'firebase-functions';
 import * as admin from 'firebase-admin';
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import { safeConfig } from '../../utils/safeConfig';
 import { BlueprintAgentV3Result } from '../../types/blueprint.types';
 
 if (admin.apps.length === 0) admin.initializeApp();
 
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || safeConfig().gemini?.api_key;
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
 
 const TAKEOFF_PROMPT_V3 = `You are a professional Master Electrician and Estimator acting as a 2D Object Detection AI.
 Your task is to locate and output the exact bounding box coordinates of electrical devices on the provided blueprint.

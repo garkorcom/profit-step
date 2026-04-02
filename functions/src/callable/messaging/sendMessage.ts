@@ -1,8 +1,6 @@
 import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
 import * as nodemailer from 'nodemailer';
-import { safeConfig } from '../../utils/safeConfig';
-
 // const db = admin.firestore(); // Moved inside function
 
 // Initialize Nodemailer (Gmail or other SMTP)
@@ -10,8 +8,8 @@ import { safeConfig } from '../../utils/safeConfig';
 const transporter = nodemailer.createTransport({
     service: 'gmail',
     auth: {
-        user: process.env.EMAIL_USER || safeConfig().email?.user,
-        pass: process.env.EMAIL_PASS || safeConfig().email?.pass,
+        user: process.env.EMAIL_USER || '',
+        pass: process.env.EMAIL_PASS || '',
     },
 });
 
@@ -80,7 +78,7 @@ export const sendMessage = functions.https.onCall(async (data: SendMessageData, 
                 const telegramChatId = lead?.telegramChatId;
 
                 if (telegramChatId) {
-                    const token = process.env.TELEGRAM_TOKEN || safeConfig().telegram?.token;
+                    const token = process.env.TELEGRAM_TOKEN || '';
                     if (token) {
                         await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
                             method: 'POST',
@@ -117,8 +115,8 @@ export const sendMessage = functions.https.onCall(async (data: SendMessageData, 
         // --- Email ---
         if (channels.email && email) {
             try {
-                const emailUser = process.env.EMAIL_USER || safeConfig().email?.user;
-                const emailPass = process.env.EMAIL_PASS || safeConfig().email?.pass;
+                const emailUser = process.env.EMAIL_USER || '';
+                const emailPass = process.env.EMAIL_PASS || '';
 
                 if (!emailUser || !emailPass) {
                     throw new Error('Missing email configuration (EMAIL_USER/EMAIL_PASS)');

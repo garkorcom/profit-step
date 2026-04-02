@@ -6,8 +6,6 @@
 
 import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
-import { safeConfig } from './utils/safeConfig';
-
 const db = admin.firestore();
 
 /**
@@ -80,9 +78,7 @@ export const checkEmailStatuses = functions
 export async function getBrevoEmailStatus(messageId: string): Promise<string> {
   // TODO: Implement Brevo API call
   // https://developers.brevo.com/reference/getemailactivity
-
-  const config = safeConfig();
-  const apiKey = config.brevo?.api_key;
+  const apiKey = process.env.BREVO_API_KEY || '';
 
   if (!apiKey) {
     throw new Error('Brevo API key not configured');

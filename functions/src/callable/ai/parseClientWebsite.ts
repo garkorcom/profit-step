@@ -1,6 +1,5 @@
 import * as functions from 'firebase-functions';
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import { safeConfig } from '../../utils/safeConfig';
 import axios from 'axios';
 import * as cheerio from 'cheerio';
 
@@ -95,7 +94,7 @@ export const parseClientWebsite = functions
         }
 
         // 2. Call Gemini API
-        const apiKey = process.env.GEMINI_API_KEY || safeConfig().gemini?.api_key;
+        const apiKey = process.env.GEMINI_API_KEY || '';
 
         if (!apiKey) {
             throw new functions.https.HttpsError('failed-precondition', 'GEMINI_API_KEY not configured.');

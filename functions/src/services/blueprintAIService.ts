@@ -2,13 +2,12 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import Anthropic from '@anthropic-ai/sdk';
 import OpenAI from 'openai';
 import { logger } from 'firebase-functions';
-import { safeConfig } from '../utils/safeConfig';
 import { BlueprintAgentResult, BlueprintDiscrepancy, BlueprintFileClassification } from '../types/blueprint.types';
 
 // ===== API Keys =====
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || safeConfig().gemini?.api_key;
-const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || safeConfig().anthropic?.api_key || safeConfig().anthropic?.key;
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY || safeConfig().openai?.api_key || safeConfig().openai?.key;
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
+const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || '' || '';
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '' || '';
 
 // ===== Building Context (extracted before analysis) =====
 export interface BuildingContext {

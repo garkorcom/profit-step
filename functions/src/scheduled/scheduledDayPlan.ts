@@ -10,7 +10,6 @@ import * as functions from 'firebase-functions';
 import { logger } from 'firebase-functions';
 import * as admin from 'firebase-admin';
 import axios from 'axios';
-import { safeConfig } from '../utils/safeConfig';
 import { generateDayPlan as generatePlanFunction } from '../callable/gtd/generateDayPlan';
 
 if (admin.apps.length === 0) {
@@ -18,7 +17,7 @@ if (admin.apps.length === 0) {
 }
 
 const db = admin.firestore();
-const WORKER_BOT_TOKEN = process.env.WORKER_BOT_TOKEN || safeConfig().worker_bot?.token;
+const WORKER_BOT_TOKEN = process.env.WORKER_BOT_TOKEN || '';
 
 
 

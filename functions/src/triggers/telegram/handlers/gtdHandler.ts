@@ -9,10 +9,8 @@ import * as admin from 'firebase-admin';
 import { logger } from 'firebase-functions';
 import { sendMessage, findPlatformUser } from '../telegramUtils';
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import { safeConfig } from '../../../utils/safeConfig';
-
 const db = admin.firestore();
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || safeConfig().gemini?.api_key;
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
 
 // ═══════════════════════════════════════════════════════════
 // CONSTANTS

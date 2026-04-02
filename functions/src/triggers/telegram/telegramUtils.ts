@@ -1,13 +1,11 @@
 import * as admin from 'firebase-admin';
 import axios from 'axios';
 import * as ShoppingAI from '../../services/shoppingAIService';
-import { safeConfig } from '../../utils/safeConfig';
-
 if (admin.apps.length === 0) {
     admin.initializeApp();
 }
 const db = admin.firestore();
-const WORKER_BOT_TOKEN = process.env.WORKER_BOT_TOKEN || safeConfig().worker_bot?.token;
+const WORKER_BOT_TOKEN = process.env.WORKER_BOT_TOKEN || '';
 
 /**
  * Find platform user by Telegram ID.

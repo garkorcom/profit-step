@@ -1,11 +1,9 @@
 import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
 import OpenAI from 'openai';
-import { safeConfig } from '../../utils/safeConfig';
-
 // const db = admin.firestore(); // Moved inside function
 const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY || safeConfig().openai?.key || 'mock-key',
+    apiKey: process.env.OPENAI_API_KEY || '' || 'mock-key',
 });
 
 export const generateLeadSummary = functions.https.onCall(async (data, context) => {

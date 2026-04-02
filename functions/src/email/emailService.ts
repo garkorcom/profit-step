@@ -8,8 +8,6 @@
 import * as nodemailer from 'nodemailer';
 
 import { getInviteEmailTemplate } from './templates/inviteTemplate';
-import { safeConfig } from '../utils/safeConfig';
-
 // Интерфейс для данных приглашения
 interface InviteEmailData {
   toEmail: string;
@@ -44,22 +42,12 @@ interface InviteEmailData {
  * - PASSWORD: SMTP ключ из https://app.brevo.com/settings/keys/smtp
  */
 function createTransporter() {
-  // Пытаемся получить конфигурацию из .env (приоритет)
-  let emailUser = process.env.EMAIL_USER;
-  let emailPassword = process.env.EMAIL_PASSWORD;
+  // Configuration loaded from .env by Firebase
+  const emailUser = process.env.EMAIL_USER;
+  const emailPassword = process.env.EMAIL_PASSWORD;
   let emailHost = process.env.EMAIL_HOST;
-  let emailPort = process.env.EMAIL_PORT;
-  let emailFrom = process.env.EMAIL_FROM;
-
-  // Если не найдено в .env, пробуем Firebase Functions Config (legacy)
-  if (!emailUser || !emailPassword) {
-    const config = safeConfig();
-    emailUser = config.email?.user;
-    emailPassword = config.email?.password;
-    emailHost = config.email?.host;
-    emailPort = config.email?.port;
-    emailFrom = config.email?.from;
-  }
+  const emailPort = process.env.EMAIL_PORT;
+  const emailFrom = process.env.EMAIL_FROM;
 
   // Устанавливаем дефолтные значения для Brevo
   emailHost = emailHost || 'smtp-relay.brevo.com';

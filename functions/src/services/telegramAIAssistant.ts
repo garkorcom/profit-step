@@ -1,8 +1,6 @@
 import { logger } from 'firebase-functions';
 import { GoogleGenerativeAI, Schema, SchemaType } from '@google/generative-ai';
-import { safeConfig } from '../utils/safeConfig';
-
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || safeConfig().gemini?.api_key;
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
 const MODELS = ['gemini-2.0-flash', 'gemini-1.5-flash-latest'];
 
 interface SessionContext {

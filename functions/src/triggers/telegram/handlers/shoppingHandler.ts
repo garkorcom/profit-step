@@ -4,9 +4,7 @@ import { logger } from 'firebase-functions';
 import * as ShoppingAI from '../../../services/shoppingAIService';
 import * as ShoppingService from '../../../services/shoppingBotService';
 import { sendMessage, showDraftConfirmation, sendMainMenu } from '../telegramUtils';
-import { safeConfig } from '../../../utils/safeConfig';
-
-const WORKER_BOT_TOKEN = process.env.WORKER_BOT_TOKEN || safeConfig().worker_bot?.token;
+const WORKER_BOT_TOKEN = process.env.WORKER_BOT_TOKEN || '';
 
 /**
  * Handle shopping quick add text (AI-powered)

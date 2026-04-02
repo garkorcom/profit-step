@@ -2,12 +2,11 @@ import * as functions from 'firebase-functions';
 import { logger } from 'firebase-functions';
 import * as admin from 'firebase-admin';
 import { GoogleGenerativeAI, Schema, SchemaType } from '@google/generative-ai';
-import { safeConfig } from '../../utils/safeConfig';
 import { BlueprintAgentResult } from '../../types/blueprint.types';
 
 if (admin.apps.length === 0) admin.initializeApp();
 
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || safeConfig().gemini?.api_key;
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
 
 const PLAUSIBILITY_SYSTEM_PROMPT = `You are a Master Electrician and Senior Estimator Quality Assurance AI.
 Your job is to review the aggregated quantities of an electrical takeoff against the basic facts of the project and flag any IMPOSSIBLE or HIGHLY UNLIKELY anomalies, which usually stem from AI hallucinations (e.g. overcounting).

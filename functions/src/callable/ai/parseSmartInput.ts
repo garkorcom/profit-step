@@ -9,8 +9,6 @@
 
 import * as functions from 'firebase-functions';
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import { safeConfig } from '../../utils/safeConfig';
-
 // ══════════════════════════════════════════════════════════════
 // TYPES
 // ══════════════════════════════════════════════════════════════
@@ -128,7 +126,7 @@ const SYSTEM_PROMPT = `Ты помощник для анализа описан�
 // ══════════════════════════════════════════════════════════════
 
 async function callGemini(prompt: string): Promise<string> {
-    const apiKey = process.env.GEMINI_API_KEY || safeConfig().gemini?.api_key;
+    const apiKey = process.env.GEMINI_API_KEY || '';
 
     if (!apiKey) {
         throw new functions.https.HttpsError('failed-precondition',

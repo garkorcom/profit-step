@@ -8,10 +8,8 @@
 import { logger } from 'firebase-functions';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import axios from 'axios';
-import { safeConfig } from '../utils/safeConfig';
-
 // Get API key
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || safeConfig().gemini?.api_key;
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
 
 const MODELS = ['gemini-2.0-flash', 'gemini-1.5-flash-latest', 'gemini-1.5-pro-latest', 'gemini-pro'];
 

@@ -17,10 +17,9 @@ import { logger } from 'firebase-functions';
 import axios from 'axios';
 import { sendMessage, editMessage, getActiveSession } from '../telegramUtils';
 import { parseVoiceTask } from '../../../services/smartDispatcherService';
-import { safeConfig } from '../../../utils/safeConfig';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || safeConfig().gemini?.api_key;
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
 const MODELS = ['gemini-2.0-flash', 'gemini-1.5-flash-latest', 'gemini-1.5-pro-latest'];
 
 /**
@@ -73,7 +72,7 @@ async function transcribeInboxVoice(audioBuffer: Buffer, mimeType: string = 'aud
 const db = admin.firestore();
 const storage = admin.storage();
 
-const WORKER_BOT_TOKEN = process.env.WORKER_BOT_TOKEN || safeConfig().worker_bot?.token;
+const WORKER_BOT_TOKEN = process.env.WORKER_BOT_TOKEN || '';
 
 // ═══════════════════════════════════════════════════════════
 // TYPES

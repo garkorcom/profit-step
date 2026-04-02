@@ -99,6 +99,7 @@ router.patch('/api/clients/:id', async (req, res, next) => {
     if (data.company !== undefined) updatePayload.company = data.company;
     if (data.geo !== undefined) updatePayload.geo = data.geo;
     if (data.nearbyStores !== undefined) updatePayload.nearbyStores = data.nearbyStores;
+    if (data.accessCredentials !== undefined) updatePayload.accessCredentials = data.accessCredentials;
 
     await clientRef.update(updatePayload);
 

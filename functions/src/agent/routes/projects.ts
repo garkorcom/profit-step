@@ -166,10 +166,10 @@ router.get('/api/projects/:id/dashboard', async (req, res, next) => {
       db.collection('projects').doc(projectId).get(),
       db.collection('gtd_tasks').where('projectId', '==', projectId)
         .orderBy('createdAt', 'desc').limit(50).get(),
-      db.collection('work_sessions').where('clientId', '==', projectId)
+      db.collection('work_sessions').where('projectId', '==', projectId)
         .where('status', '==', 'completed')
-        .orderBy('startTime', 'desc').limit(10).get(),
-      db.collection('costs').where('clientId', '==', projectId).get(),
+        .limit(10).get(),
+      db.collection('costs').where('projectId', '==', projectId).get(),
       db.collection('projects').doc(projectId).collection('files').get(),
     ]);
 

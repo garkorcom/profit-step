@@ -138,6 +138,9 @@ router.get('/api/gtd-tasks/list', async (req, res, next) => {
     if (clientId) {
       q = q.where('clientId', '==', clientId);
     }
+    if (req.query.projectId) {
+      q = q.where('projectId', '==', req.query.projectId);
+    }
     if (params.assigneeId) {
       q = q.where('assigneeId', '==', params.assigneeId);
     }

@@ -30,6 +30,7 @@ export const UpdateClientSchema = z.object({
     lng: z.number(),
   }).optional(),
   nearbyStores: z.array(z.string()).optional(),
+  accessCredentials: z.array(z.any()).optional(),
 }).refine(data => Object.keys(data).length > 0, {
   message: 'At least one field must be provided',
 });

@@ -84,15 +84,26 @@ export const onWorkSessionUpdate = functions.firestore
                         // Send text and force update keyboard to default
                         await sendMessage(telegramChatId, msg, { parse_mode: 'HTML' });
                         if (telegramId) {
-                            // Wait 2 seconds before sending main menu to avoid race condition
+                            // Wait 5 seconds before sending main menu to avoid race condition
                             // where new session might be starting immediately after stop
                             setTimeout(async () => {
                                 try {
-                                    await sendMainMenu(telegramChatId, telegramId);
+                                    // Check if employee has a new active session before sending main menu
+                                    const activeSessionSnap = await db.collection('work_sessions')
+                                        .where('employeeId', '==', after.employeeId)
+                                        .where('status', '==', 'active')
+                                        .limit(1)
+                                        .get();
+
+                                    if (activeSessionSnap.empty) {
+                                        await sendMainMenu(telegramChatId, telegramId);
+                                    } else {
+                                        console.log(`⏭️ Employee has new active session, skipping main menu for ${telegramChatId}`);
+                                    }
                                 } catch (error) {
                                     console.error('Error sending delayed main menu:', error);
                                 }
-                            }, 2000);
+                            }, 5000);
                         }
                         console.log(`✅ Session close notification sent to Telegram ID ${telegramChatId}`);
                     }

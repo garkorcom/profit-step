@@ -42,6 +42,7 @@ export const UpdateTaskSchema = z.object({
   description: z.string().optional(),
   title: z.string().min(1).optional(),
   estimatedDurationMinutes: z.number().positive().optional(),
+  projectId: z.string().nullable().optional(),
   parentTaskId: z.string().optional(),
   isSubtask: z.boolean().optional(),
   budgetAmount: z.number().optional(),

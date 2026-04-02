@@ -30,6 +30,22 @@ router.post('/api/costs', async (req, res, next) => {
       }
     }
 
+    // Auto-resolve projectId if not provided but clientId exists
+    let resolvedProjectId = data.projectId || null;
+    if (!resolvedProjectId && data.clientId) {
+      // Check if client has exactly one active project
+      const clientProjectsSnap = await db.collection('projects')
+        .where('clientId', '==', data.clientId)
+        .where('status', '==', 'active')
+        .limit(2) // Limit to 2 to detect if there's more than 1
+        .get();
+
+      if (clientProjectsSnap.size === 1) {
+        resolvedProjectId = clientProjectsSnap.docs[0].id;
+        logger.info('💰 costs:auto-resolved projectId', { clientId: data.clientId, projectId: resolvedProjectId });
+      }
+    }
+
     const effectiveAmount = data.category === 'reimbursement'
       ? -Math.abs(data.amount) : data.amount;
 
@@ -48,6 +64,7 @@ router.post('/api/costs', async (req, res, next) => {
       status: 'confirmed',
       source: 'openclaw',
       taskId: data.taskId || null,
+      projectId: resolvedProjectId,
       siteId: data.siteId || null,
       createdAt: FieldValue.serverTimestamp(),
     });
@@ -153,6 +170,7 @@ router.get('/api/costs/list', async (req, res, next) => {
         originalAmount: c.originalAmount,
         description: c.description || null,
         taskId: c.taskId || null,
+        projectId: c.projectId || null,
         status: c.status,
         source: c.source || null,
         createdAt: c.createdAt?.toDate?.()?.toISOString() || null,

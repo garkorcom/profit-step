@@ -98,11 +98,17 @@ router.post('/api/time-tracking', async (req, res, next) => {
             crossPlatformDocs.push(...activeSnap.docs);
           }
 
-          // 3. hourlyRate cascade: task → user → 0
+          // 3. hourlyRate cascade + projectId resolution: task → user → 0
           let hourlyRate = 0;
+          let resolvedProjectId = data.projectId || null;
           if (data.taskId) {
             const taskDoc = await tx.get(db.collection('gtd_tasks').doc(data.taskId));
-            hourlyRate = taskDoc.data()?.hourlyRate || 0;
+            const taskData = taskDoc.data();
+            hourlyRate = taskData?.hourlyRate || 0;
+            // Auto-resolve projectId from task if not explicitly provided
+            if (!resolvedProjectId && taskData?.projectId) {
+              resolvedProjectId = taskData.projectId;
+            }
           }
           if (!hourlyRate) {
             hourlyRate = userDoc.data()?.hourlyRate || 0;
@@ -182,6 +188,7 @@ router.post('/api/time-tracking', async (req, res, next) => {
             description: data.taskTitle,
             clientId: data.clientId || '',
             clientName: resolvedClientName || '',
+            projectId: resolvedProjectId,
             type: 'regular',
             relatedTaskId: data.taskId || null,
             relatedTaskTitle: data.taskTitle,
@@ -459,6 +466,7 @@ router.get('/api/time-tracking/active-all', async (req, res, next) => {
         employeeName: s.employeeName,
         clientId: s.clientId,
         clientName: s.clientName,
+        projectId: s.projectId || null,
         task: s.relatedTaskTitle || s.description,
         relatedTaskId: s.relatedTaskId || null,
         startTime: s.startTime?.toDate?.()?.toISOString() || null,

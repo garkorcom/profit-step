@@ -8,6 +8,7 @@ export const CreateCostSchema = z.object({
   description: z.string().optional(),
   idempotencyKey: z.string().min(1).optional(),
   taskId: z.string().optional(),
+  projectId: z.string().optional(),
   siteId: z.string().optional(),
 });
 

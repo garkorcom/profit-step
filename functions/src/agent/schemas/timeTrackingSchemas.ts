@@ -7,6 +7,7 @@ export const TimeTrackingSchema = z.discriminatedUnion('action', [
     taskTitle: z.string().min(1),
     clientId: z.string().optional(),
     clientName: z.string().optional(),
+    projectId: z.string().optional(),
     startTime: z.string().optional(),
     siteId: z.string().optional(),
   }),

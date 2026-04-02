@@ -192,6 +192,7 @@ router.get('/api/gtd-tasks/list', async (req, res, next) => {
         priority: t.priority,
         clientId: t.clientId,
         clientName: t.clientName,
+        projectId: t.projectId || null,
         assigneeId: t.assigneeId || null,
         assigneeName: t.assigneeName || null,
         description: t.description || '',
@@ -256,6 +257,9 @@ router.patch('/api/gtd-tasks/:id', async (req, res, next) => {
         ? Timestamp.fromDate(new Date(data.dueDate))
         : null;
     }
+
+    // Project assignment
+    if (data.projectId !== undefined) updatePayload.projectId = data.projectId;
 
     // Budget Tracking fields
     if (data.parentTaskId !== undefined) updatePayload.parentTaskId = data.parentTaskId;

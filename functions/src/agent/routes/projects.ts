@@ -164,11 +164,8 @@ router.get('/api/projects/:id/dashboard', async (req, res, next) => {
     // Parallel queries: project info + tasks + recent sessions + costs total + files count
     const [projectDoc, tasksSnap, sessionsSnap, costsSnap, filesSnap] = await Promise.all([
       db.collection('projects').doc(projectId).get(),
-      db.collection('gtd_tasks').where('projectId', '==', projectId)
-        .orderBy('createdAt', 'desc').limit(50).get(),
-      db.collection('work_sessions').where('projectId', '==', projectId)
-        .where('status', '==', 'completed')
-        .limit(10).get(),
+      db.collection('gtd_tasks').where('projectId', '==', projectId).limit(50).get(),
+      db.collection('work_sessions').where('projectId', '==', projectId).limit(20).get(),
       db.collection('costs').where('projectId', '==', projectId).get(),
       db.collection('projects').doc(projectId).collection('files').get(),
     ]);

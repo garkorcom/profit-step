@@ -1866,10 +1866,32 @@ async function finalizeSession(chatId: number, userId: number, activeSession: an
         throw txError; // Re-throw unexpected errors
     }
 
+    // Fix #2: Calculate salary balance (inline)
+    let balanceInfo = '';
+    try {
+        const yearStart = new Date(new Date().getFullYear(), 0, 1);
+        const sessionsSnap = await admin.firestore().collection('work_sessions')
+            .where('employeeId', '==', userId)
+            .where('status', '==', 'completed')
+            .where('startTime', '>=', admin.firestore.Timestamp.fromDate(yearStart))
+            .get();
+        const totalEarned = sessionsSnap.docs.reduce((sum: number, d: any) => sum + (d.data().sessionEarnings || 0), 0);
+        
+        const paymentsSnap = await admin.firestore().collection('payments')
+            .where('employeeId', '==', String(userId))
+            .get();
+        const totalPayments = paymentsSnap.docs.reduce((sum: number, d: any) => sum + Math.abs(d.data().amount || 0), 0);
+        
+        const balance = totalEarned - totalPayments;
+        balanceInfo = `\n💳 Баланс: $${balance.toFixed(2)} (начислено $${totalEarned.toFixed(2)} - выплачено $${totalPayments.toFixed(2)})`;
+    } catch (e) {
+        console.error('Balance calc error:', e);
+    }
+
     // V2: Time-of-day flavor + Russian
     const finishHour = new Date().getHours();
     const finishGreeting = finishHour >= 17 ? '🌙 Отличная работа!' : '🏁 Смена завершена!';
-    await sendMessage(chatId, `${finishGreeting}\n\n⏱ Сессия: ${Math.floor(totalMinutes / 60)}ч ${totalMinutes % 60}мин\n💰 Заработано: $${sessionEarnings}\n💵 Ставка: $${hourlyRate}/ч\n📅 *За сегодня: ${dailyHours}ч ${dailyMins}мин ($${dailyStats.earnings.toFixed(2)})*\n📍 Объект: ${sessionData.clientName}\n📝 ${description}${extraMessage}`);
+    await sendMessage(chatId, `${finishGreeting}\n\n⏱ Сессия: ${Math.floor(totalMinutes / 60)}ч ${totalMinutes % 60}мин\n💰 Заработано: $${sessionEarnings}\n💵 Ставка: $${hourlyRate}/ч\n📅 *За сегодня: ${dailyHours}ч ${dailyMins}мин ($${dailyStats.earnings.toFixed(2)})*\n📍 Объект: ${sessionData.clientName}\n📝 ${description}${extraMessage}\n\n${balanceInfo}`);
 
     // Fix 8 (Wave 2): Sanitize user-generated text in admin notifications
     const sanitizedDesc = safeDescription.replace(/[*_`\[\]()~>#+\-=|{}.!]/g, '').substring(0, 500);

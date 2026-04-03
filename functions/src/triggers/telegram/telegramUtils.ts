@@ -266,13 +266,19 @@ export function buildStatusAndKeyboard(
     let ongoingBreak = 0;
     const elapsedTotal = Math.floor((now - startMs) / 60000);
     const workMinutes = Math.max(0, elapsedTotal - totalBreaks - ongoingBreak);
-    const hours = Math.floor(workMinutes / 60);
-    const mins = workMinutes % 60;
     const hourlyRate = data.hourlyRate || 0;
-    const earned = ((workMinutes / 60) * hourlyRate).toFixed(2);
     const clientName = data.clientName || 'Неизвестный объект';
 
-    let msg = `👷 ${employeeName}, ты на *${clientName}*.\nВремя: ${hours}ч ${mins}мин. Заработано: $${earned}`;
+    let msg: string;
+    // Fix #1: Show friendly message for newly started sessions (< 1 minute)
+    if (workMinutes < 1) {
+        msg = `👷 ${employeeName}, ты на *${clientName}*.\n✨ Смена начата! Работаем...`;
+    } else {
+        const hours = Math.floor(workMinutes / 60);
+        const mins = workMinutes % 60;
+        const earned = ((workMinutes / 60) * hourlyRate).toFixed(2);
+        msg = `👷 ${employeeName}, ты на *${clientName}*.\nВремя: ${hours}ч ${mins}мин. Заработано: $${earned}`;
+    }
 
     // Forgotten timer warning
     if (elapsedTotal > 720) { // > 12 hours

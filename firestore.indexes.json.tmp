@@ -1,0 +1,25 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "gtd_tasks",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {"fieldPath": "projectId", "order": "ASCENDING"}
+      ]
+    },
+    {
+      "collectionGroup": "work_sessions",
+      "queryScope": "COLLECTION", 
+      "fields": [
+        {"fieldPath": "projectId", "order": "ASCENDING"}
+      ]
+    },
+    {
+      "collectionGroup": "costs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {"fieldPath": "projectId", "order": "ASCENDING"}
+      ]
+    }
+  ]
+}

@@ -246,7 +246,9 @@ export function buildStatusAndKeyboard(
         if (data.lastBreakStart) {
             breakMin = Math.floor((now - data.lastBreakStart.toMillis()) / 60000);
         }
-        let msg = `☕ ${employeeName}, перерыв ${breakMin} мин.`;
+        let msg = breakMin > 0
+            ? `☕ ${employeeName}, перерыв ${breakMin} мин.`
+            : `☕ ${employeeName}, перерыв начат!`;
         if (breakMin > 60) {
             msg += `\n⚠️ Перерыв длится уже больше часа. Продолжить работу?`;
         }

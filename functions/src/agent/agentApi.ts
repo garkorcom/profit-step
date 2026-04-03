@@ -19,7 +19,7 @@ import {
 import {
   clientRoutes, dashboardRoutes, taskRoutes, costRoutes,
   timeTrackingRoutes, financeRoutes, userRoutes,
-  estimateRoutes, projectRoutes, siteRoutes, erpRoutes,
+  estimateRoutes, projectRoutes, siteRoutes, erpRoutes, inventoryRoutes,
 } from './routes';
 
 // ─── Express App ────────────────────────────────────────────────────
@@ -54,7 +54,7 @@ app.use(rateLimitMiddleware);
 const routes = [
   clientRoutes, dashboardRoutes, taskRoutes, costRoutes,
   timeTrackingRoutes, financeRoutes, userRoutes,
-  estimateRoutes, projectRoutes, siteRoutes, erpRoutes,
+  estimateRoutes, projectRoutes, siteRoutes, erpRoutes, inventoryRoutes,
 ];
 routes.forEach(r => app.use(r));
 

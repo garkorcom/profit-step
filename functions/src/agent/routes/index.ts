@@ -12,3 +12,4 @@ export { default as estimateRoutes } from './estimates';
 export { default as projectRoutes } from './projects';
 export { default as siteRoutes } from './sites';
 export { default as erpRoutes } from './erp';
+export { default as inventoryRoutes } from './inventory';

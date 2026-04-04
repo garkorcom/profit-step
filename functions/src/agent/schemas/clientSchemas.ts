@@ -8,7 +8,7 @@ export const CreateClientSchema = z.object({
   email: z.string().email().optional().or(z.literal('')),
   notes: z.string().optional(),
   type: z.enum(['residential', 'commercial', 'industrial']).optional(),
-  company: z.string().optional(),
+  company: z.string().nullable().optional(),
   geo: z.object({
     lat: z.number(),
     lng: z.number(),
@@ -24,7 +24,7 @@ export const UpdateClientSchema = z.object({
   email: z.string().email().optional().or(z.literal('')),
   notes: z.string().optional(),
   type: z.enum(['residential', 'commercial', 'industrial']).optional(),
-  company: z.string().optional(),
+  company: z.string().nullable().optional(),
   geo: z.object({
     lat: z.number(),
     lng: z.number(),

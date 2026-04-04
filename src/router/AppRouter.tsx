@@ -59,6 +59,7 @@ const DevLogBlogPage = React.lazy(() => import('../pages/DevLogBlogPage'));
 const ContactsPage = React.lazy(() => import('../pages/crm/ContactsPage'));
 const SiteDashboardPage = React.lazy(() => import('../pages/sites/SiteDashboardPage'));
 const InfraMapPage = React.lazy(() => import('../pages/InfraMapPage'));
+const ClientPortalPage = React.lazy(() => import('../pages/portal/ClientPortalPage'));
 
 // Loading fallback component
 const PageLoader = () => (
@@ -101,6 +102,9 @@ const AppRouter: React.FC = () => {
         {/* ============================================ */}
         {/* ПУБЛИЧНЫЕ МАРШРУТЫ (БЕЗ HEADER И FOOTER)    */}
         {/* ============================================ */}
+
+        {/* Client Portal - Public Access */}
+        <Route path="/portal/:slug" element={<ClientPortalPage />} />
 
         <Route
           path="/login"

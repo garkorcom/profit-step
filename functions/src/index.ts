@@ -664,3 +664,10 @@ export {
   getNpsStatus,
   getPlanVsFact,
 } from './api/erpV4Api';
+
+// ========================================
+// NOTIFICATIONS — Budget & Deadline Alerts
+// Scheduled every 6 hours + manual HTTP trigger
+// ========================================
+
+export { notifyAlerts, triggerAlerts } from './notifications/alertNotifications';

@@ -1,0 +1,94 @@
+name: CI — Functions
+
+on:
+  push:
+    branches: [main, feature/*]
+    paths:
+      - 'functions/**'
+      - '.github/workflows/ci.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'functions/**'
+
+jobs:
+  # ─── Type Check + Build ────────────────────────────────────────
+  build:
+    name: Build & Type Check
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: functions
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: functions/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npx tsc --noEmit
+
+      - name: Build
+        run: npm run build
+
+  # ─── Agent API Tests (Firestore Emulator) ──────────────────────
+  api-tests:
+    name: Agent API Tests
+    runs-on: ubuntu-latest
+    needs: build
+    defaults:
+      run:
+        working-directory: functions
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: functions/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Firebase CLI
+        run: npm install -g firebase-tools
+
+      - name: Run API tests with emulator
+        run: |
+          firebase emulators:exec \
+            --only firestore \
+            --project profit-step \
+            'npx jest --config jest.agentApi.config.js --forceExit --maxWorkers=1'
+        env:
+          FIRESTORE_EMULATOR_HOST: 127.0.0.1:8080
+          # Minimal env vars for test runtime
+          GEMINI_API_KEY: test-key
+          AGENT_API_KEY: test-api-key
+          OWNER_UID: test-owner-uid
+
+  # ─── Summary ───────────────────────────────────────────────────
+  ci-status:
+    name: CI Status
+    runs-on: ubuntu-latest
+    needs: [build, api-tests]
+    if: always()
+
+    steps:
+      - name: Check results
+        run: |
+          echo "Build: ${{ needs.build.result }}"
+          echo "API Tests: ${{ needs.api-tests.result }}"
+          if [ "${{ needs.build.result }}" = "failure" ] || [ "${{ needs.api-tests.result }}" = "failure" ]; then
+            echo "❌ CI failed"
+            exit 1
+          fi
+          echo "✅ CI passed"

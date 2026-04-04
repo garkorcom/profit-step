@@ -88,7 +88,7 @@ const getClientData = (slug: string) => {
 const estimateItems = [
   {
     id: 1,
-    category: 'ПОЛЫ',
+    category: 'ПОЛЫ (3,600 SF + балконы)',
     icon: <HomeIcon />,
     items: [
       { name: 'Демонтаж плитки + стяжки', price: 9000, unit: '$2.50/SF', status: 'pending' },
@@ -98,29 +98,35 @@ const estimateItems = [
       { name: 'Baseboards снятие/установка', price: 5400, unit: '$1.50/SF', status: 'pending' },
     ],
     total: 59400,
-    comments: [],
+    comments: [
+      { id: 1, text: 'What type of tile options do we have?', author: 'Client', date: '2026-04-04', reply: 'We\'ll provide 3 premium options tomorrow - Юля' },
+    ],
     approved: false,
+    status: 'pending',
   },
   {
     id: 2,
-    category: 'MASTER BATHROOM',
+    category: 'MASTER BATHROOM (~$25,000)',
     icon: <PlumbingIcon />,
     items: [
-      { name: 'Полный демонтаж', price: 3000, unit: 'fixed', status: 'pending' },
+      { name: 'Полный демонтаж: ванна, стекло, душевая, краны, унитаз, bidet, vanity', price: 3000, unit: 'fixed', status: 'pending' },
       { name: 'Вывоз мусора', price: 500, unit: 'fixed', status: 'pending' },
-      { name: 'Сантехника установка', price: 5000, unit: 'fixed', status: 'pending' },
+      { name: 'Сантехника: установка новой ванны, душа, кранов, унитаза', price: 5000, unit: 'fixed', status: 'pending' },
       { name: 'Плитка стены + пол', price: 8000, unit: 'fixed', status: 'pending' },
       { name: 'Стеклянная душевая (custom)', price: 3500, unit: 'fixed', status: 'pending' },
       { name: 'Vanity + зеркало + освещение', price: 2500, unit: 'fixed', status: 'pending' },
-      { name: 'Мелочи (аксессуары, затирка)', price: 2500, unit: 'fixed', status: 'pending' },
+      { name: 'Мелочи (аксессуары, затирка, герметик)', price: 2500, unit: 'fixed', status: 'pending' },
     ],
     total: 25000,
-    comments: [],
+    comments: [
+      { id: 1, text: 'Can we see samples of the vanity options?', author: 'Client', date: '2026-04-03', reply: '' },
+    ],
     approved: false,
+    status: 'question',
   },
   {
     id: 3,
-    category: 'GUEST BATHROOM',
+    category: 'GUEST BATHROOM (~$15,000-20,000)',
     icon: <PlumbingIcon />,
     items: [
       { name: 'Полный демонтаж', price: 2000, unit: 'fixed', status: 'pending' },
@@ -134,20 +140,23 @@ const estimateItems = [
     total: 17000,
     comments: [],
     approved: false,
+    status: 'pending',
   },
   {
     id: 4,
     category: 'ДВЕРИ',
     icon: <DoorIcon />,
     items: [
-      { name: 'Демонтаж дверей + коробок (~10 шт)', price: 1500, unit: 'fixed', status: 'pending' },
+      { name: 'Демонтаж межкомнатных дверей + коробок (~10 шт)', price: 1500, unit: 'fixed', status: 'pending' },
+      { name: 'Упаковка и хранение полотен', price: 0, unit: 'incl', status: 'pending' },
       { name: 'Установка обратно после плитки', price: 2000, unit: 'fixed', status: 'pending' },
       { name: 'Подрезка дверей (if needed)', price: 500, unit: 'fixed', status: 'pending' },
-      { name: 'Реставрация проёмов', price: 1500, unit: 'fixed', status: 'pending' },
+      { name: 'Реставрация проёмов (шпаклёвка, подкраска)', price: 1500, unit: 'fixed', status: 'pending' },
     ],
     total: 5500,
     comments: [],
-    approved: false,
+    approved: true,
+    status: 'approved',
   },
   {
     id: 5,
@@ -155,43 +164,91 @@ const estimateItems = [
     icon: <PaletteIcon />,
     items: [
       { name: 'Подкраска стен после работ', price: 5400, unit: '$1.50/SF', status: 'pending' },
+      { name: 'Полная перекраска (if needed)', price: 10800, unit: '$3.00/SF', status: 'pending' },
     ],
     total: 5400,
-    comments: [],
+    comments: [
+      { id: 1, text: 'Do we need to decide on paint colors now?', author: 'Client', date: '2026-04-04', reply: 'We can choose colors closer to painting stage - Абрамов' },
+    ],
     approved: false,
+    status: 'pending',
   },
   {
     id: 6,
     category: 'ПЕРЕНОС МЕБЕЛИ',
     icon: <BusinessIcon />,
     items: [
-      { name: 'Перенос мебели (2 раза)', price: 2000, unit: 'fixed', status: 'pending' },
+      { name: 'Перенос мебели (2 раза: лево→право→обратно)', price: 2000, unit: 'fixed', status: 'pending' },
       { name: 'Упаковка/защита', price: 500, unit: 'fixed', status: 'pending' },
     ],
     total: 2500,
     comments: [],
     approved: false,
+    status: 'pending',
   },
 ];
 
 const projectStages = [
-  { name: 'Подпись', status: 'completed', progress: 100 },
-  { name: 'Дизайн', status: 'current', progress: 60 },
-  { name: 'Пермит', status: 'upcoming', progress: 0 },
-  { name: 'Демонтаж', status: 'upcoming', progress: 0 },
-  { name: 'Полы', status: 'upcoming', progress: 0 },
-  { name: 'Ванные', status: 'upcoming', progress: 0 },
-  { name: 'Двери', status: 'upcoming', progress: 0 },
-  { name: 'Покраска', status: 'upcoming', progress: 0 },
-  { name: 'Сдача', status: 'upcoming', progress: 0 },
+  { name: 'Подпись', status: 'completed', progress: 100, icon: '✅', description: 'Contract signed' },
+  { name: 'Дизайн', status: 'current', progress: 60, icon: '🔵', description: 'Floor plan in progress' },
+  { name: 'Пермит', status: 'upcoming', progress: 0, icon: '⬜', description: 'City permits pending' },
+  { name: 'Демонтаж', status: 'upcoming', progress: 0, icon: '⬜', description: 'Demo & teardown' },
+  { name: 'Полы', status: 'upcoming', progress: 0, icon: '⬜', description: 'Flooring installation' },
+  { name: 'Ванные', status: 'upcoming', progress: 0, icon: '⬜', description: 'Bathroom renovation' },
+  { name: 'Двери', status: 'upcoming', progress: 0, icon: '⬜', description: 'Doors & trim' },
+  { name: 'Покраска', status: 'upcoming', progress: 0, icon: '⬜', description: 'Painting & finishing' },
+  { name: 'Сдача', status: 'upcoming', progress: 0, icon: '⬜', description: 'Final delivery' },
 ];
 
 const currentTasks = [
-  { id: 1, task: 'Получить floor plan от дизайнера', responsible: 'Юля (Designer)', deadline: '2026-04-10', status: 'in-progress' },
-  { id: 2, task: 'Выбрать плитку для полов', responsible: 'Client', deadline: '2026-04-12', status: 'pending' },
-  { id: 3, task: 'Выбрать ванны, душевые, краны', responsible: 'Client', deadline: '2026-04-15', status: 'pending' },
-  { id: 4, task: 'Согласовать baseboards', responsible: 'Client', deadline: '2026-04-08', status: 'pending' },
-  { id: 5, task: 'Подписать контракт', responsible: 'Client', deadline: '2026-04-05', status: 'urgent' },
+  {
+    id: 1,
+    task: 'Подписать контракт',
+    responsible: 'Client',
+    deadline: '2026-04-05',
+    status: 'urgent',
+    description: 'Contract signing payment to begin the project'
+  },
+  {
+    id: 2,
+    task: 'Получить floor plan от дизайнера',
+    responsible: 'Юля (Designer)',
+    deadline: '2026-04-10',
+    status: 'in-progress',
+    description: 'Complete architectural plans for permit submission'
+  },
+  {
+    id: 3,
+    task: 'Выбрать плитку для полов',
+    responsible: 'Client',
+    deadline: '2026-04-12',
+    status: 'pending',
+    description: 'Choose tile options for 3,600 SF flooring'
+  },
+  {
+    id: 4,
+    task: 'Выбрать ванны, душевые, краны',
+    responsible: 'Client',
+    deadline: '2026-04-15',
+    status: 'pending',
+    description: 'Select fixtures for Master & Guest bathrooms'
+  },
+  {
+    id: 5,
+    task: 'Согласовать baseboards',
+    responsible: 'Client',
+    deadline: '2026-04-08',
+    status: 'pending',
+    description: 'Approve baseboard style and finish'
+  },
+  {
+    id: 6,
+    task: 'Выбрать краску',
+    responsible: 'Client',
+    deadline: '2026-04-20',
+    status: 'pending',
+    description: 'Select paint colors for all rooms'
+  },
 ];
 
 const paymentSchedule = [
@@ -228,6 +285,8 @@ const ClientPortalPage: React.FC = () => {
   const [tabValue, setTabValue] = useState(0);
   const [newComment, setNewComment] = useState<{ [key: number]: string }>({});
   const [timelineProgress, setTimelineProgress] = useState(1);
+
+  const clientData = getClientData(slug || '');
 
   const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
     setTabValue(newValue);
@@ -284,33 +343,58 @@ const ClientPortalPage: React.FC = () => {
     }}>
       <Container maxWidth="lg">
         {/* Header */}
-        <Paper elevation={2} sx={{ mb: 3, p: 3, borderRadius: 2 }}>
-          <Grid container spacing={3} alignItems="center">
+        <Paper elevation={2} sx={{ mb: 3, p: { xs: 2, md: 3 }, borderRadius: 2 }}>
+          <Grid container spacing={{ xs: 2, md: 3 }} alignItems="center">
             <Grid size={{ xs: 12, md: 8 }}>
-              <Typography variant="h4" gutterBottom sx={{ fontWeight: 'bold', color: '#2e7d32' }}>
+              <Typography
+                variant="h4"
+                gutterBottom
+                sx={{
+                  fontWeight: 'bold',
+                  color: '#2e7d32',
+                  fontSize: { xs: '1.5rem', md: '2.125rem' }
+                }}
+              >
                 {clientData.name}
               </Typography>
-              <Typography variant="h6" color="text.secondary" gutterBottom>
+              <Typography
+                variant="h6"
+                color="text.secondary"
+                gutterBottom
+                sx={{ fontSize: { xs: '1rem', md: '1.25rem' } }}
+              >
                 {clientData.projectTitle}
               </Typography>
-              <Typography variant="body1" color="text.secondary">
+              <Typography variant="body2" color="text.secondary" sx={{ display: 'flex', alignItems: 'center' }}>
                 📍 {clientData.projectAddress}
               </Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+                Start: {clientData.startDate} • Est. Completion: {clientData.estimatedCompletion}
+              </Typography>
             </Grid>
-            <Grid size={{ xs: 12, md: 4 }} sx={{ textAlign: { xs: 'left', md: 'right' } }}>
-              <Typography variant="h5" sx={{ fontWeight: 'bold', color: '#2e7d32', mb: 1 }}>
+            <Grid size={{ xs: 12, md: 4 }} sx={{ textAlign: { xs: 'center', md: 'right' } }}>
+              <Typography
+                variant="h5"
+                sx={{
+                  fontWeight: 'bold',
+                  color: '#2e7d32',
+                  mb: 1,
+                  fontSize: { xs: '1.25rem', md: '1.5rem' }
+                }}
+              >
                 {clientData.estimateRange}
               </Typography>
               <Chip
                 label={`${clientData.currentStage} • ${clientData.progress}% Complete`}
                 color="primary"
                 size="medium"
+                sx={{ mb: { xs: 2, md: 0 } }}
               />
             </Grid>
           </Grid>
 
           {/* Overall Progress */}
-          <Box sx={{ mt: 3 }}>
+          <Box sx={{ mt: { xs: 2, md: 3 } }}>
             <Box display="flex" justifyContent="space-between" alignItems="center" mb={1}>
               <Typography variant="body2" fontWeight="medium">Overall Progress</Typography>
               <Typography variant="body2" fontWeight="medium">{clientData.progress}%</Typography>
@@ -318,19 +402,31 @@ const ClientPortalPage: React.FC = () => {
             <LinearProgress
               variant="determinate"
               value={clientData.progress}
-              sx={{ height: 8, borderRadius: 4 }}
+              sx={{ height: { xs: 10, md: 8 }, borderRadius: 4 }}
             />
           </Box>
         </Paper>
 
         {/* Navigation Tabs */}
-        <Paper elevation={1} sx={{ mb: 3 }}>
-          <Tabs value={tabValue} onChange={handleTabChange} variant="scrollable" scrollButtons="auto">
-            <Tab icon={<MoneyIcon />} label="Estimate" />
-            <Tab icon={<TimelineIcon />} label="Timeline" />
-            <Tab icon={<TaskIcon />} label="Tasks" />
-            <Tab icon={<PaymentIcon />} label="Payments" />
-            <Tab icon={<PhotoIcon />} label="Gallery" />
+        <Paper elevation={1} sx={{ mb: 3, position: 'sticky', top: 0, zIndex: 10 }}>
+          <Tabs
+            value={tabValue}
+            onChange={handleTabChange}
+            variant="scrollable"
+            scrollButtons="auto"
+            allowScrollButtonsMobile
+            sx={{
+              '& .MuiTab-root': {
+                minHeight: { xs: 60, md: 72 },
+                fontSize: { xs: '0.8rem', md: '0.875rem' }
+              }
+            }}
+          >
+            <Tab icon={<MoneyIcon />} label="Estimate" iconPosition="top" />
+            <Tab icon={<TimelineIcon />} label="Timeline" iconPosition="top" />
+            <Tab icon={<TaskIcon />} label="Tasks" iconPosition="top" />
+            <Tab icon={<PaymentIcon />} label="Payments" iconPosition="top" />
+            <Tab icon={<PhotoIcon />} label="Gallery" iconPosition="top" />
           </Tabs>
         </Paper>
 
@@ -355,8 +451,11 @@ const ClientPortalPage: React.FC = () => {
                           </Typography>
                         </Box>
                         <Chip
-                          label={category.approved ? "Approved" : "Pending Review"}
-                          color={category.approved ? "success" : "warning"}
+                          label={category.status === 'approved' ? "✅ Approved" :
+                                 category.status === 'question' ? "❓ Question" :
+                                 "⏳ Pending Review"}
+                          color={category.status === 'approved' ? "success" :
+                                 category.status === 'question' ? "info" : "warning"}
                           size="small"
                         />
                       </Box>
@@ -399,6 +498,34 @@ const ClientPortalPage: React.FC = () => {
                       <Typography variant="subtitle1" gutterBottom fontWeight="bold">
                         Questions & Comments
                       </Typography>
+
+                      {/* Show existing comments */}
+                      {category.comments && category.comments.length > 0 && (
+                        <Box mb={2}>
+                          {category.comments.map((comment: any) => (
+                            <Paper key={comment.id} variant="outlined" sx={{ p: 2, mb: 1, backgroundColor: '#f8f9fa' }}>
+                              <Box display="flex" justifyContent="space-between" alignItems="flex-start" mb={1}>
+                                <Typography variant="body2" fontWeight="bold">
+                                  {comment.author}
+                                </Typography>
+                                <Typography variant="caption" color="text.secondary">
+                                  {comment.date}
+                                </Typography>
+                              </Box>
+                              <Typography variant="body2" mb={1}>
+                                {comment.text}
+                              </Typography>
+                              {comment.reply && (
+                                <Box sx={{ pl: 2, borderLeft: '3px solid #2e7d32', backgroundColor: '#e8f5e8', p: 1, borderRadius: 1 }}>
+                                  <Typography variant="body2" color="success.dark">
+                                    <strong>Reply:</strong> {comment.reply}
+                                  </Typography>
+                                </Box>
+                              )}
+                            </Paper>
+                          ))}
+                        </Box>
+                      )}
 
                       <Box display="flex" gap={1} mb={2}>
                         <TextField
@@ -448,7 +575,10 @@ const ClientPortalPage: React.FC = () => {
               Project Timeline
             </Typography>
 
-            <Box sx={{ px: 2, py: 4 }}>
+            <Box sx={{ px: { xs: 1, md: 2 }, py: 4 }}>
+              <Typography variant="body1" gutterBottom textAlign="center" color="text.secondary">
+                Drag the slider to explore project timeline
+              </Typography>
               <Slider
                 value={timelineProgress}
                 onChange={(e, value) => setTimelineProgress(value as number)}
@@ -457,11 +587,39 @@ const ClientPortalPage: React.FC = () => {
                 step={1}
                 marks={projectStages.map((stage, index) => ({
                   value: index,
-                  label: stage.name,
+                  label: stage.icon + (window.innerWidth > 600 ? ` ${stage.name}` : ''),
                 }))}
                 valueLabelDisplay="off"
-                sx={{ mb: 4 }}
+                sx={{
+                  mb: 4,
+                  '& .MuiSlider-markLabel': {
+                    fontSize: { xs: '0.7rem', md: '0.875rem' }
+                  }
+                }}
               />
+
+              {/* Current stage details */}
+              <Paper variant="outlined" sx={{ p: 2, backgroundColor: '#f0f9f0', borderColor: '#2e7d32' }}>
+                <Typography variant="h6" color="success.dark" gutterBottom>
+                  {projectStages[timelineProgress].icon} {projectStages[timelineProgress].name}
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  {projectStages[timelineProgress].description}
+                </Typography>
+                <Box display="flex" alignItems="center" mt={1}>
+                  <Typography variant="body2" sx={{ mr: 1 }}>
+                    Progress:
+                  </Typography>
+                  <LinearProgress
+                    variant="determinate"
+                    value={projectStages[timelineProgress].progress}
+                    sx={{ flexGrow: 1, mr: 1 }}
+                  />
+                  <Typography variant="body2">
+                    {projectStages[timelineProgress].progress}%
+                  </Typography>
+                </Box>
+              </Paper>
             </Box>
 
             <Grid container spacing={2}>
@@ -522,7 +680,16 @@ const ClientPortalPage: React.FC = () => {
                       </ListItemIcon>
                       <ListItemText
                         primary={task.task}
-                        secondary={`Responsible: ${task.responsible} • Due: ${task.deadline}`}
+                        secondary={
+                          <>
+                            <Typography variant="body2" color="text.secondary">
+                              {task.description}
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary">
+                              Responsible: {task.responsible} • Due: {task.deadline}
+                            </Typography>
+                          </>
+                        }
                       />
                       <ListItemSecondaryAction>
                         <Chip
@@ -614,46 +781,65 @@ const ClientPortalPage: React.FC = () => {
                   <Paper
                     elevation={1}
                     sx={{
-                      p: 4,
-                      textAlign: 'center',
-                      backgroundColor: '#f9f9f9',
                       borderRadius: 2,
-                      minHeight: 200,
-                      display: 'flex',
-                      flexDirection: 'column',
-                      justifyContent: 'center'
+                      overflow: 'hidden'
                     }}
                   >
-                    <PhotoIcon sx={{ fontSize: 48, color: '#bbb', mb: 2 }} />
-                    <Typography variant="h6" color="text.secondary" gutterBottom>
-                      Design Renders
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary">
-                      3D renders and design plans will appear here once completed
-                    </Typography>
+                    <Box sx={{ p: 3, backgroundColor: '#2e7d32', color: 'white' }}>
+                      <Typography variant="h6" gutterBottom>
+                        🎨 Design Renders
+                      </Typography>
+                      <Typography variant="body2" sx={{ opacity: 0.9 }}>
+                        Future vision of your space
+                      </Typography>
+                    </Box>
+                    <Box sx={{ p: 3, textAlign: 'center', minHeight: 180 }}>
+                      <PhotoIcon sx={{ fontSize: 48, color: '#bbb', mb: 2 }} />
+                      <Typography variant="body2" color="text.secondary">
+                        3D renders and design plans will appear here once Юля completes the floor plan
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary" display="block" mt={1}>
+                        Expected: April 10-15, 2026
+                      </Typography>
+                    </Box>
                   </Paper>
                 </Grid>
                 <Grid size={{ xs: 12, md: 6 }}>
                   <Paper
                     elevation={1}
                     sx={{
-                      p: 4,
-                      textAlign: 'center',
-                      backgroundColor: '#f9f9f9',
                       borderRadius: 2,
-                      minHeight: 200,
-                      display: 'flex',
-                      flexDirection: 'column',
-                      justifyContent: 'center'
+                      overflow: 'hidden'
                     }}
                   >
-                    <BuildIcon sx={{ fontSize: 48, color: '#bbb', mb: 2 }} />
-                    <Typography variant="h6" color="text.secondary" gutterBottom>
-                      Progress Photos
+                    <Box sx={{ p: 3, backgroundColor: '#1976d2', color: 'white' }}>
+                      <Typography variant="h6" gutterBottom>
+                        📸 Progress Photos
+                      </Typography>
+                      <Typography variant="body2" sx={{ opacity: 0.9 }}>
+                        Before, during & after
+                      </Typography>
+                    </Box>
+                    <Box sx={{ p: 3, textAlign: 'center', minHeight: 180 }}>
+                      <BuildIcon sx={{ fontSize: 48, color: '#bbb', mb: 2 }} />
+                      <Typography variant="body2" color="text.secondary">
+                        Construction progress photos will be uploaded daily during work
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary" display="block" mt={1}>
+                        Photo updates start with demo phase
+                      </Typography>
+                    </Box>
+                  </Paper>
+                </Grid>
+                <Grid size={{ xs: 12 }}>
+                  <Paper elevation={1} sx={{ borderRadius: 2, p: 3 }}>
+                    <Typography variant="h6" gutterBottom color="primary">
+                      📍 Virtual Walkthrough
                     </Typography>
-                    <Typography variant="body2" color="text.secondary">
-                      Construction progress photos will be uploaded here
+                    <Typography variant="body2" color="text.secondary" mb={2}>
+                      Once work begins, we'll create 360° virtual tours of your progress so you can see the transformation from anywhere.
                     </Typography>
+                    <Chip label="Coming Soon" color="primary" variant="outlined" size="small" />
                   </Paper>
                 </Grid>
               </Grid>

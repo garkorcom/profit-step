@@ -21,6 +21,7 @@ import {
   timeTrackingRoutes, financeRoutes, userRoutes,
   estimateRoutes, projectRoutes, siteRoutes, erpRoutes, inventoryRoutes,
 } from './routes';
+import docsRoutes from './routes/docs';
 
 // ─── Express App ────────────────────────────────────────────────────
 
@@ -43,6 +44,10 @@ app.get('/api/health', (_req, res) => {
     environment: process.env.NODE_ENV || 'production',
   });
 });
+
+// ─── Public Routes (before auth) ────────────────────────────────────
+
+app.use(docsRoutes);
 
 // ─── Auth & Rate Limiting ───────────────────────────────────────────
 

@@ -140,8 +140,12 @@ export const requestLogger = (req: Request, res: Response, next: NextFunction): 
  * req.body is logged only in non-production for security.
  */
 export const errorHandler = (err: any, req: Request, res: Response, _next: NextFunction): void => {
+  const requestId = `req_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
+
+  // ─── Zod Validation ────────────────────────────────────
   if (err instanceof z.ZodError) {
     const logPayload: Record<string, any> = {
+      requestId,
       path: req.path,
       errors: err.errors.map((e) => ({ path: e.path, message: e.message })),
     };
@@ -151,6 +155,8 @@ export const errorHandler = (err: any, req: Request, res: Response, _next: NextF
     logger.warn('❌ Validation failed', logPayload);
     res.status(400).json({
       error: 'Validation failed',
+      code: 'VALIDATION_ERROR',
+      requestId,
       details: err.errors.map((e) => ({
         field: e.path.join('.'),
         message: e.message,
@@ -159,6 +165,34 @@ export const errorHandler = (err: any, req: Request, res: Response, _next: NextF
     return;
   }
 
-  logger.error('💥 Unhandled error', { error: err.message, stack: err.stack, path: req.path });
-  res.status(500).json({ error: 'Internal server error' });
+  // ─── Known application errors ──────────────────────────
+  if (err.status && err.status >= 400 && err.status < 500) {
+    logger.warn('⚠️ Client error', { requestId, status: err.status, message: err.message, path: req.path });
+    res.status(err.status).json({
+      error: err.message || 'Bad request',
+      code: err.code || 'CLIENT_ERROR',
+      requestId,
+    });
+    return;
+  }
+
+  // ─── Firebase / Firestore errors ───────────────────────
+  if (err.code && typeof err.code === 'string' && err.code.startsWith('firestore/')) {
+    logger.error('🔥 Firestore error', { requestId, code: err.code, message: err.message, path: req.path });
+    res.status(503).json({
+      error: 'Database temporarily unavailable',
+      code: 'DATABASE_ERROR',
+      requestId,
+    });
+    return;
+  }
+
+  // ─── Unhandled ─────────────────────────────────────────
+  logger.error('💥 Unhandled error', { requestId, error: err.message, stack: err.stack, path: req.path });
+  res.status(500).json({
+    error: 'Internal server error',
+    code: 'INTERNAL_ERROR',
+    requestId,
+  });
 };
+

@@ -60,6 +60,7 @@ const ContactsPage = React.lazy(() => import('../pages/crm/ContactsPage'));
 const SiteDashboardPage = React.lazy(() => import('../pages/sites/SiteDashboardPage'));
 const InfraMapPage = React.lazy(() => import('../pages/InfraMapPage'));
 const ClientPortalPage = React.lazy(() => import('../pages/portal/ClientPortalPage'));
+const ClientDashboardPage = React.lazy(() => import('../pages/dashboard/client/[id]'));
 
 // Loading fallback component
 const PageLoader = () => (
@@ -194,6 +195,9 @@ const AppRouter: React.FC = () => {
           <Route path="/crm/clients/new" element={<ClientBuilderPage />} />
           <Route path="/crm/clients/:id" element={<ClientDetailsPage />} />
           <Route path="/crm/clients/:id/edit" element={<ClientBuilderPage />} />
+
+          {/* Internal Client Dashboard */}
+          <Route path="/dashboard/client/:id" element={<ClientDashboardPage />} />
 
           {/* V3/V4 Unified CRM Tasks Routes */}
           <Route path="/crm/tasks" element={<UnifiedTasksPage />} />

@@ -4,6 +4,7 @@
 import { Router } from 'express';
 import * as admin from 'firebase-admin';
 import { db, FieldValue, Timestamp, logger, logAgentActivity } from '../routeContext';
+import { logAudit, AuditHelpers, extractAuditContext } from '../utils/auditLogger';
 import {
   TimeTrackingSchema,
   ActiveSessionsQuerySchema,
@@ -209,6 +210,38 @@ router.post('/api/time-tracking', async (req, res, next) => {
           hourlyRate: result.hourlyRate,
           closedCount: result.closedSessions.length,
         });
+
+        // Audit Log: Timer started
+        const auditContext = extractAuditContext(req);
+        await logAudit(AuditHelpers.create(
+          'work_session',
+          result.sessionId,
+          {
+            taskTitle: data.taskTitle,
+            clientId: data.clientId,
+            projectId: resolvedProjectId,
+            hourlyRate: result.hourlyRate,
+          },
+          auditContext.performedBy,
+          auditContext.source as any
+        ));
+
+        // Audit Log: Closed previous sessions
+        for (const closedSession of result.closedSessions) {
+          await logAudit({
+            action: 'TIMER_AUTO_STOP',
+            entityType: 'work_session',
+            entityId: closedSession.id,
+            source: auditContext.source as any,
+            performedBy: auditContext.performedBy,
+            metadata: {
+              reason: 'Auto-stopped by new session start',
+              durationMinutes: closedSession.mins,
+              earnings: closedSession.earn,
+            },
+          });
+        }
+
         await logAgentActivity({
           userId,
           action: 'timer_started',
@@ -353,7 +386,7 @@ router.post('/api/time-tracking', async (req, res, next) => {
             });
           }
 
-          return { mins, earn, task: s.relatedTaskTitle || s.description };
+          return { mins, earn, task: s.relatedTaskTitle || s.description, sessionId: sessionRef.id };
         }).catch((e: Error) => {
           if (e.message === 'END_BEFORE_START') {
             return 'END_BEFORE_START' as const;
@@ -372,6 +405,22 @@ router.post('/api/time-tracking', async (req, res, next) => {
         }
 
         logger.info('⏱️ timer:stopped', result);
+
+        // Audit Log: Timer stopped
+        const stopAuditContext = extractAuditContext(req);
+        await logAudit({
+          action: 'TIMER_STOP',
+          entityType: 'work_session',
+          entityId: result.sessionId,
+          source: stopAuditContext.source as any,
+          performedBy: stopAuditContext.performedBy,
+          metadata: {
+            durationMinutes: result.mins,
+            earnings: result.earn,
+            task: result.task,
+          },
+        });
+
         await logAgentActivity({
           userId,
           action: 'timer_stopped',
@@ -676,6 +725,24 @@ router.post('/api/time-tracking/admin-stop', async (req, res, next) => {
     }
 
     logger.info('⏱️ timer:admin-stopped', result);
+
+    // Audit Log: Admin stop
+    const adminStopAuditContext = extractAuditContext(req);
+    await logAudit({
+      action: 'ADMIN_TIMER_STOP',
+      entityType: 'work_session',
+      entityId: data.sessionId,
+      source: adminStopAuditContext.source as any,
+      performedBy: adminStopAuditContext.performedBy,
+      metadata: {
+        targetEmployeeId: result.employeeId,
+        targetEmployeeName: result.employeeName,
+        durationMinutes: result.mins,
+        earnings: result.earn,
+        task: result.task,
+      },
+    });
+
     await logAgentActivity({
       userId: req.agentUserId!,
       action: 'timer_admin_stopped',
@@ -759,6 +826,23 @@ router.post('/api/time-tracking/admin-start', async (req, res, next) => {
     // Update user pointer
     await db.collection('users').doc(data.employeeId).update({ activeSessionId: newRef.id });
 
+    // Audit Log: Admin start
+    const adminStartAuditContext = extractAuditContext(req);
+    await logAudit(AuditHelpers.create(
+      'work_session',
+      newRef.id,
+      {
+        employeeId: data.employeeId,
+        employeeName,
+        taskTitle: data.taskTitle,
+        clientId: data.clientId,
+        hourlyRate,
+        adminStarted: true,
+      },
+      adminStartAuditContext.performedBy,
+      adminStartAuditContext.source as any
+    ));
+
     res.status(201).json({
       sessionId: newRef.id,
       employeeName,
@@ -770,6 +854,187 @@ router.post('/api/time-tracking/admin-start', async (req, res, next) => {
   }
 });
 
+
+// ─── autoStopStaleTimers UTILITY ────────────────────────────────────
+
+/**
+ * Find and stop all active sessions that have been running for more than 12 hours (720 minutes)
+ * @returns Array of stopped sessions with their details
+ */
+export async function autoStopStaleTimers(): Promise<{
+  stoppedSessions: Array<{
+    sessionId: string;
+    employeeId: string;
+    employeeName: string;
+    durationMinutes: number;
+    earnings: number;
+    task: string;
+  }>;
+  totalStopped: number;
+}> {
+  const twelveHoursAgo = Timestamp.fromMillis(Date.now() - 12 * 60 * 60 * 1000); // 12 hours ago
+
+  logger.info('⏱️ auto-stop:scan — searching for stale sessions', { cutoffTime: twelveHoursAgo.toDate().toISOString() });
+
+  // Find all active/paused sessions that started more than 12 hours ago
+  const staleSessionsQuery = await db.collection('work_sessions')
+    .where('status', 'in', ['active', 'paused'])
+    .where('startTime', '<', twelveHoursAgo)
+    .get();
+
+  if (staleSessionsQuery.empty) {
+    logger.info('⏱️ auto-stop:scan — no stale sessions found');
+    return { stoppedSessions: [], totalStopped: 0 };
+  }
+
+  logger.info('⏱️ auto-stop:scan — found stale sessions', { count: staleSessionsQuery.size });
+
+  const stoppedSessions = [];
+
+  // Process each stale session
+  for (const sessionDoc of staleSessionsQuery.docs) {
+    try {
+      const sessionId = sessionDoc.id;
+
+      const result = await db.runTransaction(async (tx) => {
+        // Re-read the session to ensure it's still stale and active
+        const freshSessionDoc = await tx.get(sessionDoc.ref);
+        if (!freshSessionDoc.exists || !['active', 'paused'].includes(freshSessionDoc.data()!.status)) {
+          return null; // Session was already closed by another process
+        }
+
+        const s = freshSessionDoc.data()!;
+        const endTime = Timestamp.now();
+
+        // Calculate duration and earnings
+        let diff = endTime.toMillis() - s.startTime.toMillis();
+        if (s.totalBreakMinutes) diff -= s.totalBreakMinutes * 60000;
+        if (s.status === 'paused' && s.lastBreakStart) {
+          diff -= (endTime.toMillis() - s.lastBreakStart.toMillis());
+        }
+        const mins = Math.max(0, Math.round(diff / 60000));
+        const earn = +((mins / 60) * (s.hourlyRate || 0)).toFixed(2);
+
+        // Update session to completed with auto-stop note
+        tx.update(freshSessionDoc.ref, {
+          status: 'completed',
+          endTime,
+          durationMinutes: mins,
+          sessionEarnings: earn,
+          autoStopped: true,
+          autoStopReason: 'Auto-stopped: exceeded 12 hours',
+          autoStoppedAt: endTime,
+        });
+
+        // Clear activeSessionId pointer if this session is the active one for the employee
+        if (s.employeeId) {
+          const userRef = db.collection('users').doc(s.employeeId);
+          const userDoc = await tx.get(userRef);
+          if (userDoc.exists && userDoc.data()?.activeSessionId === sessionId) {
+            tx.update(userRef, { activeSessionId: null });
+          }
+        }
+
+        // Aggregate on linked task
+        if (s.relatedTaskId) {
+          tx.update(db.collection('gtd_tasks').doc(s.relatedTaskId), {
+            totalTimeSpentMinutes: FieldValue.increment(mins),
+            totalEarnings: FieldValue.increment(earn),
+            updatedAt: FieldValue.serverTimestamp(),
+          });
+        }
+
+        return {
+          sessionId,
+          employeeId: s.employeeId,
+          employeeName: s.employeeName,
+          durationMinutes: mins,
+          earnings: earn,
+          task: s.relatedTaskTitle || s.description || 'Unknown task',
+        };
+      });
+
+      if (result) {
+        stoppedSessions.push(result);
+        logger.info('⏱️ auto-stop:stopped', result);
+
+        // Audit Log: Auto-stop stale session
+        await logAudit({
+          action: 'AUTO_STOP_STALE',
+          entityType: 'work_session',
+          entityId: result.sessionId,
+          source: 'system',
+          performedBy: 'system',
+          metadata: {
+            reason: 'Auto-stopped: exceeded 12 hours',
+            durationMinutes: result.durationMinutes,
+            earnings: result.earnings,
+            employeeName: result.employeeName,
+          },
+        });
+      }
+    } catch (error: any) {
+      logger.error('⏱️ auto-stop:error — failed to stop session', {
+        sessionId: sessionDoc.id,
+        error: error.message
+      });
+    }
+  }
+
+  logger.info('⏱️ auto-stop:complete', { totalStopped: stoppedSessions.length });
+
+  return { stoppedSessions, totalStopped: stoppedSessions.length };
+}
+
+// ─── POST /api/time-tracking/auto-stop-stale ──────────────────────
+
+router.post('/api/time-tracking/auto-stop-stale', async (req, res, next) => {
+  try {
+    // Security: only OWNER can trigger auto-stop
+    if (req.agentUserId !== process.env.OWNER_UID) {
+      res.status(403).json({ error: 'Только владелец может запускать авто-остановку сессий' });
+      return;
+    }
+
+    logger.info('⏱️ auto-stop:triggered', { userId: req.agentUserId });
+
+    const result = await autoStopStaleTimers();
+
+    // Audit Log: Manual trigger of auto-stop
+    const autoStopAuditContext = extractAuditContext(req);
+    await logAudit({
+      action: 'MANUAL_AUTO_STOP_TRIGGER',
+      entityType: 'system',
+      entityId: 'auto-stop-stale-timers',
+      source: autoStopAuditContext.source as any,
+      performedBy: autoStopAuditContext.performedBy,
+      metadata: {
+        totalStopped: result.totalStopped,
+        triggeredManually: true,
+      },
+    });
+
+    await logAgentActivity({
+      userId: req.agentUserId!,
+      action: 'auto_stop_stale_timers',
+      endpoint: '/api/time-tracking/auto-stop-stale',
+      metadata: {
+        totalStopped: result.totalStopped,
+        stoppedSessions: result.stoppedSessions,
+      },
+    });
+
+    res.json({
+      success: true,
+      totalStopped: result.totalStopped,
+      message: `Auto-stopped ${result.totalStopped} stale sessions`,
+      stoppedSessions: result.stoppedSessions,
+    });
+  } catch (e: any) {
+    logger.error('⏱️ auto-stop:error', { error: e.message, stack: e.stack });
+    next(e);
+  }
+});
 
 export default router;
 

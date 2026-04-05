@@ -560,6 +560,7 @@ export { onCostsBotMessage } from './triggers/telegram/onCostsBotMessage';
 // Scheduled: Session Management
 export { finalizeExpiredSessions } from './scheduled/finalizeExpiredSessions';
 export { autoCloseStaleSessions } from './triggers/crons/autoCloseStaleSessions';
+export { scheduledAutoStopStaleTimers } from './scheduled/autoStopStaleTimers';
 // export { sendSessionReminders } from './scheduled/sendSessionReminders'; // DISABLED: Session reminders turned off
 export { sendDeadlineReminders } from './scheduled/deadlineReminders'; // GTD task deadline notifications
 

@@ -199,7 +199,7 @@ router.post('/api/time-tracking', async (req, res, next) => {
           });
           tx.update(userRef, { activeSessionId: newRef.id });
 
-          return { sessionId: newRef.id, closedSessions, hourlyRate };
+          return { sessionId: newRef.id, closedSessions, hourlyRate, resolvedProjectId };
         });
 
         // Build response for closed sessions
@@ -219,7 +219,7 @@ router.post('/api/time-tracking', async (req, res, next) => {
           {
             taskTitle: data.taskTitle,
             clientId: data.clientId,
-            projectId: resolvedProjectId,
+            projectId: result.resolvedProjectId,
             hourlyRate: result.hourlyRate,
           },
           auditContext.performedBy,

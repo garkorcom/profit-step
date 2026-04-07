@@ -20,8 +20,10 @@ import {
   clientRoutes, dashboardRoutes, taskRoutes, costRoutes,
   timeTrackingRoutes, financeRoutes, userRoutes,
   estimateRoutes, projectRoutes, siteRoutes, erpRoutes, inventoryRoutes,
+  sharingRoutes,
 } from './routes';
 import docsRoutes from './routes/docs';
+import portalRoutes from './routes/portal';
 
 // ─── Express App ────────────────────────────────────────────────────
 
@@ -49,6 +51,10 @@ app.get('/api/health', (_req, res) => {
 
 app.use(docsRoutes);
 
+// Client portal — token-based auth inside the route, NOT bearer.
+// Clients must not need a logged-in agent token to access their portal.
+app.use(portalRoutes);
+
 // ─── Auth & Rate Limiting ───────────────────────────────────────────
 
 app.use(authMiddleware);
@@ -60,6 +66,7 @@ const routes = [
   clientRoutes, dashboardRoutes, taskRoutes, costRoutes,
   timeTrackingRoutes, financeRoutes, userRoutes,
   estimateRoutes, projectRoutes, siteRoutes, erpRoutes, inventoryRoutes,
+  sharingRoutes,
 ];
 routes.forEach(r => app.use(r));
 

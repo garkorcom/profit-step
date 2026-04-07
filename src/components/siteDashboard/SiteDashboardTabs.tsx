@@ -195,14 +195,20 @@ export const EstimatesTab: React.FC<EstimatesTabProps> = ({ estimates, site, sit
                                   </TableRow>
                                 </TableHead>
                                 <TableBody>
-                                  {ext.items.map((item, idx) => (
+                                  {ext.items.map((rawItem, idx) => {
+                                    const item = rawItem as unknown as Record<string, unknown> & typeof rawItem;
+                                    const name = (item.name as string | undefined) ?? item.description ?? '—';
+                                    const rate = (item.rate as number | undefined) ?? item.unitPrice ?? 0;
+                                    const amount = (item.amount as number | undefined) ?? ((item.quantity || 1) * rate);
+                                    return (
                                     <TableRow key={idx}>
-                                      <TableCell>{item.description || item.name || '—'}</TableCell>
+                                      <TableCell>{name}</TableCell>
                                       <TableCell align="right">{item.quantity || 1}</TableCell>
-                                      <TableCell align="right">${(item.rate || item.unitPrice || 0).toLocaleString()}</TableCell>
-                                      <TableCell align="right">${(item.amount || (item.quantity || 1) * (item.rate || item.unitPrice || 0)).toLocaleString()}</TableCell>
+                                      <TableCell align="right">${rate.toLocaleString()}</TableCell>
+                                      <TableCell align="right">${amount.toLocaleString()}</TableCell>
                                     </TableRow>
-                                  ))}
+                                    );
+                                  })}
                                 </TableBody>
                               </Table>
                             )}

@@ -141,7 +141,8 @@ export default function ElectricalEstimatorPage() {
                         setProjectName(projectData.name);
                         if (projectData.areaSqft) setSqft(projectData.areaSqft);
                         if (estId) {
-                            savedEstimateApi.getById(estId).then((estData: EstimateData) => {
+                            savedEstimateApi.getById(estId).then((rawData) => {
+                                const estData = rawData as unknown as EstimateData | null;
                                 if (estData) {
                                     setCurrentEstimateId(estId);
                                     setCurrentEstimateData(estData);
@@ -156,7 +157,8 @@ export default function ElectricalEstimatorPage() {
                     }
                 }).catch(console.error);
             } else if (estId) {
-                savedEstimateApi.getById(estId).then((data: EstimateData) => {
+                savedEstimateApi.getById(estId).then((rawData) => {
+                    const data = rawData as unknown as EstimateData | null;
                     if (data) {
                         setCurrentEstimateId(estId);
                         setCurrentEstimateData(data);
@@ -902,7 +904,7 @@ export default function ElectricalEstimatorPage() {
                 <Box sx={{ bgcolor: 'background.paper', height: '85vh', display: 'flex', flexDirection: 'column' }}>
                     {v3Images.length > 0 && Object.keys(v3Results).length > 0 ? (
                         <V3VisualProofStep
-                            images={v3Images}
+                            images={v3Images as unknown as import('../../hooks/usePdfRasterizer').RasterizedImage[]}
                             results={v3Results}
                             aggregatedResult={currentEstimateData?.quantities || quantities || {}}
                             onComplete={() => setShowVisualProof(false)}

@@ -115,31 +115,31 @@ export function useSiteDashboard({ siteId, companyId, tabValue }: UseSiteDashboa
   // ERP V4 loaders
   const loadPunchLists = useCallback(async () => {
     if (!site) return;
-    try { const r = await punchListApi.getByProject(site.clientId); setPunchLists(r?.data || []); }
+    try { const r = await punchListApi.getByProject(site.clientId); setPunchLists((r?.data as unknown as PunchList[]) || []); }
     catch (e) { console.error('Error loading punch lists:', e); setPunchLists([]); }
   }, [site]);
 
   const loadWorkActs = useCallback(async () => {
     if (!site) return;
-    try { const r = await workActsApi.getByProject(site.clientId); setWorkActs(r?.data || []); }
+    try { const r = await workActsApi.getByProject(site.clientId); setWorkActs((r?.data as unknown as WorkAct[]) || []); }
     catch (e) { console.error('Error loading work acts:', e); setWorkActs([]); }
   }, [site]);
 
   const loadPaymentSchedules = useCallback(async () => {
     if (!site) return;
-    try { const r = await paymentScheduleApi.getByProject(site.clientId); setPaymentSchedules(r?.data || []); }
+    try { const r = await paymentScheduleApi.getByProject(site.clientId); setPaymentSchedules((r?.data as unknown as PaymentSchedule[]) || []); }
     catch (e) { console.error('Error loading payment schedules:', e); setPaymentSchedules([]); }
   }, [site]);
 
   const loadWarrantyTasks = useCallback(async () => {
     if (!site) return;
-    try { const r = await warrantyApi.getByProject(site.clientId); setWarrantyTasks(r?.data || []); }
+    try { const r = await warrantyApi.getByProject(site.clientId); setWarrantyTasks((r?.data as unknown as WarrantyTask[]) || []); }
     catch (e) { console.error('Error loading warranty tasks:', e); setWarrantyTasks([]); }
   }, [site]);
 
   const loadNpsRequests = useCallback(async () => {
     if (!site) return;
-    try { const r = await npsApi.getStatus(site.clientId); setNpsRequests(r?.data || []); }
+    try { const r = await npsApi.getStatus(site.clientId); setNpsRequests((r?.data as unknown as NpsRequest[]) || []); }
     catch (e) { console.error('Error loading NPS:', e); setNpsRequests([]); }
   }, [site]);
 

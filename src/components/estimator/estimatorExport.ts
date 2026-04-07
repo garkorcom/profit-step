@@ -288,7 +288,7 @@ export async function generateEstimatePDF(params: PdfExportParams): Promise<void
   }
 
   const pdfBlobUrl = pdf.output('bloburl');
-  window.open(pdfBlobUrl as string, '_blank');
+  window.open(pdfBlobUrl.toString(), '_blank');
   const safeName = projectName.replace(/\s+/g, '_');
   const suffix = label ? `_${label.replace(/\s+/g, '_')}` : '';
   pdf.save(`${safeName}_Estimate${suffix}.pdf`);

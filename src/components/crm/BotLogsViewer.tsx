@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import {
     Dialog, DialogTitle, DialogContent, IconButton,
     Typography, Box, CircularProgress, List, ListItem,
-    ListItemText, Chip, Divider
+    ListItemText, Divider
 } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import { collection, query, where, orderBy, limit, getDocs } from 'firebase/firestore';

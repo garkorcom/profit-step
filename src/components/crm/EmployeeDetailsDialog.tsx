@@ -50,6 +50,7 @@ const EmployeeDetailsDialog: React.FC<EmployeeDetailsDialogProps> = ({ open, onC
                 loadMessages();
             }
         }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [open, employeeId, tabValue]);
 
     const loadMessages = async () => {

@@ -120,8 +120,8 @@ export const TimeTrackingWidget: React.FC<TimeTrackingWidgetProps> = ({ data }) 
                     )}
                 </Box>
 
-                <Box sx={{ mt: 'auto', height: 60, width: '100%' }}>
-                    <ResponsiveContainer width="100%" height="100%">
+                <Box sx={{ mt: 'auto', height: 60, width: '100%', minWidth: 0 }}>
+                    <ResponsiveContainer width="100%" height={60} minWidth={0}>
                         <BarChart data={data.week.dailyBreakdown} margin={{ top: 10, right: 0, left: 0, bottom: 0 }}>
                             <Tooltip
                                 cursor={{ fill: 'rgba(0,0,0,0.05)' }}

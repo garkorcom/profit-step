@@ -100,7 +100,7 @@ interface Service {
 
 // ─── API Config ──────────────────────────────────────────────────────────────
 
-const INFRA_API = process.env.REACT_APP_INFRA_API_URL || 'http://localhost:8001';
+const INFRA_API = import.meta.env.VITE_INFRA_API_URL || 'http://localhost:8001';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 

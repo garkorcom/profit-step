@@ -7,10 +7,8 @@ import {
   Paper,
   Grid,
   Card,
-  CardContent,
   Divider,
   Chip,
-  IconButton,
   Button,
   TextField,
   Table,
@@ -19,8 +17,6 @@ import {
   TableRow,
   TableCell,
   TableBody,
-  LinearProgress,
-  Avatar,
   List,
   ListItem,
   ListItemIcon,
@@ -28,170 +24,26 @@ import {
   Tab,
   Tabs,
   Alert,
-  Accordion,
-  AccordionSummary,
-  AccordionDetails,
+  CircularProgress,
+  ImageList,
+  ImageListItem,
 } from '@mui/material';
 import {
-  ExpandMore as ExpandMoreIcon,
-  Home as HomeIcon,
   Timeline as TimelineIcon,
-  Assignment as TaskIcon,
-  Payment as PaymentIcon,
   Notes as NotesIcon,
-  Link as LinkIcon,
   Visibility as VisibilityIcon,
-  AttachMoney as MoneyIcon,
   TrendingUp as ProfitIcon,
   Business as InternalIcon,
   Person as ClientIcon,
-  Plumbing as PlumbingIcon,
-  Palette as PaletteIcon,
-  MeetingRoom as DoorIcon,
   Build as BuildIcon,
+  PhotoCamera as PhotoCameraIcon,
 } from '@mui/icons-material';
-
-// Client data - this would come from API in real app
-const getClientById = (id: string) => {
-  if (id === '1' || id === 'jim-dvorkin') {
-    return {
-      id: '1',
-      name: 'Jim Dvorkin',
-      projectAddress: '17201 Collins Ave #2405, Sunny Isles',
-      projectTitle: 'Full Renovation',
-      currentStage: 'Design',
-      progress: 15,
-      unit: '#2405',
-      startDate: '2026-04-01',
-      estimatedCompletion: '2026-06-01',
-      portalSlug: 'jim-dvorkin-2405',
-      // Internal estimates (our costs)
-      internalEstimate: {
-        labor: 65000,
-        materials: 45000,
-        subcontractors: 18000,
-        permits: 2400,
-        overhead: 8000,
-        total: 138400,
-      },
-      // Client estimate (what we charge)
-      clientEstimate: {
-        total: 184000,
-        range: '$101,400 - $113,800', // This is the displayed range, actual is higher
-      },
-      // Margin calculations
-      margin: {
-        amount: 45600, // 184000 - 138400
-        percentage: 24.8, // (45600 / 184000) * 100
-      },
-      internalNotes: [
-        { id: 1, content: 'High-end client, prefers premium materials. Can charge 25%+ markup.', author: 'Абрамов', date: '2026-04-01' },
-        { id: 2, content: 'Elevator access requires special scheduling - factor in extra time for material delivery.', author: 'Foreman', date: '2026-04-02' },
-        { id: 3, content: 'Client mentioned possible additional work on balcony - keep good relationship.', author: 'Абрамов', date: '2026-04-03' },
-      ],
-    };
-  }
-  return null;
-};
-
-const internalEstimateBreakdown = [
-  {
-    id: 1,
-    category: 'ПОЛЫ (Internal)',
-    icon: <HomeIcon />,
-    internal: {
-      laborCost: 25000,
-      materialCost: 22000,
-      subcontractCost: 0,
-      total: 47000,
-    },
-    client: {
-      total: 59400,
-    },
-    markup: 12400,
-    marginPercent: 26.4,
-  },
-  {
-    id: 2,
-    category: 'MASTER BATHROOM (Internal)',
-    icon: <PlumbingIcon />,
-    internal: {
-      laborCost: 12000,
-      materialCost: 8000,
-      subcontractCost: 0,
-      total: 20000,
-    },
-    client: {
-      total: 25000,
-    },
-    markup: 5000,
-    marginPercent: 25.0,
-  },
-  {
-    id: 3,
-    category: 'GUEST BATHROOM (Internal)',
-    icon: <PlumbingIcon />,
-    internal: {
-      laborCost: 8500,
-      materialCost: 5500,
-      subcontractCost: 0,
-      total: 14000,
-    },
-    client: {
-      total: 17000,
-    },
-    markup: 3000,
-    marginPercent: 21.4,
-  },
-  {
-    id: 4,
-    category: 'ДВЕРИ (Internal)',
-    icon: <DoorIcon />,
-    internal: {
-      laborCost: 3000,
-      materialCost: 500,
-      subcontractCost: 0,
-      total: 3500,
-    },
-    client: {
-      total: 5500,
-    },
-    markup: 2000,
-    marginPercent: 57.1,
-  },
-  {
-    id: 5,
-    category: 'ПОКРАСКА (Internal)',
-    icon: <PaletteIcon />,
-    internal: {
-      laborCost: 3500,
-      materialCost: 900,
-      subcontractCost: 0,
-      total: 4400,
-    },
-    client: {
-      total: 5400,
-    },
-    markup: 1000,
-    marginPercent: 22.7,
-  },
-  {
-    id: 6,
-    category: 'ПЕРЕНОС МЕБЕЛИ (Internal)',
-    icon: <BuildIcon />,
-    internal: {
-      laborCost: 1500,
-      materialCost: 100,
-      subcontractCost: 0,
-      total: 1600,
-    },
-    client: {
-      total: 2500,
-    },
-    markup: 900,
-    marginPercent: 56.3,
-  },
-];
+import { collection, query, where, onSnapshot } from 'firebase/firestore';
+import { getStorage, ref, listAll, getDownloadURL } from 'firebase/storage';
+import { db } from '../../../firebase/firebase';
+import { InventoryTransaction } from '../../../types/inventory.types';
+import { Client } from '../../../types/crm.types';
+import { crmApi } from '../../../api/crmApi';
 
 interface TabPanelProps {
   children?: React.ReactNode;
@@ -220,29 +72,164 @@ const ClientDashboardPage: React.FC = () => {
   const [tabValue, setTabValue] = useState(0);
   const [newNote, setNewNote] = useState('');
 
-  const client = getClientById(id || '');
+  // Client from Firestore
+  const [client, setClient] = useState<Client | null>(null);
+  const [clientLoading, setClientLoading] = useState(true);
 
+  // Inventory state
+  const [inventoryTransactions, setInventoryTransactions] = useState<InventoryTransaction[]>([]);
+  const [inventoryLoading, setInventoryLoading] = useState(true);
+
+  // Photos state
+  const [photos, setPhotos] = useState<{ name: string; url: string }[]>([]);
+  const [photosLoading, setPhotosLoading] = useState(true);
+
+  // WorkSession profit state
+  const [workSessionData, setWorkSessionData] = useState<{
+    totalEarnings: number;
+    sessionCount: number;
+    loading: boolean;
+  }>({ totalEarnings: 0, sessionCount: 0, loading: true });
+
+  // Load client from Firestore
   useEffect(() => {
-    if (!client) {
-      // In real app, you might want to show a 404 or redirect
-      console.error('Client not found:', id);
+    if (!id) {
+      setClientLoading(false);
+      return;
     }
-  }, [client, id]);
+    let cancelled = false;
+    const loadClient = async () => {
+      try {
+        const data = await crmApi.getClientById(id);
+        if (!cancelled) {
+          setClient(data);
+        }
+      } catch (err) {
+        console.error('Error loading client:', err);
+      } finally {
+        if (!cancelled) {
+          setClientLoading(false);
+        }
+      }
+    };
+    loadClient();
+    return () => { cancelled = true; };
+  }, [id]);
+
+  // Real-time inventory transactions for this client
+  useEffect(() => {
+    if (!id || clientLoading || !client) return;
+    const q = query(
+      collection(db, 'inventory_transactions'),
+      where('relatedClientId', '==', id)
+    );
+    const unsub = onSnapshot(q, (snap) => {
+      const txs = snap.docs.map(d => ({ id: d.id, ...d.data() } as InventoryTransaction));
+      setInventoryTransactions(txs);
+      setInventoryLoading(false);
+    }, (err) => {
+      console.error('Error loading inventory transactions:', err);
+      setInventoryLoading(false);
+    });
+    return () => unsub();
+  }, [id, clientLoading, client]);
+
+  // Load photos from Firebase Storage
+  useEffect(() => {
+    if (!id || clientLoading || !client) return;
+    const loadPhotos = async () => {
+      try {
+        const storage = getStorage();
+        const photosRef = ref(storage, `projects/${id}/photos/`);
+        const result = await listAll(photosRef);
+        const photoData = await Promise.all(
+          result.items.map(async (itemRef) => {
+            const url = await getDownloadURL(itemRef);
+            return { name: itemRef.name, url };
+          })
+        );
+        setPhotos(photoData);
+      } catch (err) {
+        console.error('Error loading photos:', err);
+      } finally {
+        setPhotosLoading(false);
+      }
+    };
+    loadPhotos();
+  }, [id, clientLoading, client]);
+
+  // Real-time work sessions for profit calculation
+  useEffect(() => {
+    if (!id || clientLoading || !client) return;
+    const q = query(
+      collection(db, 'work_sessions'),
+      where('clientId', '==', id),
+      where('status', '==', 'completed')
+    );
+    const unsub = onSnapshot(q, (snap) => {
+      let total = 0;
+      snap.docs.forEach(d => {
+        const data = d.data();
+        total += data.sessionEarnings || 0;
+      });
+      setWorkSessionData({
+        totalEarnings: total,
+        sessionCount: snap.docs.length,
+        loading: false,
+      });
+    }, (err) => {
+      console.error('Error loading work sessions:', err);
+      setWorkSessionData(prev => ({ ...prev, loading: false }));
+    });
+    return () => unsub();
+  }, [id, clientLoading, client]);
+
+  // Aggregated inventory summary by item name
+  const inventorySummary = React.useMemo(() => {
+    const map = new Map<string, {
+      name: string;
+      category: string;
+      totalQty: number;
+      unitPrice: number;
+      totalAmount: number;
+    }>();
+    inventoryTransactions.forEach(tx => {
+      const existing = map.get(tx.catalogItemId);
+      if (existing) {
+        existing.totalQty += tx.qty;
+        existing.totalAmount += tx.totalAmount;
+        existing.unitPrice = existing.totalAmount / existing.totalQty;
+      } else {
+        map.set(tx.catalogItemId, {
+          name: tx.catalogItemName,
+          category: tx.category,
+          totalQty: tx.qty,
+          unitPrice: tx.unitPrice,
+          totalAmount: tx.totalAmount,
+        });
+      }
+    });
+    return Array.from(map.values());
+  }, [inventoryTransactions]);
+
+  if (clientLoading) {
+    return (
+      <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
+        <CircularProgress />
+      </Box>
+    );
+  }
 
   if (!client) {
     return (
       <Box sx={{ p: 3 }}>
-        <Alert severity="error">Client not found</Alert>
+        <Alert severity="error">Client not found (ID: {id})</Alert>
       </Box>
     );
   }
 
   const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
     setTabValue(newValue);
-  };
-
-  const handleViewPortal = () => {
-    window.open(`/portal/${client.portalSlug}`, '_blank');
   };
 
   const handleAddNote = () => {
@@ -274,63 +261,71 @@ const ClientDashboardPage: React.FC = () => {
                 {client.name}
               </Typography>
               <Typography variant="h6" color="text.secondary" gutterBottom>
-                {client.projectTitle}
+                {client.type === 'company' ? 'Company' : 'Person'} · {client.status}
               </Typography>
-              <Typography variant="body2" color="text.secondary">
-                📍 {client.projectAddress}
-              </Typography>
+              {(client.address || client.workLocation?.address) && (
+                <Typography variant="body2" color="text.secondary">
+                  📍 {client.workLocation?.address || client.address}
+                </Typography>
+              )}
             </Grid>
             <Grid size={{ xs: 12, md: 6 }} sx={{ textAlign: { xs: 'center', md: 'right' } }}>
               <Box display="flex" flexDirection={{ xs: 'column', md: 'column' }} gap={2}>
                 <Button
                   variant="outlined"
                   startIcon={<VisibilityIcon />}
-                  onClick={handleViewPortal}
+                  onClick={() => navigate(`/crm/clients/${id}`)}
                   sx={{ alignSelf: { xs: 'center', md: 'flex-end' } }}
                 >
-                  View Client Portal
+                  View Client Details
                 </Button>
                 <Box>
                   <Typography variant="body2" color="text.secondary">
-                    Internal Cost:
-                  </Typography>
-                  <Typography variant="h6" color="error.main" fontWeight="bold">
-                    ${client.internalEstimate.total.toLocaleString()}
-                  </Typography>
-                </Box>
-                <Box>
-                  <Typography variant="body2" color="text.secondary">
-                    Client Price:
+                    Total Revenue (LTV):
                   </Typography>
                   <Typography variant="h6" color="success.main" fontWeight="bold">
-                    ${client.clientEstimate.total.toLocaleString()}
+                    ${(client.totalRevenue || 0).toLocaleString()}
                   </Typography>
                 </Box>
+                {client.contacts && client.contacts.length > 0 && (
+                  <Box>
+                    <Typography variant="body2" color="text.secondary">
+                      Primary Contact:
+                    </Typography>
+                    <Typography variant="body1" fontWeight="bold">
+                      {client.contacts[0].name} {client.contacts[0].phone && `· ${client.contacts[0].phone}`}
+                    </Typography>
+                  </Box>
+                )}
+                <Divider sx={{ my: 1 }} />
                 <Box>
                   <Typography variant="body2" color="text.secondary">
-                    Profit Margin:
+                    Work Sessions:
                   </Typography>
-                  <Typography variant="h5" color="primary.main" fontWeight="bold">
-                    ${client.margin.amount.toLocaleString()} ({client.margin.percentage}%)
-                  </Typography>
+                  {workSessionData.loading ? (
+                    <CircularProgress size={20} />
+                  ) : (
+                    <Typography variant="h6" color="warning.main" fontWeight="bold">
+                      ${workSessionData.totalEarnings.toLocaleString()}
+                      <Typography component="span" variant="body2" color="text.secondary" sx={{ ml: 1 }}>
+                        ({workSessionData.sessionCount} sessions)
+                      </Typography>
+                    </Typography>
+                  )}
                 </Box>
               </Box>
             </Grid>
           </Grid>
 
-          {/* Progress Bar */}
-          <Box sx={{ mt: { xs: 2, md: 3 } }}>
-            <Box display="flex" justifyContent="space-between" alignItems="center" mb={1}>
-              <Typography variant="body2" fontWeight="medium">
-                Project Progress: {client.currentStage}
-              </Typography>
-              <Typography variant="body2" fontWeight="medium">{client.progress}%</Typography>
-            </Box>
-            <LinearProgress
-              variant="determinate"
-              value={client.progress}
-              sx={{ height: { xs: 10, md: 8 }, borderRadius: 4 }}
-            />
+          {/* Client Info Chips */}
+          <Box sx={{ mt: { xs: 2, md: 3 }, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+            <Chip label={`Status: ${client.status}`} color="primary" variant="outlined" />
+            {client.tags && client.tags.map((tag) => (
+              <Chip key={tag} label={tag} size="small" />
+            ))}
+            {client.services && client.services.map((svc) => (
+              <Chip key={svc} label={svc} size="small" variant="outlined" color="secondary" />
+            ))}
           </Box>
         </Paper>
 
@@ -343,183 +338,113 @@ const ClientDashboardPage: React.FC = () => {
             scrollButtons="auto"
             allowScrollButtonsMobile
           >
-            <Tab icon={<MoneyIcon />} label="Dual Estimates" iconPosition="top" />
-            <Tab icon={<ProfitIcon />} label="Margin Analysis" iconPosition="top" />
+            <Tab icon={<ClientIcon />} label="Client Info" iconPosition="top" />
+            <Tab icon={<ProfitIcon />} label="Work Sessions" iconPosition="top" />
             <Tab icon={<NotesIcon />} label="Internal Notes" iconPosition="top" />
             <Tab icon={<TimelineIcon />} label="Timeline" iconPosition="top" />
+            <Tab icon={<BuildIcon />} label="Inventory" iconPosition="top" />
+            <Tab icon={<PhotoCameraIcon />} label="Photos" iconPosition="top" />
           </Tabs>
         </Paper>
 
-        {/* Dual Estimates Tab */}
+        {/* Client Info Tab */}
         <TabPanel value={tabValue} index={0}>
-          <Grid container spacing={3}>
-            {internalEstimateBreakdown.map((category) => (
-              <Grid size={{ xs: 12 }} key={category.id}>
-                <Card elevation={2} sx={{ borderRadius: 2 }}>
-                  <Accordion defaultExpanded={category.id <= 2}>
-                    <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                      <Box display="flex" alignItems="center" width="100%" pr={2}>
-                        <Avatar sx={{ bgcolor: '#1976d2', mr: 2, width: 48, height: 48 }}>
-                          {category.icon}
-                        </Avatar>
-                        <Box flexGrow={1}>
-                          <Typography variant="h6" fontWeight="bold">
-                            {category.category}
-                          </Typography>
-                          <Typography variant="body2" color="text.secondary">
-                            Margin: ${category.markup.toLocaleString()} ({category.marginPercent}%)
-                          </Typography>
-                        </Box>
-                        <Box sx={{ textAlign: 'right' }}>
-                          <Typography variant="body2" color="error.main">
-                            Internal: ${category.internal.total.toLocaleString()}
-                          </Typography>
-                          <Typography variant="body2" color="success.main">
-                            Client: ${category.client.total.toLocaleString()}
-                          </Typography>
-                        </Box>
-                      </Box>
-                    </AccordionSummary>
-                    <AccordionDetails>
-                      <Grid container spacing={2}>
-                        <Grid size={{ xs: 12, md: 6 }}>
-                          <Paper variant="outlined" sx={{ p: 2, backgroundColor: '#ffebee' }}>
-                            <Typography variant="h6" color="error.main" gutterBottom>
-                              <InternalIcon sx={{ mr: 1 }} />
-                              Internal Costs
-                            </Typography>
-                            <TableContainer>
-                              <Table size="small">
-                                <TableBody>
-                                  <TableRow>
-                                    <TableCell>Labor</TableCell>
-                                    <TableCell align="right">${category.internal.laborCost.toLocaleString()}</TableCell>
-                                  </TableRow>
-                                  <TableRow>
-                                    <TableCell>Materials</TableCell>
-                                    <TableCell align="right">${category.internal.materialCost.toLocaleString()}</TableCell>
-                                  </TableRow>
-                                  <TableRow>
-                                    <TableCell>Subcontractors</TableCell>
-                                    <TableCell align="right">${category.internal.subcontractCost.toLocaleString()}</TableCell>
-                                  </TableRow>
-                                  <TableRow>
-                                    <TableCell sx={{ fontWeight: 'bold', borderTop: 2 }}>Total Cost</TableCell>
-                                    <TableCell align="right" sx={{ fontWeight: 'bold', fontSize: '1.1rem', borderTop: 2 }}>
-                                      ${category.internal.total.toLocaleString()}
-                                    </TableCell>
-                                  </TableRow>
-                                </TableBody>
-                              </Table>
-                            </TableContainer>
-                          </Paper>
-                        </Grid>
-                        <Grid size={{ xs: 12, md: 6 }}>
-                          <Paper variant="outlined" sx={{ p: 2, backgroundColor: '#e8f5e8' }}>
-                            <Typography variant="h6" color="success.main" gutterBottom>
-                              <ClientIcon sx={{ mr: 1 }} />
-                              Client Pricing
-                            </Typography>
-                            <TableContainer>
-                              <Table size="small">
-                                <TableBody>
-                                  <TableRow>
-                                    <TableCell>Client Price</TableCell>
-                                    <TableCell align="right">${category.client.total.toLocaleString()}</TableCell>
-                                  </TableRow>
-                                  <TableRow>
-                                    <TableCell>Our Cost</TableCell>
-                                    <TableCell align="right">-${category.internal.total.toLocaleString()}</TableCell>
-                                  </TableRow>
-                                  <TableRow>
-                                    <TableCell sx={{ fontWeight: 'bold', borderTop: 2, color: 'primary.main' }}>Profit</TableCell>
-                                    <TableCell align="right" sx={{ fontWeight: 'bold', fontSize: '1.1rem', borderTop: 2, color: 'primary.main' }}>
-                                      ${category.markup.toLocaleString()}
-                                    </TableCell>
-                                  </TableRow>
-                                  <TableRow>
-                                    <TableCell sx={{ fontWeight: 'bold', color: 'primary.main' }}>Margin %</TableCell>
-                                    <TableCell align="right" sx={{ fontWeight: 'bold', fontSize: '1.1rem', color: 'primary.main' }}>
-                                      {category.marginPercent}%
-                                    </TableCell>
-                                  </TableRow>
-                                </TableBody>
-                              </Table>
-                            </TableContainer>
-                          </Paper>
-                        </Grid>
-                      </Grid>
-                    </AccordionDetails>
-                  </Accordion>
-                </Card>
+          <Card elevation={2} sx={{ borderRadius: 2, p: 3 }}>
+            <Typography variant="h5" gutterBottom fontWeight="bold" color="primary">
+              Client Information
+            </Typography>
+
+            <Grid container spacing={3}>
+              <Grid size={{ xs: 12, md: 6 }}>
+                <Paper variant="outlined" sx={{ p: 2 }}>
+                  <Typography variant="h6" gutterBottom>Contacts</Typography>
+                  {client.contacts && client.contacts.length > 0 ? (
+                    <List dense>
+                      {client.contacts.map((contact) => (
+                        <ListItem key={contact.id}>
+                          <ListItemIcon><ClientIcon /></ListItemIcon>
+                          <ListItemText
+                            primary={contact.name}
+                            secondary={`${contact.phone || ''}${contact.email ? ` · ${contact.email}` : ''}${contact.position ? ` · ${contact.position}` : ''}`}
+                          />
+                        </ListItem>
+                      ))}
+                    </List>
+                  ) : (
+                    <Typography variant="body2" color="text.secondary">No contacts</Typography>
+                  )}
+                </Paper>
               </Grid>
-            ))}
-          </Grid>
+              <Grid size={{ xs: 12, md: 6 }}>
+                <Paper variant="outlined" sx={{ p: 2 }}>
+                  <Typography variant="h6" gutterBottom>Details</Typography>
+                  <Table size="small">
+                    <TableBody>
+                      <TableRow>
+                        <TableCell>Type</TableCell>
+                        <TableCell>{client.type}</TableCell>
+                      </TableRow>
+                      <TableRow>
+                        <TableCell>Status</TableCell>
+                        <TableCell><Chip label={client.status} size="small" color="primary" /></TableCell>
+                      </TableRow>
+                      {client.source && (
+                        <TableRow>
+                          <TableCell>Source</TableCell>
+                          <TableCell>{client.sourceName || client.source}</TableCell>
+                        </TableRow>
+                      )}
+                      {client.industry && (
+                        <TableRow>
+                          <TableCell>Industry</TableCell>
+                          <TableCell>{client.industry}</TableCell>
+                        </TableRow>
+                      )}
+                      <TableRow>
+                        <TableCell>Total Revenue</TableCell>
+                        <TableCell sx={{ fontWeight: 'bold' }}>${(client.totalRevenue || 0).toLocaleString()}</TableCell>
+                      </TableRow>
+                    </TableBody>
+                  </Table>
+                </Paper>
+              </Grid>
+            </Grid>
+          </Card>
         </TabPanel>
 
-        {/* Margin Analysis Tab */}
+        {/* Work Sessions Tab */}
         <TabPanel value={tabValue} index={1}>
           <Card elevation={2} sx={{ borderRadius: 2, p: 3 }}>
             <Typography variant="h5" gutterBottom fontWeight="bold" color="primary">
-              Profit Margin Analysis
+              Work Sessions Summary
             </Typography>
 
-            <Alert severity="success" sx={{ mb: 3 }}>
-              <Typography variant="body1">
-                <strong>Excellent margins!</strong> Overall project margin of {client.margin.percentage}%
-                exceeds our 20% target. Total profit: ${client.margin.amount.toLocaleString()}
-              </Typography>
-            </Alert>
-
-            <TableContainer>
-              <Table>
-                <TableHead>
-                  <TableRow>
-                    <TableCell>Category</TableCell>
-                    <TableCell align="right">Internal Cost</TableCell>
-                    <TableCell align="right">Client Price</TableCell>
-                    <TableCell align="right">Profit</TableCell>
-                    <TableCell align="right">Margin %</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {internalEstimateBreakdown.map((category) => (
-                    <TableRow key={category.id}>
-                      <TableCell>{category.category.replace(' (Internal)', '')}</TableCell>
-                      <TableCell align="right" sx={{ color: 'error.main' }}>
-                        ${category.internal.total.toLocaleString()}
-                      </TableCell>
-                      <TableCell align="right" sx={{ color: 'success.main' }}>
-                        ${category.client.total.toLocaleString()}
-                      </TableCell>
-                      <TableCell align="right" sx={{ fontWeight: 'bold', color: 'primary.main' }}>
-                        ${category.markup.toLocaleString()}
-                      </TableCell>
-                      <TableCell align="right" sx={{ fontWeight: 'bold', color: 'primary.main' }}>
-                        {category.marginPercent}%
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                  <TableRow>
-                    <TableCell sx={{ fontWeight: 'bold', fontSize: '1.1rem', borderTop: 2 }}>
-                      TOTAL PROJECT
-                    </TableCell>
-                    <TableCell align="right" sx={{ fontWeight: 'bold', color: 'error.main', borderTop: 2 }}>
-                      ${client.internalEstimate.total.toLocaleString()}
-                    </TableCell>
-                    <TableCell align="right" sx={{ fontWeight: 'bold', color: 'success.main', borderTop: 2 }}>
-                      ${client.clientEstimate.total.toLocaleString()}
-                    </TableCell>
-                    <TableCell align="right" sx={{ fontWeight: 'bold', color: 'primary.main', fontSize: '1.2rem', borderTop: 2 }}>
-                      ${client.margin.amount.toLocaleString()}
-                    </TableCell>
-                    <TableCell align="right" sx={{ fontWeight: 'bold', color: 'primary.main', fontSize: '1.2rem', borderTop: 2 }}>
-                      {client.margin.percentage}%
-                    </TableCell>
-                  </TableRow>
-                </TableBody>
-              </Table>
-            </TableContainer>
+            {workSessionData.loading ? (
+              <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+                <CircularProgress />
+              </Box>
+            ) : workSessionData.sessionCount === 0 ? (
+              <Alert severity="info">No completed work sessions for this client yet.</Alert>
+            ) : (
+              <Grid container spacing={3}>
+                <Grid size={{ xs: 12, md: 6 }}>
+                  <Paper variant="outlined" sx={{ p: 2, textAlign: 'center' }}>
+                    <Typography variant="body2" color="text.secondary">Total Earnings</Typography>
+                    <Typography variant="h4" fontWeight="bold" color="success.main">
+                      ${workSessionData.totalEarnings.toLocaleString()}
+                    </Typography>
+                  </Paper>
+                </Grid>
+                <Grid size={{ xs: 12, md: 6 }}>
+                  <Paper variant="outlined" sx={{ p: 2, textAlign: 'center' }}>
+                    <Typography variant="body2" color="text.secondary">Completed Sessions</Typography>
+                    <Typography variant="h4" fontWeight="bold" color="primary.main">
+                      {workSessionData.sessionCount}
+                    </Typography>
+                  </Paper>
+                </Grid>
+              </Grid>
+            )}
           </Card>
         </TabPanel>
 
@@ -557,38 +482,9 @@ const ClientDashboardPage: React.FC = () => {
               </Box>
             </Paper>
 
-            {/* Show existing notes */}
-            <List>
-              {client.internalNotes.map((note) => (
-                <React.Fragment key={note.id}>
-                  <ListItem alignItems="flex-start">
-                    <ListItemIcon>
-                      <Avatar sx={{ bgcolor: '#1976d2', width: 40, height: 40 }}>
-                        <NotesIcon />
-                      </Avatar>
-                    </ListItemIcon>
-                    <ListItemText
-                      primary={
-                        <Box display="flex" justifyContent="space-between" alignItems="flex-start">
-                          <Typography variant="body1" fontWeight="bold">
-                            {note.author}
-                          </Typography>
-                          <Typography variant="caption" color="text.secondary">
-                            {note.date}
-                          </Typography>
-                        </Box>
-                      }
-                      secondary={
-                        <Typography variant="body2" sx={{ mt: 1 }}>
-                          {note.content}
-                        </Typography>
-                      }
-                    />
-                  </ListItem>
-                  <Divider />
-                </React.Fragment>
-              ))}
-            </List>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
+              Notes will be stored in Firestore. Add a note above to start.
+            </Typography>
           </Card>
         </TabPanel>
 
@@ -611,6 +507,167 @@ const ClientDashboardPage: React.FC = () => {
                 Will show internal deadlines, crew assignments, and material delivery schedules
               </Typography>
             </Box>
+          </Card>
+        </TabPanel>
+
+        {/* Inventory Tab */}
+        <TabPanel value={tabValue} index={4}>
+          <Card elevation={2} sx={{ borderRadius: 2, p: 3 }}>
+            <Typography variant="h5" gutterBottom fontWeight="bold" color="primary">
+              <BuildIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
+              Materials & Inventory
+            </Typography>
+
+            <Alert severity="info" sx={{ mb: 3 }}>
+              Materials allocated and used for this client's project. Data sourced from inventory transactions in real-time.
+            </Alert>
+
+            {inventoryLoading ? (
+              <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+                <CircularProgress />
+              </Box>
+            ) : inventorySummary.length === 0 ? (
+              <Box sx={{ textAlign: 'center', py: 4 }}>
+                <Typography variant="h6" color="text.secondary">
+                  No materials allocated to this project yet
+                </Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                  Materials will appear here when inventory transactions reference this client
+                </Typography>
+              </Box>
+            ) : (
+              <>
+                <TableContainer>
+                  <Table>
+                    <TableHead>
+                      <TableRow>
+                        <TableCell>Name</TableCell>
+                        <TableCell>Category</TableCell>
+                        <TableCell align="right">Qty Used</TableCell>
+                        <TableCell align="right">Unit Price</TableCell>
+                        <TableCell align="right">Total</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {inventorySummary.map((item, idx) => (
+                        <TableRow key={idx}>
+                          <TableCell>{item.name}</TableCell>
+                          <TableCell>
+                            <Chip label={item.category} size="small" variant="outlined" />
+                          </TableCell>
+                          <TableCell align="right">{item.totalQty}</TableCell>
+                          <TableCell align="right">${item.unitPrice.toFixed(2)}</TableCell>
+                          <TableCell align="right" sx={{ fontWeight: 'bold' }}>
+                            ${item.totalAmount.toFixed(2)}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                      <TableRow>
+                        <TableCell colSpan={4} sx={{ fontWeight: 'bold', fontSize: '1.1rem', borderTop: 2 }}>
+                          TOTAL MATERIALS COST
+                        </TableCell>
+                        <TableCell align="right" sx={{ fontWeight: 'bold', fontSize: '1.1rem', borderTop: 2, color: 'error.main' }}>
+                          ${inventorySummary.reduce((sum, i) => sum + i.totalAmount, 0).toFixed(2)}
+                        </TableCell>
+                      </TableRow>
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+
+                {/* Total materials cost summary */}
+                <Paper variant="outlined" sx={{ p: 2, mt: 3, backgroundColor: '#f8f9fa' }}>
+                  <Typography variant="h6" gutterBottom>
+                    Materials Cost Summary
+                  </Typography>
+                  <Grid container spacing={2}>
+                    <Grid size={{ xs: 12, md: 6 }}>
+                      <Typography variant="body2" color="text.secondary">Total Materials Spent</Typography>
+                      <Typography variant="h6" fontWeight="bold" color="error.main">
+                        ${inventorySummary.reduce((sum, i) => sum + i.totalAmount, 0).toFixed(2)}
+                      </Typography>
+                    </Grid>
+                    <Grid size={{ xs: 12, md: 6 }}>
+                      <Typography variant="body2" color="text.secondary">Unique Items</Typography>
+                      <Typography variant="h6" fontWeight="bold">
+                        {inventorySummary.length}
+                      </Typography>
+                    </Grid>
+                  </Grid>
+                </Paper>
+              </>
+            )}
+          </Card>
+        </TabPanel>
+
+        {/* Photos Tab */}
+        <TabPanel value={tabValue} index={5}>
+          <Card elevation={2} sx={{ borderRadius: 2, p: 3 }}>
+            <Typography variant="h5" gutterBottom fontWeight="bold" color="primary">
+              <PhotoCameraIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
+              Project Photos
+            </Typography>
+
+            <Alert severity="info" sx={{ mb: 3 }}>
+              Photos from the project site stored in Firebase Storage at projects/{id}/photos/
+            </Alert>
+
+            {photosLoading ? (
+              <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+                <CircularProgress />
+              </Box>
+            ) : photos.length === 0 ? (
+              <Box sx={{ textAlign: 'center', py: 4 }}>
+                <PhotoCameraIcon sx={{ fontSize: 64, color: 'text.disabled', mb: 2 }} />
+                <Typography variant="h6" color="text.secondary">
+                  No photos uploaded yet
+                </Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                  Upload project photos to Firebase Storage at projects/{id}/photos/
+                </Typography>
+              </Box>
+            ) : (
+              <ImageList
+                sx={{ width: '100%' }}
+                cols={3}
+                gap={12}
+                variant="quilted"
+              >
+                {photos.map((photo, idx) => (
+                  <ImageListItem key={idx}>
+                    <img
+                      src={photo.url}
+                      alt={photo.name}
+                      loading="lazy"
+                      style={{
+                        borderRadius: 8,
+                        objectFit: 'cover',
+                        width: '100%',
+                        height: 'auto',
+                        minHeight: 200,
+                        maxHeight: 350,
+                        cursor: 'pointer',
+                      }}
+                      onClick={() => window.open(photo.url, '_blank')}
+                    />
+                    <Box sx={{
+                      position: 'absolute',
+                      bottom: 0,
+                      left: 0,
+                      right: 0,
+                      bgcolor: 'rgba(0,0,0,0.6)',
+                      color: 'white',
+                      px: 1,
+                      py: 0.5,
+                      borderRadius: '0 0 8px 8px',
+                    }}>
+                      <Typography variant="caption" noWrap>
+                        {photo.name}
+                      </Typography>
+                    </Box>
+                  </ImageListItem>
+                ))}
+              </ImageList>
+            )}
           </Card>
         </TabPanel>
       </Container>

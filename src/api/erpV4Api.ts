@@ -9,6 +9,13 @@ import { getFunctions, httpsCallable } from 'firebase/functions';
 
 const functions = getFunctions(undefined, 'us-central1');
 
+/** Standard callable response wrapper */
+interface ErpResponse<T = unknown> {
+  success?: boolean;
+  data?: T;
+  error?: string;
+}
+
 // ═══════════════════════════════════════
 // PUNCH LIST
 // ═══════════════════════════════════════
@@ -30,16 +37,16 @@ export const punchListApi = {
       assigneeName?: string;
       notes?: string;
     }>;
-  }) => {
+  }): Promise<ErpResponse> => {
     const fn = httpsCallable(functions, 'createPunchList');
     const result = await fn(data);
-    return result.data as any;
+    return result.data as ErpResponse;
   },
 
-  getByProject: async (projectId: string) => {
+  getByProject: async (projectId: string): Promise<ErpResponse<Array<Record<string, unknown>>>> => {
     const fn = httpsCallable(functions, 'getPunchLists');
     const result = await fn({ projectId });
-    return result.data as any;
+    return result.data as ErpResponse<Array<Record<string, unknown>>>;
   },
 
   updateItem: async (data: {
@@ -48,10 +55,10 @@ export const punchListApi = {
     status: string;
     fixedPhotoUrls?: string[];
     notes?: string;
-  }) => {
+  }): Promise<ErpResponse> => {
     const fn = httpsCallable(functions, 'updatePunchListItem');
     const result = await fn(data);
-    return result.data as any;
+    return result.data as ErpResponse;
   },
 };
 
@@ -69,16 +76,16 @@ export const workActsApi = {
     phaseName: string;
     phaseDescription?: string;
     plannedAmount: number;
-  }) => {
+  }): Promise<ErpResponse> => {
     const fn = httpsCallable(functions, 'createWorkAct');
     const result = await fn(data);
-    return result.data as any;
+    return result.data as ErpResponse;
   },
 
-  getByProject: async (projectId: string) => {
+  getByProject: async (projectId: string): Promise<ErpResponse<Array<Record<string, unknown>>>> => {
     const fn = httpsCallable(functions, 'getWorkActs');
     const result = await fn({ projectId });
-    return result.data as any;
+    return result.data as ErpResponse<Array<Record<string, unknown>>>;
   },
 
   update: async (data: {
@@ -86,10 +93,10 @@ export const workActsApi = {
     status?: string;
     actualAmount?: number;
     completionPercent?: number;
-  }) => {
+  }): Promise<ErpResponse> => {
     const fn = httpsCallable(functions, 'updateWorkAct');
     const result = await fn(data);
-    return result.data as any;
+    return result.data as ErpResponse;
   },
 };
 
@@ -112,22 +119,22 @@ export const paymentScheduleApi = {
       percentOfTotal?: number;
       dueDate?: string;
     }>;
-  }) => {
+  }): Promise<ErpResponse> => {
     const fn = httpsCallable(functions, 'createPaymentSchedule');
     const result = await fn(data);
-    return result.data as any;
+    return result.data as ErpResponse;
   },
 
-  getByEstimate: async (estimateId: string) => {
+  getByEstimate: async (estimateId: string): Promise<ErpResponse<Array<Record<string, unknown>>>> => {
     const fn = httpsCallable(functions, 'getPaymentSchedule');
     const result = await fn({ estimateId });
-    return result.data as any;
+    return result.data as ErpResponse<Array<Record<string, unknown>>>;
   },
 
-  getByProject: async (projectId: string) => {
+  getByProject: async (projectId: string): Promise<ErpResponse<Array<Record<string, unknown>>>> => {
     const fn = httpsCallable(functions, 'getPaymentSchedule');
     const result = await fn({ projectId });
-    return result.data as any;
+    return result.data as ErpResponse<Array<Record<string, unknown>>>;
   },
 
   updateMilestone: async (data: {
@@ -136,10 +143,10 @@ export const paymentScheduleApi = {
     status?: string;
     paidAmount?: number;
     invoiceId?: string;
-  }) => {
+  }): Promise<ErpResponse> => {
     const fn = httpsCallable(functions, 'updatePaymentMilestone');
     const result = await fn(data);
-    return result.data as any;
+    return result.data as ErpResponse;
   },
 };
 
@@ -157,16 +164,16 @@ export const warrantyApi = {
     photoUrls?: string[];
     priority?: string;
     warrantyExpiresAt?: string;
-  }) => {
+  }): Promise<ErpResponse> => {
     const fn = httpsCallable(functions, 'createWarrantyTask');
     const result = await fn(data);
-    return result.data as any;
+    return result.data as ErpResponse;
   },
 
-  getByProject: async (projectId: string) => {
+  getByProject: async (projectId: string): Promise<ErpResponse<Array<Record<string, unknown>>>> => {
     const fn = httpsCallable(functions, 'getWarrantyTasks');
     const result = await fn({ projectId });
-    return result.data as any;
+    return result.data as ErpResponse<Array<Record<string, unknown>>>;
   },
 };
 
@@ -183,16 +190,16 @@ export const npsApi = {
     contactEmail?: string;
     contactPhone?: string;
     channel?: string;
-  }) => {
+  }): Promise<ErpResponse> => {
     const fn = httpsCallable(functions, 'triggerNps');
     const result = await fn(data);
-    return result.data as any;
+    return result.data as ErpResponse;
   },
 
-  getStatus: async (projectId: string) => {
+  getStatus: async (projectId: string): Promise<ErpResponse<Array<Record<string, unknown>>>> => {
     const fn = httpsCallable(functions, 'getNpsStatus');
     const result = await fn({ projectId });
-    return result.data as any;
+    return result.data as ErpResponse<Array<Record<string, unknown>>>;
   },
 };
 
@@ -201,9 +208,9 @@ export const npsApi = {
 // ═══════════════════════════════════════
 
 export const planVsFactApi = {
-  get: async (params: { projectId?: string; clientId?: string }) => {
+  get: async (params: { projectId?: string; clientId?: string }): Promise<ErpResponse<Record<string, unknown>>> => {
     const fn = httpsCallable(functions, 'getPlanVsFact');
     const result = await fn(params);
-    return result.data as any;
+    return result.data as ErpResponse<Record<string, unknown>>;
   },
 };

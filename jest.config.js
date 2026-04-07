@@ -47,7 +47,26 @@ module.exports = {
         jsx: 'react',
         esModuleInterop: true,
       },
+      diagnostics: false,
     }],
+  },
+
+  // Vite import.meta.env polyfill
+  globals: {
+    'import.meta': {
+      env: {
+        VITE_FIREBASE_API_KEY: 'test-key',
+        VITE_FIREBASE_AUTH_DOMAIN: 'test.firebaseapp.com',
+        VITE_FIREBASE_PROJECT_ID: 'test-project',
+        VITE_FIREBASE_STORAGE_BUCKET: 'test.appspot.com',
+        VITE_FIREBASE_MESSAGING_SENDER_ID: '123',
+        VITE_FIREBASE_APP_ID: '1:123:web:abc',
+        VITE_FIREBASE_MEASUREMENT_ID: 'G-TEST',
+        MODE: 'test',
+        DEV: true,
+        PROD: false,
+      },
+    },
   },
 
   // Test matching

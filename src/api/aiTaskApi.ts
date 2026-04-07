@@ -5,15 +5,14 @@
  * Region: us-east1 (closest to South Florida)
  */
 
-import { httpsCallable, getFunctions } from 'firebase/functions';
+import { httpsCallable, getFunctions, connectFunctionsEmulator } from 'firebase/functions';
 import app from '../firebase/firebase';
 
 // Functions instance for us-east1 region (AI task functions are deployed there)
 const functionsEast = getFunctions(app, 'us-east1');
 
 // Connect to emulator if configured
-if (process.env.REACT_APP_USE_EMULATORS === 'true') {
-    const { connectFunctionsEmulator } = require('firebase/functions');
+if (import.meta.env.VITE_USE_EMULATORS === 'true') {
     connectFunctionsEmulator(functionsEast, '127.0.0.1', 5001);
 }
 

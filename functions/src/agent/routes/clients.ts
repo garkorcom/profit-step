@@ -3,6 +3,7 @@
  */
 import { Router } from 'express';
 import { db, FieldValue, logger, logAgentActivity, getCachedClients, Fuse } from '../routeContext';
+import { logAudit, AuditHelpers, extractAuditContext } from '../utils/auditLogger';
 import { CreateClientSchema, UpdateClientSchema } from '../schemas';
 
 const router = Router();
@@ -25,6 +26,7 @@ router.post('/api/clients', async (req, res, next) => {
       }
     }
 
+    const clientAuditCtx = extractAuditContext(req);
     const docRef = db.collection('clients').doc();
     await docRef.set({
       name: data.name,
@@ -37,7 +39,9 @@ router.post('/api/clients', async (req, res, next) => {
       company: data.company || null,
       geo: data.geo || null,
       status: 'active',
-      source: 'openclaw',
+      source: clientAuditCtx.source || 'openclaw',
+      createdBy: clientAuditCtx.performedBy,
+      createdBySource: clientAuditCtx.source,
       createdAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
     });
@@ -63,6 +67,8 @@ router.post('/api/clients', async (req, res, next) => {
       metadata: { clientId: docRef.id, name: data.name, type: data.type },
     });
 
+    await logAudit(AuditHelpers.create('client', docRef.id, { name: data.name, type: data.type }, clientAuditCtx.performedBy, clientAuditCtx.source as any));
+
     res.status(201).json({ clientId: docRef.id, name: data.name });
   } catch (e) {
     next(e);
@@ -86,8 +92,12 @@ router.patch('/api/clients/:id', async (req, res, next) => {
     }
 
     // Build update payload (only provided fields)
+    const clientUpdateCtx = extractAuditContext(req);
+    const oldClientData = clientDoc.data()!;
     const updatePayload: Record<string, any> = {
       updatedAt: FieldValue.serverTimestamp(),
+      updatedBy: clientUpdateCtx.performedBy,
+      updatedBySource: clientUpdateCtx.source,
     };
     if (data.name !== undefined) updatePayload.name = data.name;
     if (data.address !== undefined) updatePayload.address = data.address;
@@ -113,6 +123,16 @@ router.patch('/api/clients/:id', async (req, res, next) => {
       endpoint: `/api/clients/${clientId}`,
       metadata: { clientId, updatedFields: Object.keys(data) },
     });
+
+    const clientFrom: Record<string, any> = {};
+    const clientTo: Record<string, any> = {};
+    for (const key of Object.keys(data)) {
+      if ((data as any)[key] !== undefined) {
+        clientFrom[key] = oldClientData[key] ?? null;
+        clientTo[key] = (data as any)[key];
+      }
+    }
+    await logAudit(AuditHelpers.update('client', clientId, clientFrom, clientTo, clientUpdateCtx.performedBy, clientUpdateCtx.source as any));
 
     res.json({ clientId, updated: true });
   } catch (e) {

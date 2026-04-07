@@ -10,6 +10,7 @@ import {
   fuzzySearchClient, searchClientByAddress,
   autoCreateClientByAddress, resolveOwnerCompanyId,
 } from '../routeContext';
+import { logAudit, AuditHelpers, extractAuditContext } from '../utils/auditLogger';
 import {
   CreateProjectSchema,
   ListProjectsQuerySchema,
@@ -51,6 +52,7 @@ router.post('/api/projects', async (req, res, next) => {
     }
 
     const companyId = await resolveOwnerCompanyId();
+    const projAuditCtx = extractAuditContext(req);
 
     const docRef = db.collection('projects').doc();
     await docRef.set({
@@ -70,8 +72,9 @@ router.post('/api/projects', async (req, res, next) => {
       totalDebit: 0,
       totalCredit: 0,
       balance: 0,
-      createdBy: req.agentUserId,
-      source: 'openclaw_estimator',
+      createdBy: projAuditCtx.performedBy,
+      createdBySource: projAuditCtx.source,
+      source: projAuditCtx.source || 'openclaw_estimator',
       createdAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
     });
@@ -83,6 +86,8 @@ router.post('/api/projects', async (req, res, next) => {
       endpoint: '/api/projects',
       metadata: { projectId: docRef.id, name: data.name, clientId },
     });
+
+    await logAudit(AuditHelpers.create('project', docRef.id, { name: data.name, clientId, type: data.type }, projAuditCtx.performedBy, projAuditCtx.source as any));
 
     res.status(201).json({ projectId: docRef.id, name: data.name });
   } catch (e) {

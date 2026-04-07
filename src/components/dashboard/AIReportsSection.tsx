@@ -16,14 +16,12 @@ import {
     Typography,
     Chip,
     Skeleton,
-    Divider,
     LinearProgress,
 } from '@mui/material';
 import {
     Summarize as SummaryIcon,
     EventNote as PlanIcon,
     AccessTime as TimeIcon,
-    TrendingUp as TrendingUpIcon,
     Business as CompanyIcon,
     People as PeopleIcon,
 } from '@mui/icons-material';
@@ -87,6 +85,7 @@ const AIReportsSection: React.FC = () => {
         if (userProfile?.id) {
             loadData();
         }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [userProfile?.id]);
 
     const loadData = async () => {

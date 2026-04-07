@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Box, Typography, Paper, Grid, Chip, Card, CardContent, IconButton, Container, TextField, MenuItem, InputAdornment, Button, Tooltip, Avatar } from '@mui/material';
-import { collection, query, orderBy, onSnapshot, Timestamp, doc, updateDoc, deleteDoc, addDoc, where, getDocs, serverTimestamp } from 'firebase/firestore';
+import { collection, query, onSnapshot, Timestamp, doc, updateDoc, deleteDoc, addDoc, where, getDocs, serverTimestamp } from 'firebase/firestore';
 import { db } from '../../firebase/firebase';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import PhoneIcon from '@mui/icons-material/Phone';
@@ -377,7 +377,6 @@ const DealsPage: React.FC = () => {
             setLeads(prev => prev.map(l =>
                 l.id === leadId ? { ...l, status: newStatus as any } : l
             ));
-
 
             try {
                 await updateDoc(doc(db, 'leads', leadId), {

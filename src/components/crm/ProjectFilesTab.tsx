@@ -25,8 +25,7 @@ import {
   Image as ImageIcon,
   Visibility as PreviewIcon,
   ContentCut as SplitIcon,
-  Refresh as RefreshIcon,
-} from '@mui/icons-material';
+  } from '@mui/icons-material';
 import { collection, onSnapshot, orderBy, query } from 'firebase/firestore';
 import { db } from '../../firebase/firebase';
 import { format as formatDate } from 'date-fns';

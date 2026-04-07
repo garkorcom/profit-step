@@ -14,6 +14,33 @@
 
 import { useCallback, useRef, useState } from 'react';
 
+/** Minimal typings for the Web Speech API (not included in default TS DOM lib). */
+interface SpeechRecognitionResult {
+    readonly isFinal: boolean;
+    readonly [index: number]: { readonly transcript: string };
+}
+interface SpeechRecognitionResultList {
+    readonly length: number;
+    readonly [index: number]: SpeechRecognitionResult;
+}
+interface SpeechRecognitionEventLike {
+    readonly results: SpeechRecognitionResultList;
+}
+interface SpeechRecognitionErrorEventLike {
+    readonly error: string;
+}
+interface SpeechRecognitionLike {
+    lang: string;
+    continuous: boolean;
+    interimResults: boolean;
+    maxAlternatives: number;
+    onresult: ((event: SpeechRecognitionEventLike) => void) | null;
+    onerror: ((event: SpeechRecognitionErrorEventLike) => void) | null;
+    onend: (() => void) | null;
+    start(): void;
+    stop(): void;
+}
+
 interface UseVoiceInputOptions {
     /** Current text value to append voice results to */
     currentText: string;
@@ -45,7 +72,7 @@ export const useVoiceInput = ({
         ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window)
     );
 
-    const recognitionRef = useRef<any>(null);
+    const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
     // Track whether user explicitly pressed stop vs natural end
     const userStoppedRef = useRef(false);
     // Accumulated text across auto-restarts within one session
@@ -57,15 +84,15 @@ export const useVoiceInput = ({
         if (!voiceSupported) return;
 
         const SpeechRecognitionAPI =
-            (window as any).SpeechRecognition ||
-            (window as any).webkitSpeechRecognition;
+            (window as unknown as Record<string, new () => SpeechRecognitionLike>).SpeechRecognition ||
+            (window as unknown as Record<string, new () => SpeechRecognitionLike>).webkitSpeechRecognition;
         const recognition = new SpeechRecognitionAPI();
         recognition.lang = lang;
         recognition.continuous = false;
         recognition.interimResults = true;
         recognition.maxAlternatives = 1;
 
-        recognition.onresult = (event: any) => {
+        recognition.onresult = (event: SpeechRecognitionEventLike) => {
             let finalText = '';
             let interimText = '';
 
@@ -94,7 +121,7 @@ export const useVoiceInput = ({
             onTextChange(fullText);
         };
 
-        recognition.onerror = (event: any) => {
+        recognition.onerror = (event: SpeechRecognitionErrorEventLike) => {
             console.warn('Speech recognition error:', event.error);
             // On "no-speech" or "aborted", try to auto-restart if user didn't stop
             if (event.error === 'no-speech' && !userStoppedRef.current) {

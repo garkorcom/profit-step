@@ -28,7 +28,8 @@ import { blueprintApi } from '../../api/blueprintApi';
 import { savedEstimateApi } from '../../api/savedEstimateApi';
 import { projectsApi } from '../../api/projectsApi';
 import { BlueprintBatchJob, BlueprintAgentResult, BlueprintFileEntry } from '../../types/blueprint.types';
-import { ProjectFile } from '../../types/project.types';
+import { ProjectFile, Project } from '../../types/project.types';
+import { SavedEstimate } from '../../types/savedEstimate.types';
 import { DEVICES, GEAR, POOL, GENERATOR, LANDSCAPE } from '../../constants/electricalDevices';
 import jsPDF from 'jspdf';
 import BlueprintV2Pipeline, { PageAnalysisResult } from './BlueprintV2Pipeline';
@@ -39,7 +40,7 @@ import autoTable from 'jspdf-autotable';
 // ===== Sound notification =====
 const playCompletionSound = () => {
     try {
-        const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+        const ctx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
         osc.connect(gain);
@@ -58,7 +59,7 @@ let _categoryCache: { dev: Set<string>, gear: Set<string>, pool: Set<string>, ge
 const getCategorySets = () => {
     if (!_categoryCache) {
         _categoryCache = {
-            dev: new Set(Object.values(DEVICES).flat().map((i: any) => i.id)),
+            dev: new Set(Object.values(DEVICES).flat().map((i) => i.id)),
             gear: new Set(GEAR.map(i => i.id)),
             pool: new Set(POOL.map(i => i.id)),
             gen: new Set(GENERATOR.map(i => i.id)),
@@ -79,7 +80,7 @@ const getCategory = (key: string) => {
 };
 
 // ===== History =====
-interface JobHistoryItem { id: string; fileName: string; createdAt: any; status: string; totalFiles?: number; }
+interface JobHistoryItem { id: string; fileName: string; createdAt: Timestamp | null; status: string; totalFiles?: number; }
 
 // ===== Classification labels =====
 const classificationLabel: Record<string, { label: string; emoji: string; color: string }> = {
@@ -113,7 +114,7 @@ const fileStatusIcon = (status: string) => {
 export interface BlueprintUploadDialogProps {
     open: boolean;
     onClose: () => void;
-    onApply: (data: any, areaSqft?: number) => void;
+    onApply: (data: Record<string, number>, areaSqft?: number) => void;
     projectId?: string | null;
 }
 
@@ -230,7 +231,7 @@ export const BlueprintUploadDialog: React.FC<BlueprintUploadDialogProps> = ({ op
     // ===== File selection (not upload yet) =====
     const addFiles = useCallback((newFiles: File[]) => {
         const MAX_SIZE_MB = 50;
-        const allowedTypes = ['image/png', 'image/jpeg', 'image/jpg', 'application/pdf'];
+        const allowedTypes = new Set(['image/png', 'image/jpeg', 'image/jpg', 'application/pdf']);
         const MAX_FILES = 20;
 
         // Deduplicate by name + size
@@ -239,7 +240,7 @@ export const BlueprintUploadDialog: React.FC<BlueprintUploadDialogProps> = ({ op
                 alert(`${file.name}: слишком большой (${(file.size / 1024 / 1024).toFixed(1)}MB). Макс ${MAX_SIZE_MB}MB.`);
                 return false;
             }
-            if (!allowedTypes.includes(file.type) && !file.name.match(/\.(pdf|png|jpe?g)$/i)) {
+            if (!allowedTypes.has(file.type) && !file.name.match(/\.(pdf|png|jpe?g)$/i)) {
                 alert(`${file.name}: неподдерживаемый формат.`);
                 return false;
             }
@@ -402,7 +403,7 @@ export const BlueprintUploadDialog: React.FC<BlueprintUploadDialogProps> = ({ op
         pdf.text(`Files: ${batch.totalFiles} | Electrical: ${batch.electricalCount || 0} | Date: ${new Date().toLocaleDateString()}`, 14, 30);
 
         const allKeys = Object.keys(localResult);
-        const grouped: Record<string, any[]> = {};
+        const grouped: Record<string, { name: string; qty: string }[]> = {};
         allKeys.forEach(key => {
             const cat = getCategory(key);
             if (!grouped[cat]) grouped[cat] = [];
@@ -427,7 +428,7 @@ export const BlueprintUploadDialog: React.FC<BlueprintUploadDialogProps> = ({ op
                 margin: { left: 14 },
                 theme: 'grid'
             });
-            startY = (pdf as any).lastAutoTable.finalY + 10;
+            startY = (pdf as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 10;
         });
 
         pdf.save(`AI_Batch_Report_${new Date().toISOString().slice(0, 10)}.pdf`);
@@ -619,7 +620,7 @@ export const BlueprintUploadDialog: React.FC<BlueprintUploadDialogProps> = ({ op
                     boxShadow: 'inset 0 0 10px rgba(0,0,0,0.5)', mb: 2
                 }} ref={logBoxRef}>
                     {displayLogs.map((log, i) => {
-                        const colorMap: any = {
+                        const colorMap: Record<string, string> = {
                             error: '#ff5555', success: '#00ff00', gemini: '#8ab4f8', claude: '#fbbc04',
                             openAi: '#34a853', info: '#cccccc', classify: '#ce93d8'
                         };
@@ -779,7 +780,7 @@ export const BlueprintUploadDialog: React.FC<BlueprintUploadDialogProps> = ({ op
         if (v2Address) pdf.text(`Address: ${v2Address}`, 14, 36);
 
         const allKeys = Object.keys(quantities);
-        const grouped: Record<string, any[]> = {};
+        const grouped: Record<string, { name: string; qty: string }[]> = {};
         allKeys.forEach(key => {
             const cat = getCategory(key);
             if (!grouped[cat]) grouped[cat] = [];
@@ -801,7 +802,7 @@ export const BlueprintUploadDialog: React.FC<BlueprintUploadDialogProps> = ({ op
                 margin: { left: 14 },
                 theme: 'grid'
             });
-            startY = (pdf as any).lastAutoTable.finalY + 10;
+            startY = (pdf as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 10;
         });
 
         const safeProjectName = v2ProjectName.replace(/\s+/g, '_');
@@ -1071,21 +1072,22 @@ export const BlueprintUploadDialog: React.FC<BlueprintUploadDialogProps> = ({ op
                                     let savedProjectId = projectId;
                                     let projTitle = v2ProjectName || `Project ${new Date().toLocaleDateString()}`;
 
-                                    const cleanPayload = (obj: any): any => {
-                                        if (Array.isArray(obj)) return obj.map(cleanPayload).filter(v => v !== undefined);
+                                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                                    const cleanPayload = <T extends unknown>(obj: T): T => {
+                                        if (Array.isArray(obj)) return obj.map(cleanPayload).filter(v => v !== undefined) as unknown as T;
                                         if (obj !== null && typeof obj === 'object') {
                                             return Object.fromEntries(
-                                                Object.entries(obj)
+                                                Object.entries(obj as Record<string, unknown>)
                                                     .filter(([_, v]) => v !== undefined)
                                                     .map(([k, v]) => [k, cleanPayload(v)])
-                                            );
+                                            ) as unknown as T;
                                         }
-                                        return obj;
+                                        return obj as T;
                                     };
 
                                     if (!savedProjectId) {
                                         // 1. Create Project
-                                        const projectData: any = {
+                                        const projectData: Omit<Project, 'id' | 'createdAt' | 'updatedAt'> = {
                                             companyId: userProfile.companyId,
                                             createdBy: userProfile.id,
                                             clientId: '',           // TODO: Phase 2 — add client selector
@@ -1159,7 +1161,7 @@ export const BlueprintUploadDialog: React.FC<BlueprintUploadDialogProps> = ({ op
                                     }
 
                                     // 2. Save Estimate Version
-                                    const payload: any = {
+                                    const payload: Omit<SavedEstimate, 'id' | 'createdAt' | 'updatedAt'> = {
                                         companyId: userProfile.companyId,
                                         createdBy: userProfile.id,
                                         projectName: projTitle,

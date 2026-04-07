@@ -9,27 +9,30 @@ import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import SettingsIcon from '@mui/icons-material/Settings';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 
+/** Minimal shape for device catalog items */
+interface DeviceItem { id: string; name: string; [key: string]: unknown }
+
 export interface AiMappingDialogProps {
     open: boolean;
     onClose: () => void;
     aiResults: Record<string, number>;
     onApply: (finalMappedResults: Record<string, number>, unmappedItems: Record<string, number>) => void;
-    DEVICES: any;
-    GEAR: any;
-    POOL: any;
-    GENERATOR: any;
-    LANDSCAPE: any;
+    DEVICES: Record<string, DeviceItem[]>;
+    GEAR: DeviceItem[];
+    POOL: DeviceItem[];
+    GENERATOR: DeviceItem[];
+    LANDSCAPE: DeviceItem[];
 }
 
 export const AiMappingDialog = ({ open, onClose, aiResults, onApply, DEVICES, GEAR, POOL, GENERATOR, LANDSCAPE }: AiMappingDialogProps) => {
 
     const VALID_DEVICES = useMemo(() => {
         const map = new Map<string, string>();
-        if (DEVICES) Object.values(DEVICES).flat().forEach((i: any) => map.set(i.id, i.name));
-        if (GEAR) GEAR.forEach((i: any) => map.set(i.id, i.name));
-        if (POOL) POOL.forEach((i: any) => map.set(i.id, i.name));
-        if (GENERATOR) GENERATOR.forEach((i: any) => map.set(i.id, i.name));
-        if (LANDSCAPE) LANDSCAPE.forEach((i: any) => map.set(i.id, i.name));
+        if (DEVICES) Object.values(DEVICES).flat().forEach((i) => map.set(i.id, i.name));
+        if (GEAR) GEAR.forEach((i) => map.set(i.id, i.name));
+        if (POOL) POOL.forEach((i) => map.set(i.id, i.name));
+        if (GENERATOR) GENERATOR.forEach((i) => map.set(i.id, i.name));
+        if (LANDSCAPE) LANDSCAPE.forEach((i) => map.set(i.id, i.name));
         return map;
     }, [DEVICES, GEAR, POOL, GENERATOR, LANDSCAPE]);
 

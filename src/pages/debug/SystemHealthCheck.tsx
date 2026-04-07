@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { getAuth } from 'firebase/auth';
 import { getFirestore, doc, getDoc, collection, getDocs, limit, query } from 'firebase/firestore';
 import { Container, Typography, Paper, Button, Box, Divider, Alert } from '@mui/material';
-import { CheckCircle, Error as ErrorIcon, Warning as WarningIcon, Pending as PendingIcon } from '@mui/icons-material';
+import { CheckCircle, Error as ErrorIcon, Pending as PendingIcon } from '@mui/icons-material';
 
 // Simple component to display status
 const StatusRow = ({ label, status, error }: { label: string, status: 'pending' | 'ok' | 'error', error?: string }) => {
@@ -48,6 +48,7 @@ export const SystemHealthCheck: React.FC = () => {
             runDiagnostics(user);
         });
         return () => unsubscribe();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     const runDiagnostics = async (user: any) => {

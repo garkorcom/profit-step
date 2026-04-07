@@ -89,6 +89,7 @@ router.post('/api/estimates', async (req, res, next) => {
       siteId: data.siteId || null,
       number,
       status: 'draft',
+      estimateType: data.estimateType || 'commercial',
       items: data.items,
       subtotal: +subtotal.toFixed(2),
       taxRate,
@@ -185,6 +186,7 @@ router.get('/api/estimates/list', async (req, res, next) => {
         taxRate: e.taxRate,
         taxAmount: e.taxAmount,
         total: e.total,
+        estimateType: e.estimateType || 'commercial',
         itemCount: e.items?.length || 0,
         notes: e.notes || '',
         validUntil: e.validUntil?.toDate?.()?.toISOString() || null,
@@ -220,6 +222,7 @@ router.patch('/api/estimates/:id', async (req, res, next) => {
       updatedAt: FieldValue.serverTimestamp(),
     };
 
+    if (data.estimateType !== undefined) updatePayload.estimateType = data.estimateType;
     if (data.status !== undefined) updatePayload.status = data.status;
     if (data.notes !== undefined) updatePayload.notes = data.notes;
     if (data.terms !== undefined) updatePayload.terms = data.terms;

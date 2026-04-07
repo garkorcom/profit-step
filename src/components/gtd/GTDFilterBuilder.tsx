@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, {} from 'react';
 import {
     Box,
     Button,
@@ -6,12 +6,11 @@ import {
     MenuItem,
     Select,
     Typography,
-    Paper,
     FormControl,
 } from '@mui/material';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import AddIcon from '@mui/icons-material/Add';
-import { GTDStatus, GTD_COLUMNS, GTDPriority, PRIORITY_COLORS } from '../../types/gtd.types';
+import { GTD_COLUMNS } from '../../types/gtd.types';
 import { Client } from '../../types/crm.types';
 
 // Types

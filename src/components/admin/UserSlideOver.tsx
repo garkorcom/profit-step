@@ -27,13 +27,11 @@ import {
     Edit as EditIcon,
     Block as BlockIcon,
     History as HistoryIcon,
-    Assignment as TaskIcon,
-    TrendingUp as DealsIcon,
-} from '@mui/icons-material';
+    } from '@mui/icons-material';
 import { UserProfile, DEPARTMENT_LABELS } from '../../types/user.types';
 import StatusIndicator from '../common/StatusIndicator';
-import StatCard from '../common/StatCard';
-import { collection, query, where, getDocs, orderBy, limit } from 'firebase/firestore';
+
+import { collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../../firebase/firebase';
 import { formatDistanceToNow } from 'date-fns';
 import { ru } from 'date-fns/locale';

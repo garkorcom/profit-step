@@ -6,7 +6,6 @@ import {
     deleteDoc,
     onSnapshot,
     query,
-    where,
     orderBy,
     serverTimestamp,
     Timestamp,

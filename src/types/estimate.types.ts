@@ -65,6 +65,9 @@ export interface Estimate {
     number: string; // E.g., EST-001
     status: EstimateStatus | EstimateStatusV4;
 
+    /** Estimate type — internal cost view or commercial client-facing */
+    estimateType?: 'internal' | 'commercial';
+
     /** V3 items — kept for backward compat */
     items: EstimateItem[];
 
@@ -131,4 +134,5 @@ export interface CreateEstimateDTO {
     terms?: string;
     validUntil?: Date;
     taxRate?: number;
+    estimateType?: 'internal' | 'commercial';
 }

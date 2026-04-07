@@ -155,9 +155,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       });
 
       console.log('✅ User signed up successfully');
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('❌ Error signing up:', error);
-      throw new Error(getAuthErrorMessage(error.code));
+      const code = error instanceof Object && 'code' in error ? (error as { code: string }).code : '';
+      throw new Error(getAuthErrorMessage(code), { cause: error });
     }
   };
 
@@ -168,9 +169,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     try {
       await signInWithEmailAndPassword(auth, data.email, data.password);
       console.log('✅ User signed in successfully');
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('❌ Error signing in:', error);
-      throw new Error(getAuthErrorMessage(error.code));
+      const code = error instanceof Object && 'code' in error ? (error as { code: string }).code : '';
+      throw new Error(getAuthErrorMessage(code), { cause: error });
     }
   };
 
@@ -196,9 +198,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       }
 
       console.log('✅ User signed in with Google');
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('❌ Error signing in with Google:', error);
-      throw new Error(getAuthErrorMessage(error.code));
+      const code = error instanceof Object && 'code' in error ? (error as { code: string }).code : '';
+      throw new Error(getAuthErrorMessage(code), { cause: error });
     }
   };
 
@@ -209,9 +212,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     try {
       await firebaseSignOut(auth);
       console.log('✅ User signed out');
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('❌ Error signing out:', error);
-      throw new Error('Не удалось выйти из системы');
+      throw new Error('Не удалось выйти из системы', { cause: error as Error });
     }
   };
 
@@ -222,9 +225,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     try {
       await sendPasswordResetEmail(auth, email);
       console.log('✅ Password reset email sent');
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('❌ Error sending password reset email:', error);
-      throw new Error(getAuthErrorMessage(error.code));
+      const code = error instanceof Object && 'code' in error ? (error as { code: string }).code : '';
+      throw new Error(getAuthErrorMessage(code), { cause: error });
     }
   };
 

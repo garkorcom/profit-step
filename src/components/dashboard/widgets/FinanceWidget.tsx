@@ -1,6 +1,6 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Card, CardContent, Typography, Box, CircularProgress, Divider, IconButton, Tooltip } from '@mui/material';
+import { Card, CardContent, Typography, Box, CircularProgress, Divider } from '@mui/material';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import TrendingDownIcon from '@mui/icons-material/TrendingDown';
 import MonetizationOnIcon from '@mui/icons-material/MonetizationOn';
@@ -37,11 +37,13 @@ interface FinanceWidgetProps {
         balance: number;
         income: number;
         expenses: number;
+        labor: number;
         profit: number;
         trend: {
             balance: number;
             income: number;
             expenses: number;
+            labor: number;
             profit: number;
         };
         loading: boolean;
@@ -106,6 +108,12 @@ export const FinanceWidget: React.FC<FinanceWidgetProps> = ({ data }) => {
                         value={formatCurrency(data.expenses)}
                         trend={formatTrend(data.trend.expenses)}
                         trendUp={data.trend.expenses <= 0} // less expenses is "up" / good
+                    />
+                    <MetricRow
+                        label="Труд"
+                        value={formatCurrency(data.labor)}
+                        trend={formatTrend(data.trend.labor)}
+                        trendUp={data.trend.labor <= 0} // less labor cost is "up" / good
                     />
                     <Divider sx={{ my: 1 }} />
                     <MetricRow

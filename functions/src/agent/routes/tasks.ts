@@ -5,6 +5,7 @@ import { Router } from 'express';
 import * as admin from 'firebase-admin';
 
 import { db, FieldValue, Timestamp, logger, logAgentActivity, fuzzySearchClient } from '../routeContext';
+import { logAudit, AuditHelpers, extractAuditContext } from '../utils/auditLogger';
 import {
   CreateGTDTaskSchema,
   ListTasksQuerySchema,
@@ -21,8 +22,13 @@ router.post('/api/gtd-tasks/batch-update', async (req, res, next) => {
     const data = BatchUpdateTasksSchema.parse(req.body);
     logger.info('📋 tasks:batch-update', { count: data.taskIds.length, fields: Object.keys(data.update) });
 
+    const auditCtx = extractAuditContext(req);
     const batch = db.batch();
-    const updatePayload: Record<string, any> = { updatedAt: FieldValue.serverTimestamp() };
+    const updatePayload: Record<string, any> = {
+      updatedAt: FieldValue.serverTimestamp(),
+      updatedBy: auditCtx.performedBy,
+      updatedBySource: auditCtx.source,
+    };
     Object.entries(data.update).forEach(([k, v]) => { if (v !== undefined) updatePayload[k] = v; });
 
     let updatedCount = 0;
@@ -42,6 +48,21 @@ router.post('/api/gtd-tasks/batch-update', async (req, res, next) => {
       endpoint: '/api/gtd-tasks/batch-update',
       metadata: { updatedCount, notFoundCount: notFound.length, fields: Object.keys(data.update) },
     });
+
+    // Audit log for batch update
+    for (const taskId of data.taskIds) {
+      if (!notFound.includes(taskId)) {
+        await logAudit({
+          action: 'BATCH_UPDATE',
+          entityType: 'gtd_task',
+          entityId: taskId,
+          changes: { to: data.update },
+          source: auditCtx.source as any,
+          performedBy: auditCtx.performedBy,
+          performedByName: auditCtx.performedByName,
+        });
+      }
+    }
 
     res.json({ updated: updatedCount, notFound: notFound.length > 0 ? notFound : undefined });
   } catch (e) {
@@ -67,6 +88,7 @@ router.post('/api/gtd-tasks', async (req, res, next) => {
       }
     }
 
+    const createAuditCtx = extractAuditContext(req);
     const docRef = await db.collection('gtd_tasks').add({
       ownerId: req.agentUserId,
       ownerName: req.agentUserName,
@@ -84,7 +106,9 @@ router.post('/api/gtd-tasks', async (req, res, next) => {
       estimatedDurationMinutes: data.estimatedDurationMinutes || null,
       siteId: data.siteId || null,
       projectId: data.projectId || null,
-      source: 'openclaw',
+      source: createAuditCtx.source || 'openclaw',
+      createdBy: createAuditCtx.performedBy,
+      createdBySource: createAuditCtx.source,
       createdAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
     });
@@ -106,6 +130,8 @@ router.post('/api/gtd-tasks', async (req, res, next) => {
       endpoint: '/api/gtd-tasks',
       metadata: { taskId: docRef.id, title: data.title, clientId: data.clientId },
     });
+
+    await logAudit(AuditHelpers.create('gtd_task', docRef.id, { title: data.title, status: data.status, priority: data.priority }, createAuditCtx.performedBy, createAuditCtx.source as any));
 
     res.status(201).json({ taskId: docRef.id });
   } catch (e) {
@@ -240,8 +266,12 @@ router.patch('/api/gtd-tasks/:id', async (req, res, next) => {
       return;
     }
 
+    const updateAuditCtx = extractAuditContext(req);
+    const oldData = taskDoc.data()!;
     const updatePayload: Record<string, any> = {
       updatedAt: FieldValue.serverTimestamp(),
+      updatedBy: updateAuditCtx.performedBy,
+      updatedBySource: updateAuditCtx.source,
     };
 
     if (data.status !== undefined) updatePayload.status = data.status;
@@ -283,6 +313,17 @@ router.patch('/api/gtd-tasks/:id', async (req, res, next) => {
       metadata: { taskId, fields: Object.keys(data) },
     });
 
+    // Build from/to diff for audit
+    const changedFrom: Record<string, any> = {};
+    const changedTo: Record<string, any> = {};
+    for (const key of Object.keys(data)) {
+      if ((data as any)[key] !== undefined) {
+        changedFrom[key] = oldData[key] ?? null;
+        changedTo[key] = (data as any)[key];
+      }
+    }
+    await logAudit(AuditHelpers.update('gtd_task', taskId, changedFrom, changedTo, updateAuditCtx.performedBy, updateAuditCtx.source as any));
+
     res.json({ taskId, updated: true });
   } catch (e) {
     next(e);
@@ -311,9 +352,12 @@ router.delete('/api/gtd-tasks/:id', async (req, res, next) => {
       return;
     }
 
+    const archiveAuditCtx = extractAuditContext(req);
     await taskRef.update({
       status: 'archived',
       updatedAt: FieldValue.serverTimestamp(),
+      updatedBy: archiveAuditCtx.performedBy,
+      updatedBySource: archiveAuditCtx.source,
     });
 
     logger.info('📋 tasks:archived', { taskId });
@@ -323,6 +367,8 @@ router.delete('/api/gtd-tasks/:id', async (req, res, next) => {
       endpoint: `/api/gtd-tasks/${taskId}`,
       metadata: { taskId, previousStatus: taskData.status, title: taskData.title },
     });
+
+    await logAudit(AuditHelpers.delete('gtd_task', taskId, { title: taskData.title, previousStatus: taskData.status }, archiveAuditCtx.performedBy, archiveAuditCtx.source as any));
 
     res.json({ taskId, archived: true, message: 'Задача удалена (archived)' });
   } catch (e) {

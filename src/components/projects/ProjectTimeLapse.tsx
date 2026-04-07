@@ -8,7 +8,7 @@ import { ActivityLog } from '../../types/crm.types';
 // Icons
 import MicIcon from '@mui/icons-material/Mic';
 import PhotoCameraIcon from '@mui/icons-material/PhotoCamera';
-import PlayArrowIcon from '@mui/icons-material/PlayArrow';
+
 import ChatBubbleOutlineIcon from '@mui/icons-material/ChatBubbleOutline';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 import CloseIcon from '@mui/icons-material/Close';

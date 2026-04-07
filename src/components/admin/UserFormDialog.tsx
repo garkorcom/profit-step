@@ -160,7 +160,7 @@ const UserFormDialog: React.FC<UserFormDialogProps> = ({
                 reportsTo: user.reportsTo || '',
                 hourlyRate: user.hourlyRate ? String(user.hourlyRate) : '',
                 telegramId: user.telegramId || '',
-                referredBy: (user as any).referredBy || '',
+                referredBy: user.referredBy || '',
                 isActive: user.status === 'active',
             });
         } else if (open && !user) {
@@ -214,7 +214,7 @@ const UserFormDialog: React.FC<UserFormDialogProps> = ({
             );
 
             setManagers(managersAndAdmins);
-        } catch (err: any) {
+        } catch (err: unknown) {
             console.error('Error loading managers:', err);
         } finally {
             setLoadingManagers(false);
@@ -264,8 +264,8 @@ const UserFormDialog: React.FC<UserFormDialogProps> = ({
             const downloadURL = await uploadUserAvatar(user.id, file);
             setPhotoURL(downloadURL);
             toast.success('Аватар обновлён');
-        } catch (err: any) {
-            setError('Не удалось загрузить аватар: ' + err.message);
+        } catch (err: unknown) {
+            setError('Не удалось загрузить аватар: ' + (err instanceof Error ? err.message : String(err)));
         } finally {
             setUploading(false);
         }
@@ -288,8 +288,8 @@ const UserFormDialog: React.FC<UserFormDialogProps> = ({
             const downloadURL = await uploadReferenceFacePhoto(user.id, file);
             setReferencePhotoURL(downloadURL);
             toast.success('Эталонное фото обновлено');
-        } catch (err: any) {
-            setError('Не удалось загрузить фото: ' + err.message);
+        } catch (err: unknown) {
+            setError('Не удалось загрузить фото: ' + (err instanceof Error ? err.message : String(err)));
         } finally {
             setUploadingRefFace(false);
         }
@@ -345,14 +345,15 @@ const UserFormDialog: React.FC<UserFormDialogProps> = ({
             reset();
             onClose();
             if (onSuccess) onSuccess();
-        } catch (err: any) {
+        } catch (err: unknown) {
             console.error('Error saving user:', err);
 
             let errorMessage = 'Не удалось сохранить данные';
-            if (err.code === 'functions/already-exists') {
+            const errObj = err instanceof Object ? err as { code?: string; message?: string } : null;
+            if (errObj?.code === 'functions/already-exists') {
                 errorMessage = 'Пользователь с таким email уже существует';
-            } else if (err.message) {
-                errorMessage = err.message;
+            } else if (errObj?.message) {
+                errorMessage = errObj.message;
             }
 
             setError(errorMessage);

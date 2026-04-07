@@ -9,8 +9,7 @@ import {
     where,
     orderBy,
     Timestamp,
-    serverTimestamp,
-    limit
+    serverTimestamp
 } from 'firebase/firestore';
 import { db } from '../firebase/firebase';
 import { Estimate, CreateEstimateDTO, EstimateStatus } from '../types/estimate.types';
@@ -91,6 +90,7 @@ export const estimatesApi = {
                 taxRate,
                 taxAmount,
                 total,
+                estimateType: data.estimateType || 'commercial',
                 notes: data.notes,
                 terms: data.terms,
                 validUntil: data.validUntil ? Timestamp.fromDate(data.validUntil) : undefined,

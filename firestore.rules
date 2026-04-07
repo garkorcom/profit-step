@@ -134,6 +134,12 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Estimates (top-level — Client Portal public read)
+    match /estimates/{estimateId} {
+      allow read: if true;
+      allow write: if isSignedIn();
+    }
+
     // ==================== DASHBOARD COLLECTIONS ====================
 
     // Helper functions для дашбордов
@@ -276,9 +282,8 @@ service cloud.firestore {
 
     // Clients collection (CRM - клиенты/контрагенты)
     match /clients/{clientId} {
-      // Чтение: пользователи могут читать клиентов своей компании
-      // TEMPORARY FOR EMULATOR: Allow all authenticated users
-      allow read: if isSignedIn();
+      // Чтение: публичный доступ для Client Portal
+      allow read: if true;
 
       // Создание: только админы и менеджеры компании могут создавать клиентов
       // TEMPORARY FOR EMULATOR: Allow all authenticated users
@@ -324,23 +329,18 @@ service cloud.firestore {
         let ownerData = get(/databases/$(database)/documents/users/$(resource.data.ownerId)).data;
         // hierarchyPath contains [self, manager1, manager2, ..., topManager]
         // If requesting user's UID is in owner's hierarchyPath, they're a manager
-        return 'hierarchyPath' in ownerData && 
+        return 'hierarchyPath' in ownerData &&
                ownerData.hierarchyPath.hasAny([request.auth.uid]);
       }
-      
+
       function isManagerOfAssignee() {
         let assigneeData = get(/databases/$(database)/documents/users/$(resource.data.assigneeId)).data;
-        return 'hierarchyPath' in assigneeData && 
+        return 'hierarchyPath' in assigneeData &&
                assigneeData.hierarchyPath.hasAny([request.auth.uid]);
       }
-      
-      // Read: user is owner, assignee, manager in hierarchy, OR admin
-      allow read: if isSignedIn() && 
-                  (resource.data.ownerId == request.auth.uid || 
-                   resource.data.assigneeId == request.auth.uid ||
-                   isManagerOfOwner() ||
-                   isManagerOfAssignee() ||
-                   isAdmin());
+
+      // Read: публичный доступ для Client Portal
+      allow read: if true;
       
       // Create: any authenticated user can create tasks
       allow create: if isSignedIn() && 

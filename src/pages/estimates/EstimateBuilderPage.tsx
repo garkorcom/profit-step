@@ -5,14 +5,12 @@ import {
     Typography,
     Button,
     Paper,
-    Grid,
     TextField,
     IconButton,
     MenuItem,
     Container,
     CircularProgress,
-    Divider,
-    Alert
+    Divider
 } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
 import AddIcon from '@mui/icons-material/Add';
@@ -24,7 +22,7 @@ import ConstructionIcon from '@mui/icons-material/Construction';
 import { useAuth } from '../../auth/AuthContext';
 import { estimatesApi } from '../../api/estimatesApi';
 import { crmApi } from '../../api/crmApi';
-import { Estimate, EstimateItem, EstimateStatus } from '../../types/estimate.types';
+import { EstimateItem, EstimateStatus } from '../../types/estimate.types';
 import { Client } from '../../types/crm.types';
 
 const EstimateBuilderPage: React.FC = () => {

@@ -194,7 +194,7 @@ export async function createTransaction(
 
         const catalogData = catalogDoc.data() as InventoryCatalogItem;
         const isInbound = INBOUND_TYPES.includes(data.type);
-        const stockByLocation: Record<string, number> = { ...(catalogData.stockByLocation || {}) };
+        const stockByLocation: Record<string, number> = { ...catalogData.stockByLocation };
 
         // Update stock by location
         if (isInbound) {

@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { MapContainer, TileLayer, Marker, Circle, useMapEvents } from 'react-leaflet';
-import { Box, Typography, Paper, Slider, TextField, Grid } from '@mui/material';
+import { Box, Typography, Paper, Slider, Grid } from '@mui/material';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 

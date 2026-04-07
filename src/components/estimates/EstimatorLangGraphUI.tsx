@@ -7,22 +7,31 @@ import {
 } from '@mui/material';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
+import { SelectChangeEvent } from '@mui/material';
+
+/** LangGraph API response types */
+interface BomItem { item: string; category?: string; qty: number; unit: string; unit_price?: number; total_price?: number }
+interface CircuitItem { circuit_id: string; room: string; devices?: string[]; wire_gauge?: string; wire_calc?: { home_run_ft: number; daisy_chain_ft: number; drops_ft: number; waste_ft: number }; total_wire_length: number; dedicated?: boolean; zone_type?: string }
+interface PanelItem { circuit_id: string; breaker_type: string; amps: number; poles: number }
+interface BlueprintDevice { id: string; type: string }
+interface BlueprintRoom { name: string; zone_type: string; devices?: BlueprintDevice[] }
+interface ParsedBlueprint { rooms?: BlueprintRoom[] }
 
 export const EstimatorLangGraphUI: React.FC = () => {
     const [status, setStatus] = useState<'idle' | 'uploading' | 'processing' | 'review' | 'pricing' | 'completed'>('idle');
-    const [bom, setBom] = useState<any[]>([]);
-    const [circuits, setCircuits] = useState<any[]>([]);
-    const [panelSchedule, setPanelSchedule] = useState<any[]>([]);
+    const [bom, setBom] = useState<BomItem[]>([]);
+    const [circuits, setCircuits] = useState<CircuitItem[]>([]);
+    const [panelSchedule, setPanelSchedule] = useState<PanelItem[]>([]);
     const [threadId, setThreadId] = useState<string>('');
     const [totalCost, setTotalCost] = useState<number>(0);
     const [blueprintType, setBlueprintType] = useState<string>('P');
     const [blueprintFile, setBlueprintFile] = useState<string>('plumbing_layout_P1.pdf');
-    const [parsedJson, setParsedJson] = useState<any>(null);
+    const [parsedJson, setParsedJson] = useState<ParsedBlueprint | null>(null);
     const [error, setError] = useState<string>('');
     const [tabValue, setTabValue] = useState<number>(0); // 0 = Upload PDF, 1 = Sample
     const fileInputRef = useRef<HTMLInputElement>(null);
 
-    const handleFileChange = (e: any) => {
+    const handleFileChange = (e: SelectChangeEvent<string>) => {
         const val = e.target.value;
         setBlueprintFile(val);
         setBlueprintType(val.includes('electrical') ? 'E' : 'P');
@@ -233,12 +242,12 @@ export const EstimatorLangGraphUI: React.FC = () => {
                             <AccordionSummary expandIcon={<ExpandMoreIcon />}>
                                 <Typography fontWeight="bold">
                                     👁️ Vision Parser Output — {parsedJson.rooms?.length || 0} rooms, {
-                                        parsedJson.rooms?.reduce((sum: number, r: any) => sum + (r.devices?.length || 0), 0) || 0
+                                        parsedJson.rooms?.reduce((sum: number, r: BlueprintRoom) => sum + (r.devices?.length || 0), 0) || 0
                                     } devices detected
                                 </Typography>
                             </AccordionSummary>
                             <AccordionDetails>
-                                {parsedJson.rooms?.map((room: any, ri: number) => (
+                                {parsedJson.rooms?.map((room: BlueprintRoom, ri: number) => (
                                     <Box key={ri} mb={1}>
                                         <Typography variant="subtitle2">
                                             {room.name} 
@@ -251,7 +260,7 @@ export const EstimatorLangGraphUI: React.FC = () => {
                                             {' — '}{room.devices?.length || 0} devices
                                         </Typography>
                                         <Typography variant="body2" color="textSecondary" sx={{ pl: 2, fontSize: 11 }}>
-                                            {room.devices?.map((d: any) => `${d.id} (${d.type})`).join(', ')}
+                                            {room.devices?.map((d) => `${d.id} (${d.type})`).join(', ')}
                                         </Typography>
                                     </Box>
                                 ))}
@@ -280,7 +289,7 @@ export const EstimatorLangGraphUI: React.FC = () => {
                                         </TableRow>
                                     </TableHead>
                                     <TableBody>
-                                        {circuits.map((c: any, idx: number) => (
+                                        {circuits.map((c, idx) => (
                                             <TableRow key={idx} sx={c.dedicated ? { bgcolor: '#fff3e0' } : {}}>
                                                 <TableCell>
                                                     {c.circuit_id}
@@ -321,7 +330,7 @@ export const EstimatorLangGraphUI: React.FC = () => {
                                         </TableRow>
                                     </TableHead>
                                     <TableBody>
-                                        {panelSchedule.map((p: any, idx: number) => (
+                                        {panelSchedule.map((p, idx) => (
                                             <TableRow key={idx}>
                                                 <TableCell>{p.circuit_id}</TableCell>
                                                 <TableCell>

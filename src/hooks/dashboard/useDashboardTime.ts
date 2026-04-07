@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { collection, query, where, onSnapshot, Timestamp } from 'firebase/firestore';
 import { db } from '../../firebase/firebase';
 import { WorkSession } from '../../types/timeTracking.types';
-import { startOfDay, startOfWeek, subWeeks, endOfWeek, isSameDay } from 'date-fns';
+import { startOfDay, startOfWeek, subWeeks, isSameDay } from 'date-fns';
 
 export interface DashboardTimeData {
     today: {

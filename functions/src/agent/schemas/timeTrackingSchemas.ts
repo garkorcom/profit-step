@@ -16,6 +16,15 @@ export const TimeTrackingSchema = z.discriminatedUnion('action', [
     endTime: z.string().optional(),
   }),
   z.object({ action: z.literal('status') }),
+  z.object({
+    action: z.literal('restart'),
+    taskId: z.string().optional(),
+    taskTitle: z.string().min(1),
+    clientId: z.string().optional(),
+    clientName: z.string().optional(),
+    projectId: z.string().optional(),
+    siteId: z.string().optional(),
+  }),
 ]);
 
 export const ActiveSessionsQuerySchema = z.object({

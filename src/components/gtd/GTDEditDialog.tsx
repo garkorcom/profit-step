@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { ChangeEvent, useEffect, useState } from 'react';
 import { nanoid } from 'nanoid';
 import {
     Dialog, DialogTitle, DialogContent, DialogActions,
@@ -23,9 +23,10 @@ import WhatsAppIcon from '@mui/icons-material/WhatsApp';
 import InsertLinkIcon from '@mui/icons-material/InsertLink';
 import LaunchIcon from '@mui/icons-material/Launch';
 import { useForm, Controller } from 'react-hook-form';
-import { GTDTask, GTDStatus, GTDPriority, PRIORITY_COLORS, ChecklistItem, TaskAttachment } from '../../types/gtd.types';
-import { Client } from '../../types/crm.types';
+import { GTDTask, GTDStatus, GTDPriority, PRIORITY_COLORS, ChecklistItem, TaskAttachment, CoAssigneeRole } from '../../types/gtd.types';
+import { Client, ClientContact } from '../../types/crm.types';
 import { UserProfile } from '../../types/user.types';
+import { Contact } from '../../types/contact.types';
 import { Timestamp, collection, getDocs, query, orderBy } from 'firebase/firestore';
 import { db } from '../../firebase/firebase';
 import { useAuth } from '../../auth/AuthContext';
@@ -55,6 +56,9 @@ interface GTDEditDialogProps {
     /** Currently active session */
     activeSession?: WorkSessionData | null;
 }
+
+/** Firestore update payload — allows null to delete fields */
+type GTDTaskUpdate = Partial<GTDTask> & Record<string, unknown>;
 
 interface FormData {
     title: string;
@@ -109,7 +113,7 @@ const GTDEditDialog: React.FC<GTDEditDialogProps> = ({ open, onClose, task, onSa
     const [hours, setHours] = useState('');
 
     // Contacts Integration
-    const [contacts, setContacts] = useState<any[]>([]);
+    const [contacts, setContacts] = useState<Contact[]>([]);
     const [linkedContactIds, setLinkedContactIds] = useState<string[]>([]);
     const [globalContactOpen, setGlobalContactOpen] = useState(false);
 
@@ -151,7 +155,7 @@ const GTDEditDialog: React.FC<GTDEditDialogProps> = ({ open, onClose, task, onSa
             try {
                 const contactsQ = query(collection(db, 'contacts'), orderBy('name'));
                 const contactsSnap = await getDocs(contactsQ);
-                setContacts(contactsSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+                setContacts(contactsSnap.docs.map(d => ({ id: d.id, ...d.data() } as Contact)));
             } catch (e) { console.error("Error fetching contacts", e); }
         };
         if (open) fetchData();
@@ -160,9 +164,9 @@ const GTDEditDialog: React.FC<GTDEditDialogProps> = ({ open, onClose, task, onSa
     useEffect(() => {
         if (task) {
             // Helper to parse date field (can be Timestamp, string, or Date)
-            const parseDateField = (d: any): Date | null => {
+            const parseDateField = (d: Timestamp | string | Date | null | undefined): Date | null => {
                 if (!d) return null;
-                if (d.seconds) return new Date(d.seconds * 1000);
+                if (d instanceof Timestamp) return new Date(d.seconds * 1000);
                 if (typeof d === 'string') return new Date(d);
                 if (d instanceof Date) return d;
                 return null;
@@ -210,7 +214,7 @@ const GTDEditDialog: React.FC<GTDEditDialogProps> = ({ open, onClose, task, onSa
             setNewAttachmentTitle('');
 
             // Initialize co-assignees
-            setCoAssignees((task.coAssignees || []).map((ca: any) => ({
+            setCoAssignees((task.coAssignees || []).map((ca) => ({
                 id: ca.id,
                 name: ca.name,
                 role: ca.role || 'executor'
@@ -225,7 +229,7 @@ const GTDEditDialog: React.FC<GTDEditDialogProps> = ({ open, onClose, task, onSa
                 .filter(c => c.linkedProjects && c.linkedProjects.includes(currentClientId))
                 .map(c => c.id);
 
-            const newIds = clientContactIds.filter(id => !linkedContactIds.includes(id));
+            const newIds = clientContactIds.filter((id): id is string => !!id && !linkedContactIds.includes(id));
             if (newIds.length > 0) {
                 setLinkedContactIds(prev => [...prev, ...newIds]);
             }
@@ -249,7 +253,7 @@ const GTDEditDialog: React.FC<GTDEditDialogProps> = ({ open, onClose, task, onSa
         // Edit Collision Prevention (8.1)
         // Only set fields that actually changed! Saves bandwidth and prevents overwriting 
         // a Telegram Bot status update while writing a long description.
-        const updates: Partial<GTDTask> = { updatedAt: Timestamp.now() };
+        const updates: GTDTaskUpdate = { updatedAt: Timestamp.now() };
 
         if (data.title.trim() !== task.title) updates.title = data.title.trim();
         if ((data.description || '') !== (task.description || '')) updates.description = data.description || '';
@@ -260,18 +264,18 @@ const GTDEditDialog: React.FC<GTDEditDialogProps> = ({ open, onClose, task, onSa
         if ((data.priority || 'none') !== (task.priority || 'none')) updates.priority = data.priority || 'none';
 
         if ((data.clientId || null) !== (task.clientId || null)) {
-            updates.clientId = (data.clientId || null) as any;
-            updates.clientName = (data.clientId ? (selectedClient?.name || '') : null) as any;
+            updates.clientId = data.clientId || undefined;
+            updates.clientName = data.clientId ? (selectedClient?.name || '') : undefined;
         }
         
         if ((data.assigneeId || null) !== (task.assigneeId || null)) {
-            updates.assigneeId = (data.assigneeId || null) as any;
-            updates.assigneeName = (data.assigneeId ? (selectedAssignee?.displayName || '') : null) as any;
+            updates.assigneeId = data.assigneeId || undefined;
+            updates.assigneeName = data.assigneeId ? (selectedAssignee?.displayName || '') : undefined;
         }
 
         // Always update dates and arrays if explicitly firing save
-        updates.dueDate = data.dueDate ? Timestamp.fromDate(new Date(data.dueDate + 'T00:00:00')) : null as any;
-        updates.estimatedDurationMinutes = data.estimatedDurationMinutes ? Number(data.estimatedDurationMinutes) : null as any;
+        updates.dueDate = data.dueDate ? Timestamp.fromDate(new Date(data.dueDate + 'T00:00:00')) : undefined;
+        updates.estimatedDurationMinutes = data.estimatedDurationMinutes ? Number(data.estimatedDurationMinutes) : undefined;
 
         if (data.startDate) {
             const dateObj = new Date(data.startDate + 'T00:00:00');
@@ -281,7 +285,7 @@ const GTDEditDialog: React.FC<GTDEditDialogProps> = ({ open, onClose, task, onSa
             }
             updates.startDate = Timestamp.fromDate(dateObj);
         } else {
-            (updates as any).startDate = null;
+            updates.startDate = undefined;
         }
 
         if (data.status === 'estimate' && task.status !== 'estimate') {
@@ -292,7 +296,7 @@ const GTDEditDialog: React.FC<GTDEditDialogProps> = ({ open, onClose, task, onSa
             updates.completedAt = Timestamp.now();
         }
         if (data.status !== 'done' && task.status === 'done') {
-            (updates as any).completedAt = null;
+            updates.completedAt = undefined;
         }
 
         if (hours) updates.estimatedDurationMinutes = Math.round(Number(hours) * 60);
@@ -302,7 +306,7 @@ const GTDEditDialog: React.FC<GTDEditDialogProps> = ({ open, onClose, task, onSa
         updates.attachments = attachments.length > 0 ? attachments : [];
         updates.linkedContactIds = linkedContactIds;
         updates.coAssignees = coAssignees.length > 0 ? coAssignees : [];
-        (updates as any).coAssigneeIds = coAssignees.map(c => c.id);
+        updates.coAssigneeIds = coAssignees.map(c => c.id);
 
         if (Object.keys(updates).length <= 1) {
             // Nothing changed!
@@ -765,8 +769,8 @@ const GTDEditDialog: React.FC<GTDEditDialogProps> = ({ open, onClose, task, onSa
                                                     <Box
                                                         component="select"
                                                         value={ca.role}
-                                                        onChange={(e: any) => setCoAssignees(prev => prev.map(c =>
-                                                            c.id === ca.id ? { ...c, role: e.target.value } : c
+                                                        onChange={(e: ChangeEvent<HTMLSelectElement>) => setCoAssignees(prev => prev.map(c =>
+                                                            c.id === ca.id ? { ...c, role: e.target.value as CoAssigneeRole } : c
                                                         ))}
                                                         style={{
                                                             border: '1px solid #ccc',
@@ -936,9 +940,9 @@ const GTDEditDialog: React.FC<GTDEditDialogProps> = ({ open, onClose, task, onSa
                                             size="small"
                                             options={contacts}
                                             getOptionLabel={(option) => option.name || 'Без имени'}
-                                            value={contacts.filter(c => linkedContactIds.includes(c.id))}
+                                            value={contacts.filter(c => c.id && linkedContactIds.includes(c.id))}
                                             onChange={(_, newValue) => {
-                                                setLinkedContactIds(newValue.map(v => v.id));
+                                                setLinkedContactIds(newValue.map(v => v.id).filter((id): id is string => !!id));
                                             }}
                                             renderInput={(params) => (
                                                 <TextField
@@ -1039,7 +1043,7 @@ const GTDEditDialog: React.FC<GTDEditDialogProps> = ({ open, onClose, task, onSa
                                                             {selectedClient.contacts && selectedClient.contacts.length > 0 && (
                                                                 <Box mt={1}>
                                                                     <Typography variant="caption" color="text.secondary">Доп. контакты клиента:</Typography>
-                                                                    {selectedClient.contacts.map((cc: any, i: number) => (
+                                                                    {selectedClient.contacts.map((cc: ClientContact, i: number) => (
                                                                         <Box key={i} display="flex" alignItems="center" gap={1} mt={0.5}>
                                                                             <Typography variant="body2">
                                                                                 {cc.name} {cc.position ? `(${cc.position})` : ''}: <Link href={`tel:${cc.phone}`} underline="hover" color="primary.main">📞 {cc.phone}</Link>
@@ -1126,7 +1130,7 @@ const GTDEditDialog: React.FC<GTDEditDialogProps> = ({ open, onClose, task, onSa
                 onClose={() => setGlobalContactOpen(false)}
                 currentProjectId={currentClientId || undefined}
                 onContactAdded={(newContact) => {
-                    setContacts(prev => [...prev, newContact].sort((a: any, b: any) => (a.name || '').localeCompare(b.name || '')));
+                    setContacts(prev => [...prev, newContact].sort((a, b) => (a.name || '').localeCompare(b.name || '')));
                     if (newContact.id) setLinkedContactIds(prev => [...prev, newContact.id!]);
                 }}
             />

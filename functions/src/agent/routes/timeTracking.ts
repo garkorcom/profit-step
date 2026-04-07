@@ -3,8 +3,14 @@
  */
 import { Router } from 'express';
 import * as admin from 'firebase-admin';
-import { db, FieldValue, Timestamp, logger, logAgentActivity } from '../routeContext';
+import { db, Timestamp, logger, logAgentActivity } from '../routeContext';
 import { logAudit, AuditHelpers, extractAuditContext } from '../utils/auditLogger';
+import {
+  resolveEmployeeIds,
+  findActiveSessionsInTx,
+  closeSessionInTx,
+  findActiveSession,
+} from '../../services/TimeTrackingService';
 import {
   TimeTrackingSchema,
   ActiveSessionsQuerySchema,
@@ -49,18 +55,8 @@ router.post('/api/time-tracking', async (req, res, next) => {
         }
 
         // ─── Cross-lookup: resolve telegramId ↔ Firebase UID ───
-        // The user calling this API uses Firebase UID (userId).
-        // But they may also have a telegramId in their profile,
-        // meaning the Telegram Bot creates sessions with employeeId = telegramId (number).
-        // We need to close active sessions from BOTH IDs before starting a new one.
-        const userDocSnap = await db.collection('users').doc(userId).get();
-        const telegramId = userDocSnap.data()?.telegramId as string | undefined;
-        const allEmployeeIds: (string | number)[] = [userId];
-        if (telegramId) {
-          allEmployeeIds.push(Number(telegramId)); // Bot stores employeeId as number
-          allEmployeeIds.push(telegramId);          // Fallback: string variant
-        }
-        logger.info('⏱️ timer:start — cross-lookup IDs', { userId, telegramId, allEmployeeIds });
+        const allEmployeeIds = await resolveEmployeeIds(userId);
+        logger.info('⏱️ timer:start — cross-lookup IDs', { userId, allEmployeeIds });
 
         const result = await db.runTransaction(async (tx) => {
           // ═══════════════════════════════════════════════════════════
@@ -88,16 +84,8 @@ router.post('/api/time-tracking', async (req, res, next) => {
           }
 
           // 2b. Cross-platform scan: find ANY active sessions for ALL employee IDs
-          const crossPlatformDocs: admin.firestore.DocumentSnapshot[] = [];
-          for (const empId of allEmployeeIds) {
-            const activeSnap = await tx.get(
-              db.collection('work_sessions')
-                .where('employeeId', '==', empId)
-                .where('status', 'in', ['active', 'paused'])
-                .limit(5)
-            );
-            crossPlatformDocs.push(...activeSnap.docs);
-          }
+          // 2b. Cross-platform scan: find ANY active sessions for ALL employee IDs
+          const crossPlatformDocs = await findActiveSessionsInTx(tx, allEmployeeIds);
 
           // 3. hourlyRate cascade + projectId resolution: task → user → 0
           let hourlyRate = 0;
@@ -106,7 +94,6 @@ router.post('/api/time-tracking', async (req, res, next) => {
             const taskDoc = await tx.get(db.collection('gtd_tasks').doc(data.taskId));
             const taskData = taskDoc.data();
             hourlyRate = taskData?.hourlyRate || 0;
-            // Auto-resolve projectId from task if not explicitly provided
             if (!resolvedProjectId && taskData?.projectId) {
               resolvedProjectId = taskData.projectId;
             }
@@ -120,57 +107,30 @@ router.post('/api/time-tracking', async (req, res, next) => {
           // ═══════════════════════════════════════════════════════════
 
           const closedSessions: { id: string; mins: number; earn: number }[] = [];
-
-          // Helper: compute duration & earnings for a session, then write updates
-          const closeSession = (
-            sessionRef: admin.firestore.DocumentReference,
-            sessionDoc: admin.firestore.DocumentSnapshot,
-          ) => {
-            const old = sessionDoc.data()!;
-            const endTime = manualStartTime || Timestamp.now();
-            let diff = endTime.toMillis() - old.startTime.toMillis();
-            if (old.totalBreakMinutes) diff -= old.totalBreakMinutes * 60000;
-            if (old.status === 'paused' && old.lastBreakStart) {
-              diff -= (endTime.toMillis() - old.lastBreakStart.toMillis());
-            }
-            const mins = Math.max(0, Math.round(diff / 60000));
-            const earn = +((mins / 60) * (old.hourlyRate || 0)).toFixed(2);
-
-            tx.update(sessionRef, {
-              status: 'completed',
-              endTime,
-              durationMinutes: mins,
-              sessionEarnings: earn,
-            });
-
-            if (old.relatedTaskId) {
-              tx.update(db.collection('gtd_tasks').doc(old.relatedTaskId), {
-                totalTimeSpentMinutes: FieldValue.increment(mins),
-                totalEarnings: FieldValue.increment(earn),
-                updatedAt: FieldValue.serverTimestamp(),
-              });
-            }
-
-            closedSessions.push({ id: sessionDoc.id, mins, earn });
-            logger.info('⏱️ timer:start — closed session', { id: sessionDoc.id, mins, earn });
-          };
+          const closeEndTime = manualStartTime || Timestamp.now();
 
           // Close pointer session
           const closedIds = new Set<string>();
           if (pointerSessionDoc && pointerSessionDoc.exists &&
               ['active', 'paused'].includes(pointerSessionDoc.data()!.status)) {
-            closeSession(pointerSessionDoc.ref, pointerSessionDoc);
-            closedIds.add(pointerSessionDoc.id);
+            const result = closeSessionInTx(tx, pointerSessionDoc, closeEndTime);
+            if (result) {
+              closedSessions.push({ id: result.sessionId, mins: result.durationMinutes, earn: result.earnings });
+              closedIds.add(result.sessionId);
+              logger.info('⏱️ timer:start — closed session', { id: result.sessionId, mins: result.durationMinutes, earn: result.earnings });
+            }
           } else if (activeSessionId) {
             logger.warn('⏱️ auto-heal: stale activeSessionId', { activeSessionId });
           }
 
           // Close cross-platform sessions (deduplicated)
           for (const doc of crossPlatformDocs) {
-            if (!closedIds.has(doc.id) && !closedSessions.some(cs => cs.id === doc.id)) {
-              if (['active', 'paused'].includes(doc.data()!.status)) {
-                closeSession(doc.ref, doc);
-                closedIds.add(doc.id);
+            if (!closedIds.has(doc.id)) {
+              const result = closeSessionInTx(tx, doc, closeEndTime);
+              if (result) {
+                closedSessions.push({ id: result.sessionId, mins: result.durationMinutes, earn: result.earnings });
+                closedIds.add(result.sessionId);
+                logger.info('⏱️ timer:start — closed session', { id: result.sessionId, mins: result.durationMinutes, earn: result.earnings });
               }
             }
           }
@@ -297,13 +257,7 @@ router.post('/api/time-tracking', async (req, res, next) => {
         }
 
         // Cross-lookup: resolve telegramId for this user (same as start)
-        const stopUserDoc = await db.collection('users').doc(userId).get();
-        const stopTelegramId = stopUserDoc.data()?.telegramId as string | undefined;
-        const stopAllIds: (string | number)[] = [userId];
-        if (stopTelegramId) {
-          stopAllIds.push(Number(stopTelegramId));
-          stopAllIds.push(stopTelegramId);
-        }
+        const stopAllIds = await resolveEmployeeIds(userId);
 
         const result = await db.runTransaction(async (tx) => {
           const userRef = db.collection('users').doc(userId);
@@ -311,46 +265,28 @@ router.post('/api/time-tracking', async (req, res, next) => {
           const sid = userDoc.data()?.activeSessionId as string | undefined;
 
           // Try pointer first, then cross-platform scan
-          let sessionRef: admin.firestore.DocumentReference | null = null;
           let sessionDoc: admin.firestore.DocumentSnapshot | null = null;
 
           if (sid) {
-            sessionRef = db.collection('work_sessions').doc(sid);
-            sessionDoc = await tx.get(sessionRef);
-            if (!sessionDoc.exists || !['active', 'paused'].includes(sessionDoc.data()!.status)) {
+            const pointerDoc = await tx.get(db.collection('work_sessions').doc(sid));
+            if (pointerDoc.exists && ['active', 'paused'].includes(pointerDoc.data()!.status)) {
+              sessionDoc = pointerDoc;
+            } else {
               logger.warn('⏱️ auto-heal: clearing stale pointer', { sid });
               tx.update(userRef, { activeSessionId: null });
-              sessionRef = null;
-              sessionDoc = null;
             }
           }
 
-          // Cross-platform fallback: find active session by any employee ID
+          // Cross-platform fallback
           if (!sessionDoc) {
-            for (const empId of stopAllIds) {
-              const snap = await tx.get(
-                db.collection('work_sessions')
-                  .where('employeeId', '==', empId)
-                  .where('status', 'in', ['active', 'paused'])
-                  .limit(1)
-              );
-              if (!snap.empty) {
-                sessionDoc = snap.docs[0];
-                sessionRef = sessionDoc.ref;
-                logger.info('⏱️ timer:stop — found cross-platform session', { id: sessionDoc.id, empId });
-                break;
-              }
+            const found = await findActiveSessionsInTx(tx, stopAllIds, 1);
+            if (found.length > 0) {
+              sessionDoc = found[0];
+              logger.info('⏱️ timer:stop — found cross-platform session', { id: sessionDoc.id });
             }
           }
 
-          if (!sessionRef || !sessionDoc) return null;
-
-          // Auto-heal: stale pointer
-          if (!sessionDoc.exists || !['active', 'paused'].includes(sessionDoc.data()!.status)) {
-            logger.warn('⏱️ auto-heal: clearing stale pointer', { sid });
-            tx.update(userRef, { activeSessionId: null });
-            return null;
-          }
+          if (!sessionDoc) return null;
 
           const s = sessionDoc.data()!;
           const endTime = manualEndTime || Timestamp.now();
@@ -360,33 +296,14 @@ router.post('/api/time-tracking', async (req, res, next) => {
             throw new Error('END_BEFORE_START');
           }
 
-          let diff = endTime.toMillis() - s.startTime.toMillis();
-          if (s.totalBreakMinutes) diff -= s.totalBreakMinutes * 60000;
-          if (s.status === 'paused' && s.lastBreakStart) {
-            diff -= (endTime.toMillis() - s.lastBreakStart.toMillis());
-          }
-          const mins = Math.max(0, Math.round(diff / 60000));
-          const earn = +((mins / 60) * (s.hourlyRate || 0)).toFixed(2);
+          // Use unified closeSessionInTx (handles status update, duration, earnings, task aggregation)
+          const closed = closeSessionInTx(tx, sessionDoc, endTime);
+          if (!closed) return null;
 
-          tx.update(sessionRef, {
-            status: 'completed',
-            endTime,
-            durationMinutes: mins,
-            sessionEarnings: earn,
-            updatedBySource: 'openclaw',
-          });
+          // Clear activeSessionId pointer
           tx.update(userRef, { activeSessionId: null });
 
-          // Aggregate on linked task
-          if (s.relatedTaskId) {
-            tx.update(db.collection('gtd_tasks').doc(s.relatedTaskId), {
-              totalTimeSpentMinutes: FieldValue.increment(mins),
-              totalEarnings: FieldValue.increment(earn),
-              updatedAt: FieldValue.serverTimestamp(),
-            });
-          }
-
-          return { mins, earn, task: s.relatedTaskTitle || s.description, sessionId: sessionRef.id };
+          return { mins: closed.durationMinutes, earn: closed.earnings, task: closed.task, sessionId: closed.sessionId };
         }).catch((e: Error) => {
           if (e.message === 'END_BEFORE_START') {
             return 'END_BEFORE_START' as const;
@@ -436,36 +353,166 @@ router.post('/api/time-tracking', async (req, res, next) => {
         return;
       }
 
-      // ─── STATUS ─────────────────────────────────────────
-      case 'status': {
-        const statusUserDoc = await db.collection('users').doc(userId).get();
-        const statusSid = statusUserDoc.data()?.activeSessionId as string | undefined;
-        const statusTelegramId = statusUserDoc.data()?.telegramId as string | undefined;
+      // ─── RESTART ──────────────────────────────────────────
+      case 'restart': {
+        logger.info('⏱️ timer:restart', { taskTitle: data.taskTitle, clientId: data.clientId });
 
-        // 1. Try pointer
-        let foundSession: admin.firestore.DocumentSnapshot | null = null;
-        if (statusSid) {
-          const s = await db.collection('work_sessions').doc(statusSid).get();
-          if (s.exists && ['active', 'paused'].includes(s.data()!.status)) {
-            foundSession = s;
+        const restartAllIds = await resolveEmployeeIds(userId);
+
+        const result = await db.runTransaction(async (tx) => {
+          // ═══ PHASE 1: ALL READS ═══
+          const userRef = db.collection('users').doc(userId);
+          const userDoc = await tx.get(userRef);
+          const activeSessionId = userDoc.data()?.activeSessionId as string | undefined;
+
+          let resolvedClientName = data.clientName || '';
+          let clientDoc: admin.firestore.DocumentSnapshot | null = null;
+          if (!resolvedClientName && data.clientId) {
+            clientDoc = await tx.get(db.collection('clients').doc(data.clientId));
           }
-        }
 
-        // 2. Cross-platform fallback
-        if (!foundSession && statusTelegramId) {
-          const searchIds: (string | number)[] = [userId, Number(statusTelegramId), statusTelegramId];
-          for (const empId of searchIds) {
-            const snap = await db.collection('work_sessions')
-              .where('employeeId', '==', empId)
-              .where('status', 'in', ['active', 'paused'])
-              .limit(1)
-              .get();
-            if (!snap.empty) {
-              foundSession = snap.docs[0];
-              break;
+          let pointerSessionDoc: admin.firestore.DocumentSnapshot | null = null;
+          if (activeSessionId) {
+            pointerSessionDoc = await tx.get(db.collection('work_sessions').doc(activeSessionId));
+          }
+
+          const crossPlatformDocs = await findActiveSessionsInTx(tx, restartAllIds);
+
+          let hourlyRate = 0;
+          let resolvedProjectId = data.projectId || null;
+          if (data.taskId) {
+            const taskDoc = await tx.get(db.collection('gtd_tasks').doc(data.taskId));
+            const taskData = taskDoc.data();
+            hourlyRate = taskData?.hourlyRate || 0;
+            if (!resolvedProjectId && taskData?.projectId) {
+              resolvedProjectId = taskData.projectId;
             }
           }
+          if (!hourlyRate) {
+            hourlyRate = userDoc.data()?.hourlyRate || 0;
+          }
+
+          // ═══ PHASE 2: ALL WRITES ═══
+          const closedSessions: { id: string; mins: number; earn: number }[] = [];
+          const closeEndTime = Timestamp.now();
+          const closedIds = new Set<string>();
+
+          // Close pointer session
+          if (pointerSessionDoc && pointerSessionDoc.exists &&
+              ['active', 'paused'].includes(pointerSessionDoc.data()!.status)) {
+            const closed = closeSessionInTx(tx, pointerSessionDoc, closeEndTime);
+            if (closed) {
+              closedSessions.push({ id: closed.sessionId, mins: closed.durationMinutes, earn: closed.earnings });
+              closedIds.add(closed.sessionId);
+            }
+          }
+
+          // Close cross-platform sessions
+          for (const doc of crossPlatformDocs) {
+            if (!closedIds.has(doc.id)) {
+              const closed = closeSessionInTx(tx, doc, closeEndTime);
+              if (closed) {
+                closedSessions.push({ id: closed.sessionId, mins: closed.durationMinutes, earn: closed.earnings });
+                closedIds.add(closed.sessionId);
+              }
+            }
+          }
+
+          // Create new session
+          if (!resolvedClientName && clientDoc && clientDoc.exists) {
+            resolvedClientName = clientDoc.data()?.name || '';
+          }
+          const newRef = db.collection('work_sessions').doc();
+          tx.set(newRef, {
+            employeeId: userId,
+            employeeName: userName,
+            startTime: Timestamp.now(),
+            status: 'active',
+            description: data.taskTitle,
+            clientId: data.clientId || '',
+            clientName: resolvedClientName || '',
+            projectId: resolvedProjectId,
+            type: 'regular',
+            relatedTaskId: data.taskId || null,
+            relatedTaskTitle: data.taskTitle,
+            hourlyRate,
+            siteId: data.siteId || null,
+            source: 'openclaw',
+          });
+          tx.update(userRef, { activeSessionId: newRef.id });
+
+          return { sessionId: newRef.id, closedSessions, hourlyRate, resolvedProjectId };
+        });
+
+        const primaryClosed = result.closedSessions.length > 0 ? result.closedSessions[0] : null;
+
+        logger.info('⏱️ timer:restarted', {
+          sessionId: result.sessionId,
+          closedCount: result.closedSessions.length,
+        });
+
+        const restartAuditContext = extractAuditContext(req);
+        await logAudit(AuditHelpers.create(
+          'work_session',
+          result.sessionId,
+          {
+            action: 'restart',
+            taskTitle: data.taskTitle,
+            clientId: data.clientId,
+            projectId: result.resolvedProjectId,
+            hourlyRate: result.hourlyRate,
+            closedCount: result.closedSessions.length,
+          },
+          restartAuditContext.performedBy,
+          restartAuditContext.source as any
+        ));
+
+        for (const closedSession of result.closedSessions) {
+          await logAudit({
+            action: 'TIMER_AUTO_STOP',
+            entityType: 'work_session',
+            entityId: closedSession.id,
+            source: restartAuditContext.source as any,
+            performedBy: restartAuditContext.performedBy,
+            metadata: {
+              reason: 'Stopped by restart action',
+              durationMinutes: closedSession.mins,
+              earnings: closedSession.earn,
+            },
+          });
         }
+
+        await logAgentActivity({
+          userId,
+          action: 'timer_restarted',
+          endpoint: '/api/time-tracking',
+          metadata: {
+            sessionId: result.sessionId,
+            taskTitle: data.taskTitle,
+            closedSessions: result.closedSessions,
+          },
+        });
+
+        const warnings: string[] = [];
+        if (!result.hourlyRate) {
+          warnings.push('⚠️ Ставка $0/ч. Обратитесь к руководителю.');
+        }
+
+        res.status(201).json({
+          sessionId: result.sessionId,
+          message: 'Таймер перезапущен',
+          closedPrevious: primaryClosed
+            ? `Предыдущая сессия закрыта: ${primaryClosed.mins}мин, $${primaryClosed.earn}`
+            : null,
+          closedCount: result.closedSessions.length,
+          ...(warnings.length > 0 ? { warnings } : {}),
+        });
+        return;
+      }
+
+      // ─── STATUS ─────────────────────────────────────────
+      case 'status': {
+        const foundSession = await findActiveSession(userId);
 
         if (!foundSession) {
           res.json({ active: false, message: 'Нет активной сессии' });
@@ -662,47 +709,25 @@ router.post('/api/time-tracking/admin-stop', async (req, res, next) => {
         throw new Error('END_BEFORE_START');
       }
 
-      let diff = endTime.toMillis() - s.startTime.toMillis();
-      if (s.totalBreakMinutes) diff -= s.totalBreakMinutes * 60000;
-      if (s.status === 'paused' && s.lastBreakStart) {
-        diff -= (endTime.toMillis() - s.lastBreakStart.toMillis());
-      }
-      const mins = Math.max(0, Math.round(diff / 60000));
-      const earn = +((mins / 60) * (s.hourlyRate || 0)).toFixed(2);
-
       // READ employee doc BEFORE any writes (Firestore requirement)
       const employeeRef = db.collection('users').doc(s.employeeId);
       const employeeDoc = await tx.get(employeeRef);
 
-      // === ALL WRITES below ===
-
-      tx.update(sessionRef, {
-        status: 'completed',
-        endTime,
-        durationMinutes: mins,
-        sessionEarnings: earn,
-      });
+      // Use unified closeSessionInTx
+      const closed = closeSessionInTx(tx, sessionDoc, endTime);
+      if (!closed) throw new Error('SESSION_NOT_ACTIVE');
 
       // Clear activeSessionId pointer on the employee
       if (employeeDoc.exists && employeeDoc.data()?.activeSessionId === data.sessionId) {
         tx.update(employeeRef, { activeSessionId: null });
       }
 
-      // Aggregate on linked task
-      if (s.relatedTaskId) {
-        tx.update(db.collection('gtd_tasks').doc(s.relatedTaskId), {
-          totalTimeSpentMinutes: FieldValue.increment(mins),
-          totalEarnings: FieldValue.increment(earn),
-          updatedAt: FieldValue.serverTimestamp(),
-        });
-      }
-
       return {
-        mins,
-        earn,
-        employeeId: s.employeeId,
-        employeeName: s.employeeName,
-        task: s.relatedTaskTitle || s.description,
+        mins: closed.durationMinutes,
+        earn: closed.earnings,
+        employeeId: closed.employeeId || s.employeeId,
+        employeeName: closed.employeeName || s.employeeName,
+        task: closed.task,
       };
     }).catch((e: Error) => {
       if (['SESSION_NOT_FOUND', 'SESSION_NOT_ACTIVE', 'END_BEFORE_START'].includes(e.message)) {
@@ -906,25 +931,11 @@ export async function autoStopStaleTimers(): Promise<{
         const s = freshSessionDoc.data()!;
         const endTime = Timestamp.now();
 
-        // Calculate duration and earnings
-        let diff = endTime.toMillis() - s.startTime.toMillis();
-        if (s.totalBreakMinutes) diff -= s.totalBreakMinutes * 60000;
-        if (s.status === 'paused' && s.lastBreakStart) {
-          diff -= (endTime.toMillis() - s.lastBreakStart.toMillis());
-        }
-        const mins = Math.max(0, Math.round(diff / 60000));
-        const earn = +((mins / 60) * (s.hourlyRate || 0)).toFixed(2);
-
-        // Update session to completed with auto-stop note
-        tx.update(freshSessionDoc.ref, {
-          status: 'completed',
-          endTime,
-          durationMinutes: mins,
-          sessionEarnings: earn,
-          autoStopped: true,
+        const closed = closeSessionInTx(tx, freshSessionDoc, endTime, {
           autoStopReason: 'Auto-stopped: exceeded 12 hours',
-          autoStoppedAt: endTime,
         });
+
+        if (!closed) return null;
 
         // Clear activeSessionId pointer if this session is the active one for the employee
         if (s.employeeId) {
@@ -935,22 +946,13 @@ export async function autoStopStaleTimers(): Promise<{
           }
         }
 
-        // Aggregate on linked task
-        if (s.relatedTaskId) {
-          tx.update(db.collection('gtd_tasks').doc(s.relatedTaskId), {
-            totalTimeSpentMinutes: FieldValue.increment(mins),
-            totalEarnings: FieldValue.increment(earn),
-            updatedAt: FieldValue.serverTimestamp(),
-          });
-        }
-
         return {
           sessionId,
-          employeeId: s.employeeId,
-          employeeName: s.employeeName,
-          durationMinutes: mins,
-          earnings: earn,
-          task: s.relatedTaskTitle || s.description || 'Unknown task',
+          employeeId: closed.employeeId || '',
+          employeeName: closed.employeeName || '',
+          durationMinutes: closed.durationMinutes,
+          earnings: closed.earnings,
+          task: closed.task,
         };
       });
 

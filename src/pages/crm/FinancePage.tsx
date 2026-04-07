@@ -96,6 +96,7 @@ const FinancePage: React.FC = () => {
             fetchCosts();
         };
         loadData();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [startDate, endDate]);
 
     const fetchLedger = async () => {

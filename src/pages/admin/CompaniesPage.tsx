@@ -49,8 +49,6 @@ import CompaniesTable from '../../components/companies/CompaniesTable';
 import CompanyFormDialog from '../../components/companies/CompanyFormDialog';
 import CostWarningDialog from '../../components/admin/CostWarningDialog';
 import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts';
-import { costProtectionBreaker } from '../../utils/circuitBreaker';
-
 // Константы
 const DEFAULT_PAGE_SIZE = 25;
 const CACHE_TTL = 5 * 60 * 1000; // 5 минут
@@ -227,7 +225,7 @@ export default function CompaniesPage() {
   // Загрузка начальной страницы
   useEffect(() => {
     loadPageData(page, 'initial');
-  }, [page, statusFilter, debouncedSearchTerm]);
+  }, [loadPageData, page, statusFilter, debouncedSearchTerm]);
 
   // Debounced поиск
   const debouncedSearch = useMemo(

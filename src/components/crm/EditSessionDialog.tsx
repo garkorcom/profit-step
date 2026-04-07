@@ -7,7 +7,7 @@ import {
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import WarningIcon from '@mui/icons-material/Warning';
 import { WorkSession } from '../../types/timeTracking.types';
-import { Timestamp, collection, getDocs, query, where } from 'firebase/firestore';
+import { collection, getDocs, query, where } from 'firebase/firestore';
 import { db } from '../../firebase/firebase';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import toast from 'react-hot-toast';
@@ -90,7 +90,6 @@ const getEditWindowMessage = (session: WorkSession): { message: string; isUrgent
 
     return { message: '', isUrgent: false };
 };
-
 
 const EditSessionDialog: React.FC<EditSessionDialogProps> = ({
     open,

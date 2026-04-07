@@ -7,14 +7,11 @@ import {
     updateDoc,
     query,
     where,
-    orderBy,
-    serverTimestamp,
-    Timestamp,
-    limit
+    serverTimestamp
 } from 'firebase/firestore';
 import { db, functions } from '../firebase/firebase';
 import { httpsCallable } from 'firebase/functions';
-import { Client, ClientStatus, ClientType } from '../types/crm.types';
+import { Client } from '../types/crm.types';
 
 export interface ParseClientWebsiteRequest {
     url: string;

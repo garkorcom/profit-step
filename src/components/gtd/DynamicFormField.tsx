@@ -11,7 +11,6 @@ import {
     Box,
     Typography,
     IconButton,
-    Chip,
     List,
     ListItem,
     ListItemText,

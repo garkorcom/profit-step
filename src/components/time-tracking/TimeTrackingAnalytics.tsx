@@ -16,12 +16,8 @@ import {
     Divider,
 } from '@mui/material';
 import {
-    TrendingUp as TrendingUpIcon,
-    TrendingDown as TrendingDownIcon,
-    TrendingFlat as TrendingFlatIcon,
     Groups as GroupsIcon,
-    AccessTime as TimeIcon,
-} from '@mui/icons-material';
+    } from '@mui/icons-material';
 import { WorkSession } from '../../types/timeTracking.types';
 
 interface TimeTrackingAnalyticsProps {

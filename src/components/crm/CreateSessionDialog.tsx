@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import {
     Dialog, DialogTitle, DialogContent, DialogActions, Button, TextField,
-    FormControl, InputLabel, Select, MenuItem, Grid, Autocomplete, Box, Avatar, Typography
+    Grid, Autocomplete, Box, Avatar, Typography
 } from '@mui/material';
 import { collection, query, where, getDocs, addDoc, Timestamp, doc, getDoc } from 'firebase/firestore';
 import { db } from '../../firebase/firebase';
 import { useAuth } from '../../auth/AuthContext';
-import { WorkSession } from '../../types/timeTracking.types';
+
 
 interface CreateSessionDialogProps {
     open: boolean;
@@ -124,7 +124,7 @@ const CreateSessionDialog: React.FC<CreateSessionDialogProps> = ({ open, onClose
 
             const newSession: any = {
                 employeeId: Number(selectedEmployee.id) || 0, // Fallback if ID is numeric vs string
-                // Wait, WorkSession type says employeeId is number. My fetch returns doc.id which is string usually from Auth (uid).
+                // Wait type says employeeId is number. My fetch returns doc.id which is string usually from Auth (uid).
                 // Let's check TimeTrackingPage again. SelectedEmployee sets id: String(session.employeeId).
                 // Existing sessions seem to use numeric IDs (Telegram ID?).
                 // If I am creating for a web user, ID is string UID.

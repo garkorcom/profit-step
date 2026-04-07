@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { collection, query, where, onSnapshot, DocumentSnapshot } from 'firebase/firestore';
+import { collection, query, where, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase/firebase';
 import { WorkSession } from '../types/timeTracking.types'; // Assuming types exist, or I can define here
 

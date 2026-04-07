@@ -5,18 +5,18 @@
 
 import { initializeApp } from 'firebase/app';
 import { getAuth, connectAuthEmulator } from 'firebase/auth';
-import { getFirestore, connectFirestoreEmulator, initializeFirestore } from 'firebase/firestore';
+import { getFirestore, connectFirestoreEmulator } from 'firebase/firestore';
 import { getStorage, connectStorageEmulator } from 'firebase/storage';
 import { getFunctions, connectFunctionsEmulator } from 'firebase/functions';
 
 // Firebase конфигурация из .env файла
 const firebaseConfig = {
-  apiKey: process.env.REACT_APP_FIREBASE_API_KEY,
-  authDomain: process.env.REACT_APP_FIREBASE_AUTH_DOMAIN,
-  projectId: process.env.REACT_APP_FIREBASE_PROJECT_ID,
-  storageBucket: process.env.REACT_APP_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: process.env.REACT_APP_FIREBASE_MESSAGING_SENDER_ID,
-  appId: process.env.REACT_APP_FIREBASE_APP_ID,
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
 };
 
 // Инициализация Firebase
@@ -30,8 +30,8 @@ export const storage = getStorage(app);
 export const functions = getFunctions(app, 'us-central1');
 
 // 🛠️ Подключение к Firebase Emulators (для локальной разработки)
-// Используется только если REACT_APP_USE_EMULATORS=true в .env.local
-if (process.env.REACT_APP_USE_EMULATORS === 'true') {
+// Используется только если VITE_USE_EMULATORS=true в .env.local
+if (import.meta.env.VITE_USE_EMULATORS === 'true') {
   console.log('🔧 Connecting to Firebase Emulators...');
 
   // Auth Emulator: http://127.0.0.1:9099

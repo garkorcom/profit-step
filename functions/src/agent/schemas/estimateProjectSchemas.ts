@@ -6,6 +6,7 @@ export const CreateEstimateSchema = z.object({
   address: z.string().min(1).optional(),
   idempotencyKey: z.string().min(1).optional(),
   siteId: z.string().optional(),
+  estimateType: z.enum(['internal', 'commercial']).optional(),
   items: z.array(z.object({
     id: z.string().min(1),
     description: z.string().min(1),
@@ -29,6 +30,7 @@ export const ListEstimatesQuerySchema = z.object({
 });
 
 export const UpdateEstimateSchema = z.object({
+  estimateType: z.enum(['internal', 'commercial']).optional(),
   status: z.enum(['draft', 'sent', 'approved', 'rejected', 'converted']).optional(),
   items: z.array(z.object({
     id: z.string().min(1),

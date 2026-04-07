@@ -14,11 +14,10 @@ import {
     serverTimestamp,
     doc,
     getDoc,
-    Timestamp,
     deleteDoc,
 } from 'firebase/firestore';
 import { db } from '../../../firebase/firebase';
-import { ShoppingList, ShoppingItem, ShoppingClient } from '../types';
+import { ShoppingList, ShoppingItem } from '../types';
 
 /**
  * Get client name by ID

@@ -1,17 +1,18 @@
 import { useState, useEffect } from 'react';
 import { collection, query, where, onSnapshot, Timestamp } from 'firebase/firestore';
 import { db } from '../../firebase/firebase';
-import { BankTransaction, INCOME_CATEGORIES, EXPENSE_CATEGORIES } from '../../types/expensesBoard.types';
 
 export interface DashboardFinanceData {
     balance: number;
     income: number;
     expenses: number;
+    labor: number;
     profit: number;
     trend: {
         balance: number;
         income: number;
         expenses: number;
+        labor: number;
         profit: number;
     };
     loading: boolean;
@@ -22,8 +23,9 @@ export const useDashboardFinance = (companyId: string | undefined): DashboardFin
         balance: 0,
         income: 0,
         expenses: 0,
+        labor: 0,
         profit: 0,
-        trend: { balance: 0, income: 0, expenses: 0, profit: 0 },
+        trend: { balance: 0, income: 0, expenses: 0, labor: 0, profit: 0 },
         loading: true
     });
 
@@ -38,76 +40,123 @@ export const useDashboardFinance = (companyId: string | undefined): DashboardFin
         const startOfPreviousMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
         const endOfPreviousMonth = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999);
 
-        const transactionsRef = collection(db, 'bank_transactions');
-        // We only care about transactions from the start of the previous month onwards to calculate current vs prev
-        const q = query(
-            transactionsRef,
-            where('companyId', '==', companyId),
-            where('date', '>=', Timestamp.fromDate(startOfPreviousMonth))
-        );
+        let costsIncome = { current: 0, prev: 0 };
+        let costsExpense = { current: 0, prev: 0 };
+        let laborTotal = { current: 0, prev: 0 };
 
-        const unsubscribe = onSnapshot(q, (snapshot) => {
-            let currentIncome = 0;
-            let currentExpenses = 0;
+        let costsLoaded = false;
+        let sessionsLoaded = false;
 
-            let prevIncome = 0;
-            let prevExpenses = 0;
+        const recalculate = () => {
+            if (!costsLoaded || !sessionsLoaded) return;
 
-            snapshot.forEach((doc) => {
-                const tx = doc.data() as BankTransaction;
-                const txDate = tx.date.seconds * 1000;
+            const currentIncome = costsIncome.current;
+            const currentExpenses = costsExpense.current;
+            const currentLabor = laborTotal.current;
+            const currentProfit = currentIncome - currentExpenses - currentLabor;
 
-                const isCurrentMonth = txDate >= startOfCurrentMonth.getTime();
-                const isIncome = INCOME_CATEGORIES.includes(tx.category);
-                const isExpense = EXPENSE_CATEGORIES.includes(tx.category);
+            const prevIncome = costsIncome.prev;
+            const prevExpenses = costsExpense.prev;
+            const prevLabor = laborTotal.prev;
+            const prevProfit = prevIncome - prevExpenses - prevLabor;
 
-                // Note: isRefund logic usually reduces expenses, but for simple dashboard we can aggregate mathematically
-                const amount = tx.isRefund ? -tx.amount : tx.amount;
-
-                if (isCurrentMonth) {
-                    if (isIncome) currentIncome += amount;
-                    if (isExpense) currentExpenses += amount;
-                } else if (txDate <= endOfPreviousMonth.getTime()) {
-                    if (isIncome) prevIncome += amount;
-                    if (isExpense) prevExpenses += amount;
-                }
-            });
-
-            const currentProfit = currentIncome - currentExpenses;
-            const prevProfit = prevIncome - prevExpenses;
-
-            // Trend calculation: (Current - Prev) / Prev * 100
             const calcTrend = (curr: number, prev: number) => {
                 if (prev === 0) return curr > 0 ? 100 : 0;
                 return ((curr - prev) / Math.abs(prev)) * 100;
             };
 
-            // Calculate overall balance: this requires fetching all transactions, which is heavy. 
-            // For dashboard real-time purposes, total Balance might be approximated or require a standalone aggregation.
-            // As a fallback to avoid massive read costs, we can set balance = current profit or fetch a static aggregate doc if one exists.
-            // For now, let's represent balance as total profit over the fetched period to save reads, OR we could fetch a single aggregate doc.
-            // Assuming balance = sum of all income - all expenses. Since we only fetched 2 months, we can't show ALL TIME balance accurately without a huge query.
-            // We'll leave balance as 0 for a moment, or use currentProfit as a placeholder if there's no pre-aggregated balance field in company doc.
-
             setData({
-                balance: currentProfit, // Placeholder 
+                balance: currentProfit,
                 income: currentIncome,
                 expenses: currentExpenses,
+                labor: currentLabor,
                 profit: currentProfit,
                 trend: {
                     balance: calcTrend(currentProfit, prevProfit),
                     income: calcTrend(currentIncome, prevIncome),
                     expenses: calcTrend(currentExpenses, prevExpenses),
+                    labor: calcTrend(currentLabor, prevLabor),
                     profit: calcTrend(currentProfit, prevProfit)
                 },
                 loading: false
             });
+        };
+
+        // --- Listen to costs collection (income + expense) ---
+        const costsRef = collection(db, 'costs');
+        const costsQuery = query(
+            costsRef,
+            where('createdAt', '>=', Timestamp.fromDate(startOfPreviousMonth))
+        );
+
+        const unsubCosts = onSnapshot(costsQuery, (snapshot) => {
+            let curIncome = 0, curExpense = 0;
+            let prvIncome = 0, prvExpense = 0;
+
+            snapshot.forEach((doc) => {
+                const d = doc.data();
+                const ts = d.createdAt?.seconds ? d.createdAt.seconds * 1000 : 0;
+                const amount = Math.abs(d.amount || 0);
+                const isCurrentMonth = ts >= startOfCurrentMonth.getTime();
+                const isPrevMonth = ts >= startOfPreviousMonth.getTime() && ts <= endOfPreviousMonth.getTime();
+
+                if (d.type === 'income') {
+                    if (isCurrentMonth) curIncome += amount;
+                    else if (isPrevMonth) prvIncome += amount;
+                } else if (d.type === 'expense') {
+                    if (isCurrentMonth) curExpense += amount;
+                    else if (isPrevMonth) prvExpense += amount;
+                }
+            });
+
+            costsIncome = { current: curIncome, prev: prvIncome };
+            costsExpense = { current: curExpense, prev: prvExpense };
+            costsLoaded = true;
+            recalculate();
         }, (error) => {
-            console.error('Error fetching finance dashboard stats:', error);
-            setData(prev => ({ ...prev, loading: false }));
+            console.error('Error fetching costs for dashboard:', error);
+            costsLoaded = true;
+            recalculate();
         });
 
-        return () => unsubscribe();
+        // --- Listen to work_sessions (status=closed) for labor ---
+        const sessionsRef = collection(db, 'work_sessions');
+        const sessionsQuery = query(
+            sessionsRef,
+            where('status', '==', 'closed'),
+            where('startTime', '>=', Timestamp.fromDate(startOfPreviousMonth))
+        );
+
+        const unsubSessions = onSnapshot(sessionsQuery, (snapshot) => {
+            let curLabor = 0;
+            let prvLabor = 0;
+
+            snapshot.forEach((doc) => {
+                const d = doc.data();
+                const ts = d.startTime?.seconds ? d.startTime.seconds * 1000 : 0;
+                const minutes = d.durationMinutes || 0;
+                const rate = d.hourlyRate || 0;
+                const earnings = (minutes * rate) / 60;
+                const isCurrentMonth = ts >= startOfCurrentMonth.getTime();
+                const isPrevMonth = ts >= startOfPreviousMonth.getTime() && ts <= endOfPreviousMonth.getTime();
+
+                if (isCurrentMonth) curLabor += earnings;
+                else if (isPrevMonth) prvLabor += earnings;
+            });
+
+            laborTotal = { current: curLabor, prev: prvLabor };
+            sessionsLoaded = true;
+            recalculate();
+        }, (error) => {
+            console.error('Error fetching work_sessions for dashboard:', error);
+            sessionsLoaded = true;
+            recalculate();
+        });
+
+        return () => {
+            unsubCosts();
+            unsubSessions();
+        };
     }, [companyId]);
 
     return data;

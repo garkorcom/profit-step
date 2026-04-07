@@ -18,11 +18,15 @@ import autoTable from 'jspdf-autotable';
 import { savedEstimateApi } from '../../api/savedEstimateApi';
 import { SavedEstimate } from '../../types/savedEstimate.types';
 import { DEVICES, GEAR, POOL, GENERATOR, LANDSCAPE, WIRE } from './ElectricalEstimatorPage';
+import { Timestamp } from 'firebase/firestore';
+
+/** Minimal device item shape for lookups */
+interface DeviceItem { id: string; name: string; matRate?: number; laborRate?: number; wireLen?: number; wireType?: string }
 
 // Lookup for device data
-const ALL_ITEMS: Record<string, { name: string; matRate?: number; laborRate?: number; wireLen?: number; wireType?: string }> = {};
-Object.values(DEVICES).flat().forEach((d: any) => { ALL_ITEMS[d.id] = d; });
-[GEAR, POOL, GENERATOR, LANDSCAPE, WIRE].forEach((arr: any[]) => arr.forEach(d => { ALL_ITEMS[d.id] = d; }));
+const ALL_ITEMS: Record<string, DeviceItem> = {};
+Object.values(DEVICES).flat().forEach((d) => { ALL_ITEMS[d.id] = d; });
+[GEAR, POOL, GENERATOR, LANDSCAPE, WIRE].forEach((arr) => arr.forEach(d => { ALL_ITEMS[d.id] = d; }));
 
 const CATEGORY_NAMES: Record<string, string> = {
     lighting: '💡 Освещение',
@@ -41,13 +45,13 @@ const CATEGORY_NAMES: Record<string, string> = {
 
 function getCategory(itemId: string): string {
     for (const [cat, items] of Object.entries(DEVICES)) {
-        if ((items as any[]).some(d => d.id === itemId)) return cat;
+        if (items.some(d => d.id === itemId)) return cat;
     }
-    if (GEAR.some((d: any) => d.id === itemId)) return 'gear';
-    if (POOL.some((d: any) => d.id === itemId)) return 'pool';
-    if (GENERATOR.some((d: any) => d.id === itemId)) return 'generator';
-    if (LANDSCAPE.some((d: any) => d.id === itemId)) return 'landscape';
-    if (WIRE.some((d: any) => d.id === itemId)) return 'wire';
+    if (GEAR.some((d) => d.id === itemId)) return 'gear';
+    if (POOL.some((d) => d.id === itemId)) return 'pool';
+    if (GENERATOR.some((d) => d.id === itemId)) return 'generator';
+    if (LANDSCAPE.some((d) => d.id === itemId)) return 'landscape';
+    if (WIRE.some((d) => d.id === itemId)) return 'wire';
     return 'other';
 }
 
@@ -144,7 +148,7 @@ const EstimateDetailPage: React.FC = () => {
     const handleStatusToggle = async () => {
         if (!id || !estimate) return;
         const newStatus = estimate.status === 'draft' ? 'final' : 'draft';
-        await savedEstimateApi.update(id, { status: newStatus } as any);
+        await savedEstimateApi.update(id, { status: newStatus });
         setEstimate(prev => prev ? { ...prev, status: newStatus } : prev);
         setSnackbar(newStatus === 'final' ? 'Проект финализирован ✅' : 'Возвращён в черновик');
     };
@@ -187,7 +191,7 @@ const EstimateDetailPage: React.FC = () => {
                 bodyStyles: { fontSize: 8 },
                 margin: { left: 14 },
             });
-            startY = (pdf as any).lastAutoTable.finalY + 8;
+            startY = (pdf as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 8;
         }
 
         // Totals
@@ -212,9 +216,9 @@ const EstimateDetailPage: React.FC = () => {
     if (loading) return <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px"><CircularProgress /></Box>;
     if (!estimate) return <Box p={4}><Typography>Проект не найден</Typography></Box>;
 
-    const formatDate = (ts: any) => {
+    const formatDate = (ts: Timestamp | Date | string | null | undefined) => {
         if (!ts) return '—';
-        const d = ts.toDate ? ts.toDate() : new Date(ts);
+        const d = ts instanceof Timestamp ? ts.toDate() : new Date(ts as string | number);
         return d.toLocaleDateString('ru-RU', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
     };
 

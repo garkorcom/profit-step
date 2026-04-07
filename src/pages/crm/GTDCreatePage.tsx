@@ -196,6 +196,7 @@ const GTDCreatePage: React.FC = () => {
     useEffect(() => {
         loadClients();
         loadUsers();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     const loadClients = async () => {
@@ -243,6 +244,7 @@ const GTDCreatePage: React.FC = () => {
             const timer = setTimeout(() => analyzeWithAI(formData.title), 500);
             return () => clearTimeout(timer);
         }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [formData.title]);
 
     const analyzeWithAI = async (text: string) => {

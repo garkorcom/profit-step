@@ -16,9 +16,7 @@ import {
 import {
     ExpandMore as ExpandMoreIcon,
     ChevronRight as ChevronRightIcon,
-    Folder as FolderIcon,
-    FolderOpen as FolderOpenIcon,
-} from '@mui/icons-material';
+    } from '@mui/icons-material';
 import { UserProfile, DEPARTMENT_LABELS, Department } from '../../types/user.types';
 import { OrgTreeNode } from '../../types/rbac.types';
 import StatusIndicator from '../common/StatusIndicator';

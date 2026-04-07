@@ -55,7 +55,6 @@ import { useNavigate } from 'react-router-dom';
 import { UserProfile, UserRole, UserStatus, DEPARTMENT_LABELS } from '../../types/user.types';
 import {
   updateUserRole,
-  deactivateUser,
   activateUser,
   adminDeleteUser,
   getCompanyUsersPaginated,
@@ -66,7 +65,6 @@ import InviteUserDialog from '../../components/admin/InviteUserDialog';
 import CostWarningDialog from '../../components/admin/CostWarningDialog';
 import OffboardingWizard from '../../components/admin/OffboardingWizard';
 import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts';
-import { costProtectionBreaker } from '../../utils/circuitBreaker';
 import { formatDistanceToNow } from 'date-fns';
 import { ru } from 'date-fns/locale';
 import { DocumentSnapshot } from 'firebase/firestore';
@@ -104,6 +102,8 @@ interface CachedPage {
   lastDoc: DocumentSnapshot | null;
 }
 
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
 const TeamAdminPage: React.FC = () => {
   const { userProfile } = useAuth();
   const navigate = useNavigate();
@@ -128,7 +128,6 @@ const TeamAdminPage: React.FC = () => {
 
   // Page caching (5 min TTL)
   const [pageCache, setPageCache] = useState<Map<number, CachedPage>>(new Map());
-  const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
   // Cost tracking
   const [totalFirestoreReads, setTotalFirestoreReads] = useState(0);
@@ -183,6 +182,7 @@ const TeamAdminPage: React.FC = () => {
     }, 500); // 500ms debounce
 
     return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchQuery]);
 
   // ============================================
@@ -267,9 +267,9 @@ const TeamAdminPage: React.FC = () => {
         setSessionCost((prev) => prev + result.firestoreReads * costPerRead);
 
         setLoading(false);
-      } catch (err: any) {
+      } catch (err: unknown) {
         console.error('❌ Error loading users:', err);
-        setError('Не удалось загрузить список пользователей: ' + err.message);
+        setError('Не удалось загрузить список пользователей: ' + (err instanceof Error ? err.message : String(err)));
         setLoading(false);
       }
     },
@@ -284,6 +284,7 @@ const TeamAdminPage: React.FC = () => {
     setPageCache(new Map()); // Clear cache
     setPageCursors(new Map()); // Clear cursors
     loadUsers(0, 'initial');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [companyId, statusFilter, debouncedSearch]);
 
   // ============================================
@@ -389,9 +390,9 @@ const TeamAdminPage: React.FC = () => {
       URL.revokeObjectURL(url);
 
       toast.success(`Экспортировано ${allUsers.length} записей`, { id: 'export' });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Export error:', err);
-      toast.error('Ошибка экспорта: ' + err.message, { id: 'export' });
+      toast.error('Ошибка экспорта: ' + (err instanceof Error ? err.message : String(err)), { id: 'export' });
     } finally {
       setExporting(false);
     }
@@ -451,9 +452,9 @@ const TeamAdminPage: React.FC = () => {
         await updateUserRole(userId, newRole);
         // Refresh current page
         loadUsers(page, 'initial');
-      } catch (err: any) {
+      } catch (err: unknown) {
         console.error('Error changing role:', err);
-        setError('Не удалось изменить роль: ' + err.message);
+        setError('Не удалось изменить роль: ' + (err instanceof Error ? err.message : String(err)));
       }
     },
     [userProfile?.id, page, loadUsers]
@@ -475,7 +476,7 @@ const TeamAdminPage: React.FC = () => {
         await activateUser(user.id);
         handleMenuClose();
         loadUsers(page, 'initial');
-      } catch (err: any) {
+      } catch (err: unknown) {
         console.error('Error activating user:', err);
         setError('Не удалось активировать пользователя');
       }
@@ -498,9 +499,9 @@ const TeamAdminPage: React.FC = () => {
       loadUsers(page, 'initial');
       setDeleteDialogOpen(false);
       setUserToDelete(null);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error deleting user:', err);
-      setError('Не удалось удалить пользователя: ' + err.message);
+      setError('Не удалось удалить пользователя: ' + (err instanceof Error ? err.message : String(err)));
       setDeleteDialogOpen(false);
     }
   };
@@ -508,7 +509,7 @@ const TeamAdminPage: React.FC = () => {
   // ============================================
   // UTILITY FUNCTIONS
   // ============================================
-  const formatLastSeen = (lastSeen?: string | any) => {
+  const formatLastSeen = (lastSeen?: import('firebase/firestore').Timestamp | string) => {
     if (!lastSeen) return 'Никогда';
 
     try {
@@ -877,8 +878,8 @@ const TeamAdminPage: React.FC = () => {
                         </TableCell>
 
                         <TableCell sx={{ display: { xs: 'none', lg: 'table-cell' } }}>
-                          {(user as any).referredBy ? (
-                            <Typography variant="body2">{(user as any).referredBy}</Typography>
+                          {user.referredBy ? (
+                            <Typography variant="body2">{user.referredBy}</Typography>
                           ) : (
                             <Typography variant="body2" color="text.disabled">—</Typography>
                           )}

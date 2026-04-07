@@ -46,7 +46,6 @@ import {
     Refresh as RefreshIcon,
     Close as CloseIcon,
     People as PeopleIcon,
-    FavoriteBorder as HeartIcon,
     Warning as WarningIcon,
     CheckCircleOutline as CheckCircleIcon,
     ViewList as ViewListIcon,

@@ -1,5 +1,9 @@
 // Jest setup file
-import '@testing-library/jest-dom';
+const { TextEncoder, TextDecoder } = require('util');
+global.TextEncoder = TextEncoder;
+global.TextDecoder = TextDecoder;
+
+require('@testing-library/jest-dom');
 
 // Mock window.matchMedia
 Object.defineProperty(window, 'matchMedia', {

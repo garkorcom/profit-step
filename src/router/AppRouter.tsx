@@ -52,6 +52,7 @@ const ReconciliationPage = React.lazy(() => import('../pages/crm/ReconciliationP
 const ExpensesBoardPage = React.lazy(() => import('../pages/crm/ExpensesBoardPage'));
 const TasksMasonryPage = React.lazy(() => import('../pages/crm/TasksMasonryPage'));
 const InventoryPage = React.lazy(() => import('../pages/crm/InventoryPage'));
+const InventoryStandalonePage = React.lazy(() => import('../pages/inventory/InventoryPage'));
 const AboutProjectPage = React.lazy(() => import('../pages/AboutProjectPage'));
 const CodeDocumentationPage = React.lazy(() => import('../pages/CodeDocumentationPage'));
 const DevLogCreatePage = React.lazy(() => import('../pages/admin/DevLogCreatePage'));
@@ -212,12 +213,7 @@ const AppRouter: React.FC = () => {
           <Route path="/crm/tasks-masonry" element={<Navigate to="/crm/tasks?view=timeline" replace />} />
           <Route path="/crm/calendar" element={<Navigate to="/crm/tasks?view=calendar" replace />} />
           <Route path="/crm/inbox" element={<Navigate to="/crm/tasks?view=board" replace />} />
-          <Route path="/crm/gtd/:taskId" element={<UnifiedCockpitPage />} />
-          <Route path="/crm/cockpit/:taskId" element={<UnifiedCockpitPage />} />
-          {/* Legacy Inbox route - redirect to GTD */}
-          <Route path="/crm/inbox" element={<Navigate to="/crm/gtd" replace />} />
           <Route path="/crm/shopping" element={<ShoppingPage />} />
-          <Route path="/crm/scheduler" element={<div>Scheduler (Coming Soon)</div>} />
           <Route path="/crm/time-tracking" element={<TimeTrackingPage />} />
           <Route path="/crm/finance" element={<FinancePage />} />
           <Route path="/crm/bank-statements" element={<BankStatementsPage />} />
@@ -226,20 +222,21 @@ const AppRouter: React.FC = () => {
           <Route path="/crm/tasks-masonry" element={<TasksMasonryPage />} />
           <Route path="/crm/costs" element={<CostsReportPage />} />
           <Route path="/crm/inventory" element={<InventoryPage />} />
+          <Route path="/inventory" element={<InventoryStandalonePage />} />
           <Route path="/crm/payroll-periods" element={<PayrollPeriodsPage />} />
           <Route path="/crm/contacts" element={<ContactsPage />} />
 
           {/* Sites Dashboard */}
           <Route path="/sites/:siteId" element={<SiteDashboardPage />} />
-          <Route path="/reports" element={<div>Reports Hub (Coming Soon)</div>} />
+          <Route path="/reports" element={<Navigate to="/ai-reports" replace />} />
           <Route path="/ai-reports" element={<AIReportsPage />} />
           <Route path="/admin/infra-map" element={<InfraMapPage />} />
 
           {/* Legacy Redirects */}
           <Route path="/clients" element={<Navigate to="/crm/clients" replace />} />
-          <Route path="/projects" element={<div>Модуль "Проекты" в разработке</div>} />
-          <Route path="/tasks" element={<div>Модуль "Задачи" в разработке</div>} />
-          <Route path="/documents" element={<div>Модуль "Документы" в разработке</div>} />
+          <Route path="/projects" element={<Navigate to="/estimates" replace />} />
+          <Route path="/tasks" element={<Navigate to="/crm/tasks" replace />} />
+          <Route path="/documents" element={<Navigate to="/admin/dashboard" replace />} />
         </Route>
 
         {/* Dev Map - Public for Dev */}

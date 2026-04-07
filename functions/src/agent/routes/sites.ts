@@ -4,6 +4,7 @@
 import { Router } from 'express';
 
 import { db, FieldValue, logger, logAgentActivity } from '../routeContext';
+import { logAudit, AuditHelpers, extractAuditContext } from '../utils/auditLogger';
 import {
   CreateSiteSchema,
   UpdateSiteSchema,
@@ -29,6 +30,7 @@ router.post('/api/sites', async (req, res, next) => {
       return;
     }
 
+    const siteAuditCtx = extractAuditContext(req);
     const docRef = await db.collection('sites').add({
       clientId: data.clientId,
       name: data.name,
@@ -41,7 +43,8 @@ router.post('/api/sites', async (req, res, next) => {
       type: data.type || null,
       permitNumber: data.permitNumber || null,
       status: data.status,
-      createdBy: req.agentUserId || 'system',
+      createdBy: siteAuditCtx.performedBy,
+      createdBySource: siteAuditCtx.source,
       createdAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
     });
@@ -53,6 +56,8 @@ router.post('/api/sites', async (req, res, next) => {
       endpoint: '/api/sites',
       metadata: { siteId: docRef.id, name: data.name, clientId: data.clientId },
     });
+
+    await logAudit(AuditHelpers.create('site', docRef.id, { name: data.name, clientId: data.clientId, address: data.address }, siteAuditCtx.performedBy, siteAuditCtx.source as any));
 
     res.status(201).json({ siteId: docRef.id, name: data.name });
   } catch (e) {
@@ -119,8 +124,12 @@ router.patch('/api/sites/:id', async (req, res, next) => {
       return;
     }
 
+    const siteUpdateCtx = extractAuditContext(req);
+    const oldSiteData = siteDoc.data()!;
     const updatePayload: Record<string, any> = {
       updatedAt: FieldValue.serverTimestamp(),
+      updatedBy: siteUpdateCtx.performedBy,
+      updatedBySource: siteUpdateCtx.source,
     };
 
     if (data.name !== undefined) updatePayload.name = data.name;
@@ -143,6 +152,16 @@ router.patch('/api/sites/:id', async (req, res, next) => {
       endpoint: `/api/sites/${siteId}`,
       metadata: { siteId, fields: Object.keys(data) },
     });
+
+    const siteFrom: Record<string, any> = {};
+    const siteTo: Record<string, any> = {};
+    for (const key of Object.keys(data)) {
+      if ((data as any)[key] !== undefined) {
+        siteFrom[key] = oldSiteData[key] ?? null;
+        siteTo[key] = (data as any)[key];
+      }
+    }
+    await logAudit(AuditHelpers.update('site', siteId, siteFrom, siteTo, siteUpdateCtx.performedBy, siteUpdateCtx.source as any));
 
     res.json({ siteId, updated: true });
   } catch (e) {

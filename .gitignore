@@ -39,6 +39,9 @@ firebase-debug.log
 *.swo
 *~
 
+# Claude worktrees
+.claude/worktrees/
+
 # Local backups
 backups/
 openclaw-backup-2026-03-18.tar.gz

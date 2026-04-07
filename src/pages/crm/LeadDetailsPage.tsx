@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import {
     Box, Container, Grid, Paper, Typography, TextField, Button,
     MenuItem, Chip, Divider, List, ListItem, ListItemText,
-    Avatar, IconButton, Tabs, Tab, Checkbox, FormControlLabel, FormGroup,
+    IconButton, Tabs, Tab, Checkbox, FormControlLabel, FormGroup,
     CircularProgress
 } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
@@ -13,7 +13,7 @@ import TelegramIcon from '@mui/icons-material/Telegram';
 import EmailIcon from '@mui/icons-material/Email';
 import PhoneIcon from '@mui/icons-material/Phone';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
-import { doc, getDoc, updateDoc, arrayUnion, Timestamp, collection, query, where, orderBy, getDocs, onSnapshot } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, Timestamp, collection, query, orderBy, onSnapshot } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { db, functions } from '../../firebase/firebase';
 

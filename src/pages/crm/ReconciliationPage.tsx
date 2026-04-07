@@ -175,7 +175,7 @@ const ReconciliationPage: React.FC = () => {
     });
   };
 
-  const getApiUrl = () => process.env.REACT_APP_FIREBASE_FUNCTIONS_URL || 'https://us-central1-profit-step.cloudfunctions.net/agentApi';
+  const getApiUrl = () => import.meta.env.VITE_FIREBASE_FUNCTIONS_URL || 'https://us-central1-profit-step.cloudfunctions.net/agentApi';
 
   /** Normalize date to ISO string for API (Firestore Timestamp → string) */
   const normalizeDate = (d: string | Timestamp | any): string => {
@@ -349,7 +349,7 @@ const ReconciliationPage: React.FC = () => {
       const mk = getMonthKey(t.date);
       if (mk) months.add(mk);
     });
-    return Array.from(months).sort().reverse();
+    return Array.from(months).sort().toReversed();
   }, [enrichedTransactions]);
 
   /** Format sum of transactions as compact dollar string */
@@ -586,7 +586,7 @@ const ReconciliationPage: React.FC = () => {
               sx={{ minWidth: 180, bgcolor: 'white' }}
             >
               <MenuItem value="all">📅 Все месяцы ({enrichedTransactions.length})</MenuItem>
-              {availableMonths.map(mk => {
+              {availableMonths.map((mk: string) => {
                 const [y, m] = mk.split('-');
                 const count = enrichedTransactions.filter(t => getMonthKey(t.date) === mk).length;
                 return (

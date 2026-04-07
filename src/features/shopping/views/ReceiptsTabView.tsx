@@ -11,12 +11,12 @@ import React, { useEffect, useState, useMemo } from 'react';
 import {
     Box, Typography, Tabs, Tab, Table, TableBody, TableCell, TableContainer,
     TableHead, TableRow, Paper, Chip, CircularProgress, TextField, MenuItem,
-    Card, CardContent, Grid, Avatar, IconButton, Tooltip, Link
+    Card, CardContent, Grid, Avatar, IconButton, Tooltip
 } from '@mui/material';
 import { DatePicker, LocalizationProvider } from '@mui/x-date-pickers';
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
 import dayjs, { Dayjs } from 'dayjs';
-import { collection, query, where, orderBy, getDocs, Timestamp } from 'firebase/firestore';
+import { collection, query, orderBy, getDocs, Timestamp } from 'firebase/firestore';
 import { db } from '../../../firebase/firebase';
 import ReceiptIcon from '@mui/icons-material/Receipt';
 import PersonIcon from '@mui/icons-material/Person';

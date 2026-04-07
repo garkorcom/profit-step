@@ -23,8 +23,6 @@ import { collection, query, where, orderBy, getDocs, doc, deleteDoc, updateDoc }
 import { db } from '../../firebase/firebase';
 import { GTDTask, PRIORITY_COLORS } from '../../types/gtd.types';
 import GTDEditDialog from '../gtd/GTDEditDialog';
-import { useAuth } from '../../auth/AuthContext';
-
 interface ClientTasksTabProps {
     clientId: string;
     clientName: string;

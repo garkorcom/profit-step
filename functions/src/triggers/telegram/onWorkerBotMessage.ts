@@ -27,6 +27,13 @@ const WORKER_BOT_TOKEN = process.env.WORKER_BOT_TOKEN || '';
 const WORKER_PASSWORD = process.env.WORKER_PASSWORD || '9846' || '9846';
 const ADMIN_GROUP_ID = process.env.ADMIN_GROUP_ID || '';
 
+// Site Checklist Questions
+const CHECKLIST_QUESTIONS = [
+    { key: 'materials', text: '✅ Материалы на объекте?' },
+    { key: 'tools', text: '✅ Инструменты взял?' },
+    { key: 'access', text: '✅ Пропуск/доступ есть?' },
+];
+
 // Types
 interface TelegramUpdate {
     update_id: number;
@@ -180,11 +187,12 @@ async function handleMessage(message: any) {
         const activeSession = await getActiveSession(userId);
         if (activeSession) {
             const data = activeSession.data();
-            if (data.awaitingLocation || data.awaitingStartPhoto || data.awaitingStartVoice
+            if (data.awaitingLocation || data.awaitingChecklist || data.awaitingStartPhoto || data.awaitingStartVoice
                 || data.awaitingEndPhoto || data.awaitingEndVoice || data.awaitingDescription) {
                 // User called menu while stuck. Unblock them from any state.
                 await activeSession.ref.update({
                     awaitingLocation: false,
+                    awaitingChecklist: false,
                     awaitingStartPhoto: false,
                     awaitingStartVoice: false,
                     awaitingEndPhoto: false,
@@ -279,13 +287,13 @@ async function handleMessage(message: any) {
         if (activeSession && activeSession.data().awaitingLocation) {
             await activeSession.ref.update({
                 awaitingLocation: false,
-                awaitingStartPhoto: true,
+                awaitingChecklist: true,
+                checklistStep: 0,
+                checklistAnswers: {},
                 startLocation: null
             });
-            await sendMessage(chatId, "⏩ Локация пропущена.\n\n📸 Теперь отправь **фото** начала работ.", {
-                keyboard: [[{ text: "⏩ Пропустить фото" }]],
-                resize_keyboard: true
-            });
+            await sendMessage(chatId, "⏩ Локация пропущена.\n\n📋 Пройди чеклист перед началом работы:");
+            await sendChecklistQuestion(chatId, 0);
         } else {
             // Normal media skip flow
             await handleSkipMedia(chatId, userId);
@@ -431,7 +439,8 @@ async function handleMessage(message: any) {
         
         if (activeSession) {
             const sessionData = activeSession.data();
-            const isExpectedInput = sessionData.awaitingLocation || 
+            const isExpectedInput = sessionData.awaitingLocation ||
+                                  sessionData.awaitingChecklist ||
                                   sessionData.awaitingStartPhoto ||
                                   sessionData.awaitingEndPhoto ||
                                   sessionData.awaitingStartVoice ||
@@ -518,7 +527,8 @@ async function handleCallbackQuery(query: any) {
         // Allow GTD/Shopping callbacks (they're always valid)
         const isAlwaysValid = data.startsWith('tasks:') || data.startsWith('task_view:') ||
             data.startsWith('task_done:') || data.startsWith('task_move:') ||
-            data.startsWith('shop:') || data.startsWith('draft:') || data === 'tasks_back';
+            data.startsWith('shop:') || data.startsWith('draft:') || data === 'tasks_back' ||
+            data.startsWith('checklist_');
         if (!isAlwaysValid) {
             logger.info(`🔇 Zombie callback rejected from user ${userId}: "${data}" (age: ${Math.floor(Date.now() / 1000) - messageDate}s)`);
             try {
@@ -595,6 +605,10 @@ async function handleCallbackQuery(query: any) {
         else if (data.startsWith('shop:')) {
             await ShoppingHandler.handleShoppingCallback(chatId, userId, data, query.message.message_id);
         }
+        // --- CHECKLIST HANDLERS ---
+        else if (data.startsWith('checklist_')) {
+            await handleChecklistCallback(chatId, userId, data);
+        }
         // --- DRAFT HANDLERS (shopping add confirmation) ---
         else if (data.startsWith('draft:')) {
             const parts = data.split(':');
@@ -630,6 +644,92 @@ async function extendSession(chatId: number, userId: number, minutes: number) {
     });
 
     await sendMessage(chatId, `✅ Reminder snoozed for ${minutes} minutes.`);
+}
+
+// --- Checklist Logic ---
+
+async function sendChecklistQuestion(chatId: number, step: number) {
+    if (step >= CHECKLIST_QUESTIONS.length) return;
+    const question = CHECKLIST_QUESTIONS[step];
+    await sendMessage(chatId, question.text, {
+        inline_keyboard: [
+            [
+                { text: '✅ Да', callback_data: `checklist_yes_${step}` },
+                { text: '❌ Нет', callback_data: `checklist_no_${step}` },
+            ]
+        ]
+    });
+}
+
+async function handleChecklistCallback(chatId: number, userId: number, data: string) {
+    const activeSession = await getActiveSession(userId);
+    if (!activeSession) {
+        await sendMessage(chatId, "⚠️ Нет активной смены.");
+        return;
+    }
+
+    const sessionData = activeSession.data();
+    if (!sessionData.awaitingChecklist) {
+        return;
+    }
+
+    // Parse: checklist_yes_0 or checklist_no_1
+    const parts = data.split('_');
+    const answer = parts[1] === 'yes';
+    const step = parseInt(parts[2]);
+
+    if (step !== sessionData.checklistStep) {
+        // Ignore clicks on already-answered questions
+        return;
+    }
+
+    const questionKey = CHECKLIST_QUESTIONS[step].key;
+    const answers = sessionData.checklistAnswers || {};
+    answers[questionKey] = answer;
+
+    const nextStep = step + 1;
+
+    if (nextStep < CHECKLIST_QUESTIONS.length) {
+        // More questions to ask
+        await activeSession.ref.update({
+            checklistStep: nextStep,
+            checklistAnswers: answers,
+        });
+        await sendChecklistQuestion(chatId, nextStep);
+    } else {
+        // All questions answered — proceed to photo step
+        await activeSession.ref.update({
+            checklistStep: nextStep,
+            checklistAnswers: answers,
+            awaitingChecklist: false,
+            awaitingStartPhoto: true,
+        });
+
+        const allYes = Object.values(answers).every((v: any) => v === true);
+        const summary = CHECKLIST_QUESTIONS.map((q, i) => {
+            const val = answers[q.key];
+            return `${val ? '✅' : '❌'} ${q.text.replace('✅ ', '')}`;
+        }).join('\n');
+
+        await sendMessage(chatId,
+            `📋 *Чеклист завершён:*\n${summary}\n\n` +
+            (allYes ? '👍 Всё готово!\n\n' : '⚠️ Есть нерешённые вопросы. Админ уведомлён.\n\n') +
+            `📸 Теперь отправь **фото** начала работ.`,
+            {
+                keyboard: [[{ text: '⏩ Пропустить фото' }]],
+                resize_keyboard: true
+            }
+        );
+
+        // Notify admin if something is missing
+        if (!allYes) {
+            const employeeName = sessionData.employeeName || 'Сотрудник';
+            const clientName = sessionData.clientName || 'Объект';
+            await sendAdminNotification(
+                `⚠️ *Чеклист:* ${employeeName}\n📍 ${clientName}\n${summary}`
+            );
+        }
+    }
 }
 
 // --- Core Logic ---
@@ -755,6 +855,9 @@ async function initWorkSession(chatId: number, userId: number, clientId: string,
         status: 'active',
         service: serviceName || null, // Create field if exists
         awaitingLocation: true,
+        awaitingChecklist: false,
+        checklistStep: 0,
+        checklistAnswers: {},
         awaitingStartPhoto: false,
         hourlyRate: hourlyRate, // Snapshot rate
         // Phase 5: Task linking (optional, for future "Start from Task")
@@ -763,6 +866,7 @@ async function initWorkSession(chatId: number, userId: number, clientId: string,
     });
 
     await logBotAction(userId, userId, 'session_created', { sessionId: sessionRef.id, clientId, clientName });
+    logger.info(`[${employeeName}] ▶️ Work Started — ${clientName}`);
 
     // ─── hourlyRate = 0 warning ───
     if (!hourlyRate) {
@@ -779,7 +883,7 @@ async function initWorkSession(chatId: number, userId: number, clientId: string,
             resize_keyboard: true
         }
     );
-    await sendAdminNotification(`▶️ *Work Started*\n👤 ${employeeName}\n📍 ${clientName}`);
+    await sendAdminNotification(`👤 *${employeeName}:*\n▶️ *Work Started*\n📍 ${clientName}`);
 }
 
 async function handleLocation(chatId: number, userId: number, location: any) {
@@ -833,7 +937,7 @@ async function handleLocation(chatId: number, userId: number, location: any) {
                 { remove_keyboard: true }
             );
 
-            const snapshot = await db.collection('clients').orderBy('createdAt', 'desc').limit(20).get();
+            const snapshot = await db.collection('clients').orderBy('name', 'asc').limit(500).get();
             if (!snapshot.empty) {
                 const inlineKeyboard: any[][] = [];
                 snapshot.docs.forEach(doc => {
@@ -1034,7 +1138,10 @@ async function handleLocationConfirmStart(chatId: number, userId: number) {
         service: serviceName || null,
         startLocation: location,
         awaitingLocation: false,
-        awaitingStartPhoto: true,
+        awaitingChecklist: true,
+        checklistStep: 0,
+        checklistAnswers: {},
+        awaitingStartPhoto: false,
         hourlyRate: hourlyRate,
         taskId: null,
         taskTitle: null
@@ -1050,14 +1157,13 @@ async function handleLocationConfirmStart(chatId: number, userId: number) {
     await sendMessage(chatId,
         `✅ *Смена начата!*\n\n` +
         `🏢 Объект: *${clientName}${serviceName ? ' - ' + serviceName : ''}*\n\n` +
-        `📸 Пожалуйста, отправь **фото** начала работ.`,
-        {
-            keyboard: [[{ text: '⏩ Пропустить фото' }]],
-            resize_keyboard: true
-        }
+        `📋 Пройди чеклист перед началом работы:`
     );
 
-    await sendAdminNotification(`▶️ *Work Started (Location)*\n👤 ${employeeName}\n📍 ${clientName}`);
+    // Send first checklist question
+    await sendChecklistQuestion(chatId, 0);
+
+    await sendAdminNotification(`👤 *${employeeName}:*\n▶️ *Work Started (Location)*\n📍 ${clientName}`);
 }
 
 /**
@@ -1111,7 +1217,7 @@ async function handleLocationCancelFinish(chatId: number, userId: number) {
  * User wants to pick a different project than auto-detected.
  */
 async function handleLocationPickOther(chatId: number, userId: number) {
-    const snapshot = await db.collection('clients').orderBy('createdAt', 'desc').limit(20).get();
+    const snapshot = await db.collection('clients').orderBy('name', 'asc').limit(500).get();
 
     if (snapshot.empty) {
         await sendMessage(chatId, "Клиенты не найдены.");
@@ -1201,7 +1307,10 @@ async function handleLocationNewClient(chatId: number, userId: number, clientId:
         status: 'active',
         startLocation: location,
         awaitingLocation: false,
-        awaitingStartPhoto: true,
+        awaitingChecklist: true,
+        checklistStep: 0,
+        checklistAnswers: {},
+        awaitingStartPhoto: false,
         hourlyRate: hourlyRate,
         taskId: null,
         taskTitle: null
@@ -1218,14 +1327,11 @@ async function handleLocationNewClient(chatId: number, userId: number, clientId:
         `✅ *Смена начата!*\n\n` +
         `🏢 Объект: *${clientName}*\n` +
         `📍 Координаты объекта сохранены в базу.\n\n` +
-        `📸 Пожалуйста, отправь **фото** начала работ.`,
-        {
-            keyboard: [[{ text: '⏩ Пропустить фото' }]],
-            resize_keyboard: true
-        }
+        `📋 Пройди чеклист перед началом работы:`
     );
+    await sendChecklistQuestion(chatId, 0);
 
-    await sendAdminNotification(`▶️ *Work Started (New DB Location)*\n👤 ${employeeName}\n📍 ${clientName}`);
+    await sendAdminNotification(`👤 *${employeeName}:*\n▶️ *Work Started (New DB Location)*\n📍 ${clientName}`);
 }
 
 async function pauseWorkSession(chatId: number, userId: number) {
@@ -1566,7 +1672,40 @@ async function handleMediaUpload(chatId: number, userId: number, message: any) {
         if (message.media_group_id) {
             return;
         }
-        await sendMessage(chatId, "I'm not expecting media right now.");
+
+        // Task 2: Mid-session photo — save to Firebase Storage
+        if (message.photo && sessionData.clientId) {
+            const largestPhoto = message.photo[message.photo.length - 1];
+            const photoFileId = largestPhoto.file_id;
+            const storagePath = `clients/${sessionData.clientId}/photos/${activeSession.id}/${Date.now()}.jpg`;
+            const url = await saveTelegramFile(photoFileId, storagePath);
+
+            if (url) {
+                const currentPhotos: string[] = sessionData.photoUrls || [];
+                currentPhotos.push(url);
+                await activeSession.ref.update({ photoUrls: currentPhotos });
+
+                // Also log in activity_logs for time-lapse
+                if (sessionData.clientId !== 'no_project') {
+                    await db.collection('activity_logs').add({
+                        companyId: sessionData.companyId || 'system',
+                        projectId: sessionData.clientId,
+                        type: 'photo',
+                        content: 'Фото с объекта (mid-session)',
+                        mediaUrl: url,
+                        performedBy: sessionData.employeeName || 'Сотрудник',
+                        performedAt: admin.firestore.FieldValue.serverTimestamp(),
+                        isInternalOnly: false
+                    });
+                }
+
+                await sendMessage(chatId, "📸 Фото сохранено");
+            } else {
+                await sendMessage(chatId, "⚠️ Не удалось сохранить фото. Попробуй ещё раз.");
+            }
+        } else {
+            await sendMessage(chatId, "I'm not expecting media right now.");
+        }
     }
 }
 
@@ -1578,7 +1717,7 @@ async function handleCancel(chatId: number, userId: number) {
     if (activeSession) {
         const data = activeSession.data();
         // Only cancel if in a setup phase or stuck
-        if (data.awaitingLocation || data.awaitingStartPhoto) {
+        if (data.awaitingLocation || data.awaitingChecklist || data.awaitingStartPhoto) {
             await activeSession.ref.delete();
             await sendMessage(chatId, "✅ Сессия отменена.", { remove_keyboard: true });
         } else if (data.awaitingEndLocation || data.awaitingEndPhoto || data.awaitingEndVoice) {
@@ -1622,7 +1761,10 @@ async function handleText(chatId: number, userId: number, text: string) {
             status: 'active',
             startLocation: location,
             awaitingLocation: false,
-            awaitingStartPhoto: true,
+            awaitingChecklist: true,
+            checklistStep: 0,
+            checklistAnswers: {},
+            awaitingStartPhoto: false,
             hourlyRate: hourlyRate,
             taskId: null,
             taskTitle: null
@@ -1630,10 +1772,10 @@ async function handleText(chatId: number, userId: number, text: string) {
 
         await pendingStartRef.delete();
         await sendMessage(chatId,
-            `✅ *Смена начата!*\n\n🏢 Объект: *${text}* (ручной ввод)\n\n📸 Отправь **фото** начала работ.`,
-            { keyboard: [[{ text: '⏩ Пропустить фото' }]], resize_keyboard: true }
+            `✅ *Смена начата!*\n\n🏢 Объект: *${text}* (ручной ввод)\n\n📋 Пройди чеклист перед началом работы:`
         );
-        await sendAdminNotification(`▶️ *Work Started (Manual)*\n👤 ${employeeName}\n📍 ${text}`);
+        await sendChecklistQuestion(chatId, 0);
+        await sendAdminNotification(`👤 *${employeeName}:*\n▶️ *Work Started (Manual)*\n📍 ${text}`);
         return;
     }
 
@@ -1893,9 +2035,11 @@ async function finalizeSession(chatId: number, userId: number, activeSession: an
     const finishGreeting = finishHour >= 17 ? '🌙 Отличная работа!' : '🏁 Смена завершена!';
     await sendMessage(chatId, `${finishGreeting}\n\n⏱ Сессия: ${Math.floor(totalMinutes / 60)}ч ${totalMinutes % 60}мин\n💰 Заработано: $${sessionEarnings}\n💵 Ставка: $${hourlyRate}/ч\n📅 *За сегодня: ${dailyHours}ч ${dailyMins}мин ($${dailyStats.earnings.toFixed(2)})*\n📍 Объект: ${sessionData.clientName}\n📝 ${description}${extraMessage}\n\n${balanceInfo}`);
 
+    logger.info(`[${sessionData.employeeName}] 🏁 Work Finished — ${sessionData.clientName} (${Math.floor(totalMinutes / 60)}h ${totalMinutes % 60}m, $${sessionEarnings})`);
+
     // Fix 8 (Wave 2): Sanitize user-generated text in admin notifications
     const sanitizedDesc = safeDescription.replace(/[*_`\[\]()~>#+\-=|{}.!]/g, '').substring(0, 500);
-    await sendAdminNotification(`🏁 *Work Finished*\n👤 ${sessionData.employeeName}\n📍 ${sessionData.clientName}\n⏱ ${Math.floor(totalMinutes / 60)}h ${totalMinutes % 60}m\n💵 Earned: $${sessionEarnings}\n📝 ${sanitizedDesc}`);
+    await sendAdminNotification(`👤 *${sessionData.employeeName}:*\n🏁 *Work Finished*\n📍 ${sessionData.clientName}\n⏱ ${Math.floor(totalMinutes / 60)}h ${totalMinutes % 60}m\n💵 Earned: $${sessionEarnings}\n📝 ${sanitizedDesc}`);
 
     // Return to main menu after finishing
     await sendMainMenu(chatId, userId);
@@ -2160,7 +2304,7 @@ ${activeTasksContext}
 
             // Notify admin if issues detected
             if (aiData.issues) {
-                await sendAdminNotification(`⚠️ *Проблема от рабочего*\n👤 ${sessionData.employeeName}\n📍 ${sessionData.clientName}\n🔴 ${aiData.issues}`);
+                await sendAdminNotification(`👤 *${sessionData.employeeName}:*\n⚠️ *Проблема от рабочего*\n📍 ${sessionData.clientName}\n🔴 ${aiData.issues}`);
             }
 
             let responseMsg = `✅ Записал: *${aiData.summary}*`;
@@ -2572,7 +2716,7 @@ async function autoFinishActiveSession(activeSession: FirebaseFirestore.QueryDoc
     });
 
     // Notify admin
-    await sendAdminNotification(`🔄 *Auto-Switch*\n👤 ${sessionData.employeeName}\n📍 Closed: ${sessionData.clientName}\n⏱ ${Math.floor(totalMinutes / 60)}h ${totalMinutes % 60}m\n💵 Earned: $${sessionEarnings}`);
+    await sendAdminNotification(`👤 *${sessionData.employeeName}:*\n🔄 *Auto-Switch*\n📍 Closed: ${sessionData.clientName}\n⏱ ${Math.floor(totalMinutes / 60)}h ${totalMinutes % 60}m\n💵 Earned: $${sessionEarnings}`);
 
     return `⚠️ Previous session closed (${sessionData.clientName}).\n⏱ ${Math.floor(totalMinutes / 60)}h ${totalMinutes % 60}m  |  💵 Earned: $${sessionEarnings}\n\n`;
 }

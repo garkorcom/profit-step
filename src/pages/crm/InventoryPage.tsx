@@ -24,14 +24,12 @@ import {
     InventoryCategory,
     InventoryUnit,
     TransactionType,
-    LocationType,
     INVENTORY_CATEGORY_LABELS,
     INVENTORY_UNITS,
     TRANSACTION_TYPE_LABELS,
     LOCATION_TYPE_LABELS,
     INBOUND_TYPES,
-    OUTBOUND_TYPES,
-} from '../../types/inventory.types';
+    } from '../../types/inventory.types';
 import {
     subscribeCatalogItems,
     subscribeTransactions,

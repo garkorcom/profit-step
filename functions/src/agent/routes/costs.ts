@@ -5,6 +5,7 @@ import { Router } from 'express';
 import * as admin from 'firebase-admin';
 
 import { db, FieldValue, Timestamp, logger, logAgentActivity, fuzzySearchClient, COST_CATEGORY_LABELS } from '../routeContext';
+import { logAudit, AuditHelpers, extractAuditContext } from '../utils/auditLogger';
 import {
   CreateCostSchema,
   ListCostsQuerySchema,
@@ -49,6 +50,7 @@ router.post('/api/costs', async (req, res, next) => {
     const effectiveAmount = data.category === 'reimbursement'
       ? -Math.abs(data.amount) : data.amount;
 
+    const costAuditCtx = extractAuditContext(req);
     const docRef = await db.collection('costs').add({
       userId: req.agentUserId,
       userName: req.agentUserName,
@@ -62,7 +64,9 @@ router.post('/api/costs', async (req, res, next) => {
       receiptPhotoUrl: null,
       voiceNoteUrl: null,
       status: 'confirmed',
-      source: 'openclaw',
+      source: costAuditCtx.source || 'openclaw',
+      createdBy: costAuditCtx.performedBy,
+      createdBySource: costAuditCtx.source,
       taskId: data.taskId || null,
       projectId: resolvedProjectId,
       siteId: data.siteId || null,
@@ -85,6 +89,8 @@ router.post('/api/costs', async (req, res, next) => {
       endpoint: '/api/costs',
       metadata: { costId: docRef.id, category: data.category, amount: effectiveAmount },
     });
+
+    await logAudit(AuditHelpers.create('cost', docRef.id, { category: data.category, amount: effectiveAmount, clientId: data.clientId }, costAuditCtx.performedBy, costAuditCtx.source as any));
 
     res.status(201).json({ costId: docRef.id });
   } catch (e) {
@@ -218,10 +224,13 @@ router.delete('/api/costs/:id', async (req, res, next) => {
       return;
     }
 
+    const voidAuditCtx = extractAuditContext(req);
     await costRef.update({
       status: 'voided',
       voidedAt: FieldValue.serverTimestamp(),
       voidedBy: req.agentUserId,
+      updatedBy: voidAuditCtx.performedBy,
+      updatedBySource: voidAuditCtx.source,
     });
 
     logger.info('💰 costs:voided', { costId });
@@ -231,6 +240,8 @@ router.delete('/api/costs/:id', async (req, res, next) => {
       endpoint: `/api/costs/${costId}`,
       metadata: { costId, previousAmount: costData.amount, category: costData.category },
     });
+
+    await logAudit(AuditHelpers.delete('cost', costId, { amount: costData.amount, category: costData.category }, voidAuditCtx.performedBy, voidAuditCtx.source as any));
 
     res.json({ costId, voided: true, message: 'Расход удалён (voided)' });
   } catch (e) {

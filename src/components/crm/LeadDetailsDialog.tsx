@@ -249,7 +249,7 @@ const LeadDetailsDialog: React.FC<LeadDetailsDialogProps> = ({ open, onClose, le
 
                     <List sx={{ maxHeight: 200, overflow: 'auto', bgcolor: '#f9fafb', borderRadius: 1 }}>
                         {lead.notes && lead.notes.length > 0 ? (
-                            [...lead.notes].reverse().map((note, index) => (
+                            [...lead.notes].toReversed().map((note, index) => (
                                 <ListItem key={index} alignItems="flex-start" sx={{ py: 1 }}>
                                     <ListItemText
                                         primary={note.text}

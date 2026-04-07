@@ -34,7 +34,7 @@ export async function adminResetPassword(
     targetUserId: string,
     newPassword: string
 ): Promise<ManageUserResponse> {
-    const fn = httpsCallable<any, ManageUserResponse>(functions, 'admin_manageUser');
+    const fn = httpsCallable<{ action: string; targetUserId: string; newPassword: string }, ManageUserResponse>(functions, 'admin_manageUser');
     const result = await fn({ action: 'resetPassword', targetUserId, newPassword });
     return result.data;
 }
@@ -43,7 +43,7 @@ export async function adminResetPassword(
  * Принудительный logout (отзыв refresh tokens)
  */
 export async function adminForceLogout(targetUserId: string): Promise<ManageUserResponse> {
-    const fn = httpsCallable<any, ManageUserResponse>(functions, 'admin_manageUser');
+    const fn = httpsCallable<{ action: string; targetUserId: string }, ManageUserResponse>(functions, 'admin_manageUser');
     const result = await fn({ action: 'forceLogout', targetUserId });
     return result.data;
 }
@@ -55,7 +55,7 @@ export async function adminChangeEmail(
     targetUserId: string,
     newEmail: string
 ): Promise<ManageUserResponse> {
-    const fn = httpsCallable<any, ManageUserResponse>(functions, 'admin_manageUser');
+    const fn = httpsCallable<{ action: string; targetUserId: string; newEmail: string }, ManageUserResponse>(functions, 'admin_manageUser');
     const result = await fn({ action: 'changeEmail', targetUserId, newEmail });
     return result.data;
 }
@@ -67,7 +67,7 @@ export async function adminSendPasswordViaTelegram(
     targetUserId: string,
     newPassword: string
 ): Promise<ManageUserResponse> {
-    const fn = httpsCallable<any, ManageUserResponse>(functions, 'admin_manageUser');
+    const fn = httpsCallable<{ action: string; targetUserId: string; newPassword: string }, ManageUserResponse>(functions, 'admin_manageUser');
     const result = await fn({ action: 'sendPasswordViaTelegram', targetUserId, newPassword });
     return result.data;
 }
@@ -128,10 +128,10 @@ export interface MonthlyStats {
 }
 
 // Utility: extract Date from Timestamp | string | Date
-function toDate(val: any): Date {
+function toDate(val: Timestamp | string | Date | null | undefined): Date {
     if (!val) return new Date(0);
     if (val instanceof Timestamp) return val.toDate();
-    if (val.toDate) return val.toDate();
+    if (val instanceof Date) return val;
     return new Date(val);
 }
 

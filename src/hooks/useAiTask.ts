@@ -62,7 +62,7 @@ export interface AiGenerateResult {
 export interface AiGenerateError {
     success: false;
     error: string;
-    zodErrors?: any[];
+    zodErrors?: Array<Record<string, unknown>>;
     fallbackToManual: boolean;
 }
 
@@ -78,8 +78,8 @@ export type AiTaskStatus =
 
 export interface UserEdit {
     field: string;
-    aiValue: any;
-    userValue: any;
+    aiValue: AiTaskDraft[keyof AiTaskDraft] | undefined;
+    userValue: AiTaskDraft[keyof AiTaskDraft];
 }
 
 // ============================================================
@@ -108,7 +108,7 @@ function getClientDatetime(): string {
 
 const functionsEast = getFunctions(app, 'us-east1');
 
-if (process.env.REACT_APP_USE_EMULATORS === 'true') {
+if (import.meta.env.VITE_USE_EMULATORS === 'true') {
     connectFunctionsEmulator(functionsEast, '127.0.0.1', 5001);
 }
 
@@ -143,7 +143,7 @@ export function useAiTask() {
             setUserEdits([]);
 
             try {
-                const callable = httpsCallable<any, AiResult>(
+                const callable = httpsCallable<{ userInput: string; projectId: string; inputMethod: string; clientDatetime: string }, AiResult>(
                     functionsEast,
                     'generateAiTask'
                 );
@@ -169,9 +169,9 @@ export function useAiTask() {
                     setStatus('error');
                     // If fallbackToManual, the UI should show manual form
                 }
-            } catch (err: any) {
+            } catch (err: unknown) {
                 console.error('generateAiTask failed:', err);
-                setError(err.message || 'AI generation failed');
+                setError(err instanceof Error ? err.message : 'AI generation failed');
                 setStatus('error');
             }
         },
@@ -180,12 +180,12 @@ export function useAiTask() {
 
     // --- Edit draft field (tracks user changes for audit) ---
     const editDraft = useCallback(
-        (field: keyof AiTaskDraft, value: any) => {
+        (field: keyof AiTaskDraft, value: AiTaskDraft[keyof AiTaskDraft]) => {
             if (!draft) return;
 
             // Track the edit for audit log
             const aiValue = originalDraftRef.current
-                ? (originalDraftRef.current as any)[field]
+                ? originalDraftRef.current[field]
                 : undefined;
 
             if (JSON.stringify(aiValue) !== JSON.stringify(value)) {
@@ -219,9 +219,9 @@ export function useAiTask() {
 
                 setStatus('confirmed');
                 return data;
-            } catch (err: any) {
+            } catch (err: unknown) {
                 console.error('confirmAiTask failed:', err);
-                setError(err.message || 'Failed to save task');
+                setError(err instanceof Error ? err.message : 'Failed to save task');
                 setStatus('error');
             }
         },

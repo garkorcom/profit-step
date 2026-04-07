@@ -125,9 +125,9 @@ export interface TaskHistoryEvent {
     /** Имя пользователя */
     userName?: string;
     /** Временная метка */
-    timestamp: any; // Firestore Timestamp
+    timestamp: Timestamp;
     /** Дополнительные метаданные */
-    meta?: Record<string, any>;
+    meta?: Record<string, unknown>;
 }
 
 /** Метод оплаты */

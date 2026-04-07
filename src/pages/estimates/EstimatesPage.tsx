@@ -21,7 +21,7 @@ import EditIcon from '@mui/icons-material/Edit';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import { useAuth } from '../../auth/AuthContext';
 import { estimatesApi } from '../../api/estimatesApi';
-import { Estimate, EstimateStatus } from '../../types/estimate.types';
+import { Estimate } from '../../types/estimate.types';
 
 const statusColors: Record<string, 'default' | 'primary' | 'secondary' | 'error' | 'info' | 'success' | 'warning'> = {
     draft: 'default',
@@ -85,6 +85,7 @@ const EstimatesPage: React.FC = () => {
                         <TableRow>
                             <TableCell>Number</TableCell>
                             <TableCell>Client</TableCell>
+                            <TableCell>Type</TableCell>
                             <TableCell>Date</TableCell>
                             <TableCell align="right">Total</TableCell>
                             <TableCell align="center">Status</TableCell>
@@ -94,7 +95,7 @@ const EstimatesPage: React.FC = () => {
                     <TableBody>
                         {estimates.length === 0 ? (
                             <TableRow>
-                                <TableCell colSpan={6} align="center">
+                                <TableCell colSpan={7} align="center">
                                     <Typography variant="body1" sx={{ py: 3, color: 'text.secondary' }}>
                                         No estimates found. Create your first one!
                                     </Typography>
@@ -105,6 +106,14 @@ const EstimatesPage: React.FC = () => {
                                 <TableRow key={estimate.id} hover>
                                     <TableCell>{estimate.number}</TableCell>
                                     <TableCell>{estimate.clientName}</TableCell>
+                                    <TableCell>
+                                        <Chip
+                                            label={estimate.estimateType === 'internal' ? 'Internal' : 'Commercial'}
+                                            color={estimate.estimateType === 'internal' ? 'default' : 'primary'}
+                                            size="small"
+                                            variant="outlined"
+                                        />
+                                    </TableCell>
                                     <TableCell>
                                         {estimate.createdAt?.toDate().toLocaleDateString()}
                                     </TableCell>

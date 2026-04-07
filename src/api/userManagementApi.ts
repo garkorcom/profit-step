@@ -12,7 +12,6 @@ import {
   deleteDoc,
   Timestamp,
   DocumentSnapshot,
-  QueryDocumentSnapshot,
   orderBy,
   limit,
   startAfter,
@@ -271,7 +270,7 @@ export const adminDeleteUser = async (userIdToDelete: string): Promise<{ success
     return result.data as { success: boolean; message: string };
   } catch (error: any) {
     console.error('Error calling adminDeleteUser function:', error);
-    throw new Error(error.message || 'Не удалось удалить пользователя');
+    throw new Error(error.message || 'Не удалось удалить пользователя', { cause: error });
   }
 };
 
@@ -322,7 +321,7 @@ export const inviteUser = async (
     };
   } catch (error: any) {
     console.error('Error calling inviteUser function:', error);
-    throw new Error(error.message || 'Не удалось пригласить пользователя');
+    throw new Error(error.message || 'Не удалось пригласить пользователя', { cause: error });
   }
 };
 

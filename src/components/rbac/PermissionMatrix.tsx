@@ -18,7 +18,6 @@ import {
     MenuItem,
     Checkbox,
     Typography,
-    Box,
     Chip,
 } from '@mui/material';
 import {

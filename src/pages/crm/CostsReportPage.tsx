@@ -55,6 +55,7 @@ const CostsReportPage: React.FC = () => {
 
     useEffect(() => {
         fetchCosts();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [startDate, endDate]);
 
     const fetchCosts = async () => {

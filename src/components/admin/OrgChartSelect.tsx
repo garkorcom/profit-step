@@ -28,8 +28,6 @@ import { db } from '../../firebase/firebase';
 import { useAuth } from '../../auth/AuthContext';
 import { UserProfile } from '../../types/user.types';
 import { buildOrgTree, flattenOrgTree } from '../../utils/hierarchyUtils';
-import { OrgTreeNode } from '../../types/rbac.types';
-
 interface OrgChartSelectProps {
     /** Выбранный пользователь ID */
     value: string;

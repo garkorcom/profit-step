@@ -13,7 +13,13 @@ import {
   ListItem,
   ListItemText,
   Chip,
-  Button
+  Button,
+  MenuItem,
+  Select,
+  FormControl,
+  InputLabel,
+  Avatar,
+  SelectChangeEvent
 } from '@mui/material';
 import {
   People as PeopleIcon,
@@ -26,12 +32,15 @@ import {
   AccessTime as AccessTimeIcon,
   MenuBook as MenuBookIcon,
   Edit as EditIcon,
-  SmartToy as SmartToyIcon
+  SmartToy as SmartToyIcon,
+  Warning as WarningIcon,
+  FiberManualRecord as FiberManualRecordIcon
 } from '@mui/icons-material';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { useAuth } from '../../auth/AuthContext';
 import { Link, useNavigate } from 'react-router-dom';
 import { KPICard } from '../../components/dashboard/KPICard';
-import { collection, query, where, getDocs, Timestamp } from 'firebase/firestore';
+import { collection, query, where, getDocs, Timestamp, onSnapshot } from 'firebase/firestore';
 import { db } from '../../firebase/firebase';
 
 import { useDashboardFinance } from '../../hooks/dashboard/useDashboardFinance';
@@ -90,6 +99,21 @@ interface MarketingStats {
   conversionRate: string;
 }
 
+interface MonthlyPnL {
+  month: string;
+  income: number;
+  expenses: number;
+  profit: number;
+  client?: string;
+}
+
+interface ActiveEmployee {
+  id: string;
+  employeeName: string;
+  startedAt: Date;
+  projectName?: string;
+}
+
 /**
  * Company Admin Dashboard
  * Дашборд для управления командой компании
@@ -112,6 +136,13 @@ const CompanyDashboard: React.FC = () => {
   });
   const [recentDeals, setRecentDeals] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // --- New V2+ State ---
+  const [monthlyPnL, setMonthlyPnL] = useState<MonthlyPnL[]>([]);
+  const [pnlLoading, setPnlLoading] = useState(true);
+  const [activeEmployees, setActiveEmployees] = useState<ActiveEmployee[]>([]);
+  const [clientFilter, setClientFilter] = useState<string>('all');
+  const [availableClients, setAvailableClients] = useState<string[]>([]);
 
   // --- V2 Dashboard Hooks ---
   const financeData = useDashboardFinance(userProfile?.companyId);
@@ -244,6 +275,134 @@ const CompanyDashboard: React.FC = () => {
     loadTeamStats();
   }, [userProfile?.companyId]);
 
+  // --- P&L Monthly Data from costs + work_sessions ---
+  useEffect(() => {
+    const loadMonthlyPnL = async () => {
+      if (!userProfile?.companyId) return;
+      try {
+        setPnlLoading(true);
+        const now = new Date();
+        const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 5, 1);
+
+        const [costsSnap, sessionsSnap] = await Promise.all([
+          getDocs(query(
+            collection(db, 'costs'),
+            where('createdAt', '>=', Timestamp.fromDate(sixMonthsAgo))
+          )),
+          getDocs(query(
+            collection(db, 'work_sessions'),
+            where('status', '==', 'closed'),
+            where('startTime', '>=', Timestamp.fromDate(sixMonthsAgo))
+          )),
+        ]);
+
+        const monthMap: Record<string, { income: number; expenses: number; labor: number; clients: Set<string> }> = {};
+        const clientSet = new Set<string>();
+
+        // Initialize last 6 months
+        for (let i = 5; i >= 0; i--) {
+          const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+          const key = d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+          monthMap[key] = { income: 0, expenses: 0, labor: 0, clients: new Set() };
+        }
+
+        // Income & Expenses from costs
+        costsSnap.forEach((doc) => {
+          const data = doc.data();
+          const costDate = data.createdAt?.toDate ? data.createdAt.toDate() : new Date(data.createdAt);
+          const key = costDate.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+          const client = data.clientName || 'Unknown';
+
+          if (client !== 'Unknown') clientSet.add(client);
+
+          if (monthMap[key]) {
+            monthMap[key].clients.add(client);
+            const amount = Math.abs(data.amount || 0);
+            if (data.type === 'income') {
+              if (clientFilter === 'all' || client === clientFilter) {
+                monthMap[key].income += amount;
+              }
+            } else if (data.type === 'expense') {
+              if (clientFilter === 'all' || client === clientFilter) {
+                monthMap[key].expenses += amount;
+              }
+            }
+          }
+        });
+
+        // Labor from work_sessions (closed, minutes * hourlyRate / 60)
+        sessionsSnap.forEach((doc) => {
+          const data = doc.data();
+          const sessDate = data.startTime?.toDate ? data.startTime.toDate() : new Date(data.startTime);
+          const key = sessDate.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+          const client = data.clientName || 'Unknown';
+
+          if (client !== 'Unknown') clientSet.add(client);
+
+          if (monthMap[key]) {
+            const minutes = data.durationMinutes || 0;
+            const rate = data.hourlyRate || 0;
+            const earnings = (minutes * rate) / 60;
+            if (clientFilter === 'all' || client === clientFilter) {
+              monthMap[key].labor += earnings;
+            }
+          }
+        });
+
+        const pnlData: MonthlyPnL[] = Object.entries(monthMap).map(([month, values]) => ({
+          month,
+          income: Math.round(values.income),
+          expenses: Math.round(values.expenses + values.labor),
+          profit: Math.round(values.income - values.expenses - values.labor),
+        }));
+
+        setMonthlyPnL(pnlData);
+        setAvailableClients(Array.from(clientSet).sort());
+      } catch (error) {
+        console.error('Error loading P&L data:', error);
+      } finally {
+        setPnlLoading(false);
+      }
+    };
+
+    loadMonthlyPnL();
+  }, [userProfile?.companyId, clientFilter]);
+
+  // --- Active Employees Real-Time (onSnapshot) ---
+  useEffect(() => {
+    if (!userProfile?.companyId) return;
+
+    const sessionsRef = collection(db, 'work_sessions');
+    const activeQuery = query(sessionsRef, where('status', '==', 'active'));
+
+    const unsubscribe = onSnapshot(activeQuery, (snapshot) => {
+      const employees: ActiveEmployee[] = snapshot.docs.map((doc) => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          employeeName: data.employeeName || data.userName || 'Unknown',
+          startedAt: data.startedAt?.toDate ? data.startedAt.toDate() : new Date(data.startedAt),
+          projectName: data.projectName || data.project || undefined,
+        };
+      });
+      setActiveEmployees(employees);
+    }, (error) => {
+      console.error('Error listening to active sessions:', error);
+    });
+
+    return () => unsubscribe();
+  }, [userProfile?.companyId]);
+
+  // Helper: format elapsed time
+  const formatElapsed = (startDate: Date): string => {
+    const now = new Date();
+    const diffMs = now.getTime() - startDate.getTime();
+    const hours = Math.floor(diffMs / (1000 * 60 * 60));
+    const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+    if (hours > 0) return `${hours}h ${minutes}m`;
+    return `${minutes}m`;
+  };
+
   if (!isAdmin) {
     return (
       <Container maxWidth="lg" sx={{ mt: 4 }}>
@@ -334,6 +493,163 @@ const CompanyDashboard: React.FC = () => {
       <Box sx={{ mb: 4 }}>
         <ActivityFeedWidget data={activityData} filterType={activityFilter} onFilterChange={setActivityFilter} />
       </Box>
+
+      {/* --- P&L CHART SECTION --- */}
+      <Paper sx={{ p: { xs: 2, sm: 3 }, mb: 4 }}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2, flexWrap: 'wrap', gap: 2 }}>
+          <Typography variant="h6" sx={{ fontSize: { xs: '1.125rem', sm: '1.25rem' } }}>
+            P&L - Income vs Expenses (Last 6 Months)
+          </Typography>
+          <FormControl size="small" sx={{ minWidth: 200 }}>
+            <InputLabel id="client-filter-label">Filter by Client</InputLabel>
+            <Select
+              labelId="client-filter-label"
+              value={clientFilter}
+              label="Filter by Client"
+              onChange={(e: SelectChangeEvent) => setClientFilter(e.target.value)}
+            >
+              <MenuItem value="all">All Clients</MenuItem>
+              {availableClients.map((client) => (
+                <MenuItem key={client} value={client}>{client}</MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+        </Box>
+        {pnlLoading ? (
+          <Box sx={{ display: 'flex', justifyContent: 'center', py: 6 }}>
+            <CircularProgress />
+          </Box>
+        ) : (
+          <ResponsiveContainer width="100%" height={350}>
+            <BarChart data={monthlyPnL} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="month" />
+              <YAxis />
+              <Tooltip
+                formatter={(value: number) => `$${value.toLocaleString()}`}
+              />
+              <Legend />
+              <Bar dataKey="income" name="Income" fill="#4caf50" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="expenses" name="Expenses" fill="#f44336" radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        )}
+        {!pnlLoading && monthlyPnL.length > 0 && (
+          <Box sx={{ display: 'flex', gap: 3, mt: 2, flexWrap: 'wrap' }}>
+            {(() => {
+              const totalIncome = monthlyPnL.reduce((s, m) => s + m.income, 0);
+              const totalExpenses = monthlyPnL.reduce((s, m) => s + m.expenses, 0);
+              const totalProfit = totalIncome - totalExpenses;
+              return (
+                <>
+                  <Chip label={`Total Income: $${totalIncome.toLocaleString()}`} color="success" variant="outlined" />
+                  <Chip label={`Total Expenses: $${totalExpenses.toLocaleString()}`} color="error" variant="outlined" />
+                  <Chip
+                    label={`Net Profit: $${totalProfit.toLocaleString()}`}
+                    color={totalProfit >= 0 ? 'success' : 'error'}
+                  />
+                </>
+              );
+            })()}
+          </Box>
+        )}
+      </Paper>
+
+      {/* --- ACTIVE EMPLOYEES REAL-TIME --- */}
+      <Paper sx={{ p: { xs: 2, sm: 3 }, mb: 4 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+          <FiberManualRecordIcon sx={{ color: '#4caf50', fontSize: 14, animation: 'pulse 2s infinite' }} />
+          <Typography variant="h6" sx={{ fontSize: { xs: '1.125rem', sm: '1.25rem' } }}>
+            Active Employees ({activeEmployees.length})
+          </Typography>
+        </Box>
+        {activeEmployees.length === 0 ? (
+          <Typography variant="body2" color="text.secondary" sx={{ py: 2 }}>
+            No employees currently working
+          </Typography>
+        ) : (
+          <Grid container spacing={2}>
+            {activeEmployees.map((emp) => (
+              <Grid size={{ xs: 12, sm: 6, md: 4, lg: 3 }} key={emp.id}>
+                <Box sx={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 1.5,
+                  p: 1.5,
+                  borderRadius: 2,
+                  bgcolor: 'action.hover',
+                }}>
+                  <Avatar sx={{ width: 36, height: 36, bgcolor: '#4caf50', fontSize: '0.875rem' }}>
+                    {emp.employeeName.charAt(0).toUpperCase()}
+                  </Avatar>
+                  <Box sx={{ flex: 1, minWidth: 0 }}>
+                    <Typography variant="body2" fontWeight={600} noWrap>
+                      {emp.employeeName}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      {formatElapsed(emp.startedAt)} {emp.projectName ? `| ${emp.projectName}` : ''}
+                    </Typography>
+                  </Box>
+                  <AccessTimeIcon sx={{ color: 'text.secondary', fontSize: 18 }} />
+                </Box>
+              </Grid>
+            ))}
+          </Grid>
+        )}
+      </Paper>
+
+      {/* --- CRITICAL / URGENT TASKS --- */}
+      {tasksData.urgentTasks && tasksData.urgentTasks.length > 0 && (
+        <Paper sx={{ p: { xs: 2, sm: 3 }, mb: 4, border: '1px solid', borderColor: 'warning.main' }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+            <WarningIcon sx={{ color: 'warning.main' }} />
+            <Typography variant="h6" sx={{ fontSize: { xs: '1.125rem', sm: '1.25rem' }, color: 'warning.main' }}>
+              Critical / Overdue Tasks ({tasksData.urgentTasks.length})
+            </Typography>
+          </Box>
+          <List disablePadding>
+            {tasksData.urgentTasks.map((task: any, index: number) => (
+              <ListItem
+                key={task.id || index}
+                divider={index < tasksData.urgentTasks.length - 1}
+                sx={{ px: 0 }}
+              >
+                <ListItemText
+                  primary={
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <Typography variant="body2" fontWeight={600}>
+                        {task.title || task.name}
+                      </Typography>
+                      {task.priority && (
+                        <Chip
+                          label={task.priority}
+                          size="small"
+                          color={task.priority === 'urgent' || task.priority === 'high' ? 'error' : 'warning'}
+                          variant="outlined"
+                        />
+                      )}
+                    </Box>
+                  }
+                  secondary={
+                    <Typography variant="caption" color="text.secondary">
+                      {task.assignee ? `Assigned to: ${task.assignee}` : 'Unassigned'}
+                      {task.dueDate ? ` | Due: ${new Date(task.dueDate?.seconds ? task.dueDate.seconds * 1000 : task.dueDate).toLocaleDateString()}` : ''}
+                    </Typography>
+                  }
+                />
+                <Button
+                  size="small"
+                  variant="outlined"
+                  color="warning"
+                  onClick={() => navigate(`/crm/tasks${task.id ? `?taskId=${task.id}` : ''}`)}
+                >
+                  View
+                </Button>
+              </ListItem>
+            ))}
+          </List>
+        </Paper>
+      )}
 
       {/* Team Overview KPIs */}
       {loading ? (

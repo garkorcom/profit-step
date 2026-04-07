@@ -543,7 +543,7 @@ export { updateCompanyMemberCount as updateCompanyMemberCount_v2 } from './trigg
 // AI Agent
 export { onLeadCreate } from './triggers/leads/onLeadCreate';
 export { onWhatsAppMessage } from './triggers/whatsapp/onWhatsAppMessage';
-export { onTelegramMessage } from './triggers/telegram/onTelegramMessage';
+// export { onTelegramMessage } from './triggers/telegram/onTelegramMessage';
 
 // Messaging
 export { sendMessage } from './callable/messaging/sendMessage';

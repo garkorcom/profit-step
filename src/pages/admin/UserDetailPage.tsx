@@ -65,6 +65,7 @@ import { useAuth } from '../../auth/AuthContext';
 import { doc, getDoc, Timestamp } from 'firebase/firestore';
 import { db } from '../../firebase/firebase';
 import { UserProfile, DEPARTMENT_LABELS } from '../../types/user.types';
+import { errorMessage } from '../../utils/errorMessage';
 import StatusIndicator from '../../components/common/StatusIndicator';
 import StatCard from '../../components/common/StatCard';
 import toast from 'react-hot-toast';
@@ -315,8 +316,8 @@ const UserDetailPage: React.FC = () => {
         try {
             const result = await adminResetPassword(userId, newPassword);
             toast.success(result.message);
-        } catch (err: any) {
-            toast.error(err.message || 'Ошибка сброса пароля');
+        } catch (err: unknown) {
+            toast.error(errorMessage(err) || 'Ошибка сброса пароля');
         } finally {
             setPasswordLoading(false);
         }
@@ -332,8 +333,8 @@ const UserDetailPage: React.FC = () => {
         try {
             const result = await adminSendPasswordViaTelegram(userId, newPassword);
             toast.success(result.message);
-        } catch (err: any) {
-            toast.error(err.message || 'Ошибка отправки в Telegram');
+        } catch (err: unknown) {
+            toast.error(errorMessage(err) || 'Ошибка отправки в Telegram');
         } finally {
             setTelegramLoading(false);
         }
@@ -352,8 +353,8 @@ const UserDetailPage: React.FC = () => {
             // Update local state
             setUser((prev) => (prev ? { ...prev, email: newEmail.toLowerCase() } : prev));
             setNewEmail('');
-        } catch (err: any) {
-            toast.error(err.message || 'Ошибка смены email');
+        } catch (err: unknown) {
+            toast.error(errorMessage(err) || 'Ошибка смены email');
         } finally {
             setEmailLoading(false);
         }
@@ -370,8 +371,8 @@ const UserDetailPage: React.FC = () => {
             const result = await adminForceLogout(userId);
             toast.success(result.message);
             setLogoutDialogOpen(false);
-        } catch (err: any) {
-            toast.error(err.message || 'Ошибка завершения сессий');
+        } catch (err: unknown) {
+            toast.error(errorMessage(err) || 'Ошибка завершения сессий');
         } finally {
             setLogoutLoading(false);
         }
@@ -457,7 +458,7 @@ const UserDetailPage: React.FC = () => {
                             {user.email} {user.title && `• ${user.title}`}
                         </Typography>
                         <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center' }}>
-                            <StatusIndicator status={user.status as any} isOnline={isOnline} size="small" />
+                            <StatusIndicator status={user.status} isOnline={isOnline} size="small" />
                             <Chip label={user.role} size="small" color="primary" variant="outlined" />
                             {user.department && (
                                 <Chip

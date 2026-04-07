@@ -19,33 +19,66 @@ interface SmartCockpitInputProps {
     isLoading: boolean;
 }
 
+// Web Speech API types — SpeechRecognition is not in lib.dom.d.ts yet,
+// so we define the minimal surface we actually use.
+interface SpeechRecognitionResult {
+  readonly length: number;
+  [index: number]: { transcript: string };
+}
+interface SpeechRecognitionResultList {
+  readonly length: number;
+  [index: number]: SpeechRecognitionResult;
+}
+interface SpeechRecognitionEvent extends Event {
+  readonly resultIndex: number;
+  readonly results: SpeechRecognitionResultList;
+}
+interface SpeechRecognitionErrorEvent extends Event {
+  readonly error: string;
+}
+interface SpeechRecognitionInstance {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  onresult: ((ev: SpeechRecognitionEvent) => void) | null;
+  onerror: ((ev: SpeechRecognitionErrorEvent) => void) | null;
+  onend: (() => void) | null;
+  start: () => void;
+  stop: () => void;
+}
+type SpeechRecognitionCtor = new () => SpeechRecognitionInstance;
+
 export const SmartCockpitInput: React.FC<SmartCockpitInputProps> = ({ onCommandSubmit, isLoading }) => {
     const [text, setText] = useState('');
     const [isRecording, setIsRecording] = useState(false);
 
     // Recording state
-    const recognitionRef = useRef<any>(null);
+    const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
 
     // Initialize Speech Recognition
     useEffect(() => {
-        const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+        const win = window as unknown as {
+          SpeechRecognition?: SpeechRecognitionCtor;
+          webkitSpeechRecognition?: SpeechRecognitionCtor;
+        };
+        const SpeechRecognition = win.SpeechRecognition || win.webkitSpeechRecognition;
         if (SpeechRecognition) {
             recognitionRef.current = new SpeechRecognition();
             recognitionRef.current.continuous = true; // Let it run until user stops
             recognitionRef.current.interimResults = true; // Show words as they speak
             recognitionRef.current.lang = 'ru-RU';
 
-            recognitionRef.current.onresult = (event: any) => {
+            recognitionRef.current.onresult = (event: SpeechRecognitionEvent) => {
                 let currentTranscript = '';
                 for (let i = event.resultIndex; i < event.results.length; ++i) {
                     currentTranscript += event.results[i][0].transcript;
                 }
-                // Avoid duplicating the text if interim results fire rapidly. 
+                // Avoid duplicating the text if interim results fire rapidly.
                 // A simpler, safer approach is just rewriting the text field while recording
                 setText(currentTranscript);
             };
 
-            recognitionRef.current.onerror = (event: any) => {
+            recognitionRef.current.onerror = (event: SpeechRecognitionErrorEvent) => {
                 console.error("Speech recognition error", event.error);
                 setIsRecording(false);
             };

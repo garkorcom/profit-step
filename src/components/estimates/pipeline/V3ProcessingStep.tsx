@@ -7,6 +7,21 @@ import { BlueprintAgentResult, BlueprintAgentV3Result } from '../../../types/blu
 
 import { httpsCallable } from 'firebase/functions';
 import { functions } from '../../../firebase/firebase';
+import { errorMessage } from '../../../utils/errorMessage';
+
+interface PipelineLog {
+    time: Date;
+    message: string;
+    type: 'info' | 'success' | 'warning' | 'error';
+}
+
+interface AnomalyCheckResponse {
+    anomalies?: { itemKey: string; reason: string }[];
+}
+
+interface AnalyzeResponse {
+    quantities?: BlueprintAgentV3Result;
+}
 
 interface V3ProcessingStepProps {
     images: RasterizedImage[];
@@ -14,7 +29,7 @@ interface V3ProcessingStepProps {
     sqft?: number;
     stories?: number;
     projectType?: string;
-    onComplete: (results: BlueprintAgentResult, rawV3Data: Record<string, BlueprintAgentV3Result>, anomalies: {itemKey: string, reason: string}[], logs: any[]) => void;
+    onComplete: (results: BlueprintAgentResult, rawV3Data: Record<string, BlueprintAgentV3Result>, anomalies: {itemKey: string, reason: string}[], logs: PipelineLog[]) => void;
     onBack: () => void;
 }
 
@@ -42,7 +57,7 @@ export const V3ProcessingStep: React.FC<V3ProcessingStepProps> = ({ images, conf
                 stories: stories,
                 projectType: projectType
             });
-            const anomalies = (checkRes.data as any).anomalies || [];
+            const anomalies = (checkRes.data as AnomalyCheckResponse).anomalies || [];
             if (anomalies.length > 0) {
                 addLog(`Plausibility check flagged ${anomalies.length} potential anomalies!`, 'warning');
             } else {
@@ -51,8 +66,8 @@ export const V3ProcessingStep: React.FC<V3ProcessingStepProps> = ({ images, conf
             setTimeout(() => {
                 onComplete(aggregated, rawData, anomalies, logs);
             }, 1000);
-        } catch (err: any) {
-            addLog(`Plausibility check failed: ${err.message}. Proceeding without it.`, 'error');
+        } catch (err: unknown) {
+            addLog(`Plausibility check failed: ${errorMessage(err)}. Proceeding without it.`, 'error');
             setTimeout(() => {
                 onComplete(aggregated, rawData, [], logs);
             }, 1000);
@@ -94,18 +109,18 @@ export const V3ProcessingStep: React.FC<V3ProcessingStepProps> = ({ images, conf
                     templateId: config.templateId, 
                     customInstructions: config.customInstructions 
                 });
-                const data = (res.data as any).quantities as BlueprintAgentV3Result;
-                
+                const data = ((res.data as AnalyzeResponse).quantities || {}) as BlueprintAgentV3Result;
+
                 dataToSave[img.id] = data;
                 setResults(prev => ({ ...prev, [img.id]: data }));
                 updatedFailed.delete(img.id);
                 setFailedIds(new Set(updatedFailed));
-                
+
                 addLog(`Success: ${img.originalFileName} (pg ${img.pageNumber})`, 'success');
-            } catch (err: any) {
+            } catch (err: unknown) {
                 updatedFailed.add(img.id);
                 setFailedIds(new Set(updatedFailed));
-                addLog(`Error on ${img.originalFileName}: ${err.message}`, 'error');
+                addLog(`Error on ${img.originalFileName}: ${errorMessage(err)}`, 'error');
             }
 
             completed++;

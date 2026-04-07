@@ -5,6 +5,13 @@
 
 import jsPDF from 'jspdf';
 import 'jspdf-autotable';
+
+// jspdf-autotable extends jsPDF at runtime; types aren't exported.
+// This is the subset of the plugin API we use across all export helpers.
+type PdfWithAutoTable = jsPDF & {
+    autoTable: (opts: Record<string, unknown>) => void;
+    lastAutoTable?: { finalY?: number };
+};
 import {
     BankTransaction,
     InlineReportData,
@@ -72,7 +79,7 @@ export function exportPDF(
         `$${Math.abs(tx.amount).toFixed(2)}`,
     ]);
 
-    (doc as any).autoTable({
+    (doc as PdfWithAutoTable).autoTable({
         startY: 45,
         head: [['Date', 'Vendor', 'Category', 'Amount']],
         body: tableData,
@@ -266,7 +273,8 @@ export function exportReportPDF(data: InlineReportData): string {
     });
 
     if (expenseData.length > 0) {
-        (doc as any).autoTable({
+        const docWithPlugin = doc as PdfWithAutoTable;
+        docWithPlugin.autoTable({
             startY: yPos,
             head: [['Category', 'Amount']],
             body: expenseData,
@@ -278,7 +286,7 @@ export function exportReportPDF(data: InlineReportData): string {
                 1: { cellWidth: 40, halign: 'right' },
             },
         });
-        yPos = (doc as any).lastAutoTable.finalY + 10;
+        yPos = (docWithPlugin.lastAutoTable?.finalY ?? yPos) + 10;
     }
 
     // Transfers
@@ -354,7 +362,8 @@ export function downloadScheduleC(
     const totalDeductible = Object.values(scheduleCData).reduce((s, r) => s + r.deductible, 0);
 
     if (tableData.length > 0) {
-        (doc_pdf as any).autoTable({
+        const pdfPlugin = doc_pdf as PdfWithAutoTable;
+        pdfPlugin.autoTable({
             startY: yPos,
             head: [['IRS Line Item', 'Gross Amount', 'Tax Deductible']],
             body: tableData,
@@ -369,7 +378,7 @@ export function downloadScheduleC(
                 2: { cellWidth: 40, halign: 'right' },
             },
         });
-        yPos = (doc_pdf as any).lastAutoTable.finalY + 15;
+        yPos = (pdfPlugin.lastAutoTable?.finalY ?? yPos) + 15;
     }
 
     // Income summary

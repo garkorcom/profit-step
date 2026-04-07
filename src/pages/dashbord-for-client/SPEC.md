@@ -548,7 +548,15 @@ function stripInternalNotes(inspection: Inspection): PublicInspection {
 
 1. **Существует ли реальный Jim Dvorkin в Firestore сейчас?** Если нет — кто и когда засеет? Без этого нельзя продемонстрировать ничего.
 2. **Какой формат estimate items в БД?** В EstimateView.tsx ожидается `{ description/name, quantity, unit, unitPrice/unitCostPrice, ... }`. Это совпадает с реальной схемой? Где указан `unitCostPrice` (источник internal cost)?
-3. **Поле `estimateType: 'internal'`** — реально ли проставляется? Если нет — фильтр пропустит ВСЁ и клиент увидит наши internal цены. **Самый опасный баг** который надо проверить ДО первой демонстрации.
+3. **Поле `estimateType: 'internal'`** — ✅ **ИССЛЕДОВАНО 2026-04-07** (см. коммит `92ab645`).
+   - Field существует в `src/types/estimate.types.ts` как `estimateType?: 'internal' | 'commercial'`
+   - Backend create route (`functions/src/agent/routes/estimates.ts:92`) и frontend API (`src/api/estimatesApi.ts:93`) оба **default'ят в `'commercial'`** когда не указан
+   - Backend schema (`functions/src/agent/schemas/estimateProjectSchemas.ts`) валидирует как optional enum
+   - UI `EstimatesPage.tsx` показывает chip "Internal"/"Commercial"
+   - ⚠️ **ЗАМЕЧАНИЕ:** В коде **нет UI** для установки `estimateType` при создании нового estimate — всегда попадает в `'commercial'` по умолчанию. Значит: чтобы создать "internal" estimate, нужен либо ручной edit в Firebase Console, либо дополнительный UI control.
+   - ⚠️ **Старые данные**: estimates созданные до добавления этого поля могут иметь `estimateType: undefined`. Portal filter `e.estimateType === 'internal'` их НЕ отфильтрует (undefined !== 'internal'), но поскольку `clientItems` / `.items` в V3 содержит `unitPrice` (sell price), **реальный leak маловероятен** — если только старый "internal" estimate не был создан вручную с cost prices в `unitPrice`.
+   - 🚨 **НАЙДЕНА ОТДЕЛЬНАЯ УЯЗВИМОСТЬ (и починена):** `EstimateSection.tsx:80` имел fallback `const unitPrice = item.unitPrice ?? item.unitCostPrice ?? null` — это показывало internal cost price если sell price отсутствовал. Удалено в коммите `92ab645`.
+   - **Миграция рекомендуется:** скрипт который находит все estimates с `estimateType === undefined`, смотрит на содержимое, и проставляет `'commercial'` либо `'internal'` явно. Отдельной задачей.
 4. **Phases/stages проекта** — какой канонический набор? Откуда брать (group by `task.context`, отдельная коллекция, поле `phase` на projects)?
 5. **Inspections** — отдельная коллекция или фильтр по словам? Если фильтр — какие именно слова, на каких языках?
 6. **Photo categories** — как маркировать (filename prefix, metadata, отдельная коллекция)? Сейчас filename prefix — хрупко.

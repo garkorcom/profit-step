@@ -12,6 +12,7 @@ import {
   Task as TaskIcon,
   Folder as FolderIcon,
   MonitorHeart as MonitorIcon,
+  Campaign as CampaignIcon,
 } from '@mui/icons-material';
 import { useAuth } from '../auth/AuthContext';
 import { useNavigate } from 'react-router-dom';
@@ -59,6 +60,13 @@ const DashboardPage: React.FC = () => {
       icon: <FolderIcon sx={{ fontSize: 60 }} />,
       color: '#9c27b0',
       path: '/documents',
+    },
+    {
+      title: 'Лендинги',
+      description: 'Управление промо-сайтами',
+      icon: <CampaignIcon sx={{ fontSize: 60 }} />,
+      color: '#d81b60',
+      path: '/crm/landings',
     },
     {
       title: 'Мониторинг',

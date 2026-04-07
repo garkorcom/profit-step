@@ -170,7 +170,7 @@ const Header: React.FC = () => {
       { path: '/crm/clients', label: 'Clients', icon: <BusinessIcon sx={{ mr: 0.5 }} /> },
       { path: '/crm/contacts', label: 'Contacts', icon: <ContactsIcon sx={{ mr: 0.5 }} /> },
       { path: '/crm/deals', label: 'Deals', icon: <KanbanIcon sx={{ mr: 0.5 }} /> },
-      { path: '/landings.html', label: 'Landing Pages', icon: <MarketingIcon sx={{ mr: 0.5 }} /> },
+      { path: '/crm/landings', label: 'Landing Pages', icon: <MarketingIcon sx={{ mr: 0.5 }} /> },
     ];
 
     const estimatesLinks = [

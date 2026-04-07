@@ -43,7 +43,6 @@ import {
   Person as ClientIcon,
   Build as BuildIcon,
   PhotoCamera as PhotoCameraIcon,
-  Share as ShareIcon,
   Phone as PhoneIcon,
   Email as EmailIcon,
 } from '@mui/icons-material';
@@ -61,6 +60,7 @@ import ClientDashboardLayout, {
 import GallerySection, {
   type GalleryPhoto,
 } from '../../../components/client-dashboard/sections/GallerySection';
+import ShareWithClientButton from '../../../components/client-dashboard/sharing/ShareWithClientButton';
 
 // ─── internal section content components (local, single-use) ──────────
 
@@ -624,16 +624,14 @@ const ClientDashboardPage: React.FC = () => {
       >
         Details
       </Button>
-      <Button
-        size="small"
-        variant="contained"
-        color="primary"
-        startIcon={<ShareIcon />}
-        disabled
-        title="Phase 4 — backend portal endpoint + share-link token management"
-      >
-        Share
-      </Button>
+      {id && (
+        <ShareWithClientButton
+          clientId={id}
+          clientName={client.name}
+          size="small"
+          variant="contained"
+        />
+      )}
     </Stack>
   );
 

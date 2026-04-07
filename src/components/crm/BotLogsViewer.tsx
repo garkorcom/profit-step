@@ -5,14 +5,14 @@ import {
     ListItemText, Divider
 } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
-import { collection, query, where, orderBy, limit, getDocs } from 'firebase/firestore';
+import { collection, query, where, orderBy, limit, getDocs, Timestamp } from 'firebase/firestore';
 import { db } from '../../firebase/firebase';
 
 interface BotLog {
     id: string;
     action: string;
-    details: any;
-    timestamp: any;
+    details: Record<string, unknown>;
+    timestamp: Timestamp | Date | string | null;
 }
 
 interface BotLogsViewerProps {
@@ -57,9 +57,18 @@ export const BotLogsViewer: React.FC<BotLogsViewerProps> = ({ open, onClose, wor
         fetchLogs();
     }, [open, workerId]);
 
-    const formatTime = (ts: any) => {
+    const formatTime = (ts: Timestamp | Date | string | null) => {
         if (!ts) return '';
-        const d = ts.toDate ? ts.toDate() : new Date(ts);
+        let d: Date;
+        if (ts instanceof Date) {
+            d = ts;
+        } else if (typeof ts === 'string') {
+            d = new Date(ts);
+        } else if (typeof (ts as Timestamp).toDate === 'function') {
+            d = (ts as Timestamp).toDate();
+        } else {
+            return '';
+        }
         return d.toLocaleString('ru-RU', {
             day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'
         });

@@ -24,6 +24,7 @@ import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage, functions } from '../firebase/firebase';
 import { UserProfile, UserRole, UserStatus } from '../types/user.types';
 import { costProtectionBreaker } from '../utils/circuitBreaker';
+import { errorMessage } from '../utils/errorMessage';
 
 // ============================================
 // PAGINATION INTERFACES
@@ -194,7 +195,7 @@ export const updateUserExtendedProfile = async (
 ): Promise<void> => {
   try {
     const userRef = doc(db, 'users', userId);
-    const updateData: any = {};
+    const updateData: Record<string, unknown> = {};
 
     if (data.displayName !== undefined) updateData.displayName = data.displayName;
     if (data.title !== undefined) updateData.title = data.title;
@@ -268,9 +269,9 @@ export const adminDeleteUser = async (userIdToDelete: string): Promise<{ success
 
     console.log('✅ User deleted successfully:', result.data);
     return result.data as { success: boolean; message: string };
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error calling adminDeleteUser function:', error);
-    throw new Error(error.message || 'Не удалось удалить пользователя', { cause: error });
+    throw new Error(errorMessage(error) || 'Не удалось удалить пользователя', { cause: error });
   }
 };
 
@@ -319,9 +320,9 @@ export const inviteUser = async (
       emailSent?: boolean;
       emailError?: string;
     };
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error calling inviteUser function:', error);
-    throw new Error(error.message || 'Не удалось пригласить пользователя', { cause: error });
+    throw new Error(errorMessage(error) || 'Не удалось пригласить пользователя', { cause: error });
   }
 };
 

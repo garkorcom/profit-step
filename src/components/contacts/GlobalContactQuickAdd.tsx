@@ -10,6 +10,7 @@ import {
     Delete as DeleteIcon,
     LocationOn as LocationIcon
 } from '@mui/icons-material';
+import { Timestamp } from 'firebase/firestore';
 import { Contact, ContactPhone } from '../../types/contact.types';
 import { contactsService } from '../../services/contactsService';
 import { useAuth } from '../../auth/AuthContext';
@@ -187,12 +188,14 @@ const GlobalContactQuickAdd: React.FC<GlobalContactQuickAddProps> = ({
                 const authorName = userProfile?.displayName || currentUser.email || 'Пользователь';
                 const newId = await contactsService.createContact(newContactData, currentUser.uid, authorName);
                 if (onContactAdded) {
-                    onContactAdded({ id: newId, ...newContactData, createdAt: null as any });
+                    // createdAt is set server-side by Firestore — null is a
+                    // valid placeholder until the next snapshot arrives
+                    onContactAdded({ id: newId, ...newContactData, createdAt: null as unknown as Timestamp });
                 }
             }
 
             onClose();
-        } catch (err: any) {
+        } catch (err: unknown) {
             console.error("Failed to add contact", err);
             setError("Не удалось сохранить контакт. Пожалуйста, попробуйте снова.");
         } finally {
@@ -263,7 +266,7 @@ const GlobalContactQuickAdd: React.FC<GlobalContactQuickAddProps> = ({
                         </Box>
                         {/* Show custom (non-preset) roles */}
                         <Box display="flex" flexWrap="wrap" gap={0.5}>
-                            {roles.filter(r => !ROLE_PRESETS.includes(r as any)).map(r => (
+                            {roles.filter(r => !(ROLE_PRESETS as readonly string[]).includes(r)).map(r => (
                                 <Chip
                                     key={r}
                                     label={r}

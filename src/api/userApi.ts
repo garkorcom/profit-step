@@ -24,7 +24,7 @@ export const createUserProfile = async (
 ): Promise<void> => {
   const userRef = doc(db, 'users', userId);
 
-  const profileData: any = {
+  const profileData: Record<string, unknown> = {
     email: data.email.toLowerCase(),
     displayName: data.displayName,
     companyId: userId, // По умолчанию companyId = userId (для одиночных пользователей)
@@ -82,7 +82,7 @@ export const updateUserProfile = async (
 ): Promise<void> => {
   try {
     const userRef = doc(db, 'users', userId);
-    await updateDoc(userRef, updates as any);
+    await updateDoc(userRef, updates as Record<string, unknown>);
     console.log(`✅ User profile updated for: ${userId}`);
   } catch (error) {
     console.error('Error updating user profile:', error);
@@ -110,7 +110,7 @@ export const updateLastSeen = async (userId: string): Promise<void> => {
     const userRef = doc(db, 'users', userId);
     await updateDoc(userRef, {
       lastSeen: serverTimestamp(),
-    } as any);
+    });
   } catch (error) {
     // Не выбрасываем ошибку, чтобы не блокировать вход пользователя
     console.error('Error updating lastSeen:', error);

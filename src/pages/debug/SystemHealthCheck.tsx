@@ -29,8 +29,17 @@ const StatusRow = ({ label, status, error }: { label: string, status: 'pending' 
     );
 };
 
+type HealthStatus = 'pending' | 'ok' | 'error';
+
+interface HealthChecks {
+    auth: HealthStatus;
+    firestoreProfile: HealthStatus;
+    estimateFunc: HealthStatus;
+    fsmGeo: HealthStatus;
+}
+
 export const SystemHealthCheck: React.FC = () => {
-    const [checks, setChecks] = useState({
+    const [checks, setChecks] = useState<HealthChecks>({
         auth: 'pending',
         firestoreProfile: 'pending',
         estimateFunc: 'pending',
@@ -51,7 +60,7 @@ export const SystemHealthCheck: React.FC = () => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    const runDiagnostics = async (user: any) => {
+    const runDiagnostics = async (user: { uid: string; email?: string | null } | null) => {
         // 1. Check AUTH and Profile (V0)
         if (!user) {
             setChecks(c => ({ ...c, auth: 'error', firestoreProfile: 'pending' }));
@@ -124,10 +133,10 @@ export const SystemHealthCheck: React.FC = () => {
 
                 <Divider sx={{ my: 3 }} />
 
-                <StatusRow label="Authentication" status={checks.auth as any} />
-                <StatusRow label="User Profile & Company" status={checks.firestoreProfile as any} />
-                <StatusRow label="Estimate Calculator (Server)" status={checks.estimateFunc as any} />
-                <StatusRow label="GeoLocation API" status={checks.fsmGeo as any} />
+                <StatusRow label="Authentication" status={checks.auth} />
+                <StatusRow label="User Profile & Company" status={checks.firestoreProfile} />
+                <StatusRow label="Estimate Calculator (Server)" status={checks.estimateFunc} />
+                <StatusRow label="GeoLocation API" status={checks.fsmGeo} />
 
                 <Box mt={4}>
                     <Button

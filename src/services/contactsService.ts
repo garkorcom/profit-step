@@ -21,16 +21,16 @@ export const contactsService = {
     /**
      * Helper to safely remove undefined fields
      */
-    cleanPayload(obj: any): any {
-        return Object.entries(obj).reduce((acc, [key, val]) => {
+    cleanPayload(obj: Record<string, unknown>): Record<string, unknown> {
+        return Object.entries(obj).reduce<Record<string, unknown>>((acc, [key, val]) => {
             if (val === undefined) return acc;
             if (val && typeof val === 'object' && !Array.isArray(val) && !(val instanceof Timestamp)) {
-                acc[key] = this.cleanPayload(val);
+                acc[key] = this.cleanPayload(val as Record<string, unknown>);
                 return acc;
             }
             acc[key] = val;
             return acc;
-        }, {} as any);
+        }, {});
     },
 
     /**
@@ -43,7 +43,7 @@ export const contactsService = {
                 createdAt: Timestamp.now(),
                 createdBy: userId,
             };
-            const newContactData = this.cleanPayload(rawData);
+            const newContactData = this.cleanPayload(rawData as Record<string, unknown>);
 
             const docRef = await addDoc(collection(db, COLLECTION_NAME), newContactData);
 
@@ -51,7 +51,7 @@ export const contactsService = {
             await this.logContactCreation(docRef.id, newContactData, userName || 'System');
 
             return docRef.id;
-        } catch (error: any) {
+        } catch (error: unknown) {
             console.error('Error creating contact:', error);
             console.error('Payload attempted:', JSON.stringify(contactData, null, 2));
             throw error;
@@ -131,7 +131,7 @@ export const contactsService = {
     /**
      * Helper: Log contact creation for AI daily summaries
      */
-    async logContactCreation(contactId: string, contactData: any, authorName: string) {
+    async logContactCreation(contactId: string, contactData: Record<string, unknown>, authorName: string) {
         try {
             const timeStr = new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
             // For location name parsing (often linkedProjects contains names or we just put the geo coordinate)
@@ -139,8 +139,10 @@ export const contactsService = {
                 ? contactData.createdLocation
                 : (contactData.createdLocation ? 'геолокации' : 'в системе');
 
-            const rolesStr = (contactData.roles || []).join(', ');
-            const projectsCount = (contactData.linkedProjects || []).length;
+            const roles = (contactData.roles as string[] | undefined) || [];
+            const linkedProjects = (contactData.linkedProjects as unknown[] | undefined) || [];
+            const rolesStr = roles.join(', ');
+            const projectsCount = linkedProjects.length;
 
             const message = `В ${timeStr} на объекте (${locDetails}) добавлен новый контакт: ${contactData.name} (${rolesStr}). Привязан к объектам: ${projectsCount} шт.`;
 
@@ -153,7 +155,7 @@ export const contactsService = {
                 metadata: {
                     contactId: contactId,
                     contactName: contactData.name,
-                    roles: contactData.roles
+                    roles: roles,
                 }
             });
         } catch (err) {

@@ -179,7 +179,7 @@ export const useInvoices = () => {
 
             const docRef = await addDoc(collection(db, 'invoices'), newInvoice);
             return docRef.id;
-        } catch (err: any) {
+        } catch (err: unknown) {
             console.error("Error creating invoice:", err);
             throw err;
         }
@@ -192,7 +192,7 @@ export const useInvoices = () => {
                 status,
                 updatedAt: serverTimestamp()
             });
-        } catch (err: any) {
+        } catch (err: unknown) {
             console.error("Error updating invoice status:", err);
             throw err;
         }
@@ -225,7 +225,7 @@ export const useInvoices = () => {
                 status: newStatus,
                 updatedAt: serverTimestamp()
             });
-        } catch (err: any) {
+        } catch (err: unknown) {
             console.error("Error adding payment:", err);
             throw err;
         }
@@ -234,7 +234,7 @@ export const useInvoices = () => {
     const deleteInvoice = async (id: string) => {
         try {
             await deleteDoc(doc(db, 'invoices', id));
-        } catch (err: any) {
+        } catch (err: unknown) {
             console.error("Error deleting invoice:", err);
             throw err;
         }

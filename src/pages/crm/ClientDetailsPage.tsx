@@ -31,6 +31,7 @@ import FolderIcon from '@mui/icons-material/Folder';
 import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile';
 
 import { collection, query, where, getDocs } from 'firebase/firestore';
+import { errorMessage } from '../../utils/errorMessage';
 import { db } from '../../firebase/firebase';
 import { crmApi } from '../../api/crmApi';
 import { projectsApi } from '../../api/projectsApi';
@@ -113,7 +114,7 @@ const ClientDetailsPage: React.FC = () => {
                 try {
                     const projectsData = await projectsApi.getProjectsByClient(id);
                     setProjects(projectsData);
-                } catch (projErr: any) {
+                } catch (projErr: unknown) {
                     console.error('Error loading projects:', projErr);
                 }
 
@@ -121,7 +122,7 @@ const ClientDetailsPage: React.FC = () => {
                 try {
                     const sitesData = await sitesApi.getSitesByClient(id);
                     setSites(sitesData);
-                } catch (sitesErr: any) {
+                } catch (sitesErr: unknown) {
                     console.error('Error loading sites:', sitesErr);
                 }
 
@@ -134,9 +135,9 @@ const ClientDetailsPage: React.FC = () => {
                     console.error('Error loading linked contacts:', cErr);
                 }
 
-            } catch (err: any) {
+            } catch (err: unknown) {
                 console.error('Error loading client:', err);
-                setError(`Failed to load client: ${err.message}`);
+                setError(`Failed to load client: ${errorMessage(err)}`);
             } finally {
                 setLoading(false);
             }
@@ -210,7 +211,7 @@ const getStatusLabel = (status: string) => {
     }
 };
 
-const getStatusColor = (status: string) => {
+const getStatusColor = (status: string): 'primary' | 'success' | 'default' => {
     switch (status) {
         case 'new': case 'contacted': case 'qualified': return 'primary';
         case 'customer': return 'success';
@@ -234,7 +235,7 @@ const getStatusColor = (status: string) => {
                         <EditIcon fontSize="small" />
                     </IconButton>
                 </Box>
-                <Chip label={getStatusLabel(client.status)} color={getStatusColor(client.status) as any} />
+                <Chip label={getStatusLabel(client.status)} color={getStatusColor(client.status)} />
             </Box>
 
             <Paper sx={{ width: '100%', mb: 2 }}>
@@ -251,7 +252,7 @@ const getStatusColor = (status: string) => {
                     <Typography variant="h6" gutterBottom>Client Information</Typography>
                     <Typography><strong>Type:</strong> {client.type}</Typography>
                     <Typography>
-                        <strong>Статус:</strong> <Chip size="small" label={getStatusLabel(client.status)} color={getStatusColor(client.status) as any} sx={{ ml: 1 }} />
+                        <strong>Статус:</strong> <Chip size="small" label={getStatusLabel(client.status)} color={getStatusColor(client.status)} sx={{ ml: 1 }} />
                     </Typography>
                     {client.sourceType && (
                         <Typography>

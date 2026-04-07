@@ -51,7 +51,9 @@ export interface PaginatedCompaniesResult {
   companies: Company[];
 
   // Pagination cursors
-  firstDoc: any; // QueryDocumentSnapshot
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  firstDoc: any; // QueryDocumentSnapshot (kept as `any` — consumers assign directly to DocumentSnapshot)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   lastDoc: any; // QueryDocumentSnapshot
 
   // Metadata
@@ -130,6 +132,7 @@ export interface Client {
    */
   aliases?: string[];
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   customFields?: Record<string, any>;
 }
 
@@ -266,7 +269,8 @@ export interface ActivityLog {
   content: string; // Description, message body, or AI transcription
   
   // Extra data: photoUrls, audioUrl, fileUrls, aiTranslation, sentiment
-  metadata?: Record<string, any>; 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  metadata?: Record<string, any>;
 
   performedBy: string; // User ID
   performedAt: Timestamp;

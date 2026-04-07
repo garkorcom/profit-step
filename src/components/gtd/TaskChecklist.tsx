@@ -104,7 +104,11 @@ const TaskChecklist: React.FC<TaskChecklistProps> = ({ items, onUpdate, readOnly
     const handleKeyDown = (e: React.KeyboardEvent, action: 'add' | 'edit') => {
         if (e.key === 'Enter') {
             e.preventDefault();
-            action === 'add' ? handleAddItem() : handleSaveEdit();
+            if (action === 'add') {
+                handleAddItem();
+            } else {
+                handleSaveEdit();
+            }
         }
         if (e.key === 'Escape') {
             setEditingId(null);

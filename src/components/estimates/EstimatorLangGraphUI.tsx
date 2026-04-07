@@ -408,7 +408,7 @@ export const EstimatorLangGraphUI: React.FC = () => {
                         </Typography>
                     </Paper>
 
-                    {bom.length > 0 && bom.some(item => item.unit_price !== undefined) && (
+                    {bom.some(item => item.unit_price !== undefined) && (
                         <Accordion sx={{ mt: 2 }}>
                             <AccordionSummary expandIcon={<ExpandMoreIcon />}>
                                 <Typography fontWeight="bold">📊 Priced BOM ({bom.length} items)</Typography>

@@ -925,7 +925,7 @@ const TeamAdminPage: React.FC = () => {
       )}
       {/* Actions Menu */}
       <Menu anchorEl={anchorEl} open={Boolean(anchorEl)} onClose={handleMenuClose}>
-        <MenuItem onClick={() => { handleMenuClose(); menuUser && navigate(`/admin/team/${menuUser.id}`); }}>
+        <MenuItem onClick={() => { handleMenuClose(); if (menuUser) navigate(`/admin/team/${menuUser.id}`); }}>
           Управление
         </MenuItem>
         <MenuItem onClick={() => menuUser && handleEditProfile(menuUser)}>

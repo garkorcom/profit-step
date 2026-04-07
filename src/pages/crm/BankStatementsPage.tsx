@@ -67,7 +67,6 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveCont
 // ─── Bank Statements Module ─────────────────────────────────
 import {
     TaxCategory,
-    BankTransaction,
     DROPDOWN_CATEGORIES,
     CATEGORY_COLORS,
     CATEGORY_LABELS,

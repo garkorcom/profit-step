@@ -132,7 +132,7 @@ const DroppableDayCell: React.FC<{
     taskCount?: number;
     onShowMore?: (event: React.MouseEvent<HTMLElement>) => void;
 }> =
-    ({ day, children, onClick, isCurrentMonth, isToday, viewMode, taskCount: _taskCount = 0, onShowMore }) => {
+    ({ day, children, onClick, isCurrentMonth, isToday, viewMode, taskCount: _taskCount = 0, onShowMore: _onShowMore }) => {
         const { isOver, setNodeRef } = useDroppable({ id: day.toISOString() });
 
         const cellHeight = viewMode === 'week' ? 200 : 110;

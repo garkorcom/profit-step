@@ -6,7 +6,7 @@
 
 import React, { useState, useEffect } from 'react';
 import {
-  Box, Typography, Paper, Avatar, Chip, Divider, CircularProgress, Link,
+  Box, Typography, Paper, Avatar, Chip, Divider, CircularProgress,
 } from '@mui/material';
 import { collection, query, where, orderBy, onSnapshot } from 'firebase/firestore';
 import { db } from '../../firebase/firebase';

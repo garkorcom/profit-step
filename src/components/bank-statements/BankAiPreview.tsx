@@ -25,7 +25,6 @@ import {
     DialogActions,
 } from '@mui/material';
 import {
-    TaxCategory,
     AISuggestion,
     CATEGORY_COLORS,
     CATEGORY_LABELS,

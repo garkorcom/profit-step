@@ -48,7 +48,15 @@
 
     // ─── ESLint ───
     "eslint/no-await-in-loop": "off",
-    "eslint/no-shadow": "off"
+    "eslint/no-shadow": "off",
+    // Treat _-prefixed parameters/catches/variables as intentionally unused
+    // (ESLint-compatible convention). Otherwise every `catch (_e)` triggers.
+    "eslint/no-unused-vars": ["error", {
+      "argsIgnorePattern": "^_",
+      "caughtErrorsIgnorePattern": "^_",
+      "varsIgnorePattern": "^_",
+      "destructuredArrayIgnorePattern": "^_"
+    }]
   },
   "ignorePatterns": [
     "build/",

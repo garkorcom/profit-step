@@ -388,7 +388,11 @@ const TaskSquare: React.FC<TaskSquareProps> = ({
                             onClick={(e) => {
                                 e.stopPropagation();
                                 if (navigator.vibrate) navigator.vibrate(10);
-                                isDone ? onMarkUndone(task.id) : onMarkDone(task.id);
+                                if (isDone) {
+                                    onMarkUndone(task.id);
+                                } else {
+                                    onMarkDone(task.id);
+                                }
                             }}
                             sx={{
                                 width: 44,

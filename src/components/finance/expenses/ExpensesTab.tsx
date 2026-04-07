@@ -31,7 +31,7 @@ interface ExpensesTabProps {
 
 // ── Component ────────────────────────────────────────────────────────────────
 
-export const ExpensesTab: React.FC<ExpensesTabProps> = ({ costs, loading, startDate: _startDate, endDate }) => {
+export const ExpensesTab: React.FC<ExpensesTabProps> = ({ costs, loading, startDate: _startDate, endDate: _endDate }) => {
     const navigate = useNavigate();
 
     // Filters

@@ -11,7 +11,7 @@ import { DEVICES, WIRE } from '../../constants/electricalDevices';
 import { ProjectOverview } from '../../utils/estimateValidation';
 import {
   ElectricalItem, QuantityMap, EstimatorCalcResult,
-  EQUIPMENT_SBO, WIRE_RATES, fmt, fmtHr,
+  EQUIPMENT_SBO, fmt, fmtHr,
 } from './estimator.types';
 import type { BlueprintV3Session } from '../../types/blueprint.types';
 

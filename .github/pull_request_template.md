@@ -72,7 +72,7 @@ await change.after.ref.update({ count: increment(1) });
 
 ## 💰 Я понимаю риски
 
-- [ ] Я прочитал `DEFENSIVE_PROGRAMMING_GUIDE.md`
+- [ ] Я прочитал `docs/legacy-nov2025/DEFENSIVE_PROGRAMMING_GUIDE.md`
 - [ ] Я понимаю как infinite loop приводит к катастрофическим счетам
 - [ ] Я обязуюсь мониторить логи первые 48 часов после деплоя
 

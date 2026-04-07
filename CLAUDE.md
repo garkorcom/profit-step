@@ -55,7 +55,7 @@
 
 ### 2.1. Firebase Cloud Functions — infinite loop risk
 
-Один неправильный `onUpdate` триггер без idempotency guard = **$10,000+ billing bomb** за пару дней. Прочитай `docs/legacy/DEFENSIVE_PROGRAMMING_GUIDE.md` ДО любых правок триггеров. Всегда:
+Один неправильный `onUpdate` триггер без idempotency guard = **$10,000+ billing bomb** за пару дней. Прочитай `docs/legacy-nov2025/DEFENSIVE_PROGRAMMING_GUIDE.md` ДО любых правок триггеров. Всегда:
 
 - Идемпотентность через `processedEvents` коллекцию ИЛИ guard на `before.data() vs after.data()` вернуть `null` если ничего не изменилось
 - Не делать писать в тот же документ который триггерит функцию, без защиты от рекурсии
@@ -139,7 +139,7 @@ cd .claude/worktrees/<task-name>
 
 - **13 TypeScript ошибок** в `siteDashboard/`, `estimator/`, `ElectricalEstimatorPage` — pre-existing work от предыдущего AI-агента. Vite build проходит (warnings, не errors), но `tsc --noEmit` падает. **Не игнорируй при правке этих модулей** — добавлять новые ошибки нельзя.
 - **Backend тестов НОЛЬ** (130 .ts файлов в `functions/src/`). Любой рефакторинг без тестов — рулетка. См. `docs/tasks/` если там есть план покрытия.
-- **Глобальный ErrorBoundary отсутствует** (см. `docs/legacy/TODO_FUTURE_IMPROVEMENTS.md`)
+- **Глобальный ErrorBoundary отсутствует** (см. `docs/legacy-nov2025/TODO_FUTURE_IMPROVEMENTS.md`)
 - **Sentry не подключен**
 - **Offline detection** не реализован
 - **Zod валидация форм** — не везде

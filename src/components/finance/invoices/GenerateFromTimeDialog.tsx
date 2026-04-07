@@ -23,6 +23,10 @@ interface GenerateInvoiceFormParams {
 interface GenerateFromTimeDialogProps {
     open: boolean;
     onClose: () => void;
+    // onCreate signature is legacy — consumer passes the invoice creation
+    // function from useInvoices which has a different shape than our preview
+    // data. Kept loose to avoid cascading refactor of InvoicesTab consumers.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     onCreate: (data: any) => Promise<any>;
 }
 
@@ -30,6 +34,7 @@ export const GenerateFromTimeDialog: React.FC<GenerateFromTimeDialogProps> = ({ 
     const { clients, loading: clientsLoading } = useClients();
     const { generateFromTimeTracking, generating, error: genError } = useInvoiceGenerator();
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const [previewData, setPreviewData] = useState<any>(null);
     const [saving, setSaving] = useState(false);
 

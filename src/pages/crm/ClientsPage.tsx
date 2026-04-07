@@ -285,7 +285,8 @@ const ClientsPage: React.FC = () => {
                                         ml: '8px !important',
                                         animation: 'healthPulse 2s infinite',
                                         '--glow-color': 'rgba(255,107,107,0.6)',
-                                    } as any}
+                                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+} as any /* MUI sx doesn't type CSS custom props like --glow-color */}
                                     />
                                 }
                                 label={`${stats.red} забытых`}
@@ -422,7 +423,8 @@ const ClientsPage: React.FC = () => {
                                 width: 10, height: 10, borderRadius: '50%', bgcolor: 'white',
                                 animation: 'healthPulse 2s infinite',
                                 '--glow-color': 'rgba(255,255,255,0.6)',
-                            } as any}
+                            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+} as any /* MUI sx doesn't type CSS custom props like --glow-color */}
                             />
                         )}
                     </Box>
@@ -870,7 +872,8 @@ const ClientsPage: React.FC = () => {
                                                 boxShadow: `0 0 8px ${healthCfg.glow}`,
                                                 animation: client.health === 'red' ? 'healthPulse 2s infinite' : 'none',
                                                 '--glow-color': healthCfg.glow,
-                                            } as any}
+                                            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+} as any /* MUI sx doesn't type CSS custom props like --glow-color */}
                                         />
                                     </Box>
                                 </Tooltip>
@@ -1130,7 +1133,8 @@ const MobileClientCard: React.FC<{
                     boxShadow: `0 0 10px ${healthCfg.glow}`,
                     animation: client.health === 'red' ? 'healthPulse 2s infinite' : 'none',
                     '--glow-color': healthCfg.glow,
-                } as any}
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+} as any /* MUI sx doesn't type CSS custom props like --glow-color */}
                 />
             </Box>
 

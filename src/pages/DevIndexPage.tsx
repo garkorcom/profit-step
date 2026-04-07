@@ -11,6 +11,7 @@ import {
     Storage as StorageIcon
 } from '@mui/icons-material';
 import { useAuth } from '../auth/AuthContext';
+import { errorMessage, errorCode } from '../utils/errorMessage';
 import { seedLocalDb } from '../scripts/seedLocalDb';
 import { db } from '../firebase/firebase';
 // [ARCHIVED] TaskTimerButton moved to _archived/timer-v2-fsm/
@@ -162,19 +163,20 @@ const DevIndexPage: React.FC = () => {
                                         await signInWithEmailAndPassword(auth, 'admin@test.com', 'password123');
                                         alert('Logged in as admin@test.com');
                                         // window.location.reload(); // Removed to prevent subagent disconnect
-                                    } catch (e: any) {
+                                    } catch (e: unknown) {
                                         console.error(e);
-                                        if (e.code === 'auth/user-not-found') {
+                                        const code = errorCode(e);
+                                        if (code === 'auth/user-not-found') {
                                             try {
                                                 const { getAuth, createUserWithEmailAndPassword } = await import('firebase/auth');
                                                 const auth = getAuth();
                                                 await createUserWithEmailAndPassword(auth, 'admin@test.com', 'password123');
                                                 console.log('Created and logged in as admin@test.com');
-                                            } catch (createError: any) {
-                                                console.error('Login AND Creation failed: ' + createError.message);
+                                            } catch (createError: unknown) {
+                                                console.error('Login AND Creation failed: ' + errorMessage(createError));
                                             }
                                         } else {
-                                            console.error('Login failed: ' + e.message);
+                                            console.error('Login failed: ' + errorMessage(e));
                                         }
                                     }
                                 }}
@@ -220,7 +222,7 @@ const DevIndexPage: React.FC = () => {
                                         const userRef = doc(db, 'users', currentUser.uid);
                                         const userSnap = await getDoc(userRef);
 
-                                        const updates: any = { role: 'admin' };
+                                        const updates: Record<string, unknown> = { role: 'admin' };
                                         if (!userSnap.exists() || !userSnap.data()?.companyId) {
                                             updates.companyId = currentUser.uid;
                                             console.log('Setting missing companyId to uid');
@@ -260,9 +262,9 @@ const DevIndexPage: React.FC = () => {
 
                                         console.log('✅ User created successfully:', result.data);
                                         alert(`Success! Created: ${email}`);
-                                    } catch (e: any) {
+                                    } catch (e: unknown) {
                                         console.error('❌ Creation failed:', e);
-                                        alert(`Failed: ${e.message}`);
+                                        alert(`Failed: ${errorMessage(e)}`);
                                     }
                                 }}
                             >

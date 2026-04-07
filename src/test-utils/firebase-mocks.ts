@@ -12,8 +12,11 @@ import { Timestamp } from 'firebase/firestore';
 // FIRESTORE MOCKS
 // ============================================
 
+type MockDocData = Record<string, unknown>;
+type MockDocSnap = ReturnType<typeof createMockDocSnap>;
+
 /** Creates a mock Firestore document snapshot */
-export const createMockDocSnap = (id: string, data: Record<string, any>) => ({
+export const createMockDocSnap = (id: string, data: MockDocData) => ({
     id,
     data: () => data,
     exists: () => true,
@@ -21,11 +24,11 @@ export const createMockDocSnap = (id: string, data: Record<string, any>) => ({
 });
 
 /** Creates a mock Firestore query snapshot */
-export const createMockQuerySnap = (docs: Array<{ id: string; data: Record<string, any> }>) => ({
+export const createMockQuerySnap = (docs: Array<{ id: string; data: MockDocData }>) => ({
     docs: docs.map(d => createMockDocSnap(d.id, d.data)),
     empty: docs.length === 0,
     size: docs.length,
-    forEach: (cb: (doc: any) => void) => docs.map(d => createMockDocSnap(d.id, d.data)).forEach(cb),
+    forEach: (cb: (doc: MockDocSnap) => void) => docs.map(d => createMockDocSnap(d.id, d.data)).forEach(cb),
 });
 
 /** Creates a fake Firestore Timestamp from a Date */
@@ -35,7 +38,7 @@ export const mockTimestamp = (date: Date = new Date()): Timestamp => {
         nanoseconds: 0,
         toDate: () => date,
         toMillis: () => date.getTime(),
-        isEqual: (other: any) => other?.seconds === Math.floor(date.getTime() / 1000),
+        isEqual: (other: { seconds?: number } | null | undefined) => other?.seconds === Math.floor(date.getTime() / 1000),
     } as unknown as Timestamp;
 };
 

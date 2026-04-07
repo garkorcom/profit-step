@@ -42,6 +42,7 @@ import {
     updateLocation,
 } from '../../features/inventory/inventoryService';
 import { useAuth } from '../../auth/AuthContext';
+import { errorMessage } from '../../utils/errorMessage';
 import { Timestamp } from 'firebase/firestore';
 
 // ═══════════════════════════════════════
@@ -181,8 +182,8 @@ const InventoryPage: React.FC = () => {
         try {
             await archiveCatalogItem(archiveConfirm.item.id);
             setSnackbar({ open: true, msg: `✅ "${archiveConfirm.item.name}" архивирован`, severity: 'success' });
-        } catch (err: any) {
-            setSnackbar({ open: true, msg: err.message || 'Ошибка архивации', severity: 'error' });
+        } catch (err: unknown) {
+            setSnackbar({ open: true, msg: errorMessage(err) || 'Ошибка архивации', severity: 'error' });
         } finally {
             setArchiveConfirm({ open: false, item: null });
         }
@@ -197,8 +198,8 @@ const InventoryPage: React.FC = () => {
         try {
             await updateLocation(loc.id, { isActive: !loc.isActive });
             setSnackbar({ open: true, msg: loc.isActive ? `"${loc.name}" деактивирована` : `"${loc.name}" активирована`, severity: 'success' });
-        } catch (err: any) {
-            setSnackbar({ open: true, msg: err.message || 'Ошибка', severity: 'error' });
+        } catch (err: unknown) {
+            setSnackbar({ open: true, msg: errorMessage(err) || 'Ошибка', severity: 'error' });
         }
     };
 
@@ -886,9 +887,9 @@ const TransactionDialog: React.FC<TransactionDialogProps> = ({
                 note: note.trim() || undefined,
             });
             onSave();
-        } catch (err: any) {
+        } catch (err: unknown) {
             console.error('Transaction error:', err);
-            alert(err.message || 'Ошибка при создании операции');
+            alert(errorMessage(err) || 'Ошибка при создании операции');
         } finally {
             setSaving(false);
         }
@@ -1048,7 +1049,7 @@ const AddLocationDialog: React.FC<AddLocationDialogProps> = ({ open, onClose, on
                     <TextField label="Название *" value={name} onChange={(e) => setName(e.target.value)} fullWidth />
                     <FormControl fullWidth>
                         <InputLabel>Тип</InputLabel>
-                        <Select value={type} onChange={(e) => setType(e.target.value as any)} label="Тип">
+                        <Select value={type} onChange={(e) => setType(e.target.value as 'warehouse' | 'vehicle' | 'jobsite')} label="Тип">
                             {Object.entries(LOCATION_TYPE_LABELS).map(([k, v]) => (
                                 <MenuItem key={k} value={k}>{v}</MenuItem>
                             ))}

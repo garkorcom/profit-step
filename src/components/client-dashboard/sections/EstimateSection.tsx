@@ -77,7 +77,12 @@ function ExpandableItemRow({ item, index }: { item: any; index: number }) {
   const desc = item.description || item.name || '';
   const qty = item.quantity ?? '';
   const unit = item.unit || '';
-  const unitPrice = item.unitPrice ?? item.unitCostPrice ?? null;
+  // ⚠️ SECURITY: Do NOT fall back to item.unitCostPrice here — that's the
+  // INTERNAL cost price and this component renders in the client portal
+  // (/portal/:slug). When Phase 3 adds internal mode via a
+  // `showInternalCost` prop, the internal view can opt in to showing cost
+  // prices. For now, client portal only sees sell prices.
+  const unitPrice = item.unitPrice ?? null;
   const itemTotal = item.total ?? item.price ?? 0;
   const notes = item.notes || '';
 

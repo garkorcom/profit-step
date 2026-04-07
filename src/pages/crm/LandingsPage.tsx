@@ -38,7 +38,7 @@ const LandingsPage: React.FC = () => {
 
       <Grid container spacing={4} sx={{ mt: 2 }}>
         {landings.map((landing) => (
-          <Grid item xs={12} md={6} lg={4} key={landing.id}>
+          <Grid size={{ xs: 12, md: 6, lg: 4 }} key={landing.id}>
             <Paper
               elevation={3}
               sx={{

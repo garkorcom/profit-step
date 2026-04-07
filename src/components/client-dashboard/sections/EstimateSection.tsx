@@ -67,7 +67,7 @@ export interface EstimateCategory {
   status: string;
 }
 
-interface EstimateViewProps {
+interface EstimateSectionProps {
   estimates: Estimate[];
 }
 
@@ -132,7 +132,7 @@ function ExpandableItemRow({ item, index }: { item: any; index: number }) {
   );
 }
 
-const EstimateView: React.FC<EstimateViewProps> = ({ estimates }) => {
+const EstimateSection: React.FC<EstimateSectionProps> = ({ estimates }) => {
   const [newComment, setNewComment] = useState<{ [key: string]: string }>({});
 
   const handleAddComment = async (estimateId: string) => {
@@ -304,4 +304,4 @@ const EstimateView: React.FC<EstimateViewProps> = ({ estimates }) => {
   );
 };
 
-export default EstimateView;
+export default EstimateSection;

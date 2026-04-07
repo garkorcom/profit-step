@@ -29,13 +29,13 @@ export interface GalleryPhoto {
   category: 'render' | 'progress' | 'before';
 }
 
-interface PhotoGalleryProps {
+interface GallerySectionProps {
   photos: GalleryPhoto[];
   designerName?: string;
   expectedDesignDate?: string;
 }
 
-const PhotoGallery: React.FC<PhotoGalleryProps> = ({
+const GallerySection: React.FC<GallerySectionProps> = ({
   photos,
   designerName = 'Designer',
   expectedDesignDate = 'TBD',
@@ -245,4 +245,4 @@ const PhotoGallery: React.FC<PhotoGalleryProps> = ({
   );
 };
 
-export default PhotoGallery;
+export default GallerySection;

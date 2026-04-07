@@ -17,11 +17,11 @@ export interface ProjectStage {
   description: string;
 }
 
-interface TimelineSliderProps {
+interface TimelineSectionProps {
   stages: ProjectStage[];
 }
 
-const TimelineSlider: React.FC<TimelineSliderProps> = ({ stages }) => {
+const TimelineSection: React.FC<TimelineSectionProps> = ({ stages }) => {
   const currentIndex = stages.findIndex(s => s.status === 'current');
   const [timelineProgress, setTimelineProgress] = useState(currentIndex >= 0 ? currentIndex : 0);
 
@@ -118,4 +118,4 @@ const TimelineSlider: React.FC<TimelineSliderProps> = ({ stages }) => {
   );
 };
 
-export default TimelineSlider;
+export default TimelineSection;

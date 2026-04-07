@@ -22,7 +22,7 @@ export interface PaymentItem {
   dueDate: string;
 }
 
-interface PaymentScheduleProps {
+interface PaymentsSectionProps {
   payments: PaymentItem[];
   totalEstimate: string;
 }
@@ -37,7 +37,7 @@ const getPaymentStatusColor = (status: string) => {
   }
 };
 
-const PaymentSchedule: React.FC<PaymentScheduleProps> = ({ payments, totalEstimate }) => {
+const PaymentsSection: React.FC<PaymentsSectionProps> = ({ payments, totalEstimate }) => {
   const totalPaid = payments
     .filter(p => p.status === 'paid')
     .reduce((sum, p) => sum + p.amount, 0);
@@ -133,4 +133,4 @@ const PaymentSchedule: React.FC<PaymentScheduleProps> = ({ payments, totalEstima
   );
 };
 
-export default PaymentSchedule;
+export default PaymentsSection;

@@ -22,11 +22,11 @@ import {
 } from '@mui/icons-material';
 
 import { useClientPortal } from '../../hooks/useClientPortal';
-import EstimateView from './components/EstimateView';
-import TimelineSlider, { type ProjectStage } from './components/TimelineSlider';
-import PhotoGallery from './components/PhotoGallery';
-import PaymentSchedule, { type PaymentItem } from './components/PaymentSchedule';
-import InspectionsView, { type Inspection } from './components/InspectionsView';
+import EstimateSection from '../../components/client-dashboard/sections/EstimateSection';
+import TimelineSection, { type ProjectStage } from '../../components/client-dashboard/sections/TimelineSection';
+import GallerySection from '../../components/client-dashboard/sections/GallerySection';
+import PaymentsSection, { type PaymentItem } from '../../components/client-dashboard/sections/PaymentsSection';
+import InspectionsSection, { type Inspection } from '../../components/client-dashboard/sections/InspectionsSection';
 
 // --- Helpers ---
 
@@ -311,19 +311,19 @@ const ClientPortalPage: React.FC = () => {
 
         {/* Tab Panels */}
         <TabPanel value={tabValue} index={0}>
-          <EstimateView estimates={estimates} />
+          <EstimateSection estimates={estimates} />
         </TabPanel>
 
         <TabPanel value={tabValue} index={1}>
-          <TimelineSlider stages={stages} />
+          <TimelineSection stages={stages} />
         </TabPanel>
 
         <TabPanel value={tabValue} index={2}>
-          <PaymentSchedule payments={payments} totalEstimate={totalEstimate} />
+          <PaymentsSection payments={payments} totalEstimate={totalEstimate} />
         </TabPanel>
 
         <TabPanel value={tabValue} index={3}>
-          <PhotoGallery
+          <GallerySection
             photos={photos}
             designerName="Designer"
             expectedDesignDate="TBD"
@@ -331,7 +331,7 @@ const ClientPortalPage: React.FC = () => {
         </TabPanel>
 
         <TabPanel value={tabValue} index={4}>
-          <InspectionsView inspections={inspections} />
+          <InspectionsSection inspections={inspections} />
         </TabPanel>
       </Container>
     </Box>

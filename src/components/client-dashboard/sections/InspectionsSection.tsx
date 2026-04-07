@@ -29,7 +29,7 @@ export interface Inspection {
   notes?: string;
 }
 
-interface InspectionsViewProps {
+interface InspectionsSectionProps {
   inspections: Inspection[];
 }
 
@@ -47,7 +47,7 @@ const getStatusConfig = (status: string) => {
   }
 };
 
-const InspectionsView: React.FC<InspectionsViewProps> = ({ inspections }) => {
+const InspectionsSection: React.FC<InspectionsSectionProps> = ({ inspections }) => {
   const upcoming = inspections.filter(i => i.status === 'scheduled' || i.status === 'in-progress');
   const completed = inspections.filter(i => i.status === 'passed' || i.status === 'failed');
 
@@ -178,4 +178,4 @@ const InspectionsView: React.FC<InspectionsViewProps> = ({ inspections }) => {
   );
 };
 
-export default InspectionsView;
+export default InspectionsSection;

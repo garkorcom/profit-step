@@ -15,7 +15,7 @@ import type { Estimate } from '../types/estimate.types';
 import type { GTDTask } from '../types/gtd.types';
 import type { Project } from '../types/project.types';
 import type { LedgerEntry } from '../types/crm.types';
-import type { GalleryPhoto } from '../pages/portal/components/PhotoGallery';
+import type { GalleryPhoto } from '../components/client-dashboard/sections/GallerySection';
 
 export interface ClientPortalData {
   client: Client | null;

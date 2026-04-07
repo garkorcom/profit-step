@@ -130,10 +130,25 @@ function ExpandableItemRow({
         <TableCell align="right" sx={{ fontWeight: 'bold' }}>
           ${itemTotal.toLocaleString()}
         </TableCell>
+        {showInternalCost && (
+          <>
+            <TableCell align="right" sx={{ color: 'error.main' }}>
+              {itemCostTotal !== null ? `$${itemCostTotal.toLocaleString()}` : '—'}
+            </TableCell>
+            <TableCell align="right" sx={{
+              color: marginPct === null ? 'text.disabled' :
+                     marginPct > 30 ? 'success.main' :
+                     marginPct >= 20 ? 'warning.main' : 'error.main',
+              fontWeight: 'bold'
+            }}>
+              {marginPct !== null ? `${marginPct.toFixed(0)}%` : '—'}
+            </TableCell>
+          </>
+        )}
       </TableRow>
       {hasDetails && (
         <TableRow>
-          <TableCell colSpan={4} sx={{ py: 0, pl: 6, borderBottom: open ? undefined : 0 }}>
+          <TableCell colSpan={showInternalCost ? 6 : 4} sx={{ py: 0, pl: 6, borderBottom: open ? undefined : 0 }}>
             <Collapse in={open} timeout="auto" unmountOnExit>
               <Box sx={{ py: 1.5, color: 'text.secondary' }}>
                 {qty && unitPrice !== null && (
@@ -160,7 +175,7 @@ function ExpandableItemRow({
   );
 }
 
-const EstimateSection: React.FC<EstimateSectionProps> = ({ estimates }) => {
+const EstimateSection: React.FC<EstimateSectionProps> = ({ estimates, showInternalCost = false }) => {
   const [newComment, setNewComment] = useState<{ [key: string]: string }>({});
 
   const handleAddComment = async (estimateId: string) => {
@@ -208,8 +223,14 @@ const EstimateSection: React.FC<EstimateSectionProps> = ({ estimates }) => {
   return (
     <Grid container spacing={3}>
       {estimates.map((estimate) => {
-        const items = estimate.clientItems || estimate.items || [];
-        const total = estimate.clientSubtotal || estimate.total || 0;
+        // In internal mode, show ALL items (internalItems if V4, otherwise .items).
+        // In client mode, strictly use clientItems (sell-side only) with .items fallback.
+        const items = showInternalCost
+          ? (estimate.internalItems || estimate.clientItems || estimate.items || [])
+          : (estimate.clientItems || estimate.items || []);
+        const total = showInternalCost
+          ? ((estimate.internalTotal as number | undefined) ?? estimate.total ?? 0)
+          : (estimate.clientSubtotal || estimate.total || 0);
         const isApproved = estimate.status === 'approved' || estimate.status === 'locked';
 
         return (
@@ -256,11 +277,22 @@ const EstimateSection: React.FC<EstimateSectionProps> = ({ estimates }) => {
                           <TableCell>Work Item</TableCell>
                           <TableCell align="right">Qty</TableCell>
                           <TableCell align="right">Amount</TableCell>
+                          {showInternalCost && (
+                            <>
+                              <TableCell align="right" sx={{ color: 'error.main' }}>Cost</TableCell>
+                              <TableCell align="right">Margin</TableCell>
+                            </>
+                          )}
                         </TableRow>
                       </TableHead>
                       <TableBody>
                         {items.map((item, index) => (
-                          <ExpandableItemRow key={(item as any).id || index} item={item} index={index} />
+                          <ExpandableItemRow
+                            key={(item as any).id || index}
+                            item={item}
+                            index={index}
+                            showInternalCost={showInternalCost}
+                          />
                         ))}
                         <TableRow>
                           <TableCell colSpan={3} sx={{ fontWeight: 'bold', borderTop: 2 }}>
@@ -269,6 +301,27 @@ const EstimateSection: React.FC<EstimateSectionProps> = ({ estimates }) => {
                           <TableCell align="right" sx={{ fontWeight: 'bold', fontSize: '1.1rem', borderTop: 2 }}>
                             ${total.toLocaleString()}
                           </TableCell>
+                          {showInternalCost && (
+                            <>
+                              <TableCell align="right" sx={{ borderTop: 2, color: 'error.main', fontWeight: 'bold' }}>
+                                {(() => {
+                                  const costTotal = (estimate as any).internalTotal
+                                    ?? items.reduce((s: number, it: any) => s + (it.totalCost ?? 0), 0);
+                                  return costTotal > 0 ? `$${costTotal.toLocaleString()}` : '—';
+                                })()}
+                              </TableCell>
+                              <TableCell align="right" sx={{ borderTop: 2, fontWeight: 'bold' }}>
+                                {(() => {
+                                  const costTotal = (estimate as any).internalTotal
+                                    ?? items.reduce((s: number, it: any) => s + (it.totalCost ?? 0), 0);
+                                  if (costTotal <= 0 || total <= 0) return '—';
+                                  const margin = ((total - costTotal) / total) * 100;
+                                  const color = margin > 30 ? '#2e7d32' : margin >= 20 ? '#ed6c02' : '#d32f2f';
+                                  return <span style={{ color }}>{margin.toFixed(0)}%</span>;
+                                })()}
+                              </TableCell>
+                            </>
+                          )}
                         </TableRow>
                       </TableBody>
                     </Table>

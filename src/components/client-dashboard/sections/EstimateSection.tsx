@@ -69,21 +69,44 @@ export interface EstimateCategory {
 
 interface EstimateSectionProps {
   estimates: Estimate[];
+  /**
+   * Internal mode: show cost-price columns and margin.
+   * Default false — client portal must NEVER set this to true.
+   * Set to true only from internal employee views (e.g. /dashboard/client/:id).
+   */
+  showInternalCost?: boolean;
 }
 
-function ExpandableItemRow({ item, index: _index }: { item: any; index: number }) {
+function ExpandableItemRow({
+  item,
+  index: _index,
+  showInternalCost = false,
+}: {
+  item: any;
+  index: number;
+  showInternalCost?: boolean;
+}) {
   const [open, setOpen] = useState(false);
 
   const desc = item.description || item.name || '';
   const qty = item.quantity ?? '';
   const unit = item.unit || '';
-  // ⚠️ SECURITY: Do NOT fall back to item.unitCostPrice here — that's the
-  // INTERNAL cost price and this component renders in the client portal
-  // (/portal/:slug). When Phase 3 adds internal mode via a
-  // `showInternalCost` prop, the internal view can opt in to showing cost
-  // prices. For now, client portal only sees sell prices.
-  const unitPrice = item.unitPrice ?? null;
+  // ⚠️ SECURITY: item.unitCostPrice is the INTERNAL cost price — only read
+  // it when showInternalCost is true. Client portal MUST pass false
+  // (or omit the prop — default is false).
+  const sellPrice = item.unitPrice ?? null;
+  const costPrice = showInternalCost ? (item.unitCostPrice ?? null) : null;
+  const unitPrice = sellPrice;
   const itemTotal = item.total ?? item.price ?? 0;
+  const itemCostTotal = showInternalCost
+    ? (item.totalCost ?? (qty && costPrice !== null ? Number(qty) * Number(costPrice) : null))
+    : null;
+  const margin = showInternalCost && itemCostTotal !== null && itemTotal > 0
+    ? itemTotal - itemCostTotal
+    : null;
+  const marginPct = showInternalCost && margin !== null && itemTotal > 0
+    ? (margin / itemTotal) * 100
+    : null;
   const notes = item.notes || '';
 
   const hasDetails = !!(notes || (qty && unitPrice !== null));

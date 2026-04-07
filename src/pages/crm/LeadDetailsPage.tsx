@@ -101,7 +101,7 @@ const LeadDetailsPage: React.FC = () => {
         // Strategy: Listen to ALL relevant collections and merge? 
         // Or just listen to the one active tab? Let's do active tab for efficiency.
 
-        let collectionRef = null;
+        let _collectionRef = null;
         let chatId = '';
 
         if (activeTab === 1 && lead.phone) {

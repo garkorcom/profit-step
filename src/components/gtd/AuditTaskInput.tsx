@@ -170,9 +170,9 @@ interface AuditTaskInputProps {
 const AuditTaskInput: React.FC<AuditTaskInputProps> = ({
     onComplete,
     onCancel,
-    clientId,
+    clientId: _clientId,
     clientName,
-    locationId,
+    locationId: _locationId,
 }) => {
     const { currentUser, userProfile } = useAuth();
 

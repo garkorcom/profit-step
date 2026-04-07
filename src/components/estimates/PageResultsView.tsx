@@ -21,7 +21,7 @@ interface PageResultsViewProps {
     onMergedUpdate?: (merged: BlueprintAgentResult) => void;
 }
 
-const PageResultsView: React.FC<PageResultsViewProps> = ({ pageResults, onMergedUpdate }) => {
+const PageResultsView: React.FC<PageResultsViewProps> = ({ pageResults, onMergedUpdate: _onMergedUpdate }) => {
     const [activeTab, setActiveTab] = useState(0);
 
     // Combine all page results into one merged table

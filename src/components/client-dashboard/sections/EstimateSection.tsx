@@ -71,7 +71,7 @@ interface EstimateSectionProps {
   estimates: Estimate[];
 }
 
-function ExpandableItemRow({ item, index }: { item: any; index: number }) {
+function ExpandableItemRow({ item, index: _index }: { item: any; index: number }) {
   const [open, setOpen] = useState(false);
 
   const desc = item.description || item.name || '';

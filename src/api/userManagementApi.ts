@@ -359,7 +359,7 @@ export const getCompanyUserCount = async (
             return companyData.memberCount;
           }
         }
-      } catch (error) {
+      } catch (_error) {
         console.warn('⚠️ Could not get memberCount from company doc, falling back to count query');
       }
     }

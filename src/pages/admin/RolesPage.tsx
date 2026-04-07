@@ -144,7 +144,7 @@ const RolesPage: React.FC = () => {
             console.log('Saving role permissions:', { selectedRole, permissions, fieldRestrictions });
             toast.success('Права сохранены (demo)');
             setHasChanges(false);
-        } catch (err) {
+        } catch (_err) {
             toast.error('Ошибка сохранения');
         } finally {
             setLoading(false);

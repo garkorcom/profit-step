@@ -214,7 +214,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       console.log('✅ User signed out');
     } catch (error: unknown) {
       console.error('❌ Error signing out:', error);
-      throw new Error('Не удалось выйти из системы', { cause: error as Error });
+      throw new Error('Не удалось выйти из системы', { cause: error });
     }
   };
 

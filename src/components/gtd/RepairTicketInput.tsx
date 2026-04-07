@@ -76,9 +76,9 @@ interface RepairTicketInputProps {
 const RepairTicketInput: React.FC<RepairTicketInputProps> = ({
     onComplete,
     onCancel,
-    clientId,
+    clientId: _clientId,
     clientName,
-    locationId,
+    locationId: _locationId,
 }) => {
     const fileInputRef = useRef<HTMLInputElement>(null);
 

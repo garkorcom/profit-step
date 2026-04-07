@@ -31,7 +31,7 @@ export const useDashboardTime = (companyId: string | undefined): DashboardTimeDa
         if (!companyId) return;
 
         const now = new Date();
-        const todayStart = startOfDay(now);
+        const _todayStart = startOfDay(now);
 
         // Let's use Monday as week start
         const currentWeekStart = startOfWeek(now, { weekStartsOn: 1 });

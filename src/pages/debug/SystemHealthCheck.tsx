@@ -91,15 +91,15 @@ export const SystemHealthCheck: React.FC = () => {
             } else {
                 setChecks(c => ({ ...c, firestoreProfile: 'error' }));
             }
-        } catch (e) {
+        } catch (_e) {
             setChecks(c => ({ ...c, firestoreProfile: 'error' }));
         }
 
         // 3. Check Geo Services (V3.1)
         if ("geolocation" in navigator) {
             navigator.geolocation.getCurrentPosition(
-                (position) => setChecks(c => ({ ...c, fsmGeo: 'ok' })),
-                (error) => setChecks(c => ({ ...c, fsmGeo: 'error' }))
+                (_position) => setChecks(c => ({ ...c, fsmGeo: 'ok' })),
+                (_error) => setChecks(c => ({ ...c, fsmGeo: 'error' }))
             );
         } else {
             setChecks(c => ({ ...c, fsmGeo: 'error' }));

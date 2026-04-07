@@ -412,7 +412,7 @@ const ContactsPage: React.FC = () => {
                                     setSuccessMsg('Контакт успешно удален!');
                                     setDeleteDialogOpen(false);
                                     setActionContact(null);
-                                } catch (err) {
+                                } catch (_err) {
                                     // Error is already logged in service, can just notify
                                     setSuccessMsg('Ошибка при удалении контакта.');
                                 } finally {

@@ -74,7 +74,7 @@ const ShoppingPage: React.FC = () => {
 
     // Current lists based on tab
     const currentHook = tabValue === 'active' ? activeLists : completedLists;
-    const { lists, loading, stats, toggleItem, updateItem, deleteItem, addItems, updateClient, completeList } = currentHook;
+    const { lists, loading, stats: _stats, toggleItem, updateItem, deleteItem, addItems, updateClient, completeList } = currentHook;
 
     // Create dialog state
     const [createDialogOpen, setCreateDialogOpen] = useState(false);

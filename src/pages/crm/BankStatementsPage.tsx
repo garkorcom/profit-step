@@ -79,7 +79,6 @@ import {
 import { useBankStatements } from '../../components/bank-statements/useBankStatements';
 import { BankSummaryCards } from '../../components/bank-statements/BankSummaryCards';
 import { BankReportPreview } from '../../components/bank-statements/BankReportPreview';
-import { BankTransactionsTable } from '../../components/bank-statements/BankTransactionsTable';
 import { BankAccountingReport } from '../../components/bank-statements/BankAccountingReport';
 import { BankAiPreview } from '../../components/bank-statements/BankAiPreview';
 import { BankSplitDialog } from '../../components/bank-statements/BankSplitDialog';

@@ -59,7 +59,7 @@ export const GenerateFromTimeDialog: React.FC<GenerateFromTimeDialogProps> = ({ 
                 true // Apply client rates
             );
             setPreviewData(preview);
-        } catch (e) {
+        } catch (_e) {
             setPreviewData(null);
             // Error is handled by useInvoiceGenerator and displayed via genError
         }

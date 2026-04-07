@@ -281,7 +281,7 @@ export function useClientDashboard(companyId: string | undefined) {
 // HELPERS
 // ═══════════════════════════════════════
 
-async function loadTaskStats(companyId: string): Promise<Map<string, TaskStats>> {
+async function loadTaskStats(_companyId: string): Promise<Map<string, TaskStats>> {
     const map = new Map<string, TaskStats>();
     const now = Timestamp.now();
 

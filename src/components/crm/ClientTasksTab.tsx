@@ -38,7 +38,7 @@ const statusLabels: Record<string, string> = {
     'done': 'Выполнено'
 };
 
-const ClientTasksTab: React.FC<ClientTasksTabProps> = ({ clientId, clientName }) => {
+const ClientTasksTab: React.FC<ClientTasksTabProps> = ({ clientId, clientName: _clientName }) => {
     const navigate = useNavigate();
     const [tasks, setTasks] = useState<GTDTask[]>([]);
     const [loading, setLoading] = useState(true);

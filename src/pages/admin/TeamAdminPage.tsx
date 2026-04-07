@@ -122,7 +122,7 @@ const TeamAdminPage: React.FC = () => {
   const [totalUsers, setTotalUsers] = useState(0);
 
   // Cursors for navigation
-  const [firstDoc, setFirstDoc] = useState<DocumentSnapshot | null>(null);
+  const [_firstDoc, setFirstDoc] = useState<DocumentSnapshot | null>(null);
   const [lastDoc, setLastDoc] = useState<DocumentSnapshot | null>(null);
   const [pageCursors, setPageCursors] = useState<Map<number, DocumentSnapshot>>(new Map());
 

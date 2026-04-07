@@ -119,13 +119,13 @@ export async function deleteAvatar(): Promise<{
 
     try {
       await deleteObject(originalRef);
-    } catch (e) {
+    } catch (_e) {
       console.log('Original not found, skipping');
     }
 
     try {
       await deleteObject(thumbnailRef);
-    } catch (e) {
+    } catch (_e) {
       console.log('Thumbnail not found, skipping');
     }
 

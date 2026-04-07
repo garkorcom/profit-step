@@ -49,7 +49,7 @@ export default function CostWarningDialog({
   open,
   currentReads,
   estimatedCost,
-  warningThreshold = 1000,
+  warningThreshold: _warningThreshold = 1000,
   hardLimit = 5000,
   onClose,
   onReset,

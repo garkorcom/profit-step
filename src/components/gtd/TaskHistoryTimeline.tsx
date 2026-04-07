@@ -170,7 +170,7 @@ export const TaskHistoryTimeline: React.FC<TaskHistoryTimelineProps> = ({ task }
                     }}
                 />
 
-                {events.map((evt, idx) => (
+                {events.map((evt, _idx) => (
                     <Box key={evt.id} sx={{ display: 'flex', mb: 4, position: 'relative', zIndex: 1 }}>
 
                         {/* Dot / Icon container */}

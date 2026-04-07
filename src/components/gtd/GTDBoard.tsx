@@ -673,7 +673,7 @@ const GTDBoard: React.FC = () => {
                             }
                         }}
                     >
-                        {GTD_COLUMNS.map((col, idx) => (
+                        {GTD_COLUMNS.map((col, _idx) => (
                             <Tab
                                 key={col.id}
                                 sx={{ 

@@ -96,7 +96,7 @@ const EditSessionDialog: React.FC<EditSessionDialogProps> = ({
     session,
     onClose,
     onSave,
-    currentUserId
+    currentUserId: _currentUserId
 }) => {
     // Form state
     const [clientId, setClientId] = useState('');

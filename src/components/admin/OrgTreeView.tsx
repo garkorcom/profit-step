@@ -146,17 +146,17 @@ const TreeNode: React.FC<TreeNodeProps> = ({ node, users, depth, onUserClick }) 
 };
 
 // Group users by department
-interface DepartmentGroup {
+interface _DepartmentGroup {
     department: Department | 'none';
     label: string;
     users: OrgTreeNode[];
 }
 
 const OrgTreeView: React.FC<OrgTreeViewProps> = ({ nodes, users, onUserClick }) => {
-    const [expandedDepts, setExpandedDepts] = useState<Set<string>>(new Set(['none']));
+    const [_expandedDepts, setExpandedDepts] = useState<Set<string>>(new Set(['none']));
 
     // Group by department
-    const groupedByDept = React.useMemo(() => {
+    const _groupedByDept = React.useMemo(() => {
         const groups: Map<Department | 'none', OrgTreeNode[]> = new Map();
 
         const collectNodes = (nodeList: OrgTreeNode[]) => {
@@ -180,7 +180,7 @@ const OrgTreeView: React.FC<OrgTreeViewProps> = ({ nodes, users, onUserClick }) 
         }));
     }, [nodes, users]);
 
-    const toggleDept = (dept: string) => {
+    const _toggleDept = (dept: string) => {
         setExpandedDepts(prev => {
             const next = new Set(prev);
             if (next.has(dept)) {

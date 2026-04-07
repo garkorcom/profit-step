@@ -122,7 +122,7 @@ const CreateSessionDialog: React.FC<CreateSessionDialogProps> = ({ open, onClose
             const hours = durationMinutes / 60;
             const earnings = parseFloat((hours * rate).toFixed(2));
 
-            const newSession: any = {
+            const _newSession: any = {
                 employeeId: Number(selectedEmployee.id) || 0, // Fallback if ID is numeric vs string
                 // Wait type says employeeId is number. My fetch returns doc.id which is string usually from Auth (uid).
                 // Let's check TimeTrackingPage again. SelectedEmployee sets id: String(session.employeeId).

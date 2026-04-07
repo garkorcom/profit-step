@@ -96,7 +96,7 @@ export const V3PipelineContainer: React.FC<V3PipelineContainerProps> = ({ compan
         setImages(prev => prev.filter(img => img.id !== id));
     };
 
-    const handleProcessingComplete = (aggregatedData: BlueprintAgentResult, rawV3Data: Record<string, BlueprintAgentV3Result>, anomaliesArray: {itemKey: string, reason: string}[], logs: any[]) => {
+    const handleProcessingComplete = (aggregatedData: BlueprintAgentResult, rawV3Data: Record<string, BlueprintAgentV3Result>, anomaliesArray: {itemKey: string, reason: string}[], _logs: any[]) => {
         setAggregatedResult(aggregatedData);
         setV3Results(rawV3Data);
         setAnomalies(anomaliesArray);

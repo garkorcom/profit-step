@@ -202,7 +202,7 @@ const CompanyDashboard: React.FC = () => {
           if (userData.status === 'pending') pendingInvites++;
 
           if (userData.lastSeen) {
-            const lastSeenDate = new Date(userData.lastSeen); // or .toDate() if Timestamp
+            const _lastSeenDate = new Date(userData.lastSeen); // or .toDate() if Timestamp
             // Handle Firestore Timestamp conversion safely
             const dateObj = typeof userData.lastSeen.toDate === 'function'
               ? userData.lastSeen.toDate()

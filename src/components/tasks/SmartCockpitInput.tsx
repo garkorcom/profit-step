@@ -90,7 +90,7 @@ export const SmartCockpitInput: React.FC<SmartCockpitInputProps> = ({ onCommandS
 
         try {
             await onCommandSubmit(cmd);
-        } catch (err) {
+        } catch (_err) {
             // Restore text if failed
             setText(cmd);
         }

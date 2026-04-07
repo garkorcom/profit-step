@@ -290,7 +290,7 @@ export default function CompaniesPage() {
         toast.success(`Компания "${company.name}" архивирована`);
       }
       handleRefresh();
-    } catch (err) {
+    } catch (_err) {
       toast.error('Ошибка при изменении статуса компании');
     }
   };

@@ -253,7 +253,7 @@ const ShoppingListInput: React.FC<ShoppingListInputProps> = ({
                     </Box>
                 ) : (
                     <List dense disablePadding>
-                        {items.map((item, idx) => (
+                        {items.map((item, _idx) => (
                             <ListItem
                                 key={item.id}
                                 sx={{

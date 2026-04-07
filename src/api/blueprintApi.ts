@@ -2,6 +2,7 @@ import { doc, setDoc, updateDoc, serverTimestamp, getDoc, collection, query, whe
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../firebase/firebase';
 import { BlueprintJob, BlueprintAgentResult, BlueprintFileEntry, BlueprintV3Session } from '../types/blueprint.types';
+import { RasterizedImage } from '../hooks/usePdfRasterizer';
 import { v4 as uuidv4 } from 'uuid';
 
 export const blueprintApi = {
@@ -36,8 +37,8 @@ export const blueprintApi = {
                 progress: 0,
                 message: 'Загрузка документа...',
                 logs: [{ timestamp: Date.now(), message: 'Инициализация загрузки чертежа...', type: 'info' }],
-                createdAt: serverTimestamp() as any,
-                updatedAt: serverTimestamp() as any,
+                createdAt: serverTimestamp() as unknown as BlueprintJob['createdAt'],
+                updatedAt: serverTimestamp() as unknown as BlueprintJob['updatedAt'],
             };
 
             await setDoc(jobRef, jobData);
@@ -135,10 +136,10 @@ export const blueprintApi = {
     async uploadV3Images(
         companyId: string,
         projectId: string | null,
-        images: any[], // RasterizedImage[]
+        images: RasterizedImage[],
         onProgress?: (uploaded: number, total: number) => void
-    ): Promise<any[]> {
-        const uploadedImages = [];
+    ): Promise<RasterizedImage[]> {
+        const uploadedImages: RasterizedImage[] = [];
         let completed = 0;
         const subFolder = projectId || uuidv4();
 
@@ -193,21 +194,23 @@ export const blueprintApi = {
      */
     async saveV3Session(session: BlueprintV3Session): Promise<void> {
         // Firebase setDoc rejects undefined values. Recursively strip them.
-        const stripUndefined = (obj: any): any => {
+        const stripUndefined = (obj: unknown): unknown => {
             if (Array.isArray(obj)) return obj.map(stripUndefined);
             if (obj instanceof Date) return obj;
-            if (obj && typeof obj.toDate === 'function') return obj; // Keep Firestore Timestamps intact
+            if (obj && typeof obj === 'object' && typeof (obj as { toDate?: unknown }).toDate === 'function') {
+                return obj; // Keep Firestore Timestamps intact
+            }
             if (obj !== null && typeof obj === 'object') {
                 return Object.fromEntries(
-                    Object.entries(obj)
-                        .filter(([_, v]) => v !== undefined)
+                    Object.entries(obj as Record<string, unknown>)
+                        .filter(([, v]) => v !== undefined)
                         .map(([k, v]) => [k, stripUndefined(v)])
                 );
             }
             return obj;
         };
 
-        const cleanSession = stripUndefined(session);
+        const cleanSession = stripUndefined(session) as Record<string, unknown>;
         const docRef = doc(db, 'blueprint_v3_sessions', session.id);
         await setDoc(docRef, {
             ...cleanSession,

@@ -51,34 +51,34 @@ export const MASKED_VALUE = '***';
  * const filtered = filterSensitiveData(deal, ['cost', 'margin'], 'user');
  * // { id: 1, cost: '***', margin: '***', name: 'Deal' }
  */
-export const filterSensitiveData = <T extends Record<string, any>>(
+export const filterSensitiveData = <T extends Record<string, unknown>>(
     data: T,
     sensitiveFields: SensitiveField[],
     role: UserRole,
     mode: 'mask' | 'remove' = 'mask'
 ): T => {
     const restrictions = getFieldRestrictionsForRole(role);
-    const result = { ...data };
+    const result: Record<string, unknown> = { ...data };
 
     for (const field of sensitiveFields) {
         const restriction = restrictions.find(r => r.field === field);
 
         if (restriction?.hidden && field in result) {
             if (mode === 'mask') {
-                (result as any)[field] = MASKED_VALUE;
+                result[field] = MASKED_VALUE;
             } else {
-                delete (result as any)[field];
+                delete result[field];
             }
         }
     }
 
-    return result;
+    return result as T;
 };
 
 /**
  * Фильтрация массива объектов
  */
-export const filterSensitiveDataArray = <T extends Record<string, any>>(
+export const filterSensitiveDataArray = <T extends Record<string, unknown>>(
     dataArray: T[],
     sensitiveFields: SensitiveField[],
     role: UserRole,
@@ -113,11 +113,11 @@ export const filterExportColumns = <T>(
 /**
  * Подготовить данные для экспорта (фильтрует колонки и значения)
  */
-export const prepareDataForExport = <T extends Record<string, any>>(
+export const prepareDataForExport = <T extends Record<string, unknown>>(
     data: T[],
     columns: ExportColumn<T>[],
     role: UserRole
-): { headers: string[]; rows: any[][] } => {
+): { headers: string[]; rows: unknown[][] } => {
     const allowedColumns = filterExportColumns(columns, role);
 
     const headers = allowedColumns.map(col => col.header);

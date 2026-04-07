@@ -131,7 +131,9 @@ export const V3PipelineContainer: React.FC<V3PipelineContainerProps> = ({ compan
                     pageNumber: img.pageNumber,
                     storageUrl: img.storageUrl || '',
                     selected: img.selected,
-                    dimensions: { width: img.width, height: img.height }
+                    ...(img.width !== undefined && img.height !== undefined
+                        ? { dimensions: { width: img.width, height: img.height } }
+                        : {}),
                 })),
                 promptConfig,
                 v3Results,

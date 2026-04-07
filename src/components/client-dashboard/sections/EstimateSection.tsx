@@ -77,12 +77,31 @@ interface EstimateSectionProps {
   showInternalCost?: boolean;
 }
 
+// Flexible item shape accepted by the expandable row.
+// Handles both V3 EstimateItem (description/unitPrice/total) and V4
+// ClientEstimateItem plus the legacy V3 fallback with `name`/`price`.
+// Internal-only fields are read only when showInternalCost is true.
+interface FlexibleEstimateItem {
+  id?: string;
+  description?: string;
+  name?: string;
+  quantity?: number;
+  unit?: string;
+  unitPrice?: number;
+  total?: number;
+  price?: number;
+  notes?: string;
+  // Internal-only (guarded behind showInternalCost)
+  unitCostPrice?: number;
+  totalCost?: number;
+}
+
 function ExpandableItemRow({
   item,
   index: _index,
   showInternalCost = false,
 }: {
-  item: any;
+  item: FlexibleEstimateItem;
   index: number;
   showInternalCost?: boolean;
 }) {
@@ -286,14 +305,17 @@ const EstimateSection: React.FC<EstimateSectionProps> = ({ estimates, showIntern
                         </TableRow>
                       </TableHead>
                       <TableBody>
-                        {items.map((item, index) => (
-                          <ExpandableItemRow
-                            key={(item as any).id || index}
-                            item={item}
-                            index={index}
-                            showInternalCost={showInternalCost}
-                          />
-                        ))}
+                        {items.map((item, index) => {
+                          const flexItem = item as FlexibleEstimateItem;
+                          return (
+                            <ExpandableItemRow
+                              key={flexItem.id || index}
+                              item={flexItem}
+                              index={index}
+                              showInternalCost={showInternalCost}
+                            />
+                          );
+                        })}
                         <TableRow>
                           <TableCell colSpan={3} sx={{ fontWeight: 'bold', borderTop: 2 }}>
                             TOTAL
@@ -301,27 +323,40 @@ const EstimateSection: React.FC<EstimateSectionProps> = ({ estimates, showIntern
                           <TableCell align="right" sx={{ fontWeight: 'bold', fontSize: '1.1rem', borderTop: 2 }}>
                             ${total.toLocaleString()}
                           </TableCell>
-                          {showInternalCost && (
-                            <>
-                              <TableCell align="right" sx={{ borderTop: 2, color: 'error.main', fontWeight: 'bold' }}>
-                                {(() => {
-                                  const costTotal = (estimate as any).internalTotal
-                                    ?? items.reduce((s: number, it: any) => s + (it.totalCost ?? 0), 0);
-                                  return costTotal > 0 ? `$${costTotal.toLocaleString()}` : '—';
-                                })()}
-                              </TableCell>
-                              <TableCell align="right" sx={{ borderTop: 2, fontWeight: 'bold' }}>
-                                {(() => {
-                                  const costTotal = (estimate as any).internalTotal
-                                    ?? items.reduce((s: number, it: any) => s + (it.totalCost ?? 0), 0);
-                                  if (costTotal <= 0 || total <= 0) return '—';
-                                  const margin = ((total - costTotal) / total) * 100;
-                                  const color = margin > 30 ? '#2e7d32' : margin >= 20 ? '#ed6c02' : '#d32f2f';
-                                  return <span style={{ color }}>{margin.toFixed(0)}%</span>;
-                                })()}
-                              </TableCell>
-                            </>
-                          )}
+                          {showInternalCost && (() => {
+                            const estimateWithInternal = estimate as { internalTotal?: number };
+                            const costTotal = estimateWithInternal.internalTotal
+                              ?? (items as FlexibleEstimateItem[]).reduce(
+                                (s, it) => s + (it.totalCost ?? 0),
+                                0
+                              );
+                            const marginPct =
+                              costTotal > 0 && total > 0
+                                ? ((total - costTotal) / total) * 100
+                                : null;
+                            const marginColor =
+                              marginPct === null
+                                ? undefined
+                                : marginPct > 30
+                                  ? '#2e7d32'
+                                  : marginPct >= 20
+                                    ? '#ed6c02'
+                                    : '#d32f2f';
+                            return (
+                              <>
+                                <TableCell align="right" sx={{ borderTop: 2, color: 'error.main', fontWeight: 'bold' }}>
+                                  {costTotal > 0 ? `$${costTotal.toLocaleString()}` : '—'}
+                                </TableCell>
+                                <TableCell align="right" sx={{ borderTop: 2, fontWeight: 'bold' }}>
+                                  {marginPct === null ? (
+                                    '—'
+                                  ) : (
+                                    <span style={{ color: marginColor }}>{marginPct.toFixed(0)}%</span>
+                                  )}
+                                </TableCell>
+                              </>
+                            );
+                          })()}
                         </TableRow>
                       </TableBody>
                     </Table>

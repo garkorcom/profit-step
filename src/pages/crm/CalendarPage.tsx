@@ -263,8 +263,10 @@ const CalendarPage: React.FC<{ hideHeader?: boolean }> = ({ hideHeader }) => {
         const d = task.dueDate || task.startDate || task.createdAt;
         if (!d) return null;
         if (typeof d === 'string') return parseISO(d);
-        if ((d as any).toDate) return (d as any).toDate();
-        return new Date(d as any);
+        if (d instanceof Date) return d;
+        const withToDate = d as { toDate?: () => Date };
+        if (typeof withToDate.toDate === 'function') return withToDate.toDate();
+        return new Date(d as unknown as string | number);
     };
 
     const isOverdue = (task: GTDTask): boolean => {
@@ -281,7 +283,7 @@ const CalendarPage: React.FC<{ hideHeader?: boolean }> = ({ hideHeader }) => {
             return activeFilters.every(filter => {
                 const { property, operator, value } = filter;
                 if (!value) return true;
-                let taskValue: any;
+                let taskValue: string | undefined;
                 switch (property) {
                     case 'status': taskValue = task.status; break;
                     case 'client': taskValue = task.clientId; break;
@@ -795,13 +797,25 @@ const CalendarPage: React.FC<{ hideHeader?: boolean }> = ({ hideHeader }) => {
                                     <TimePicker
                                         label="Start"
                                         value={quickAddStartTime}
-                                        onChange={(v) => setQuickAddStartTime(v ? (v as any).toDate?.() ?? v : null)}
+                                        onChange={(v) => {
+                                            if (!v) { setQuickAddStartTime(null); return; }
+                                            const withToDate = v as unknown as { toDate?: () => Date };
+                                            setQuickAddStartTime(
+                                                typeof withToDate.toDate === 'function' ? withToDate.toDate() : (v as Date)
+                                            );
+                                        }}
                                         slotProps={{ textField: { size: 'small', fullWidth: true } }}
                                     />
                                     <TimePicker
                                         label="End"
                                         value={quickAddEndTime}
-                                        onChange={(v) => setQuickAddEndTime(v ? (v as any).toDate?.() ?? v : null)}
+                                        onChange={(v) => {
+                                            if (!v) { setQuickAddEndTime(null); return; }
+                                            const withToDate = v as unknown as { toDate?: () => Date };
+                                            setQuickAddEndTime(
+                                                typeof withToDate.toDate === 'function' ? withToDate.toDate() : (v as Date)
+                                            );
+                                        }}
                                         slotProps={{ textField: { size: 'small', fullWidth: true } }}
                                     />
                                 </Box>

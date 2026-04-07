@@ -1,3 +1,10 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+// d3.js type definitions don't flow well through force simulation
+// callbacks. The `d: any` pattern in d3 selections is the standard
+// approach — proper typing requires manual generic parameters on
+// every .attr() / .force() call and still ends up as any-equivalent.
+// File-level disable is the pragmatic choice; revisit if d3 types
+// improve or this file is refactored to svelte/chart library.
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Box,

@@ -16,6 +16,7 @@ import VerifiedIcon from '@mui/icons-material/Verified';
 import { db } from '../../firebase/firebase';
 import { collection, query, where, getDocs, Timestamp, orderBy, limit, doc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
+import { errorMessage } from '../../utils/errorMessage';
 
 const COST_CATEGORY_LABELS: Record<string, string> = {
   materials: '🧱 Материалы',
@@ -142,19 +143,20 @@ const ReconciliationPage: React.FC = () => {
       const prjQuery = query(collection(db, 'projects'), where('status', '==', 'active'));
       const prjSnap = await getDocs(prjQuery);
       setProjects(prjSnap.docs.map(d => ({ id: d.id, name: d.data().name || d.id })));
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error("Failed to fetch drafts/projects:", e);
-      if (e.message?.includes('index')) {
-        setErrorMsg("Требуется создать индекс Firestore для поля updatedAt. " + e.message);
+      const msg = errorMessage(e);
+      if (msg.includes('index')) {
+        setErrorMsg("Требуется создать индекс Firestore для поля updatedAt. " + msg);
       } else {
-        setErrorMsg("Ошибка базы данных: " + e.message);
+        setErrorMsg("Ошибка базы данных: " + msg);
       }
     } finally {
       setLoading(false);
     }
   };
 
-  const handleUpdate = (id: string, field: keyof ReconcileTx, value: any) => {
+  const handleUpdate = (id: string, field: keyof ReconcileTx, value: unknown) => {
     setTransactions(prev => prev.map(t => t.id === id ? { ...t, [field]: value } : t));
   };
 
@@ -178,10 +180,11 @@ const ReconciliationPage: React.FC = () => {
   const getApiUrl = () => import.meta.env.VITE_FIREBASE_FUNCTIONS_URL || 'https://us-central1-profit-step.cloudfunctions.net/agentApi';
 
   /** Normalize date to ISO string for API (Firestore Timestamp → string) */
-  const normalizeDate = (d: string | Timestamp | any): string => {
+  const normalizeDate = (d: string | Timestamp | Date | null | undefined): string => {
     if (!d) return new Date().toISOString();
     if (typeof d === 'string') return d;
-    if (d.toDate) return d.toDate().toISOString();
+    if (d instanceof Date) return d.toISOString();
+    if (typeof (d as Timestamp).toDate === 'function') return (d as Timestamp).toDate().toISOString();
     return new Date().toISOString();
   };
 
@@ -317,10 +320,11 @@ const ReconciliationPage: React.FC = () => {
     }
   };
 
-  const renderDate = (d: string | Timestamp | any) => {
+  const renderDate = (d: string | Timestamp | Date | null | undefined) => {
     if (!d) return '';
     if (typeof d === 'string') return new Date(d).toLocaleDateString();
-    if (d.toDate) return d.toDate().toLocaleDateString();
+    if (d instanceof Date) return d.toLocaleDateString();
+    if (typeof (d as Timestamp).toDate === 'function') return (d as Timestamp).toDate().toLocaleDateString();
     return '';
   };
 
@@ -334,10 +338,11 @@ const ReconciliationPage: React.FC = () => {
   );
 
   /** Parse transaction date to YYYY-MM string */
-  const getMonthKey = (d: string | Timestamp | any): string => {
+  const getMonthKey = (d: string | Timestamp | Date | null | undefined): string => {
     let date: Date | null = null;
     if (typeof d === 'string') date = new Date(d);
-    else if (d?.toDate) date = d.toDate();
+    else if (d instanceof Date) date = d;
+    else if (d && typeof (d as Timestamp).toDate === 'function') date = (d as Timestamp).toDate();
     if (!date || isNaN(date.getTime())) return '';
     return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
   };
@@ -454,7 +459,7 @@ const ReconciliationPage: React.FC = () => {
     const tableData = filteredTransactions.map(t => [
       renderDate(t.date),
       t.cleanMerchant || '',
-      (t as any)._location || '',
+      (t as unknown as { _location?: string })._location || '',
       `$${Math.abs(t.amount).toFixed(2)}${t.amount > 0 ? ' (ret)' : ''}`,
       t.paymentType === 'company' ? 'Company' : 'Personal',
       COST_CATEGORY_LABELS[t.categoryId] || t.categoryId,
@@ -462,16 +467,23 @@ const ReconciliationPage: React.FC = () => {
       t.verifiedBy ? '✓' : '',
     ]);
     
-    (pdf as any).autoTable({
+    // jspdf-autotable plugin extends jsPDF instance at runtime; types
+    // aren't exported. Narrow to the subset of the plugin API we use.
+    type PdfWithAutoTable = {
+      autoTable: (opts: Record<string, unknown>) => void;
+      lastAutoTable?: { finalY?: number };
+    };
+    const pdfPlugin = pdf as unknown as PdfWithAutoTable;
+    pdfPlugin.autoTable({
       head: [['Date', 'Merchant', 'Location', 'Amount', 'Type', 'Category', 'Project', 'Verified']],
       body: tableData,
       startY: filterInfo.length > 0 ? 26 : 20,
       styles: { fontSize: 7, cellPadding: 1.5 },
       headStyles: { fillColor: [59, 130, 246], fontSize: 8 },
     });
-    
+
     // Totals
-    const finalY = (pdf as any).lastAutoTable?.finalY || 200;
+    const finalY = pdfPlugin.lastAutoTable?.finalY || 200;
     const totalAmount = filteredTransactions.reduce((s, t) => s + Math.abs(t.amount), 0);
     pdf.setFontSize(10);
     pdf.text(`Total: $${totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })} | Count: ${filteredTransactions.length}`, 14, finalY + 8);
@@ -491,7 +503,7 @@ const ReconciliationPage: React.FC = () => {
       <Box display="flex" justifyContent="space-between" alignItems="center" mb={2} flexWrap="wrap" gap={2}>
         <Box display="flex" alignItems="center" gap={2}>
           <Typography variant="h4" fontWeight="bold">Reconciliation Hub</Typography>
-          <Select size="small" value={view} onChange={e => setView(e.target.value as any)} sx={{ minWidth: 200, bgcolor: 'white' }}>
+          <Select size="small" value={view} onChange={e => setView(e.target.value as 'draft' | 'approved')} sx={{ minWidth: 200, bgcolor: 'white' }}>
             <MenuItem value="draft">⏳ Черновики (Draft)</MenuItem>
             <MenuItem value="approved">✅ Недавно Утвержденные</MenuItem>
           </Select>

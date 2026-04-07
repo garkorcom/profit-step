@@ -24,6 +24,7 @@ import PageResultsView from './PageResultsView';
 import CrossVerification, { PageVerificationEntry } from './CrossVerification';
 import { BlueprintAgentResult } from '../../types/blueprint.types';
 import { exportBlueprintPdf } from '../../utils/exportBlueprintPdf';
+import { errorMessage } from '../../utils/errorMessage';
 import { useAuth } from '../../auth/AuthContext';
 
 export interface PageAnalysisResult {
@@ -122,7 +123,7 @@ const BlueprintV2Pipeline: React.FC<BlueprintV2PipelineProps> = ({ files, onComp
     const [auditNotes, setAuditNotes] = useState<string[]>([]);
 
     // Building Context (extracted automatically from first page)
-    const [buildingContext, setBuildingContext] = useState<Record<string, any> | null>(null);
+    const [buildingContext, setBuildingContext] = useState<Record<string, unknown> | null>(null);
 
     // Timer
     const [startTime, setStartTime] = useState<number | null>(null);
@@ -183,9 +184,9 @@ const BlueprintV2Pipeline: React.FC<BlueprintV2PipelineProps> = ({ files, onComp
                 setCurrentFilePages(fp);
                 setCurrentFileSelected(new Set([`${fileIdx}-0`]));
             }
-        } catch (err: any) {
+        } catch (err: unknown) {
             console.error(`Failed to convert ${file.name}:`, err);
-            setError(`Ошибка: ${file.name}: ${err.message}`);
+            setError(`Ошибка: ${file.name}: ${errorMessage(err)}`);
         }
 
         setStartTime(null);
@@ -313,10 +314,10 @@ const BlueprintV2Pipeline: React.FC<BlueprintV2PipelineProps> = ({ files, onComp
                 setProgress('🏗 Определение типа здания...');
                 const extractCtxFn = httpsCallable(functions, 'extractBuildingContextCallable');
                 const ctxResponse = await extractCtxFn({ storagePath: ctxStoragePath, fileName: firstPage.fileName });
-                const ctx = ctxResponse.data as Record<string, any>;
+                const ctx = ctxResponse.data as Record<string, unknown>;
                 setBuildingContext(ctx);
                 if (ctx.buildingType !== 'unknown') {
-                    setProgress(`🏗 ${ctx.buildingType}, ${ctx.unitCount} units, ${ctx.stories} stories`);
+                    setProgress(`🏗 ${String(ctx.buildingType)}, ${String(ctx.unitCount)} units, ${String(ctx.stories)} stories`);
                 }
             } catch (err) {
                 console.warn('Building context extraction failed, proceeding without:', err);
@@ -341,7 +342,12 @@ const BlueprintV2Pipeline: React.FC<BlueprintV2PipelineProps> = ({ files, onComp
                     customPrompt: customPrompt.trim() !== '' ? customPrompt : undefined,
                 });
 
-                const data = response.data as any;
+                const data = response.data as {
+                    geminiResult?: BlueprintAgentResult;
+                    claudeResult?: BlueprintAgentResult;
+                    openAiResult?: BlueprintAgentResult;
+                    mergedResult?: BlueprintAgentResult;
+                };
                 results.push({
                     fileIndex: page.fileIndex,
                     pageIndex: page.pageIndex,
@@ -352,7 +358,7 @@ const BlueprintV2Pipeline: React.FC<BlueprintV2PipelineProps> = ({ files, onComp
                     openAiResult: data.openAiResult || {},
                     mergedResult: data.mergedResult || {},
                 });
-            } catch (err: any) {
+            } catch (err: unknown) {
                 console.error(`Analysis failed for ${page.fileName} p${page.pageIndex}:`, err);
                 failedCount++;
                 results.push({
@@ -366,8 +372,8 @@ const BlueprintV2Pipeline: React.FC<BlueprintV2PipelineProps> = ({ files, onComp
                     mergedResult: {},
                 });
                 setError(prev => prev
-                    ? `${prev}\n❌ ${page.fileName} стр.${page.pageIndex + 1}: ${err.message}`
-                    : `❌ ${page.fileName} стр.${page.pageIndex + 1}: ${err.message}`
+                    ? `${prev}\n❌ ${page.fileName} стр.${page.pageIndex + 1}: ${errorMessage(err)}`
+                    : `❌ ${page.fileName} стр.${page.pageIndex + 1}: ${errorMessage(err)}`
                 );
             }
 
@@ -474,7 +480,7 @@ const BlueprintV2Pipeline: React.FC<BlueprintV2PipelineProps> = ({ files, onComp
             });
 
             onComplete(finalAuditedResult, { gemini, claude, openai }, pageResults);
-        } catch (err: any) {
+        } catch (err: unknown) {
             console.error('Audit failed, passing raw results', err);
             // Fallback: pass raw results if audit somehow fails
             const gemini: Record<string, number> = {};
@@ -563,7 +569,7 @@ const BlueprintV2Pipeline: React.FC<BlueprintV2PipelineProps> = ({ files, onComp
                     discrepancyItems: itemsToRefine,
                 });
 
-                const data = response.data as any;
+                const data = response.data as Record<string, unknown>;
                 if (data.refinedResult) {
                     const updated = { ...pr.mergedResult };
                     for (const [key, qty] of Object.entries(data.refinedResult as Record<string, number>)) {
@@ -573,9 +579,9 @@ const BlueprintV2Pipeline: React.FC<BlueprintV2PipelineProps> = ({ files, onComp
                     }
                     updatedResults[idx] = { ...pr, mergedResult: updated };
                 }
-            } catch (err: any) {
+            } catch (err: unknown) {
                 console.error('Refinement failed:', err);
-                setError(`Ошибка пересчёта ${pr.fileName}: ${err.message}`);
+                setError(`Ошибка пересчёта ${pr.fileName}: ${errorMessage(err)}`);
             }
         }
 

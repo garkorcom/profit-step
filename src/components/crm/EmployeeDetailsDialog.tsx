@@ -10,6 +10,14 @@ import { db, functions } from '../../firebase/firebase';
 import { httpsCallable } from 'firebase/functions';
 import { updateEmployeeRate, getRateHistory, RateHistoryEntry, getEmployeeDetails } from '../../api/rateApi';
 import { useAuth } from '../../auth/AuthContext';
+import { errorMessage } from '../../utils/errorMessage';
+
+interface WorkerMessageRecord {
+    id: string;
+    message?: string;
+    timestamp: Timestamp;
+    [key: string]: unknown;
+}
 import AttachMoneyIcon from '@mui/icons-material/AttachMoney';
 import HistoryIcon from '@mui/icons-material/History';
 import ChatIcon from '@mui/icons-material/Chat';
@@ -40,7 +48,7 @@ const EmployeeDetailsDialog: React.FC<EmployeeDetailsDialogProps> = ({ open, onC
 
     // Message Tab State
     const [messageText, setMessageText] = useState('');
-    const [messagesHistory, setMessagesHistory] = useState<any[]>([]);
+    const [messagesHistory, setMessagesHistory] = useState<WorkerMessageRecord[]>([]);
     const [sending, setSending] = useState(false);
 
     useEffect(() => {
@@ -61,7 +69,7 @@ const EmployeeDetailsDialog: React.FC<EmployeeDetailsDialogProps> = ({ open, onC
                 orderBy('timestamp', 'desc')
             );
             const snapshot = await getDocs(q);
-            setMessagesHistory(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+            setMessagesHistory(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as WorkerMessageRecord)));
         } catch (error) {
             console.error('Failed to load messages history', error);
         }
@@ -146,9 +154,9 @@ const EmployeeDetailsDialog: React.FC<EmployeeDetailsDialogProps> = ({ open, onC
             alert('Сообщение успешно отправлено!');
             setMessageText('');
             loadMessages();
-        } catch (error: any) {
+        } catch (error: unknown) {
             console.error('Error sending message:', error);
-            alert(`Ошибка: ${error.message || 'Не удалось отправить сообщение'}`);
+            alert(`Ошибка: ${errorMessage(error) || 'Не удалось отправить сообщение'}`);
         } finally {
             setSending(false);
         }

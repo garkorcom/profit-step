@@ -23,6 +23,7 @@ import { collection, query, where, orderBy, getDocs, doc, deleteDoc, updateDoc }
 import { db } from '../../firebase/firebase';
 import { GTDTask, PRIORITY_COLORS } from '../../types/gtd.types';
 import GTDEditDialog from '../gtd/GTDEditDialog';
+import { errorMessage } from '../../utils/errorMessage';
 interface ClientTasksTabProps {
     clientId: string;
     clientName: string;
@@ -64,9 +65,9 @@ const ClientTasksTab: React.FC<ClientTasksTabProps> = ({ clientId, clientName: _
                 ...doc.data()
             } as GTDTask));
             setTasks(loadedTasks);
-        } catch (err: any) {
+        } catch (err: unknown) {
             console.error('Error loading tasks:', err);
-            setError('Не удалось загрузить задачи: ' + err.message);
+            setError('Не удалось загрузить задачи: ' + errorMessage(err));
         } finally {
             setLoading(false);
         }

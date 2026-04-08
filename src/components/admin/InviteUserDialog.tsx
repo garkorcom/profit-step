@@ -20,6 +20,7 @@ import {
 import { ContentCopy as ContentCopyIcon } from '@mui/icons-material';
 import { UserRole } from '../../types/user.types';
 import { inviteUser } from '../../api/userManagementApi';
+import { errorMessage } from '../../utils/errorMessage';
 
 interface InviteUserDialogProps {
   open: boolean;
@@ -94,9 +95,9 @@ const InviteUserDialog: React.FC<InviteUserDialogProps> = ({ open, onClose, onSu
 
       // Успех - обновляем список пользователей
       onSuccess();
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error inviting user:', err);
-      setError(err.message || 'Не удалось пригласить пользователя');
+      setError(errorMessage(err) || 'Не удалось пригласить пользователя');
     } finally {
       setLoading(false);
     }

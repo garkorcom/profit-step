@@ -46,6 +46,7 @@ import { useAuth } from '../../auth/AuthContext';
 import { UserProfile } from '../../types/user.types';
 import { deactivateUser } from '../../api/userManagementApi';
 import toast from 'react-hot-toast';
+import { errorMessage } from '../../utils/errorMessage';
 
 interface UserAssets {
     deals: number;
@@ -228,9 +229,9 @@ const OffboardingWizard: React.FC<OffboardingWizardProps> = ({
             toast.success('Пользователь заблокирован');
             onSuccess();
             onClose();
-        } catch (err: any) {
+        } catch (err: unknown) {
             console.error('Error blocking user:', err);
-            toast.error('Ошибка: ' + err.message);
+            toast.error('Ошибка: ' + errorMessage(err));
         } finally {
             setLoading(false);
         }

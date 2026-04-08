@@ -110,9 +110,9 @@ export const useInvoiceGenerator = () => {
                 total: subtotal
             };
 
-        } catch (err: any) {
+        } catch (err: unknown) {
             console.error("Error generating invoice from time tracking:", err);
-            setError(err);
+            setError(err instanceof Error ? err : new Error(String(err)));
             setGenerating(false);
             throw err;
         }

@@ -190,7 +190,7 @@ function buildInspectionsFromTasks(
         name: t.title,
         date: dateStr,
         status,
-        notes: (t as any).description || undefined,
+        notes: t.description || undefined,
       };
     });
 }

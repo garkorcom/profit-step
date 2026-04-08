@@ -12,6 +12,7 @@ import { useAuth } from '../auth/AuthContext';
 import { UserProfile } from '../types/user.types';
 import { getAllSubordinates, buildOrgTree, flattenOrgTree } from '../utils/hierarchyUtils';
 import { OrgTreeNode } from '../types/rbac.types';
+import { errorMessage } from '../utils/errorMessage';
 
 interface UseSubordinatesResult {
     /** Все подчинённые (рекурсивно) */
@@ -93,9 +94,9 @@ export const useSubordinates = (includeInactive = false): UseSubordinatesResult 
             const flat = flattenOrgTree(tree);
             setFlatList(flat);
 
-        } catch (err: any) {
+        } catch (err: unknown) {
             console.error('Error loading subordinates:', err);
-            setError(err.message || 'Не удалось загрузить данные');
+            setError(errorMessage(err) || 'Не удалось загрузить данные');
         } finally {
             setLoading(false);
         }

@@ -90,7 +90,7 @@ export interface ActivityLog {
   userId: string; // user affected by the action
   actorId: string; // user who performed the action
   action: ActivityAction;
-  metadata: Record<string, any>;
+  metadata: Record<string, unknown>;
   timestamp: Timestamp;
 }
 

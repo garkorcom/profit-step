@@ -12,6 +12,7 @@ import {
 import { Email as EmailIcon } from '@mui/icons-material';
 import { useAuth } from '../../auth/AuthContext';
 import { Link } from 'react-router-dom';
+import { errorMessage } from '../../utils/errorMessage';
 
 const ForgotPasswordPage: React.FC = () => {
   const [email, setEmail] = useState('');
@@ -37,8 +38,8 @@ const ForgotPasswordPage: React.FC = () => {
       await resetPassword(email.trim());
       setSuccess(true);
       setEmail('');
-    } catch (err: any) {
-      setError(err.message || 'Не удалось отправить письмо');
+    } catch (err: unknown) {
+      setError(errorMessage(err) || 'Не удалось отправить письмо');
     } finally {
       setLoading(false);
     }

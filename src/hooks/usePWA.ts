@@ -23,11 +23,14 @@ export function usePWA() {
 
     useEffect(() => {
         // Check if running as standalone (installed)
+        // navigator.standalone is Safari iOS-specific and not in TS DOM lib
+        const iosNav = window.navigator as Navigator & { standalone?: boolean };
         const isStandalone = window.matchMedia('(display-mode: standalone)').matches ||
-            (window.navigator as any).standalone === true;
+            iosNav.standalone === true;
 
-        // Check if iOS
-        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
+        // Check if iOS — window.MSStream is IE-specific and not in TS DOM lib
+        const ieWin = window as Window & { MSStream?: unknown };
+        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !ieWin.MSStream;
 
         // Check if already installed
         const isInstalled = isStandalone || localStorage.getItem('pwa-installed') === 'true';

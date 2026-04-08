@@ -7,7 +7,7 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import AddIcon from '@mui/icons-material/Add';
 import { useForm, useFieldArray, Controller } from 'react-hook-form';
 import { Timestamp } from 'firebase/firestore';
-import { InvoiceStatus, InvoiceLineItem } from '../../../types/invoice.types';
+import { InvoiceStatus, InvoiceLineItem, Invoice } from '../../../types/invoice.types';
 import { useClients } from '../../../features/shopping/hooks/useClients';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
@@ -22,10 +22,12 @@ interface CreateInvoiceFormParams {
     notes: string;
 }
 
+type CreateInvoicePayload = Omit<Invoice, 'id' | 'createdAt' | 'updatedAt' | 'invoiceNumber'>;
+
 interface CreateInvoiceDialogProps {
     open: boolean;
     onClose: () => void;
-    onCreate: (data: any) => Promise<any>;
+    onCreate: (data: CreateInvoicePayload) => Promise<string>;
 }
 
 export const CreateInvoiceDialog: React.FC<CreateInvoiceDialogProps> = ({ open, onClose, onCreate }) => {
@@ -60,7 +62,7 @@ export const CreateInvoiceDialog: React.FC<CreateInvoiceDialogProps> = ({ open, 
         const client = clients.find(c => c.id === data.clientId);
         if (!client) return;
 
-        const payload = {
+        const payload: CreateInvoicePayload = {
             clientId: client.id,
             clientName: client.name,
             date: data.issueDate ? Timestamp.fromDate(data.issueDate) : Timestamp.now(),
@@ -75,7 +77,9 @@ export const CreateInvoiceDialog: React.FC<CreateInvoiceDialogProps> = ({ open, 
             taxRate: Number(data.taxRate) || 0,
             taxAmount,
             total,
-            notes: data.notes
+            notes: data.notes,
+            payments: [],
+            createdBy: '', // populated by useInvoices.createInvoice hook
         };
 
         try {

@@ -282,7 +282,7 @@ export const useTasksMasonry = () => {
         dueDate?: string; // yyyy-MM-dd
     }) => {
         if (!currentUser || !payload.title.trim()) return;
-        const taskData: Record<string, any> = {
+        const taskData: Record<string, unknown> = {
             title: payload.title.trim(),
             status: (payload.status || 'inbox') as GTDStatus,
             priority: payload.priority || 'none' as GTDPriority,
@@ -303,7 +303,7 @@ export const useTasksMasonry = () => {
     // ── Move task (for drag-and-drop) ──
     const moveTask = useCallback(async (taskId: string, targetGroupId: string) => {
         if (!currentUser) return;
-        const updates: Record<string, any> = { updatedAt: Timestamp.now() };
+        const updates: Record<string, unknown> = { updatedAt: Timestamp.now() };
 
         // Handle target group mapping
         if (targetGroupId === 'done') {

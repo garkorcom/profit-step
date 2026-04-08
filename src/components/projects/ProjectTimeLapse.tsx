@@ -94,7 +94,7 @@ export const ProjectTimeLapse: React.FC<ProjectTimeLapseProps> = ({ projectId, c
             await uploadBytes(fileRef, file);
             const downloadUrl = await getDownloadURL(fileRef);
 
-            let metadata: any = {};
+            const metadata: Record<string, unknown> = {};
             if (type === 'media_added') metadata.photoUrls = [downloadUrl];
             if (type === 'voice_report') metadata.audioUrl = downloadUrl;
             if (type === 'document_uploaded') metadata.fileUrls = [{ url: downloadUrl, name: file.name, size: file.size, type: file.type }];
@@ -256,7 +256,7 @@ export const ProjectTimeLapse: React.FC<ProjectTimeLapseProps> = ({ projectId, c
                                     {/* Document Files */}
                                     {log.type === 'document_uploaded' && log.metadata?.fileUrls && (
                                         <Box display="flex" flexDirection="column" gap={1} mt={1} mb={1}>
-                                            {log.metadata.fileUrls.map((f: any, idx: number) => (
+                                            {log.metadata.fileUrls.map((f: { url: string; name: string; size: number; type: string }, idx: number) => (
                                                 <Button key={idx} variant="outlined" startIcon={<UploadFileIcon />} href={f.url} target="_blank" sx={{ justifyContent: 'flex-start', textTransform: 'none' }}>
                                                     {f.name} ({(f.size / 1024).toFixed(1)} KB)
                                                 </Button>

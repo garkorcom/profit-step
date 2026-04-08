@@ -98,6 +98,11 @@ interface Client {
     address?: string;
 }
 
+/** Response shape from the confirmAiTask cloud function (via ai.confirm). */
+interface ConfirmAiTaskResult {
+    taskId?: string;
+}
+
 // ═══════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════
@@ -326,7 +331,7 @@ const GTDCreatePage: React.FC = () => {
 
     // Confirm handler for AiDraftPreview
     const handleAiConfirm = async (scopeDecision?: string) => {
-        const result: any = await ai.confirm(scopeDecision);
+        const result = (await ai.confirm(scopeDecision)) as ConfirmAiTaskResult | undefined;
 
         if (formData.clientId) {
             trackUsage(formData.clientId);
@@ -412,9 +417,9 @@ const GTDCreatePage: React.FC = () => {
         try {
             // If AI draft exists, use confirmAiTask for audit trail
             if (ai.isPreview && ai.draft && ai.auditLogId) {
-                const result: any = await ai.confirm(
+                const result = (await ai.confirm(
                     ai.analysis?.scopeStatus
-                );
+                )) as ConfirmAiTaskResult | undefined;
 
                 // Track client usage
                 if (formData.clientId) {

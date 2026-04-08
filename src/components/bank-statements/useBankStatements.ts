@@ -29,6 +29,7 @@ import {
     MONTH_NAMES,
     AMBIGUOUS_VENDORS,
 } from './bankStatements.types';
+import { errorMessage } from '../../utils/errorMessage';
 
 export function useBankStatements() {
     // ─── Core State ──────────────────────────────────────────
@@ -452,9 +453,9 @@ export function useBankStatements() {
             } else {
                 setNotification({ open: true, message: `❌ Ошибка AI: ${data.error || 'Unknown error'}`, severity: 'error' });
             }
-        } catch (error: any) {
+        } catch (error: unknown) {
             console.error('AI categorization error:', error);
-            setNotification({ open: true, message: `❌ Ошибка AI категоризации: ${error.message}`, severity: 'error' });
+            setNotification({ open: true, message: `❌ Ошибка AI категоризации: ${errorMessage(error)}`, severity: 'error' });
         } finally {
             setAiLoading(false);
         }
@@ -496,9 +497,9 @@ export function useBankStatements() {
             setShowAiPreview(false);
             setAiSuggestions([]);
             setSelectedSuggestions(new Set());
-        } catch (error: any) {
+        } catch (error: unknown) {
             console.error('Error applying AI suggestions:', error);
-            setNotification({ open: true, message: `❌ Ошибка при применении: ${error.message}`, severity: 'error' });
+            setNotification({ open: true, message: `❌ Ошибка при применении: ${errorMessage(error)}`, severity: 'error' });
         } finally {
             setAiApplying(false);
         }

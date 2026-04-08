@@ -124,7 +124,9 @@ export const exportBlueprintPdf = (
             }
         });
 
-        currentY = (pdf as any).lastAutoTable.finalY + 14;
+        // jspdf-autotable plugin attaches `lastAutoTable` to the jsPDF instance
+        // at runtime; it's not in the base jsPDF typings.
+        currentY = (pdf as jsPDF & { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 14;
     };
 
     // 1. Global Summary Section

@@ -72,7 +72,7 @@ export interface AiTaskSuccessResponse {
 export interface AiTaskFallbackResponse {
     success: false;
     error: string;
-    zodErrors: any[];
+    zodErrors: unknown[];
     fallbackToManual: true;
 }
 
@@ -90,7 +90,7 @@ export interface GenerateAiTaskRequest {
 }
 
 export interface ConfirmAiTaskRequest {
-    taskData: AiTaskDraft & Record<string, any>;
+    taskData: AiTaskDraft & Record<string, unknown>;
     auditLogId: string;
     userEdits?: string[];
     scopeDecision?: string;

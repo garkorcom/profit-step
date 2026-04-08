@@ -1,5 +1,6 @@
 import { getStorage, ref, uploadBytesResumable, UploadTaskSnapshot, deleteObject } from 'firebase/storage';
 import { getAuth } from 'firebase/auth';
+import { errorMessage } from '../utils/errorMessage';
 
 /**
  * Загружает аватар пользователя в Firebase Storage
@@ -86,12 +87,12 @@ export async function uploadAvatar(
         }
       );
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('❌ Error uploading avatar:', error);
     return {
       success: false,
       message: 'Ошибка при загрузке аватара',
-      error: error.message,
+      error: errorMessage(error),
     };
   }
 }
@@ -133,11 +134,11 @@ export async function deleteAvatar(): Promise<{
       success: true,
       message: 'Аватар удален',
     };
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('❌ Error deleting avatar:', error);
     return {
       success: false,
-      message: error.message,
+      message: errorMessage(error),
     };
   }
 }

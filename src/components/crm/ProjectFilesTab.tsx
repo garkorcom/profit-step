@@ -30,6 +30,7 @@ import { collection, onSnapshot, orderBy, query } from 'firebase/firestore';
 import { db } from '../../firebase/firebase';
 import { format as formatDate } from 'date-fns';
 import { ru } from 'date-fns/locale';
+import { errorMessage } from '../../utils/errorMessage';
 
 interface ProjectFile {
   id: string;
@@ -156,9 +157,9 @@ const ProjectFilesTab: React.FC<ProjectFilesTabProps> = ({ projectId }) => {
 
         setSuccessMsg(`Файл "${file.name}" загружен`);
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Upload error:', err);
-      setError(err.message || 'Ошибка загрузки файла');
+      setError(errorMessage(err) || 'Ошибка загрузки файла');
     } finally {
       setUploading(false);
       // Reset input
@@ -184,9 +185,9 @@ const ProjectFilesTab: React.FC<ProjectFilesTabProps> = ({ projectId }) => {
 
       const result = await response.json();
       setSuccessMsg(`PDF "${fileName}" разбит на ${result.totalPages} страниц`);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Split error:', err);
-      setError(err.message || 'Ошибка разбивки PDF');
+      setError(errorMessage(err) || 'Ошибка разбивки PDF');
     } finally {
       setSplitting(null);
     }

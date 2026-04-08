@@ -19,7 +19,7 @@ interface V3PipelineContainerProps {
     sqft?: number;
     stories?: number;
     projectType?: string;
-    onAnalysisComplete: (results: BlueprintAgentResult, v3Results: Record<string, BlueprintAgentV3Result>, anomalies: {itemKey: string, reason: string}[], images: any[]) => void;
+    onAnalysisComplete: (results: BlueprintAgentResult, v3Results: Record<string, BlueprintAgentV3Result>, anomalies: {itemKey: string, reason: string}[], images: RasterizedImage[]) => void;
     onCancel: () => void;
 }
 
@@ -96,7 +96,7 @@ export const V3PipelineContainer: React.FC<V3PipelineContainerProps> = ({ compan
         setImages(prev => prev.filter(img => img.id !== id));
     };
 
-    const handleProcessingComplete = (aggregatedData: BlueprintAgentResult, rawV3Data: Record<string, BlueprintAgentV3Result>, anomaliesArray: {itemKey: string, reason: string}[], _logs: any[]) => {
+    const handleProcessingComplete = (aggregatedData: BlueprintAgentResult, rawV3Data: Record<string, BlueprintAgentV3Result>, anomaliesArray: {itemKey: string, reason: string}[], _logs: unknown[]) => {
         setAggregatedResult(aggregatedData);
         setV3Results(rawV3Data);
         setAnomalies(anomaliesArray);

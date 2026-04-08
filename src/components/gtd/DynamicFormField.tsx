@@ -25,10 +25,20 @@ import {
 } from '@mui/icons-material';
 import { FieldConfig } from '../../types/gtd.types';
 
+type ChecklistItem = { text: string; completed: boolean };
+
+/**
+ * All possible values a dynamic form field can hold.
+ * text/number/date/time/location/camera → string
+ * checklist → ChecklistItem[]
+ * empty → null | undefined
+ */
+export type FormFieldValue = string | number | ChecklistItem[] | null | undefined;
+
 interface DynamicFormFieldProps {
     config: FieldConfig;
-    value: any;
-    onChange: (value: any) => void;
+    value: FormFieldValue;
+    onChange: (value: FormFieldValue) => void;
 }
 
 /**
@@ -37,24 +47,28 @@ interface DynamicFormFieldProps {
 const DynamicFormField: React.FC<DynamicFormFieldProps> = ({ config, value, onChange }) => {
     const [newItem, setNewItem] = useState('');
 
+    // Narrow value to a string for text-like fields (text, number, date, time, location, camera URL)
+    const textValue = typeof value === 'string' || typeof value === 'number' ? String(value) : '';
+    // Narrow value to ChecklistItem[] for checklist fields
+    const checklistValue: ChecklistItem[] = Array.isArray(value) ? value : [];
+
     // Handle checklist item add
     const handleAddItem = () => {
         if (!newItem.trim()) return;
-        const items = Array.isArray(value) ? value : [];
-        onChange([...items, { text: newItem.trim(), completed: false }]);
+        onChange([...checklistValue, { text: newItem.trim(), completed: false }]);
         setNewItem('');
     };
 
     // Handle checklist item toggle
     const handleToggleItem = (index: number) => {
-        const items = [...(value || [])];
+        const items = [...checklistValue];
         items[index] = { ...items[index], completed: !items[index].completed };
         onChange(items);
     };
 
     // Handle checklist item delete
     const handleDeleteItem = (index: number) => {
-        const items = [...(value || [])];
+        const items = [...checklistValue];
         items.splice(index, 1);
         onChange(items);
     };
@@ -67,7 +81,7 @@ const DynamicFormField: React.FC<DynamicFormFieldProps> = ({ config, value, onCh
                     size="small"
                     label={config.label}
                     placeholder={config.placeholder}
-                    value={value || ''}
+                    value={textValue}
                     onChange={(e) => onChange(e.target.value)}
                     required={config.required}
                     sx={{ mb: 2 }}
@@ -82,7 +96,7 @@ const DynamicFormField: React.FC<DynamicFormFieldProps> = ({ config, value, onCh
                     type="number"
                     label={config.label}
                     placeholder={config.placeholder}
-                    value={value || ''}
+                    value={textValue}
                     onChange={(e) => onChange(e.target.value)}
                     required={config.required}
                     sx={{ mb: 2 }}
@@ -96,7 +110,7 @@ const DynamicFormField: React.FC<DynamicFormFieldProps> = ({ config, value, onCh
                     size="small"
                     type="date"
                     label={config.label}
-                    value={value || ''}
+                    value={textValue}
                     onChange={(e) => onChange(e.target.value)}
                     required={config.required}
                     InputLabelProps={{ shrink: true }}
@@ -111,7 +125,7 @@ const DynamicFormField: React.FC<DynamicFormFieldProps> = ({ config, value, onCh
                     size="small"
                     type="time"
                     label={config.label}
-                    value={value || ''}
+                    value={textValue}
                     onChange={(e) => onChange(e.target.value)}
                     required={config.required}
                     InputLabelProps={{ shrink: true }}
@@ -120,7 +134,6 @@ const DynamicFormField: React.FC<DynamicFormFieldProps> = ({ config, value, onCh
             );
 
         case 'checklist':
-            const items = Array.isArray(value) ? value : [];
             return (
                 <Box sx={{ mb: 2 }}>
                     <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
@@ -143,9 +156,9 @@ const DynamicFormField: React.FC<DynamicFormFieldProps> = ({ config, value, onCh
                     </Box>
 
                     {/* Items list */}
-                    {items.length > 0 && (
+                    {checklistValue.length > 0 && (
                         <List dense sx={{ bgcolor: 'grey.50', borderRadius: 1, p: 0 }}>
-                            {items.map((item: { text: string; completed: boolean }, idx: number) => (
+                            {checklistValue.map((item, idx) => (
                                 <ListItem key={idx} sx={{ py: 0.5 }}>
                                     <Checkbox
                                         edge="start"
@@ -179,10 +192,10 @@ const DynamicFormField: React.FC<DynamicFormFieldProps> = ({ config, value, onCh
                         {config.label} {config.required && <span style={{ color: 'red' }}>*</span>}
                     </Typography>
 
-                    {value ? (
+                    {textValue ? (
                         <Box sx={{ position: 'relative', display: 'inline-block' }}>
                             <img
-                                src={value}
+                                src={textValue}
                                 alt="Captured"
                                 style={{ maxWidth: '100%', maxHeight: 150, borderRadius: 8 }}
                             />
@@ -227,7 +240,7 @@ const DynamicFormField: React.FC<DynamicFormFieldProps> = ({ config, value, onCh
                         size="small"
                         label={config.label}
                         placeholder="Введите адрес..."
-                        value={value || ''}
+                        value={textValue}
                         onChange={(e) => onChange(e.target.value)}
                         required={config.required}
                         InputProps={{
@@ -255,7 +268,7 @@ const DynamicFormField: React.FC<DynamicFormFieldProps> = ({ config, value, onCh
                     size="small"
                     select
                     label={config.label}
-                    value={value || ''}
+                    value={textValue}
                     onChange={(e) => onChange(e.target.value)}
                     required={config.required}
                     SelectProps={{ native: true }}

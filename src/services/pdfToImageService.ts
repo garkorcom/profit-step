@@ -4,6 +4,7 @@
  * Runs entirely in the browser — no backend dependency needed.
  */
 import * as pdfjsLib from 'pdfjs-dist';
+import type { RenderParameters } from 'pdfjs-dist/types/src/display/api';
 
 // Use local worker file copied from node_modules/pdfjs-dist/build/
 // This avoids CDN version mismatches (v5.4.624 not available on cdnjs)
@@ -46,7 +47,8 @@ export async function convertPdfToImages(
             canvas.height = viewport.height;
             const ctx = canvas.getContext('2d')!;
 
-            await page.render({ canvasContext: ctx, viewport, canvas } as any).promise;
+            const renderParams: RenderParameters = { canvasContext: ctx, viewport, canvas };
+            await page.render(renderParams).promise;
 
             // Full-resolution blob for AI analysis
             const blob = await new Promise<Blob>((resolve, reject) => {
@@ -79,7 +81,7 @@ export async function convertPdfToImages(
             thumbCanvas.width = 0;
             thumbCanvas.height = 0;
             page.cleanup();
-        } catch (pageErr: any) {
+        } catch (pageErr: unknown) {
             console.error(`Failed to render page ${i} of ${file.name}:`, pageErr);
             // Skip failed pages but continue
         }

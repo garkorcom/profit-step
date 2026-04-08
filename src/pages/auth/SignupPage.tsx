@@ -13,6 +13,7 @@ import {
 import { Google as GoogleIcon } from '@mui/icons-material';
 import { useAuth } from '../../auth/AuthContext';
 import { useNavigate, Link } from 'react-router-dom';
+import { errorMessage } from '../../utils/errorMessage';
 
 const SignupPage: React.FC = () => {
   const [displayName, setDisplayName] = useState('');
@@ -59,8 +60,8 @@ const SignupPage: React.FC = () => {
         password,
       });
       navigate('/');
-    } catch (err: any) {
-      setError(err.message || 'Не удалось зарегистрироваться');
+    } catch (err: unknown) {
+      setError(errorMessage(err) || 'Не удалось зарегистрироваться');
     } finally {
       setLoading(false);
     }
@@ -73,8 +74,8 @@ const SignupPage: React.FC = () => {
     try {
       await signInWithGoogle();
       navigate('/');
-    } catch (err: any) {
-      setError(err.message || 'Не удалось войти через Google');
+    } catch (err: unknown) {
+      setError(errorMessage(err) || 'Не удалось войти через Google');
     } finally {
       setLoading(false);
     }

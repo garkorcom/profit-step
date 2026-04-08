@@ -12,6 +12,15 @@ import { httpsCallable } from 'firebase/functions';
 import { db, functions } from '../../firebase/firebase';
 import { format, subMonths } from 'date-fns';
 import { PayrollPeriod, getPeriodId, getPeriodDateRange } from '../../types/payroll.types';
+import { errorMessage } from '../../utils/errorMessage';
+
+interface ClosePayrollPeriodResponse {
+    period?: {
+        totalSessions?: number;
+        totalHours?: number;
+        totalAmount?: number;
+    };
+}
 
 /**
  * Payroll Periods Management Page
@@ -66,13 +75,13 @@ const PayrollPeriodsPage: React.FC = () => {
         try {
             const closePayrollPeriod = httpsCallable(functions, 'closePayrollPeriod');
             const result = await closePayrollPeriod({ periodId });
-            const data = result.data as any;
+            const data = result.data as ClosePayrollPeriodResponse;
 
             setSuccess(`Period ${periodId} closed! Sessions: ${data.period?.totalSessions}, Hours: ${data.period?.totalHours}, Amount: $${data.period?.totalAmount}`);
             fetchPeriods(); // Refresh list
-        } catch (err: any) {
+        } catch (err: unknown) {
             console.error('Error closing period:', err);
-            setError(err.message || 'Failed to close period');
+            setError(errorMessage(err) || 'Failed to close period');
         } finally {
             setClosing(false);
         }

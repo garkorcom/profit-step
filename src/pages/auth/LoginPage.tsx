@@ -13,6 +13,7 @@ import {
 import { Google as GoogleIcon } from '@mui/icons-material';
 import { useAuth } from '../../auth/AuthContext';
 import { useNavigate, Link } from 'react-router-dom';
+import { errorMessage } from '../../utils/errorMessage';
 
 const LoginPage: React.FC = () => {
   const [email, setEmail] = useState('');
@@ -31,8 +32,8 @@ const LoginPage: React.FC = () => {
     try {
       await signIn({ email: email.trim(), password });
       navigate('/');
-    } catch (err: any) {
-      setError(err.message || 'Не удалось войти');
+    } catch (err: unknown) {
+      setError(errorMessage(err) || 'Не удалось войти');
     } finally {
       setLoading(false);
     }
@@ -45,8 +46,8 @@ const LoginPage: React.FC = () => {
     try {
       await signInWithGoogle();
       navigate('/');
-    } catch (err: any) {
-      setError(err.message || 'Не удалось войти через Google');
+    } catch (err: unknown) {
+      setError(errorMessage(err) || 'Не удалось войти через Google');
     } finally {
       setLoading(false);
     }

@@ -49,6 +49,7 @@ import CompaniesTable from '../../components/companies/CompaniesTable';
 import CompanyFormDialog from '../../components/companies/CompanyFormDialog';
 import CostWarningDialog from '../../components/admin/CostWarningDialog';
 import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts';
+import { errorMessage } from '../../utils/errorMessage';
 // Константы
 const DEFAULT_PAGE_SIZE = 25;
 const CACHE_TTL = 5 * 60 * 1000; // 5 минут
@@ -210,9 +211,9 @@ export default function CompaniesPage() {
           });
           return newCache;
         });
-      } catch (err: any) {
+      } catch (err: unknown) {
         console.error('Error loading companies:', err);
-        setError(err.message || 'Failed to load companies');
+        setError(errorMessage(err) || 'Failed to load companies');
         toast.error('Ошибка загрузки компаний');
       } finally {
         setLoading(false);
@@ -362,9 +363,9 @@ export default function CompaniesPage() {
       URL.revokeObjectURL(url);
 
       toast.success(`Экспортировано ${allCompanies.length} компаний`, { id: toastId });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Export error:', err);
-      toast.error('Ошибка экспорта: ' + err.message, { id: toastId });
+      toast.error('Ошибка экспорта: ' + errorMessage(err), { id: toastId });
     } finally {
       setExporting(false);
     }

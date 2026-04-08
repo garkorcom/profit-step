@@ -15,6 +15,7 @@ import { httpsCallable } from 'firebase/functions';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { functions, db } from '../firebase/firebase';
 import { useAuth } from '../auth/AuthContext';
+import { errorMessage } from '../utils/errorMessage';
 
 /**
  * Страница настроек приложения
@@ -61,8 +62,8 @@ const SettingsPage: React.FC = () => {
         updatedAt: new Date()
       }, { merge: true });
       setRateSuccess('✅ Базовый Rate сохранен!');
-    } catch (err: any) {
-      setError('Ошибка сохранения: ' + err.message);
+    } catch (err: unknown) {
+      setError('Ошибка сохранения: ' + errorMessage(err));
     } finally {
       setSavingRate(false);
     }
@@ -81,9 +82,9 @@ const SettingsPage: React.FC = () => {
 
       console.log('✅ Результат:', result.data);
       setSuccess('✅ Тестовое письмо успешно отправлено! Проверьте ваш email (включая папку SPAM).');
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('❌ Ошибка:', err);
-      setError('Ошибка отправки тестового email: ' + err.message);
+      setError('Ошибка отправки тестового email: ' + errorMessage(err));
     } finally {
       setTestingEmail(false);
     }

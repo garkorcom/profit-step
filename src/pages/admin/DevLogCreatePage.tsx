@@ -50,6 +50,7 @@ import type {
     TonePreference,
 } from '../../types/devlog.types';
 import { useAuth } from '../../auth/AuthContext';
+import { Timestamp } from 'firebase/firestore';
 
 // ============================================
 // Type config
@@ -243,8 +244,8 @@ const DevLogCreatePage: React.FC = () => {
                 techStack: [],
                 version: '0.1.0',
                 roadmap: [],
-                createdAt: {} as any,
-                lastUpdated: {} as any,
+                createdAt: Timestamp.now(),
+                lastUpdated: Timestamp.now(),
             };
             setFeatures(prev => [...prev, newF].sort((a, b) => a.title.localeCompare(b.title)));
             setFormData(prev => ({ ...prev, featureId: id }));

@@ -38,10 +38,11 @@ const getStartOfDay = (date: Date): Date => {
 };
 
 /**
- * Checks if a session can still be edited (today or yesterday)
- * Sessions from day-before-yesterday and earlier cannot be edited
+ * Checks if a session can still be edited.
+ * Regular users: today or yesterday only.
+ * Admins: any session from the current month.
  */
-const canEditSession = (session: WorkSession): boolean => {
+const canEditSession = (session: WorkSession, isAdmin?: boolean): boolean => {
     // Cannot edit correction entries
     if (session.type === 'correction') return false;
 
@@ -50,14 +51,21 @@ const canEditSession = (session: WorkSession): boolean => {
         return false;
     }
 
-    // Check if session is from today or yesterday
+    // Check date window
     if (!session.startTime) return false;
 
     const sessionDate = new Date(session.startTime.seconds * 1000);
     const today = getStartOfDay(new Date());
+
+    if (isAdmin) {
+        // Admins can edit any session from the current month
+        const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+        return sessionDate >= startOfMonth;
+    }
+
+    // Regular users: today or yesterday only
     const yesterday = new Date(today);
     yesterday.setDate(yesterday.getDate() - 1);
-
     return sessionDate >= yesterday;
 };
 
@@ -113,7 +121,7 @@ const TimeTrackingTable: React.FC<TimeTrackingTableProps> = ({
                     ) : (
                         sessions.map((session) => {
                             const isCorrection = session.type === 'correction';
-                            const isEditable = canEditSession(session);
+                            const isEditable = canEditSession(session, isAdmin);
                             const rowStyle = getRowStyle(session);
 
                             return (

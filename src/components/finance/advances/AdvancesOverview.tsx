@@ -116,6 +116,12 @@ const AdvancesOverview: React.FC<AdvancesOverviewProps> = ({ employees }) => {
     return computeAdvanceSummary(filtered, filteredTx);
   }, [filtered, transactions]);
 
+  // ── Overdue count (open advances > 14 days) ──────────────────────────
+
+  const overdueCount = useMemo(() => {
+    return filtered.filter(a => a.status === 'open' && daysAgo(a.issuedAt) > 14).length;
+  }, [filtered]);
+
   // ── Render ────────────────────────────────────────────────────────────
 
   if (loading) {
@@ -171,6 +177,16 @@ const AdvancesOverview: React.FC<AdvancesOverviewProps> = ({ employees }) => {
             </CardContent>
           </Card>
         </Box>
+        {overdueCount > 0 && (
+          <Box sx={{ flex: 1, minWidth: 150 }}>
+            <Card sx={{ bgcolor: '#f44336', color: 'white', height: '100%' }}>
+              <CardContent>
+                <Typography variant="body2" sx={{ opacity: 0.8 }}>Overdue (&gt;14 days)</Typography>
+                <Typography variant="h5" fontWeight="bold">{overdueCount}</Typography>
+              </CardContent>
+            </Card>
+          </Box>
+        )}
       </Box>
 
       {/* ── Actions + Filters ──────────────────────────────────────────── */}

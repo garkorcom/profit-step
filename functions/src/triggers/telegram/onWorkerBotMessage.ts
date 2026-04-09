@@ -2055,7 +2055,37 @@ async function finalizeSession(chatId: number, userId: number, activeSession: an
 
         const balance = totalEarned - totalPayments;
         const balanceEmoji = balance >= 0 ? '💚' : '🔴';
-        await sendMessage(chatId, `${balanceEmoji} Баланс ЗП: *$${balance.toFixed(2)}*\n📊 Начислено с начала года: $${totalEarned.toFixed(2)}\n💸 Выплачено: $${totalPayments.toFixed(2)}`);
+
+        // Query PO (advance) balance for the same employee
+        let poLine = '';
+        try {
+            const advSnap = await admin.firestore().collection('advance_accounts')
+                .where('employeeId', 'in', searchIds)
+                .where('status', '==', 'open')
+                .get();
+
+            if (!advSnap.empty) {
+                const advTxSnap = await admin.firestore().collection('advance_transactions')
+                    .where('employeeId', 'in', searchIds)
+                    .where('status', '==', 'active')
+                    .get();
+
+                const totalIssued = advSnap.docs.reduce((s: number, d: any) => s + (d.data().amount || 0), 0);
+                const totalSpent = advTxSnap.docs
+                    .filter((d: any) => advSnap.docs.some((a: any) => a.id === d.data().advanceId))
+                    .reduce((s: number, d: any) => s + (d.data().amount || 0), 0);
+                const poBalance = Math.round((totalIssued - totalSpent) * 100) / 100;
+
+                if (poBalance !== 0) {
+                    const poEmoji = poBalance > 0 ? '📦' : '⚠️';
+                    poLine = `\n${poEmoji} Баланс ПО: *$${poBalance.toFixed(2)}* (${advSnap.size} авансов)`;
+                }
+            }
+        } catch (poErr) {
+            console.error('PO balance calc error:', poErr);
+        }
+
+        await sendMessage(chatId, `${balanceEmoji} Баланс ЗП: *$${balance.toFixed(2)}*\n📊 Начислено с начала года: $${totalEarned.toFixed(2)}\n💸 Выплачено: $${totalPayments.toFixed(2)}${poLine}`);
     } catch (e) {
         console.error('Balance calc error:', e);
         // Non-critical — don't fail the session finalization

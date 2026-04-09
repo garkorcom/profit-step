@@ -4,6 +4,7 @@ import { ThemeProvider, createTheme, CssBaseline } from '@mui/material';
 import { Toaster } from 'react-hot-toast';
 import AppRouter from './router/AppRouter';
 import { AuthProvider } from './auth/AuthContext';
+import ErrorBoundary from './components/ErrorBoundary';
 import PWAInstallBanner from './components/pwa/PWAInstallBanner';
 
 // Создание зеленой темы (аналогично my-business-app)
@@ -41,12 +42,14 @@ function App() {
     <ThemeProvider theme={theme}>
       <CssBaseline />
       <Toaster position="top-right" />
-      <BrowserRouter>
-        <AuthProvider>
-          <AppRouter />
-          <PWAInstallBanner />
-        </AuthProvider>
-      </BrowserRouter>
+      <ErrorBoundary>
+        <BrowserRouter>
+          <AuthProvider>
+            <AppRouter />
+            <PWAInstallBanner />
+          </AuthProvider>
+        </BrowserRouter>
+      </ErrorBoundary>
     </ThemeProvider>
   );
 }

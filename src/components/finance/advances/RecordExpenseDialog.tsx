@@ -172,7 +172,23 @@ const RecordExpenseDialog: React.FC<RecordExpenseDialogProps> = ({
         }
       }
 
-      toast.success(`Expense $${parsedAmount.toFixed(2)} recorded against advance`);
+      // Auto-settle if balance reaches exactly 0
+      const newBalance = Math.round((remainingBalance - parsedAmount) * 100) / 100;
+      if (newBalance === 0 && selectedAdvance) {
+        try {
+          const { updateDoc: updDoc, doc: docRef, serverTimestamp: srvTs } = await import('firebase/firestore');
+          await updDoc(docRef(db, 'advance_accounts', selectedAdvance.id), {
+            status: 'settled',
+            settledAt: srvTs(),
+          });
+          toast.success(`Expense $${parsedAmount.toFixed(2)} recorded — advance auto-settled!`);
+        } catch {
+          toast.success(`Expense $${parsedAmount.toFixed(2)} recorded (auto-settle failed)`);
+        }
+      } else {
+        toast.success(`Expense $${parsedAmount.toFixed(2)} recorded against advance`);
+      }
+
       onSaved();
       onClose();
     } catch (err) {

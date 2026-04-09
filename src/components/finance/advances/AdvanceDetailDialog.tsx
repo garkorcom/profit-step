@@ -168,7 +168,22 @@ const AdvanceDetailDialog: React.FC<AdvanceDetailDialogProps> = ({
         write_off: 'Write-off',
       };
 
-      toast.success(`${labels[activeAction]} of $${parsedAmount.toFixed(2)} recorded`);
+      // Auto-settle if balance reaches exactly 0 after this transaction
+      const newBalance = Math.round((balance - parsedAmount) * 100) / 100;
+      if (newBalance === 0) {
+        try {
+          await updateDoc(doc(db, 'advance_accounts', advance.id), {
+            status: 'settled',
+            settledAt: serverTimestamp(),
+          });
+          toast.success(`${labels[activeAction]} of $${parsedAmount.toFixed(2)} recorded — advance auto-settled!`);
+        } catch {
+          toast.success(`${labels[activeAction]} of $${parsedAmount.toFixed(2)} recorded (auto-settle failed, settle manually)`);
+        }
+      } else {
+        toast.success(`${labels[activeAction]} of $${parsedAmount.toFixed(2)} recorded`);
+      }
+
       cancelAction();
       onChanged();
     } catch (err) {

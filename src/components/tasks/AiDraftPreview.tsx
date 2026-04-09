@@ -420,7 +420,7 @@ interface AiDraftPreviewProps {
     latencyMs: number;
     employees: Array<{ id: string; name: string }>;
     projects: Array<{ id: string; name: string }>;
-    onEditField: (field: keyof AiTaskDraft, value: any) => void;
+    onEditField: (field: keyof AiTaskDraft, value: AiTaskDraft[keyof AiTaskDraft]) => void;
     onConfirm: (scopeDecision?: string) => void;
     onCancel: () => void;
     isConfirming: boolean;

@@ -24,6 +24,7 @@ import toast from 'react-hot-toast';
 import { functions, db } from '../../firebase/firebase';
 import { useAuth } from '../../auth/AuthContext';
 import { UserProfile, UserRole } from '../../types/user.types';
+import { errorMessage, errorCode } from '../../utils/errorMessage';
 
 /**
  * Компонент: Создание пользователя администратором
@@ -104,7 +105,7 @@ const CreateUserDialog: React.FC<CreateUserDialogProps> = ({ open, onClose, onSu
 
       setManagers(managersAndAdmins);
       console.log(`✅ Loaded ${managersAndAdmins.length} potential managers`);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error loading managers:', err);
       toast.error('Не удалось загрузить список руководителей');
     } finally {
@@ -164,25 +165,27 @@ const CreateUserDialog: React.FC<CreateUserDialogProps> = ({ open, onClose, onSu
       reset();
       onClose();
       if (onSuccess) onSuccess();
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('❌ Error creating user:', err);
 
       // Обработка Firebase errors
-      let errorMessage = 'Не удалось создать пользователя';
+      let errorText = 'Не удалось создать пользователя';
+      const code = errorCode(err);
+      const msg = errorMessage(err);
 
-      if (err.code === 'functions/permission-denied') {
-        errorMessage = 'У вас нет прав для создания пользователей';
-      } else if (err.code === 'functions/already-exists') {
-        errorMessage = 'Пользователь с таким email уже существует';
-      } else if (err.code === 'functions/invalid-argument') {
-        errorMessage = err.message || 'Некорректные данные';
-      } else if (err.code === 'functions/not-found') {
-        errorMessage = 'Указанный руководитель не найден';
-      } else if (err.message) {
-        errorMessage = err.message;
+      if (code === 'functions/permission-denied') {
+        errorText = 'У вас нет прав для создания пользователей';
+      } else if (code === 'functions/already-exists') {
+        errorText = 'Пользователь с таким email уже существует';
+      } else if (code === 'functions/invalid-argument') {
+        errorText = msg || 'Некорректные данные';
+      } else if (code === 'functions/not-found') {
+        errorText = 'Указанный руководитель не найден';
+      } else if (msg) {
+        errorText = msg;
       }
 
-      toast.error(errorMessage);
+      toast.error(errorText);
     } finally {
       setLoading(false);
     }

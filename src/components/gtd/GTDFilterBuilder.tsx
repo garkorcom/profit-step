@@ -149,7 +149,7 @@ const GTDFilterBuilder: React.FC<GTDFilterBuilderProps> = ({ filters, onChange, 
                         <FormControl size="small">
                             <Select
                                 value={filter.property}
-                                onChange={(e) => handleUpdateFilter(filter.id, 'property', e.target.value as any)}
+                                onChange={(e) => handleUpdateFilter(filter.id, 'property', e.target.value as FilterProperty)}
                                 sx={{ minWidth: 100, fontSize: '0.875rem', bgcolor: 'white' }}
                             >
                                 {PROPERTY_OPTIONS.map(opt => (
@@ -162,7 +162,7 @@ const GTDFilterBuilder: React.FC<GTDFilterBuilderProps> = ({ filters, onChange, 
                         <FormControl size="small">
                             <Select
                                 value={filter.operator}
-                                onChange={(e) => handleUpdateFilter(filter.id, 'operator', e.target.value as any)}
+                                onChange={(e) => handleUpdateFilter(filter.id, 'operator', e.target.value as FilterOperator)}
                                 sx={{ minWidth: 80, fontSize: '0.875rem', bgcolor: 'white' }}
                             >
                                 {OPERATOR_OPTIONS.map(opt => (

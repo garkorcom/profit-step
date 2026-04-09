@@ -184,7 +184,7 @@ export async function updateCompany(
   data: Partial<Omit<Company, 'id' | 'createdAt' | 'ownerCompanyId'>>
 ): Promise<void> {
   try {
-    const updateData: any = {
+    const updateData: Record<string, unknown> = {
       ...data,
       updatedAt: serverTimestamp(),
     };

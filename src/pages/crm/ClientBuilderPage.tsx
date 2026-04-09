@@ -177,7 +177,7 @@ const ClientBuilderPage: React.FC = () => {
                     name: formData.name!,
                     type: formData.type as ClientType || 'person',
                     status: formData.status as ClientStatus || 'new',
-                } as any);
+                } as Omit<Client, 'id' | 'createdAt' | 'updatedAt'>);
                 navigate(`/crm/clients/${newClientId}`);
             }
         } catch (err) {

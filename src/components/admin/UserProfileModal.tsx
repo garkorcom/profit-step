@@ -16,6 +16,7 @@ import { PhotoCamera as PhotoCameraIcon } from '@mui/icons-material';
 import { UserProfile } from '../../types/user.types';
 import { uploadUserAvatar, updateUserExtendedProfile } from '../../api/userManagementApi';
 import { useAuth } from '../../auth/AuthContext';
+import { errorMessage } from '../../utils/errorMessage';
 
 interface UserProfileModalProps {
   open: boolean;
@@ -91,9 +92,9 @@ const UserProfileModal: React.FC<UserProfileModalProps> = ({
       setPhotoURL(downloadURL);
 
       console.log('✅ Avatar uploaded successfully');
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error uploading avatar:', err);
-      setError('Не удалось загрузить аватар: ' + err.message);
+      setError('Не удалось загрузить аватар: ' + errorMessage(err));
     } finally {
       setUploading(false);
     }
@@ -119,9 +120,9 @@ const UserProfileModal: React.FC<UserProfileModalProps> = ({
       console.log('✅ Profile updated successfully');
       onSuccess();
       onClose();
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error saving profile:', err);
-      setError('Не удалось сохранить профиль: ' + err.message);
+      setError('Не удалось сохранить профиль: ' + errorMessage(err));
     } finally {
       setSaving(false);
     }

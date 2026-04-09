@@ -30,6 +30,7 @@ import {
 } from '../../types/inventory.types';
 import { getCatalogItems, createTransaction, getAvailableStock, calculateMaterialsCost } from '../../features/inventory/inventoryService';
 import { Timestamp } from 'firebase/firestore';
+import { errorMessage } from '../../utils/errorMessage';
 
 interface TaskMaterialsTabProps {
     taskId: string;
@@ -104,8 +105,8 @@ const TaskMaterialsTab: React.FC<TaskMaterialsTabProps> = ({
             }
             // Show confirmation dialog
             setWriteOffConfirm({ open: true, idx, loading: false });
-        } catch (err: any) {
-            setSnackbar({ open: true, msg: err.message || 'Ошибка проверки остатков', severity: 'error' });
+        } catch (err: unknown) {
+            setSnackbar({ open: true, msg: errorMessage(err) || 'Ошибка проверки остатков', severity: 'error' });
         }
     };
 
@@ -138,8 +139,8 @@ const TaskMaterialsTab: React.FC<TaskMaterialsTabProps> = ({
             updated[idx] = { ...updated[idx], status: 'issued', transactionId: txId };
             onMaterialsChange(updated);
             setSnackbar({ open: true, msg: `✅ ${mat.name} — списано ${mat.qty} ${mat.unit}`, severity: 'success' });
-        } catch (err: any) {
-            setSnackbar({ open: true, msg: err.message || 'Ошибка при списании', severity: 'error' });
+        } catch (err: unknown) {
+            setSnackbar({ open: true, msg: errorMessage(err) || 'Ошибка при списании', severity: 'error' });
         } finally {
             setWriteOffConfirm({ open: false, idx: -1, loading: false });
         }

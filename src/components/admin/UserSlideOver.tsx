@@ -29,7 +29,7 @@ import {
     History as HistoryIcon,
     } from '@mui/icons-material';
 import { UserProfile, DEPARTMENT_LABELS } from '../../types/user.types';
-import StatusIndicator from '../common/StatusIndicator';
+import StatusIndicator, { type StatusIndicatorStatus } from '../common/StatusIndicator';
 
 import { collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../../firebase/firebase';
@@ -177,7 +177,7 @@ const UserSlideOver: React.FC<UserSlideOverProps> = ({
                             {user.title || 'Без должности'}
                         </Typography>
                         <StatusIndicator
-                            status={user.status as any}
+                            status={user.status as StatusIndicatorStatus}
                             isOnline={isOnline}
                             size="small"
                         />

@@ -11,6 +11,8 @@ import {
   query,
   where,
   serverTimestamp,
+  Timestamp,
+  FieldValue,
 } from 'firebase/firestore';
 import { db } from '../firebase/firebase';
 
@@ -28,8 +30,8 @@ export interface SiteData {
   permitNumber?: string | null;
   status: 'active' | 'completed' | 'on_hold';
   createdBy?: string;
-  createdAt?: any;
-  updatedAt?: any;
+  createdAt?: Timestamp | FieldValue;
+  updatedAt?: Timestamp | FieldValue;
 }
 
 const SITES_COLLECTION = 'sites';

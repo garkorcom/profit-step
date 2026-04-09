@@ -25,7 +25,7 @@ export interface RateHistoryEntry {
 export interface EmployeeDetails {
     id: string;
     hourlyRate?: number;
-    [key: string]: any;
+    [key: string]: unknown;
 }
 
 /**

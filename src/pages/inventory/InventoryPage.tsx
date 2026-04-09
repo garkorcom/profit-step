@@ -31,6 +31,7 @@ import {
 } from '../../features/inventory/inventoryService';
 import { useAuth } from '../../auth/AuthContext';
 import { Timestamp } from 'firebase/firestore';
+import { errorMessage } from '../../utils/errorMessage';
 
 // =======================================
 // MAIN PAGE
@@ -167,10 +168,10 @@ const InventoryPage: React.FC = () => {
                     : 'Списание записано',
                 severity: 'success',
             });
-        } catch (err: any) {
+        } catch (err: unknown) {
             setSnackbar({
                 open: true,
-                message: err.message || 'Ошибка при создании транзакции',
+                message: errorMessage(err) || 'Ошибка при создании транзакции',
                 severity: 'error',
             });
         } finally {
@@ -206,8 +207,8 @@ const InventoryPage: React.FC = () => {
             setNewItemUnit('шт');
             setNewItemMinStock('0');
             setSnackbar({ open: true, message: 'Товар добавлен в каталог', severity: 'success' });
-        } catch (err: any) {
-            setSnackbar({ open: true, message: err.message || 'Ошибка при добавлении', severity: 'error' });
+        } catch (err: unknown) {
+            setSnackbar({ open: true, message: errorMessage(err) || 'Ошибка при добавлении', severity: 'error' });
         } finally {
             setAddItemSubmitting(false);
         }

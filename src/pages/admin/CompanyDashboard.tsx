@@ -45,7 +45,7 @@ import { db } from '../../firebase/firebase';
 
 import { useDashboardFinance } from '../../hooks/dashboard/useDashboardFinance';
 import { useDashboardTime } from '../../hooks/dashboard/useDashboardTime';
-import { useDashboardTasks } from '../../hooks/dashboard/useDashboardTasks';
+import { useDashboardTasks, type UrgentTask } from '../../hooks/dashboard/useDashboardTasks';
 import { useDashboardActivity } from '../../hooks/dashboard/useDashboardActivity';
 
 import { FinanceWidget } from '../../components/dashboard/widgets/FinanceWidget';
@@ -608,7 +608,7 @@ const CompanyDashboard: React.FC = () => {
             </Typography>
           </Box>
           <List disablePadding>
-            {tasksData.urgentTasks.map((task: any, index: number) => (
+            {tasksData.urgentTasks.map((task: UrgentTask, index: number) => (
               <ListItem
                 key={task.id || index}
                 divider={index < tasksData.urgentTasks.length - 1}
@@ -618,13 +618,13 @@ const CompanyDashboard: React.FC = () => {
                   primary={
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                       <Typography variant="body2" fontWeight={600}>
-                        {task.title || task.name}
+                        {task.title}
                       </Typography>
-                      {task.priority && (
+                      {task.priority && task.priority !== 'none' && (
                         <Chip
                           label={task.priority}
                           size="small"
-                          color={task.priority === 'urgent' || task.priority === 'high' ? 'error' : 'warning'}
+                          color={task.priority === 'high' ? 'error' : 'warning'}
                           variant="outlined"
                         />
                       )}
@@ -633,7 +633,7 @@ const CompanyDashboard: React.FC = () => {
                   secondary={
                     <Typography variant="caption" color="text.secondary">
                       {task.assignee ? `Assigned to: ${task.assignee}` : 'Unassigned'}
-                      {task.dueDate ? ` | Due: ${new Date(task.dueDate?.seconds ? task.dueDate.seconds * 1000 : task.dueDate).toLocaleDateString()}` : ''}
+                      {task.deadline ? ` | Due: ${task.deadline.toLocaleDateString()}` : ''}
                     </Typography>
                   }
                 />

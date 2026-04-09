@@ -110,7 +110,7 @@ export function useClientDashboard(companyId: string | undefined) {
 
             // Balance map
             const balanceMap = new Map<string, number>();
-            balancesSummary.forEach((item: any) => balanceMap.set(item.clientId, item.balance));
+            balancesSummary.forEach(item => balanceMap.set(item.clientId, item.balance));
 
             // Build enriched rows
             const rows: ClientRow[] = clientsData.map(client => {

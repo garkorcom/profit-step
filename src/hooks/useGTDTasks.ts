@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { collection, query, onSnapshot, orderBy, doc, updateDoc, addDoc, deleteDoc, Timestamp } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { DropResult } from '@hello-pangea/dnd';
+import type { User } from 'firebase/auth';
 import { db, functions } from '../firebase/firebase';
 import { GTDTask, GTDStatus, GTDPriority } from '../types/gtd.types';
 import { Client } from '../types/crm.types';
@@ -18,7 +19,7 @@ const createInitialData = (): Record<GTDStatus, GTDTask[]> => ({
     done: []
 });
 
-export const useGTDTasks = (currentUser: any, showAllTasks: boolean = false) => {
+export const useGTDTasks = (currentUser: Pick<User, 'uid' | 'displayName'> | null, showAllTasks: boolean = false) => {
     const [rawTasks, setRawTasks] = useState<GTDTask[]>([]);
     const [columns, setColumns] = useState(createInitialData);
     const [loading, setLoading] = useState(true);
@@ -54,9 +55,10 @@ export const useGTDTasks = (currentUser: any, showAllTasks: boolean = false) => 
             // V1 Fix: Never show subtasks on the main Kanban board
             if (task.parentTaskId || task.isSubtask) return;
 
-            const isMine = task.ownerId === currentUser?.uid || 
-                           task.assigneeId === currentUser?.uid || 
-                           task.coAssigneeIds?.includes(currentUser?.uid);
+            const uid = currentUser?.uid;
+            const isMine = task.ownerId === uid ||
+                           task.assigneeId === uid ||
+                           (uid !== undefined && task.coAssigneeIds?.includes(uid));
 
             if (showAllTasks || isMine) {
                 // Safety check if status is valid

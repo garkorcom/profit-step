@@ -9,6 +9,7 @@
 import React, { useRef, useCallback, useEffect, useState } from 'react';
 import { Box, Typography, CircularProgress, Button, Snackbar, Alert } from '@mui/material';
 import { useExpensesBoard } from '../../hooks/useExpensesBoard';
+import { TaxCategory } from '../../types/expensesBoard.types';
 import SmartTransactionCard from '../../components/expenses/SmartTransactionCard';
 import ExpensesBoardHeader from '../../components/expenses/ExpensesBoardHeader';
 
@@ -59,7 +60,7 @@ const ExpensesBoardPage: React.FC = () => {
     // ── Bulk action toast ──
     const [bulkToast, setBulkToast] = useState<{ open: boolean; count: number }>({ open: false, count: 0 });
 
-    const handleBulkCategorize = useCallback(async (category: any) => {
+    const handleBulkCategorize = useCallback(async (category: TaxCategory) => {
         const count = selectedIds.size;
         await bulkUpdateCategory(category);
         setBulkToast({ open: true, count });

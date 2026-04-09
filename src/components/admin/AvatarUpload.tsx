@@ -11,6 +11,7 @@ import {
 import { PhotoCamera, Delete as DeleteIcon } from '@mui/icons-material';
 import { uploadAvatar, deleteAvatar } from '../../api/avatarApi';
 import { useAuth } from '../../auth/AuthContext';
+import { errorMessage } from '../../utils/errorMessage';
 
 const AvatarUpload: React.FC = () => {
   const { userProfile } = useAuth();
@@ -40,8 +41,8 @@ const AvatarUpload: React.FC = () => {
       } else {
         setError(result.error || 'Ошибка загрузки');
       }
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(errorMessage(err));
     } finally {
       setUploading(false);
       setProgress(0);
@@ -61,8 +62,8 @@ const AvatarUpload: React.FC = () => {
       } else {
         setError(result.message);
       }
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(errorMessage(err));
     } finally {
       setUploading(false);
     }

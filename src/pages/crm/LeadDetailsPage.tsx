@@ -16,6 +16,7 @@ import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import { doc, getDoc, updateDoc, Timestamp, collection, query, orderBy, onSnapshot } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { db, functions } from '../../firebase/firebase';
+import { errorMessage } from '../../utils/errorMessage';
 
 interface Lead {
     id: string;
@@ -160,9 +161,9 @@ const LeadDetailsPage: React.FC = () => {
                 channels: sendChannels
             });
             setNewMessage('');
-        } catch (error: any) {
+        } catch (error: unknown) {
             console.error("Error sending message:", error);
-            alert(`Failed to send message: ${error.message || 'Unknown error'}`);
+            alert(`Failed to send message: ${errorMessage(error) || 'Unknown error'}`);
         }
     };
 

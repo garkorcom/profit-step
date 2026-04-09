@@ -23,6 +23,7 @@ import {
 import { Contact } from '../../types/contact.types';
 import { contactsService } from '../../services/contactsService';
 import GlobalContactQuickAdd from '../../components/contacts/GlobalContactQuickAdd';
+import { errorMessage } from '../../utils/errorMessage';
 
 // Preset roles for quick filtering
 const PRESET_ROLES = [
@@ -70,7 +71,7 @@ const ContactsPage: React.FC = () => {
                 const roles = new Set<string>(PRESET_ROLES);
                 data.forEach(c => c.roles?.forEach(r => roles.add(r)));
                 setAllRoles(Array.from(roles).sort());
-            } catch (err: any) {
+            } catch (err: unknown) {
                 console.error("Failed to fetch contacts", err);
                 setError("Ошибка загрузки справочника контактов.");
             } finally {
@@ -189,9 +190,9 @@ const ContactsPage: React.FC = () => {
                 refreshed.forEach(c => c.roles?.forEach(r => newRoles.add(r)));
                 setAllRoles(Array.from(newRoles).sort());
 
-            } catch (err: any) {
+            } catch (err: unknown) {
                 console.error("CSV Import Error", err);
-                setError(err.message || 'Ошибка импорта CSV.');
+                setError(errorMessage(err) || 'Ошибка импорта CSV.');
             } finally {
                 setLoading(false);
                 // Reset file input

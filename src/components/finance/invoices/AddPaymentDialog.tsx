@@ -5,6 +5,7 @@ import {
 } from '@mui/material';
 import { useForm, Controller } from 'react-hook-form';
 import { Timestamp } from 'firebase/firestore';
+import { InvoicePayment } from '../../../types/invoice.types';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
@@ -12,14 +13,16 @@ import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 interface PaymentFormParams {
     amount: number;
     date: Date | null;
-    method: string;
+    method: InvoicePayment['method'];
     notes: string;
 }
+
+type AddPaymentPayload = Omit<InvoicePayment, 'id'>;
 
 interface AddPaymentDialogProps {
     open: boolean;
     onClose: () => void;
-    onAdd: (data: any) => Promise<any>;
+    onAdd: (data: AddPaymentPayload) => Promise<void>;
     invoiceId: string | null;
     currentTotal: number;
     paidAmount: number;
@@ -42,7 +45,7 @@ export const AddPaymentDialog: React.FC<AddPaymentDialogProps> = ({ open, onClos
     const onSubmit = async (data: PaymentFormParams) => {
         if (!invoiceId) return;
 
-        const payload = {
+        const payload: AddPaymentPayload = {
             amount: Number(data.amount),
             date: data.date ? Timestamp.fromDate(data.date) : Timestamp.now(),
             method: data.method,

@@ -248,7 +248,7 @@ const TimeTrackingTable: React.FC<TimeTrackingTableProps> = ({
                                             <Box display="flex" alignItems="center" gap={0.5}>
                                                 <Chip
                                                     label={isCorrection ? 'Correction' : (session.status === 'paused' ? 'On Break' : session.status)}
-                                                    color={getStatusColor(session.status, session.type) as any}
+                                                    color={getStatusColor(session.status, session.type)}
                                                     size="small"
                                                     variant="outlined"
                                                 />

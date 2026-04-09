@@ -144,7 +144,8 @@ export const WIRE = [
  * Pre-built item name lookup table for all known device/equipment IDs.
  * Used by analysis and verification components to display human-readable names.
  */
+interface NamedItem { id: string; name: string }
 export const ITEM_NAMES: Record<string, string> = {};
-Object.values(DEVICES).flat().forEach((d: any) => { ITEM_NAMES[d.id] = d.name; });
-[GEAR, POOL, GENERATOR, LANDSCAPE, WIRE].forEach((arr: any[]) => arr.forEach(d => { ITEM_NAMES[d.id] = d.name; }));
+Object.values(DEVICES).flat().forEach((d: NamedItem) => { ITEM_NAMES[d.id] = d.name; });
+[GEAR, POOL, GENERATOR, LANDSCAPE, WIRE].forEach((arr: NamedItem[]) => arr.forEach(d => { ITEM_NAMES[d.id] = d.name; }));
 

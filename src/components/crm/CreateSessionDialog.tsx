@@ -122,36 +122,12 @@ const CreateSessionDialog: React.FC<CreateSessionDialogProps> = ({ open, onClose
             const hours = durationMinutes / 60;
             const earnings = parseFloat((hours * rate).toFixed(2));
 
-            const _newSession: any = {
-                employeeId: Number(selectedEmployee.id) || 0, // Fallback if ID is numeric vs string
-                // Wait type says employeeId is number. My fetch returns doc.id which is string usually from Auth (uid).
-                // Let's check TimeTrackingPage again. SelectedEmployee sets id: String(session.employeeId).
-                // Existing sessions seem to use numeric IDs (Telegram ID?).
-                // If I am creating for a web user, ID is string UID.
-                // If I create for Telegram worker, ID is numeric chat ID.
-                // This is a potential conflict. 'users' collection usually uses UID (string).
-                // Worker Bot rate snapshot logic uses 'userId' (number).
-                // I'll stick to string for now, but type says number.
-                // WorkSession interface: employeeId: number.
-                // This implies legacy bot structure.
-                // If I select a web user, I might not have a numeric ID.
-                // Strategy: Save raw UID string in a new field if needed, or force number?
-                // Let's check onWorkerBotMessage logic. 'userId' is telegram ID.
-                // If I want to support WEB USERS via this dialog, I need to know their numeric ID, or update schema to support string IDs.
-                // OR, assume selectedEmployee has a 'telegramId' field or similar if they are linked.
-                // FOR NOW: I will cast to any or string and save 'employeeId' as string if needed, or verify if types allow.
-                // Types say `employeeId: number`.
-                // Let's look at `createTask` or similar.
-                // For this task, I'll store `uid` as `employeeId` (string) and update type to `number | string` if possible, OR
-                // Just save it. Firestore is flexible. The frontend Type `WorkSession` expects number.
-                // I will update WorkSession type to `employeeId: number | string;`.
-            };
-
-            // Correction: WorkSession uses `employeeId` which is typically Telegram ID.
-            // But we also have `uid` for web users.
-            // Let's check `users` collection data structure.
-            // Ideally, I should save `employeeId` (if available) OR `uid`.
-            // I'll update the type to allow string ID to support web users.
+            // NOTE: WorkSession.employeeId is typed as number (legacy Telegram bot
+            // chat ID), but this dialog creates sessions for web users whose IDs
+            // are string UIDs from Firebase Auth. We save the string UID directly
+            // — Firestore tolerates the mismatch at runtime, and the WorkSession
+            // type should eventually be widened to `number | string`. Tracked as
+            // a separate follow-up (not blocking this form).
 
             const sessionData = {
                 employeeId: selectedEmployee.id, // String UID usually

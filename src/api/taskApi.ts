@@ -56,7 +56,7 @@ export const createTask = async (companyId: string, userId: string, data: Create
 export const updateTask = async (companyId: string, taskId: string, data: UpdateTaskData) => {
     const taskRef = doc(db, 'companies', companyId, TASKS_COLLECTION, taskId);
 
-    const updates: any = {
+    const updates: Record<string, unknown> = {
         ...data,
         updatedAt: serverTimestamp()
     };

@@ -67,7 +67,7 @@ const LeadDetailsDialog: React.FC<LeadDetailsDialogProps> = ({ open, onClose, le
         }
     }, [lead]);
 
-    const handleChange = (field: keyof Lead, value: any) => {
+    const handleChange = (field: keyof Lead, value: Lead[keyof Lead]) => {
         setFormData(prev => ({ ...prev, [field]: value }));
     };
 

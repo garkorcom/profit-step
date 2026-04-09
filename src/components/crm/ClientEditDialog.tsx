@@ -21,7 +21,8 @@ import LanguageIcon from '@mui/icons-material/Language';
 import ContactsIcon from '@mui/icons-material/Contacts';
 import BusinessIcon from '@mui/icons-material/Business';
 import KeyboardIcon from '@mui/icons-material/Keyboard';
-import { Client, ClientStatus, Company } from '../../types/crm.types';
+import { Client, ClientStatus, ClientType, Company } from '../../types/crm.types';
+import { errorMessage } from '../../utils/errorMessage';
 import { Contact } from '../../types/contact.types';
 import { crmApi, ParseClientWebsiteResponse } from '../../api/crmApi';
 import { contactsService } from '../../services/contactsService';
@@ -183,11 +184,11 @@ const ClientEditDialog: React.FC<ClientEditDialogProps> = ({ open, onClose, clie
                 phone: aiData.phone || prev.phone,
                 email: aiData.email || prev.email,
                 address: aiData.address || prev.address,
-                type: aiData.type === 'company' || aiData.type === 'person' ? aiData.type as any : prev.type
+                type: aiData.type === 'company' || aiData.type === 'person' ? (aiData.type as ClientType) : prev.type
             }));
-        } catch (error: any) {
+        } catch (error: unknown) {
             console.error('Error parsing website:', error);
-            setParseError(error.message || 'Не удалось извлечь данные с сайта');
+            setParseError(errorMessage(error) || 'Не удалось извлечь данные с сайта');
         } finally {
             setIsParsing(false);
         }

@@ -64,27 +64,36 @@ export const TasksTableView: React.FC<TasksTableViewProps> = ({ tasks, onTaskCli
         setPage(0);
     };
 
-    const getTaskDate = (d: any): Date | null => {
+    const getTaskDate = (d: unknown): Date | null => {
         if (!d) return null;
         if (typeof d === 'string') return parseISO(d);
-        if (d.toDate) return d.toDate();
-        return new Date(d);
+        if (
+            typeof d === 'object' &&
+            d !== null &&
+            'toDate' in d &&
+            typeof (d as { toDate: unknown }).toDate === 'function'
+        ) {
+            return (d as { toDate: () => Date }).toDate();
+        }
+        return new Date(d as string | number | Date);
     };
 
     const sortedTasks = useMemo(() => {
         return [...tasks].sort((a, b) => {
-            let valA: any = a[orderBy as keyof GTDTask];
-            let valB: any = b[orderBy as keyof GTDTask];
+            const rawA: unknown = a[orderBy as keyof GTDTask];
+            const rawB: unknown = b[orderBy as keyof GTDTask];
+            let valA: string | number = '';
+            let valB: string | number = '';
 
             if (orderBy === 'createdAt' || orderBy === 'dueDate') {
-                valA = getTaskDate(valA)?.getTime() || 0;
-                valB = getTaskDate(valB)?.getTime() || 0;
-            } else if (typeof valA === 'string' && typeof valB === 'string') {
-                valA = valA.toLowerCase();
-                valB = valB.toLowerCase();
+                valA = getTaskDate(rawA)?.getTime() || 0;
+                valB = getTaskDate(rawB)?.getTime() || 0;
+            } else if (typeof rawA === 'string' && typeof rawB === 'string') {
+                valA = rawA.toLowerCase();
+                valB = rawB.toLowerCase();
             } else {
-                valA = valA || '';
-                valB = valB || '';
+                valA = String(rawA ?? '');
+                valB = String(rawB ?? '');
             }
 
             if (valA < valB) return order === 'asc' ? -1 : 1;

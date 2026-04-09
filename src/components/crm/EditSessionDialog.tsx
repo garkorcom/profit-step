@@ -11,6 +11,7 @@ import { collection, getDocs, query, where } from 'firebase/firestore';
 import { db } from '../../firebase/firebase';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import toast from 'react-hot-toast';
+import { errorMessage as getErrorMessage } from '../../utils/errorMessage';
 
 interface Client {
     id: string;
@@ -233,18 +234,18 @@ const EditSessionDialog: React.FC<EditSessionDialogProps> = ({
                 // Notify parent to refresh (onSave is now just for refresh trigger)
                 await onSave(session.id, {});
             }
-        } catch (error: any) {
+        } catch (error: unknown) {
             console.error("Error saving edit:", error);
             // Parse Cloud Function error message
-            const errorMessage = error.message || 'Ошибка сохранения';
-            if (errorMessage.includes('14')) {
+            const msg = getErrorMessage(error) || 'Ошибка сохранения';
+            if (msg.includes('14')) {
                 toast.error('Смена не может превышать 14 часов');
-            } else if (errorMessage.includes('Пересечение')) {
-                toast.error(errorMessage);
-            } else if (errorMessage.includes('processed')) {
+            } else if (msg.includes('Пересечение')) {
+                toast.error(msg);
+            } else if (msg.includes('processed')) {
                 toast.error('Нельзя редактировать обработанную сессию');
             } else {
-                toast.error(errorMessage);
+                toast.error(msg);
             }
         } finally {
             setSaving(false);

@@ -50,9 +50,9 @@ export default function CompaniesTable({
   onEdit,
   onArchive,
 }: CompaniesTableProps) {
-  const formatDate = (date: any) => {
+  const formatDate = (date: Timestamp | string | null | undefined) => {
     if (!date) return '-';
-    const d = typeof date === 'string' ? new Date(date) : (date as Timestamp).toDate();
+    const d = typeof date === 'string' ? new Date(date) : date.toDate();
     return d.toLocaleDateString('ru-RU');
   };
 

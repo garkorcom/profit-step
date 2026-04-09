@@ -220,7 +220,7 @@ export async function createTransaction(
         const totalStock = Object.values(stockByLocation).reduce((sum, v) => sum + v, 0);
 
         // Update catalog
-        const catalogUpdate: any = {
+        const catalogUpdate: Record<string, unknown> = {
             stockByLocation,
             totalStock,
             updatedAt: Timestamp.now(),

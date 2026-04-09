@@ -178,7 +178,7 @@ const QuickAddDialog: React.FC<QuickAddProps> = ({ open, onClose, onAdd }) => {
         const fetchClients = async () => {
             try {
                 const snap = await getDocs(query(collection(db, 'clients'), orderBy('name')));
-                setClients(snap.docs.map(d => ({ id: d.id, name: (d.data() as any).name || '' })));
+                setClients(snap.docs.map(d => ({ id: d.id, name: (d.data() as { name?: string }).name || '' })));
             } catch (e) {
                 console.error('Error fetching clients', e);
             }

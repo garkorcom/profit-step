@@ -6,14 +6,17 @@
 import React from 'react';
 import { Box, Typography } from '@mui/material';
 
-type UserStatus = 'active' | 'invited' | 'blocked' | 'inactive';
+export type StatusIndicatorStatus = 'active' | 'invited' | 'blocked' | 'inactive';
 
 interface StatusIndicatorProps {
-    status: UserStatus;
+    status: StatusIndicatorStatus;
     isOnline?: boolean;
     showLabel?: boolean;
     size?: 'small' | 'medium';
 }
+
+// Keep internal alias for the STATUS_CONFIG Record key below
+type UserStatus = StatusIndicatorStatus;
 
 const STATUS_CONFIG: Record<UserStatus, { color: string; label: string; dot: string }> = {
     active: { color: 'success.main', label: 'Активен', dot: '●' },

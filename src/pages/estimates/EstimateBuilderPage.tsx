@@ -88,7 +88,7 @@ const EstimateBuilderPage: React.FC = () => {
     const taxAmount = subtotal * (taxRate / 100);
     const total = subtotal + taxAmount;
 
-    const handleItemChange = (index: number, field: keyof EstimateItem, value: any) => {
+    const handleItemChange = (index: number, field: keyof EstimateItem, value: EstimateItem[keyof EstimateItem]) => {
         const newItems = [...items];
         const item = { ...newItems[index], [field]: value };
 

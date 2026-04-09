@@ -13,7 +13,7 @@ import CallIcon from '@mui/icons-material/Call';
 import WhatsAppIcon from '@mui/icons-material/WhatsApp';
 import DeleteIcon from '@mui/icons-material/Delete';
 import InboxIcon from '@mui/icons-material/Inbox';
-import { DndContext, DragEndEvent, useDraggable, useDroppable, DragOverlay, closestCorners, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
+import { DndContext, DragEndEvent, DragStartEvent, useDraggable, useDroppable, DragOverlay, closestCorners, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
 import LeadDetailsDialog from '../../components/crm/LeadDetailsDialog';
 
@@ -355,7 +355,7 @@ const DealsPage: React.FC = () => {
         return Array.from(unique);
     }, [leads]);
 
-    const handleDragStart = (event: any) => {
+    const handleDragStart = (event: DragStartEvent) => {
         const { active } = event;
         const lead = leads.find(l => l.id === active.id);
         if (lead) setActiveDragLead(lead);
@@ -368,14 +368,14 @@ const DealsPage: React.FC = () => {
         if (!over) return;
 
         const leadId = active.id as string;
-        const newStatus = over.id as string;
+        const newStatus = over.id as Lead['status'];
         const lead = leads.find(l => l.id === leadId);
 
         if (lead && lead.status !== newStatus) {
             // Optimistic Update
             const oldStatus = lead.status;
             setLeads(prev => prev.map(l =>
-                l.id === leadId ? { ...l, status: newStatus as any } : l
+                l.id === leadId ? { ...l, status: newStatus } : l
             ));
 
             try {

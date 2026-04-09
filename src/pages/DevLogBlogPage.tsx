@@ -173,7 +173,7 @@ const MarkdownBlock: React.FC<{ content: string; glossary?: { title: string; log
 // ============================================
 // Timeline Card (Brutalist)
 // ============================================
-const TimelineCard: React.FC<{ log: DevLog; isLast: boolean; glossary: any[] }> = ({ log, isLast, glossary }) => {
+const TimelineCard: React.FC<{ log: DevLog; isLast: boolean; glossary: { title: string; log: DevLog }[] }> = ({ log, isLast, glossary }) => {
     const [expanded, setExpanded] = useState(false);
     const [showTechnical, setShowTechnical] = useState(false);
     const typeStyle = TYPE_STYLE[log.type] || TYPE_STYLE.feature;

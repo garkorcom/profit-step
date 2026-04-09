@@ -19,6 +19,7 @@ import TelegramIcon from '@mui/icons-material/Telegram';
 import { useAuth } from '../auth/AuthContext';
 import AvatarUpload from '../components/admin/AvatarUpload';
 import { updateUserExtendedProfile } from '../api/userManagementApi';
+import { errorMessage } from '../utils/errorMessage';
 
 /**
  * Страница профиля пользователя
@@ -58,9 +59,9 @@ const ProfilePage: React.FC = () => {
 
       setSuccess('Профиль успешно обновлен!');
       console.log('✅ Profile updated successfully');
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error saving profile:', err);
-      setError('Не удалось сохранить профиль: ' + err.message);
+      setError('Не удалось сохранить профиль: ' + errorMessage(err));
     } finally {
       setSaving(false);
     }

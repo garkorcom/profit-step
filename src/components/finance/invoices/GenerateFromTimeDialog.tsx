@@ -5,7 +5,7 @@ import {
 } from '@mui/material';
 import { useForm, Controller } from 'react-hook-form';
 import { Timestamp } from 'firebase/firestore';
-import { InvoiceStatus } from '../../../types/invoice.types';
+import { InvoiceStatus, InvoiceLineItem } from '../../../types/invoice.types';
 import { useClients } from '../../../features/shopping/hooks/useClients';
 import { useInvoiceGenerator } from '../../../hooks/finance/useInvoiceGenerator';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
@@ -217,7 +217,7 @@ export const GenerateFromTimeDialog: React.FC<GenerateFromTimeDialogProps> = ({ 
                                 <Typography sx={{ width: 80, textAlign: 'right', fontWeight: 'bold' }}>Amount</Typography>
                             </Box>
 
-                            {previewData.lineItems.map((item: any, idx: number) => (
+                            {previewData.lineItems.map((item: InvoiceLineItem, idx: number) => (
                                 <Box key={idx} sx={{ display: 'flex', px: 2, py: 1, borderBottom: '1px solid #eee' }}>
                                     <Typography sx={{ flex: 3 }}>{item.description}</Typography>
                                     <Typography sx={{ flex: 1 }}>{item.quantity.toFixed(2)}h</Typography>

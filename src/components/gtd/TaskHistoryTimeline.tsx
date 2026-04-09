@@ -28,10 +28,12 @@ interface TimelineEvent {
     isSystem?: boolean;
 }
 
-const parseDate = (d: any): Date | null => {
+const parseDate = (d: unknown): Date | null => {
     if (!d) return null;
-    if (d.toDate) return d.toDate();
-    return new Date(d);
+    if (typeof d === 'object' && d !== null && 'toDate' in d && typeof (d as { toDate: unknown }).toDate === 'function') {
+        return (d as { toDate: () => Date }).toDate();
+    }
+    return new Date(d as string | number | Date);
 };
 
 export const TaskHistoryTimeline: React.FC<TaskHistoryTimelineProps> = ({ task }) => {

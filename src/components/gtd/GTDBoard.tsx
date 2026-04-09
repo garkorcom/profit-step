@@ -256,10 +256,10 @@ const GTDBoard: React.FC = () => {
                     if (!t.dueDate) {
                         return selectedDateFilter === 'no_date';
                     }
-                    const dueDateRaw = t.dueDate as any;
-                    const dueDate = dueDateRaw?.toDate
+                    const dueDateRaw = t.dueDate as unknown as { toDate?: () => Date } | string | number | Date;
+                    const dueDate = typeof dueDateRaw === 'object' && dueDateRaw !== null && 'toDate' in dueDateRaw && typeof dueDateRaw.toDate === 'function'
                         ? startOfDay(dueDateRaw.toDate())
-                        : startOfDay(new Date(dueDateRaw));
+                        : startOfDay(new Date(dueDateRaw as string | number | Date));
 
                     switch (selectedDateFilter) {
                         case 'today':

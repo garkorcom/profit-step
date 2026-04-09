@@ -7,7 +7,7 @@ import EditIcon from '@mui/icons-material/Edit';
 import SendIcon from '@mui/icons-material/Send';
 import DeleteIcon from '@mui/icons-material/Delete';
 import PaymentIcon from '@mui/icons-material/Payment';
-import { Invoice, InvoiceStatus } from '../../../types/invoice.types';
+import { Invoice, InvoiceStatus, InvoicePayment } from '../../../types/invoice.types';
 import { format } from 'date-fns';
 import { AddPaymentDialog } from './AddPaymentDialog';
 
@@ -15,7 +15,7 @@ interface InvoiceTableProps {
     invoices: Invoice[];
     loading: boolean;
     onUpdateStatus: (id: string, status: InvoiceStatus) => Promise<void>;
-    onAddPayment: (id: string, data: any) => Promise<void>;
+    onAddPayment: (id: string, data: Omit<InvoicePayment, 'id'>) => Promise<void>;
     onDelete: (id: string) => Promise<void>;
 }
 

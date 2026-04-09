@@ -22,6 +22,7 @@ import { PayrollReport } from './PayrollReport';
 import { WorkSession } from '../../types/timeTracking.types';
 
 const PnLView = React.lazy(() => import('../../components/finance/PnLView'));
+const AdvancesOverview = React.lazy(() => import('../../components/finance/advances/AdvancesOverview'));
 
 interface Employee {
     id: string;
@@ -661,6 +662,7 @@ const FinancePage: React.FC = () => {
             <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 3 }}>
                 <Tabs value={tabIndex} onChange={(e, v) => setTabIndex(v)} aria-label="finance tabs">
                     <Tab label="Overview (Payroll)" />
+                    <Tab label="Advances (PO)" />
                     <Tab label="Invoices (Billing)" />
                     <Tab label="Expenses" />
                     <Tab label="P&L" />
@@ -966,8 +968,13 @@ const FinancePage: React.FC = () => {
                 </Box>
             )}
 
-            {tabIndex === 1 && <InvoicesTab />}
-            {tabIndex === 2 && (
+            {tabIndex === 1 && (
+                <React.Suspense fallback={<CircularProgress sx={{ mt: 4, display: 'block', mx: 'auto' }} />}>
+                    <AdvancesOverview employees={employees} />
+                </React.Suspense>
+            )}
+            {tabIndex === 2 && <InvoicesTab />}
+            {tabIndex === 3 && (
                 <ExpensesTab
                     costs={costs}
                     loading={loading}
@@ -975,7 +982,7 @@ const FinancePage: React.FC = () => {
                     endDate={endDate}
                 />
             )}
-            {tabIndex === 3 && (
+            {tabIndex === 4 && (
                 <React.Suspense fallback={<CircularProgress sx={{ mt: 4, display: 'block', mx: 'auto' }} />}>
                     <PnLView startDate={startDate} endDate={endDate} />
                 </React.Suspense>

@@ -2,14 +2,61 @@ import { z } from 'zod';
 
 // ─── Warehouse Schemas ─────────────────────────────────────────────
 
+export const WAREHOUSE_TYPES = ['physical', 'vehicle'] as const;
+export type WarehouseType = (typeof WAREHOUSE_TYPES)[number];
+
+/**
+ * Warehouse create schema.
+ *
+ * Two flavors:
+ *   - 'physical' (default) — fixed location, optional clientId/projectId
+ *     binding. This is the legacy shape and matches all existing
+ *     Firestore documents in the `warehouses` collection.
+ *   - 'vehicle' — mobile (truck/van/transit). Requires licensePlate.
+ *
+ * All vehicle-specific fields (type, location, licensePlate) are
+ * additive — existing physical warehouse creates without `type`
+ * default to 'physical' and continue to work as before.
+ */
 export const CreateWarehouseSchema = z.object({
+  // Existing fields (unchanged behavior)
   name: z.string().min(1),
   clientId: z.string().optional(),
   projectId: z.string().optional(),
   address: z.string().optional(),
   description: z.string().optional(),
   idempotencyKey: z.string().optional(),
-});
+  // New additive fields for vehicle/fleet support
+  type: z.enum(WAREHOUSE_TYPES).default('physical'),
+  location: z.string().optional(),
+  licensePlate: z.string().optional(),
+}).refine(
+  data => data.type !== 'vehicle' || (data.licensePlate != null && data.licensePlate.length > 0),
+  { message: 'licensePlate is required when type is "vehicle"', path: ['licensePlate'] },
+);
+
+/**
+ * Warehouse update schema — partial update, at least one field required.
+ *
+ * Note: vehicle refine is NOT applied here because partial updates
+ * may legitimately change type and licensePlate in separate calls.
+ * The PATCH /api/inventory/warehouses/:id route applies the
+ * "vehicle => licensePlate" check server-side after merging with
+ * the existing document.
+ */
+export const UpdateWarehouseSchema = z.object({
+  name: z.string().min(1).optional(),
+  clientId: z.string().nullable().optional(),
+  projectId: z.string().nullable().optional(),
+  address: z.string().optional(),
+  description: z.string().optional(),
+  type: z.enum(WAREHOUSE_TYPES).optional(),
+  location: z.string().optional(),
+  licensePlate: z.string().optional(),
+}).refine(
+  data => Object.keys(data).length > 0,
+  { message: 'At least one field required' },
+);
 
 // ─── Inventory Item Schemas ────────────────────────────────────────
 

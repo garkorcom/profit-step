@@ -110,9 +110,11 @@ const SavedEstimatesPage: React.FC = () => {
         }
     };
 
-    const formatDate = (ts: any) => {
+    const formatDate = (ts: { toDate?: () => Date } | Date | string | number | null | undefined) => {
         if (!ts) return '—';
-        const d = ts.toDate ? ts.toDate() : new Date(ts);
+        const d = typeof ts === 'object' && ts !== null && 'toDate' in ts && typeof ts.toDate === 'function'
+            ? ts.toDate()
+            : new Date(ts as Date | string | number);
         return d.toLocaleDateString('ru-RU', { day: '2-digit', month: 'short', year: 'numeric' });
     };
 

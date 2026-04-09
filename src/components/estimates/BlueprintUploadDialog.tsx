@@ -1072,8 +1072,7 @@ export const BlueprintUploadDialog: React.FC<BlueprintUploadDialogProps> = ({ op
                                     let savedProjectId = projectId;
                                     let projTitle = v2ProjectName || `Project ${new Date().toLocaleDateString()}`;
 
-                                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                                    const cleanPayload = <T extends unknown>(obj: T): T => {
+                                    const cleanPayload = <T,>(obj: T): T => {
                                         if (Array.isArray(obj)) return obj.map(cleanPayload).filter(v => v !== undefined) as unknown as T;
                                         if (obj !== null && typeof obj === 'object') {
                                             return Object.fromEntries(

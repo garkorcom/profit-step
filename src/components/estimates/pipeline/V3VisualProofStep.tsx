@@ -84,7 +84,9 @@ export const V3VisualProofStep: React.FC<V3VisualProofStepProps> = ({ images, re
                             const color = stringToColor(itemType);
                             return boxes.map((box, boxIdx) => {
                                 // item is [ymin, xmin, ymax, xmax] or {box: [...], confidence}
-                                const boxArr = Array.isArray(box) ? box : (box as any)?.box;
+                                const boxArr = Array.isArray(box)
+                                    ? box
+                                    : (box as { box?: number[] } | null | undefined)?.box;
                                 if (!boxArr) return null;
                                 const [ymin, xmin, ymax, xmax] = boxArr;
                                 const top = `${ymin / 10}%`;

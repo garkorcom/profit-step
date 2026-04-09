@@ -76,7 +76,7 @@ export default function CompanyFormDialog({
         phone: companyToEdit.phone || '',
         website: companyToEdit.website || '',
         address: companyToEdit.address || '',
-        paymentDetails: (companyToEdit as any).paymentDetails || '',
+        paymentDetails: (companyToEdit as { paymentDetails?: string }).paymentDetails || '',
       });
     } else {
       reset({

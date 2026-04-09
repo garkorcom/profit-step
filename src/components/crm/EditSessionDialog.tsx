@@ -24,6 +24,7 @@ interface EditSessionDialogProps {
     onClose: () => void;
     onSave: (sessionId: string, updates: Partial<WorkSession>) => Promise<void>;
     currentUserId?: string;
+    isAdmin?: boolean;
 }
 
 /**
@@ -36,11 +37,12 @@ const getStartOfDay = (date: Date): Date => {
 };
 
 /**
- * Checks if a session is within the edit window (today or yesterday)
- * Sessions from day-before-yesterday and earlier cannot be edited
- * EXCEPTION: Sessions with requiresAdminReview=true can always be edited
+ * Checks if a session is within the edit window.
+ * Regular users: today or yesterday only.
+ * Admins: any session from the current month.
+ * EXCEPTION: Sessions with requiresAdminReview=true can always be edited.
  */
-const isWithinEditWindow = (session: WorkSession): boolean => {
+const isWithinEditWindow = (session: WorkSession, isAdmin?: boolean): boolean => {
     if (!session.startTime) return false;
 
     // Sessions requiring admin review can ALWAYS be edited
@@ -55,17 +57,23 @@ const isWithinEditWindow = (session: WorkSession): boolean => {
 
     const sessionDate = new Date(session.startTime.seconds * 1000);
     const today = getStartOfDay(new Date());
+
+    if (isAdmin) {
+        // Admins can edit any session from the current month
+        const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+        return sessionDate >= startOfMonth;
+    }
+
+    // Regular users: today or yesterday only
     const yesterday = new Date(today);
     yesterday.setDate(yesterday.getDate() - 1);
-
-    // Can edit if session is from today or yesterday
     return sessionDate >= yesterday;
 };
 
 /**
  * Gets user-friendly message about edit window status
  */
-const getEditWindowMessage = (session: WorkSession): { message: string; isUrgent: boolean } => {
+const getEditWindowMessage = (session: WorkSession, isAdmin?: boolean): { message: string; isUrgent: boolean } => {
     if (!session.startTime) return { message: '', isUrgent: false };
 
     // Special case: auto-closed sessions requiring review
@@ -83,6 +91,14 @@ const getEditWindowMessage = (session: WorkSession): { message: string; isUrgent
 
     const sessionDay = getStartOfDay(sessionDate);
 
+    if (isAdmin) {
+        const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+        if (sessionDate >= startOfMonth) {
+            return { message: '🔑 Admin: можно редактировать сессии текущего месяца', isUrgent: false };
+        }
+        return { message: '', isUrgent: false };
+    }
+
     if (sessionDay.getTime() === today.getTime()) {
         return { message: '✏️ Session from today — can be edited until tomorrow night', isUrgent: false };
     } else if (sessionDay.getTime() === yesterday.getTime()) {
@@ -97,7 +113,8 @@ const EditSessionDialog: React.FC<EditSessionDialogProps> = ({
     session,
     onClose,
     onSave,
-    currentUserId: _currentUserId
+    currentUserId: _currentUserId,
+    isAdmin,
 }) => {
     // Form state
     const [clientId, setClientId] = useState('');
@@ -254,8 +271,8 @@ const EditSessionDialog: React.FC<EditSessionDialogProps> = ({
 
     if (!session) return null;
 
-    const canEdit = isWithinEditWindow(session);
-    const { message: editWindowMessage, isUrgent } = getEditWindowMessage(session);
+    const canEdit = isWithinEditWindow(session, isAdmin);
+    const { message: editWindowMessage, isUrgent } = getEditWindowMessage(session, isAdmin);
 
     return (
         <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>

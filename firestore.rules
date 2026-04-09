@@ -593,6 +593,19 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // ==================== ADVANCE ACCOUNTS (PO / Podotchet) ====================
+    match /advance_accounts/{docId} {
+      allow read: if isSignedIn();
+      allow create, update: if isAdmin();
+      allow delete: if false; // Never delete — void or cancel instead
+    }
+
+    match /advance_transactions/{docId} {
+      allow read: if isSignedIn();
+      allow create, update: if isAdmin();
+      allow delete: if false; // Never delete — void instead
+    }
+
     // ==================== DEFAULT DENY ====================
 
     // Запретить доступ ко всем остальным документам

@@ -1,13 +1,14 @@
 /**
- * Internal client dashboard. Mounted at /dashboard/client/:id.
+ * Internal client dashboard — financial analytics + project activity.
+ * Mounted at /dashboard/client/:id.
  *
- * Thin wrapper around ClientDashboardLayout in "internal" mode — builds
- * the header + sections from crmApi + Firestore subscriptions + Storage
- * listings, and passes everything to the layout.
+ * Refactored in v2.1: thin wrapper that loads data via server-side API
+ * hooks and delegates rendering to modular components in
+ * src/components/dashboard/client/.
  *
- * For the client-facing (external) view of the same unified dashboard,
- * see src/pages/portal/ClientPortalPage.tsx.
+ * Previous monolith: 688 lines → now < 200 lines.
  *
+ * For the client-facing (external) view, see ClientPortalPage.tsx.
  * See src/pages/dashbord-for-client/SPEC.md for the unified architecture.
  */
 
@@ -15,44 +16,37 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Box,
-  Typography,
-  Paper,
   Grid,
-  Card,
-  Chip,
   Button,
-  TextField,
-  Table,
-  TableContainer,
-  TableHead,
-  TableRow,
-  TableCell,
-  TableBody,
-  List,
-  ListItem,
-  ListItemIcon,
-  ListItemText,
   Alert,
   CircularProgress,
   Stack,
 } from '@mui/material';
-import {
-  Timeline as TimelineIcon,
-  Notes as NotesIcon,
-  Visibility as VisibilityIcon,
-  Person as ClientIcon,
-  Build as BuildIcon,
-  PhotoCamera as PhotoCameraIcon,
-  Phone as PhoneIcon,
-  Email as EmailIcon,
-} from '@mui/icons-material';
-import { collection, query, where, onSnapshot } from 'firebase/firestore';
+import { Visibility as VisibilityIcon } from '@mui/icons-material';
 import { getStorage, ref, listAll, getDownloadURL } from 'firebase/storage';
-import { db } from '../../../firebase/firebase';
-import { InventoryTransaction } from '../../../types/inventory.types';
 import { Client } from '../../../types/crm.types';
+import type { LaborPeriod } from '../../../types/clientDashboard.types';
 import { crmApi } from '../../../api/crmApi';
 
+// ─── Dashboard hooks (API-backed) ─────────────────────────────────
+import {
+  useClientSummary,
+  useClientLaborLog,
+  useClientTimeline,
+  useClientCostBreakdown,
+} from '../../../hooks/dashboard';
+
+// ─── Dashboard components ──────────────────────────────────────────
+import {
+  ClientHeader,
+  BudgetProgressBar,
+  CostBreakdownPie,
+  LaborLog,
+  RedFlagsBanner,
+  ProjectTimeline,
+} from '../../../components/dashboard/client';
+
+// ─── Existing layout + sections (reused from Phase 2) ──────────────
 import ClientDashboardLayout, {
   type DashboardHeader,
   type DashboardSection,
@@ -62,503 +56,67 @@ import GallerySection, {
 } from '../../../components/client-dashboard/sections/GallerySection';
 import ShareWithClientButton from '../../../components/client-dashboard/sharing/ShareWithClientButton';
 
-// ─── internal section content components (local, single-use) ──────────
-
-const OverviewContent: React.FC<{
-  client: Client;
-  workSessions: { totalEarnings: number; sessionCount: number; loading: boolean };
-}> = ({ client, workSessions }) => (
-  <Grid container spacing={3}>
-    <Grid size={{ xs: 12, md: 6 }}>
-      <Paper variant="outlined" sx={{ p: 2 }}>
-        <Typography variant="h6" gutterBottom>
-          Contacts
-        </Typography>
-        {client.contacts && client.contacts.length > 0 ? (
-          <List dense>
-            {client.contacts.map(contact => (
-              <ListItem key={contact.id}>
-                <ListItemIcon>
-                  <ClientIcon />
-                </ListItemIcon>
-                <ListItemText
-                  primary={
-                    <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
-                      <Typography variant="body1" fontWeight="bold">
-                        {contact.name}
-                      </Typography>
-                      {contact.position && (
-                        <Chip label={contact.position} size="small" variant="outlined" />
-                      )}
-                    </Stack>
-                  }
-                  secondary={
-                    <Stack direction="row" spacing={2} mt={0.5}>
-                      {contact.phone && (
-                        <Stack direction="row" spacing={0.5} alignItems="center">
-                          <PhoneIcon fontSize="small" />
-                          <Typography
-                            variant="body2"
-                            component="a"
-                            href={`tel:${contact.phone}`}
-                            sx={{ color: 'primary.main', textDecoration: 'none' }}
-                          >
-                            {contact.phone}
-                          </Typography>
-                        </Stack>
-                      )}
-                      {contact.email && (
-                        <Stack direction="row" spacing={0.5} alignItems="center">
-                          <EmailIcon fontSize="small" />
-                          <Typography
-                            variant="body2"
-                            component="a"
-                            href={`mailto:${contact.email}`}
-                            sx={{ color: 'primary.main', textDecoration: 'none' }}
-                          >
-                            {contact.email}
-                          </Typography>
-                        </Stack>
-                      )}
-                    </Stack>
-                  }
-                />
-              </ListItem>
-            ))}
-          </List>
-        ) : (
-          <Typography variant="body2" color="text.secondary">
-            No contacts
-          </Typography>
-        )}
-      </Paper>
-    </Grid>
-
-    <Grid size={{ xs: 12, md: 6 }}>
-      <Paper variant="outlined" sx={{ p: 2 }}>
-        <Typography variant="h6" gutterBottom>
-          Details
-        </Typography>
-        <Table size="small">
-          <TableBody>
-            <TableRow>
-              <TableCell>Type</TableCell>
-              <TableCell>{client.type}</TableCell>
-            </TableRow>
-            <TableRow>
-              <TableCell>Status</TableCell>
-              <TableCell>
-                <Chip label={client.status} size="small" color="primary" />
-              </TableCell>
-            </TableRow>
-            {client.source && (
-              <TableRow>
-                <TableCell>Source</TableCell>
-                <TableCell>{client.sourceName || client.source}</TableCell>
-              </TableRow>
-            )}
-            {client.industry && (
-              <TableRow>
-                <TableCell>Industry</TableCell>
-                <TableCell>{client.industry}</TableCell>
-              </TableRow>
-            )}
-            <TableRow>
-              <TableCell>Total Revenue (LTV)</TableCell>
-              <TableCell sx={{ fontWeight: 'bold' }}>
-                ${(client.totalRevenue || 0).toLocaleString()}
-              </TableCell>
-            </TableRow>
-          </TableBody>
-        </Table>
-      </Paper>
-    </Grid>
-
-    {/* Internal-only KPI: Work sessions earnings */}
-    <Grid size={{ xs: 12 }}>
-      <Paper variant="outlined" sx={{ p: 2, bgcolor: '#fffdf5', borderColor: 'warning.light' }}>
-        <Typography variant="overline" color="warning.dark" fontWeight="bold">
-          🔒 Internal — Work Sessions Summary
-        </Typography>
-        {workSessions.loading ? (
-          <CircularProgress size={20} />
-        ) : workSessions.sessionCount === 0 ? (
-          <Typography variant="body2" color="text.secondary">
-            No completed work sessions for this client yet.
-          </Typography>
-        ) : (
-          <Grid container spacing={2} mt={0.5}>
-            <Grid size={{ xs: 12, md: 6 }}>
-              <Typography variant="body2" color="text.secondary">
-                Total Labor Earnings
-              </Typography>
-              <Typography variant="h4" fontWeight="bold" color="warning.dark">
-                ${workSessions.totalEarnings.toLocaleString()}
-              </Typography>
-            </Grid>
-            <Grid size={{ xs: 12, md: 6 }}>
-              <Typography variant="body2" color="text.secondary">
-                Completed Sessions
-              </Typography>
-              <Typography variant="h4" fontWeight="bold">
-                {workSessions.sessionCount}
-              </Typography>
-            </Grid>
-          </Grid>
-        )}
-      </Paper>
-    </Grid>
-  </Grid>
-);
-
-interface InventoryRow {
-  name: string;
-  category: string;
-  totalQty: number;
-  unitPrice: number;
-  totalAmount: number;
-}
-
-const InventoryContent: React.FC<{
-  loading: boolean;
-  summary: InventoryRow[];
-}> = ({ loading, summary }) => {
-  const total = summary.reduce((sum, i) => sum + i.totalAmount, 0);
-
-  return (
-    <Card elevation={2} sx={{ borderRadius: 2, p: 3 }}>
-      <Typography variant="h5" gutterBottom fontWeight="bold" color="primary">
-        <BuildIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
-        Materials & Inventory
-      </Typography>
-
-      <Alert severity="info" sx={{ mb: 3 }}>
-        🔒 Internal only — materials allocated and used for this client's project.
-        Real-time data from inventory transactions.
-      </Alert>
-
-      {loading ? (
-        <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
-          <CircularProgress />
-        </Box>
-      ) : summary.length === 0 ? (
-        <Box sx={{ textAlign: 'center', py: 4 }}>
-          <Typography variant="h6" color="text.secondary">
-            No materials allocated to this project yet
-          </Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-            Materials will appear here when inventory transactions reference this client
-          </Typography>
-        </Box>
-      ) : (
-        <>
-          <TableContainer>
-            <Table>
-              <TableHead>
-                <TableRow>
-                  <TableCell>Name</TableCell>
-                  <TableCell>Category</TableCell>
-                  <TableCell align="right">Qty Used</TableCell>
-                  <TableCell align="right">Unit Price</TableCell>
-                  <TableCell align="right">Total</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {summary.map((item, idx) => (
-                  <TableRow key={idx}>
-                    <TableCell>{item.name}</TableCell>
-                    <TableCell>
-                      <Chip label={item.category} size="small" variant="outlined" />
-                    </TableCell>
-                    <TableCell align="right">{item.totalQty}</TableCell>
-                    <TableCell align="right">${item.unitPrice.toFixed(2)}</TableCell>
-                    <TableCell align="right" sx={{ fontWeight: 'bold' }}>
-                      ${item.totalAmount.toFixed(2)}
-                    </TableCell>
-                  </TableRow>
-                ))}
-                <TableRow>
-                  <TableCell colSpan={4} sx={{ fontWeight: 'bold', fontSize: '1.1rem', borderTop: 2 }}>
-                    TOTAL MATERIALS COST
-                  </TableCell>
-                  <TableCell
-                    align="right"
-                    sx={{ fontWeight: 'bold', fontSize: '1.1rem', borderTop: 2, color: 'error.main' }}
-                  >
-                    ${total.toFixed(2)}
-                  </TableCell>
-                </TableRow>
-              </TableBody>
-            </Table>
-          </TableContainer>
-
-          <Paper variant="outlined" sx={{ p: 2, mt: 3, backgroundColor: '#f8f9fa' }}>
-            <Typography variant="h6" gutterBottom>
-              Materials Cost Summary
-            </Typography>
-            <Grid container spacing={2}>
-              <Grid size={{ xs: 12, md: 6 }}>
-                <Typography variant="body2" color="text.secondary">
-                  Total Materials Spent
-                </Typography>
-                <Typography variant="h6" fontWeight="bold" color="error.main">
-                  ${total.toFixed(2)}
-                </Typography>
-              </Grid>
-              <Grid size={{ xs: 12, md: 6 }}>
-                <Typography variant="body2" color="text.secondary">
-                  Unique Items
-                </Typography>
-                <Typography variant="h6" fontWeight="bold">
-                  {summary.length}
-                </Typography>
-              </Grid>
-            </Grid>
-          </Paper>
-        </>
-      )}
-    </Card>
-  );
-};
-
-const InternalNotesContent: React.FC<{
-  newNote: string;
-  setNewNote: (v: string) => void;
-  handleAdd: () => void;
-}> = ({ newNote, setNewNote, handleAdd }) => (
-  <Card elevation={2} sx={{ borderRadius: 2, p: 3 }}>
-    <Typography variant="h5" gutterBottom fontWeight="bold" color="error.main">
-      🔒 Internal Notes (Team Only)
-    </Typography>
-
-    <Alert severity="warning" sx={{ mb: 3 }}>
-      These notes are private and will never be visible to the client
-    </Alert>
-
-    <Paper variant="outlined" sx={{ p: 2, mb: 3, backgroundColor: '#f8f9fa' }}>
-      <Typography variant="h6" gutterBottom>
-        Add Internal Note
-      </Typography>
-      <Box display="flex" gap={1}>
-        <TextField
-          fullWidth
-          multiline
-          rows={2}
-          placeholder="Add internal note (team observations, pricing strategy, client behavior, etc.)"
-          value={newNote}
-          onChange={e => setNewNote(e.target.value)}
-        />
-        <Button
-          variant="contained"
-          onClick={handleAdd}
-          disabled={!newNote.trim()}
-          sx={{ minWidth: 100 }}
-        >
-          Add
-        </Button>
-      </Box>
-    </Paper>
-
-    <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
-      Notes will be stored in Firestore. Add a note above to start.
-    </Typography>
-  </Card>
-);
-
-const TimelinePlaceholderContent: React.FC = () => (
-  <Card elevation={2} sx={{ borderRadius: 2, p: 3 }}>
-    <Typography variant="h5" gutterBottom fontWeight="bold">
-      Internal Timeline View
-    </Typography>
-
-    <Alert severity="info" sx={{ mb: 3 }}>
-      Master Plan / Interactive Gantt coming per SPEC v1.1 §1.3 — unified timeline
-      for all participants with plan/fact overlay and permit risk tracking.
-    </Alert>
-
-    <Box sx={{ textAlign: 'center', py: 4 }}>
-      <Typography variant="h6" color="text.secondary">
-        Master Plan integration pending
-      </Typography>
-      <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-        Will show internal deadlines, crew assignments, and material delivery schedules
-      </Typography>
-    </Box>
-  </Card>
-);
-
-// ─── page ─────────────────────────────────────────────────────────────
+// ─── Page Component ────────────────────────────────────────────────
 
 const ClientDashboardPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const [newNote, setNewNote] = useState('');
 
-  // Client from Firestore
+  // Client base data (Firestore direct — for header/layout)
   const [client, setClient] = useState<Client | null>(null);
   const [clientLoading, setClientLoading] = useState(true);
 
-  // Inventory state
-  const [inventoryTransactions, setInventoryTransactions] = useState<InventoryTransaction[]>([]);
-  const [inventoryLoading, setInventoryLoading] = useState(true);
-
-  // Photos state
+  // Photos from Firebase Storage
   const [photos, setPhotos] = useState<{ name: string; url: string }[]>([]);
   const [photosLoading, setPhotosLoading] = useState(true);
 
-  // Work session earnings
-  const [workSessionData, setWorkSessionData] = useState<{
-    totalEarnings: number;
-    sessionCount: number;
-    loading: boolean;
-  }>({ totalEarnings: 0, sessionCount: 0, loading: true });
+  // API-backed hooks for financial data
+  const { data: summary, loading: summaryLoading } = useClientSummary(id);
+  const [laborPeriod, setLaborPeriod] = useState<LaborPeriod>('month');
+  const { data: laborData, loading: laborLoading } = useClientLaborLog(id, laborPeriod);
+  const { events, loading: timelineLoading, hasMore, total, loadMore } = useClientTimeline(id);
+  const { data: costsData, loading: costsLoading } = useClientCostBreakdown(id);
 
   // Load client
   useEffect(() => {
-    if (!id) {
-      setClientLoading(false);
-      return;
-    }
+    if (!id) { setClientLoading(false); return; }
     let cancelled = false;
-    const loadClient = async () => {
-      try {
-        const data = await crmApi.getClientById(id);
-        if (!cancelled) setClient(data);
-      } catch (err) {
-        console.error('Error loading client:', err);
-      } finally {
-        if (!cancelled) setClientLoading(false);
-      }
-    };
-    loadClient();
-    return () => {
-      cancelled = true;
-    };
+    crmApi.getClientById(id)
+      .then(data => { if (!cancelled) setClient(data); })
+      .catch(err => console.error('Error loading client:', err))
+      .finally(() => { if (!cancelled) setClientLoading(false); });
+    return () => { cancelled = true; };
   }, [id]);
 
-  // Real-time inventory transactions
+  // Load photos from Storage
   useEffect(() => {
     if (!id || clientLoading || !client) return;
-    const q = query(collection(db, 'inventory_transactions'), where('relatedClientId', '==', id));
-    const unsub = onSnapshot(
-      q,
-      snap => {
-        const txs = snap.docs.map(d => ({ id: d.id, ...d.data() } as InventoryTransaction));
-        setInventoryTransactions(txs);
-        setInventoryLoading(false);
-      },
-      err => {
-        console.error('Error loading inventory transactions:', err);
-        setInventoryLoading(false);
-      }
-    );
-    return () => unsub();
+    const storage = getStorage();
+    const photosRef = ref(storage, `projects/${id}/photos/`);
+    listAll(photosRef)
+      .then(result =>
+        Promise.all(result.items.map(async itemRef => ({
+          name: itemRef.name,
+          url: await getDownloadURL(itemRef),
+        })))
+      )
+      .then(setPhotos)
+      .catch(err => console.error('Error loading photos:', err))
+      .finally(() => setPhotosLoading(false));
   }, [id, clientLoading, client]);
 
-  // Photos from Storage
-  useEffect(() => {
-    if (!id || clientLoading || !client) return;
-    const loadPhotos = async () => {
-      try {
-        const storage = getStorage();
-        const photosRef = ref(storage, `projects/${id}/photos/`);
-        const result = await listAll(photosRef);
-        const photoData = await Promise.all(
-          result.items.map(async itemRef => {
-            const url = await getDownloadURL(itemRef);
-            return { name: itemRef.name, url };
-          })
-        );
-        setPhotos(photoData);
-      } catch (err) {
-        console.error('Error loading photos:', err);
-      } finally {
-        setPhotosLoading(false);
-      }
-    };
-    loadPhotos();
-  }, [id, clientLoading, client]);
+  const galleryPhotos = useMemo((): GalleryPhoto[] =>
+    photos.map(p => ({
+      id: p.name,
+      url: p.url,
+      title: p.name.replace(/\.[^.]+$/, '').replace(/[-_]/g, ' '),
+      date: '',
+      category: p.name.startsWith('render') ? 'render' as const
+        : p.name.startsWith('before') ? 'before' as const
+        : 'progress' as const,
+    })), [photos]);
 
-  // Real-time work sessions
-  useEffect(() => {
-    if (!id || clientLoading || !client) return;
-    const q = query(
-      collection(db, 'work_sessions'),
-      where('clientId', '==', id),
-      where('status', '==', 'completed')
-    );
-    const unsub = onSnapshot(
-      q,
-      snap => {
-        let total = 0;
-        snap.docs.forEach(d => {
-          const data = d.data();
-          total += data.sessionEarnings || 0;
-        });
-        setWorkSessionData({
-          totalEarnings: total,
-          sessionCount: snap.docs.length,
-          loading: false,
-        });
-      },
-      err => {
-        console.error('Error loading work sessions:', err);
-        setWorkSessionData(prev => ({ ...prev, loading: false }));
-      }
-    );
-    return () => unsub();
-  }, [id, clientLoading, client]);
-
-  // Aggregate inventory by item
-  const inventorySummary = useMemo((): InventoryRow[] => {
-    const map = new Map<string, InventoryRow>();
-    inventoryTransactions.forEach(tx => {
-      const existing = map.get(tx.catalogItemId);
-      if (existing) {
-        existing.totalQty += tx.qty;
-        existing.totalAmount += tx.totalAmount;
-        existing.unitPrice = existing.totalAmount / existing.totalQty;
-      } else {
-        map.set(tx.catalogItemId, {
-          name: tx.catalogItemName,
-          category: tx.category,
-          totalQty: tx.qty,
-          unitPrice: tx.unitPrice,
-          totalAmount: tx.totalAmount,
-        });
-      }
-    });
-    return Array.from(map.values());
-  }, [inventoryTransactions]);
-
-  // Convert Storage photos to GalleryPhoto format
-  const galleryPhotos = useMemo(
-    (): GalleryPhoto[] =>
-      photos.map(p => {
-        const name = p.name;
-        let category: GalleryPhoto['category'] = 'progress';
-        if (name.startsWith('render_') || name.startsWith('render-')) category = 'render';
-        else if (name.startsWith('before_') || name.startsWith('before-')) category = 'before';
-        return {
-          id: name,
-          url: p.url,
-          title: name.replace(/\.[^.]+$/, '').replace(/[-_]/g, ' '),
-          date: '',
-          category,
-        };
-      }),
-    [photos]
-  );
-
-  const handleAddNote = () => {
-    if (newNote.trim()) {
-      // TODO: Phase 3.5 — persist internal notes to Firestore (client_notes collection)
-      console.log('Adding internal note:', newNote);
-      setNewNote('');
-    }
-  };
-
-  // ─── Loading / not-found ────────────────────────────────────────
+  // ─── Loading / error ───────────────────────────────────────────
   if (clientLoading) {
     return (
       <Box display="flex" justifyContent="center" alignItems="center" minHeight="100vh">
@@ -566,122 +124,81 @@ const ClientDashboardPage: React.FC = () => {
       </Box>
     );
   }
-
   if (!client) {
-    return (
-      <Box sx={{ p: 3 }}>
-        <Alert severity="error">Client not found (ID: {id})</Alert>
-      </Box>
-    );
+    return <Box sx={{ p: 3 }}><Alert severity="error">Client not found (ID: {id})</Alert></Box>;
   }
 
-  // ─── Build layout props ─────────────────────────────────────────
+  // ─── Layout header ─────────────────────────────────────────────
   const header: DashboardHeader = {
     title: client.name,
     subtitle: client.workLocation?.address || client.address || '',
     caption: `${client.type === 'company' ? 'Company' : 'Person'} · ${client.status}`,
-    totalAmount: `LTV $${(client.totalRevenue || 0).toLocaleString()}`,
+    totalAmount: summary
+      ? `Profit $${summary.profit.toLocaleString()}`
+      : `LTV $${(client.totalRevenue || 0).toLocaleString()}`,
     chips: [
       { label: client.status, color: 'primary' },
       ...(client.tags || []).slice(0, 4).map(tag => ({ label: tag })),
-      ...(client.services || []).slice(0, 4).map(svc => ({ label: svc })),
     ],
-    meta:
-      client.contacts && client.contacts.length > 0 ? (
-        <Stack direction="row" spacing={0.5} alignItems="center">
-          <Typography variant="body2" color="text.secondary">
-            Primary:
-          </Typography>
-          <Typography variant="body2" fontWeight="bold">
-            {client.contacts[0].name}
-          </Typography>
-          {client.contacts[0].phone && (
-            <>
-              <Typography variant="body2" color="text.secondary">
-                ·
-              </Typography>
-              <Typography
-                variant="body2"
-                component="a"
-                href={`tel:${client.contacts[0].phone}`}
-                sx={{ color: 'primary.main', textDecoration: 'none' }}
-              >
-                {client.contacts[0].phone}
-              </Typography>
-            </>
-          )}
-        </Stack>
-      ) : undefined,
   };
 
   const actions = (
-    <Stack direction={{ xs: 'row', md: 'row' }} spacing={1}>
-      <Button
-        size="small"
-        variant="outlined"
-        startIcon={<VisibilityIcon />}
-        onClick={() => navigate(`/crm/clients/${id}`)}
-      >
-        Details
-      </Button>
-      {id && (
-        <ShareWithClientButton
-          clientId={id}
-          clientName={client.name}
-          size="small"
-          variant="contained"
-        />
-      )}
+    <Stack direction="row" spacing={1}>
+      <Button size="small" variant="outlined" startIcon={<VisibilityIcon />}
+        onClick={() => navigate(`/crm/clients/${id}`)}>Details</Button>
+      {id && <ShareWithClientButton clientId={id} clientName={client.name}
+        size="small" variant="contained" />}
     </Stack>
   );
 
+  // ─── Sections (tab panels) ─────────────────────────────────────
   const sections: DashboardSection[] = [
     {
-      label: 'Overview',
-      icon: <ClientIcon />,
-      content: <OverviewContent client={client} workSessions={workSessionData} />,
-    },
-    {
-      label: 'Inventory',
-      icon: <BuildIcon />,
-      content: <InventoryContent loading={inventoryLoading} summary={inventorySummary} />,
-    },
-    {
-      label: 'Notes',
-      icon: <NotesIcon />,
+      label: 'Finance',
+      icon: <VisibilityIcon />,
       content: (
-        <InternalNotesContent
-          newNote={newNote}
-          setNewNote={setNewNote}
-          handleAdd={handleAddNote}
-        />
+        <Box>
+          <RedFlagsBanner flags={summary?.redFlags || []} />
+          <ClientHeader summary={summary} loading={summaryLoading}
+            onNewTask={() => navigate(`/gtd/create?clientId=${id}`)}
+            onNewEstimate={() => navigate(`/estimates/new?clientId=${id}`)} />
+          <Grid container spacing={2} sx={{ mt: 1 }}>
+            <Grid size={{ xs: 12, md: 6 }}>
+              <BudgetProgressBar estimated={summary?.estimateTotal || 0}
+                spent={summary?.totalSpent || 0} invoiced={summary?.invoiced || 0}
+                loading={summaryLoading} />
+            </Grid>
+            <Grid size={{ xs: 12, md: 6 }}>
+              <CostBreakdownPie data={costsData} loading={costsLoading} />
+            </Grid>
+          </Grid>
+        </Box>
       ),
     },
     {
-      label: `Photos (${galleryPhotos.length})`,
-      icon: <PhotoCameraIcon />,
-      content: photosLoading ? (
-        <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
-          <CircularProgress />
-        </Box>
-      ) : (
-        <GallerySection photos={galleryPhotos} />
-      ),
+      label: 'Labor',
+      icon: <VisibilityIcon />,
+      content: <LaborLog data={laborData} loading={laborLoading}
+        period={laborPeriod} onPeriodChange={setLaborPeriod} />,
     },
     {
       label: 'Timeline',
-      icon: <TimelineIcon />,
-      content: <TimelinePlaceholderContent />,
+      icon: <VisibilityIcon />,
+      content: <ProjectTimeline events={events} loading={timelineLoading}
+        hasMore={hasMore} total={total} onLoadMore={loadMore} />,
+    },
+    {
+      label: `Photos (${galleryPhotos.length})`,
+      icon: <VisibilityIcon />,
+      content: photosLoading
+        ? <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}><CircularProgress /></Box>
+        : <GallerySection photos={galleryPhotos} />,
     },
   ];
 
   return (
-    <ClientDashboardLayout
-      mode="internal"
-      header={header}
-      sections={sections}
-      actions={actions}
-    />
+    <ClientDashboardLayout mode="internal" header={header}
+      sections={sections} actions={actions} />
   );
 };
 

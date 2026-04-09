@@ -17,7 +17,7 @@ import {
 } from './agentMiddleware';
 
 import {
-  clientRoutes, dashboardRoutes, taskRoutes, costRoutes,
+  clientRoutes, dashboardRoutes, dashboardClientRoutes, taskRoutes, costRoutes,
   timeTrackingRoutes, financeRoutes, userRoutes,
   estimateRoutes, projectRoutes, siteRoutes, erpRoutes, inventoryRoutes,
   sharingRoutes,
@@ -63,7 +63,7 @@ app.use(rateLimitMiddleware);
 // ─── Register Domain Routes ────────────────────────────────────────
 
 const routes = [
-  clientRoutes, dashboardRoutes, taskRoutes, costRoutes,
+  clientRoutes, dashboardRoutes, dashboardClientRoutes, taskRoutes, costRoutes,
   timeTrackingRoutes, financeRoutes, userRoutes,
   estimateRoutes, projectRoutes, siteRoutes, erpRoutes, inventoryRoutes,
   sharingRoutes,

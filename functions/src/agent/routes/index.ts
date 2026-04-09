@@ -3,6 +3,7 @@
  */
 export { default as clientRoutes } from './clients';
 export { default as dashboardRoutes } from './dashboard';
+export { default as dashboardClientRoutes } from './dashboardClient';
 export { default as taskRoutes } from './tasks';
 export { default as costRoutes } from './costs';
 export { default as timeTrackingRoutes } from './timeTracking';

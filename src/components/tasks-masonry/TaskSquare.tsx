@@ -36,7 +36,8 @@ interface TaskSquareProps {
 const SF_FONT = '-apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", system-ui, sans-serif';
 
 // ── Due date formatter ──
-const formatDueDate = (dueDate: any): { label: string; color: string } | null => {
+// Accepts Firestore Timestamp-like { seconds: number } or null/undefined.
+const formatDueDate = (dueDate: { seconds?: number } | null | undefined): { label: string; color: string } | null => {
     if (!dueDate?.seconds) return null;
     const due = new Date(dueDate.seconds * 1000);
     const now = new Date();

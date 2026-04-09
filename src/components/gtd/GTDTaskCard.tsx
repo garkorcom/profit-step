@@ -56,12 +56,16 @@ const GTDTaskCard: React.FC<GTDTaskCardProps> = ({
     // Compute due date display
     const dueDateDisplay = useMemo(() => {
         if (!task.dueDate) return null;
-        const raw = task.dueDate as any;
-        const d = raw?.seconds
-            ? new Date(raw.seconds * 1000)
-            : raw?.toDate
-                ? raw.toDate()
-                : new Date(raw);
+        const raw: unknown = task.dueDate;
+        let d: Date;
+        if (typeof raw === 'object' && raw !== null) {
+            const ts = raw as { seconds?: number; toDate?: () => Date };
+            if (typeof ts.toDate === 'function') d = ts.toDate();
+            else if (typeof ts.seconds === 'number') d = new Date(ts.seconds * 1000);
+            else d = new Date(raw as unknown as string);
+        } else {
+            d = new Date(raw as string | number);
+        }
         if (isNaN(d.getTime())) return null;
         const isOverdue = d < new Date() && !isDone;
         return {

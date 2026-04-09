@@ -55,12 +55,15 @@ export const useDashboardTasks = (companyId: string | undefined): DashboardTasks
         let activeReady = false;
         let completedReady = false;
 
-        const safeGetDate = (val: any) => {
+        const safeGetDate = (val: unknown): Date | null => {
             if (!val) return null;
-            if (typeof val.toDate === 'function') return val.toDate();
-            if (val.seconds) return new Date(val.seconds * 1000);
             if (val instanceof Date) return val;
-            return new Date(val);
+            if (typeof val === 'object' && val !== null) {
+                const obj = val as { toDate?: () => Date; seconds?: number };
+                if (typeof obj.toDate === 'function') return obj.toDate();
+                if (typeof obj.seconds === 'number') return new Date(obj.seconds * 1000);
+            }
+            return new Date(val as string | number);
         };
 
         const processAggregations = () => {
@@ -89,7 +92,7 @@ export const useDashboardTasks = (companyId: string | undefined): DashboardTasks
                         id: task.id,
                         title: task.title,
                         assignee: task.assigneeName || task.ownerName || 'Unassigned',
-                        deadline: taskDueDate,
+                        deadline: taskDueDate ?? undefined,
                         priority: task.priority
                     });
                 }

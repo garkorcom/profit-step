@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
+import type { RenderParameters } from 'pdfjs-dist/types/src/display/api';
 
 // Since we are using pdfjs in a React app, we need to set the workerSrc.
 // We use the unpkg CDN for convenience to avoid webpack complex worker configurations.
@@ -96,10 +97,11 @@ export const usePdfRasterizer = () => {
                         canvas.width = viewport.width;
                         canvas.height = viewport.height;
 
-                        const renderContext = {
+                        const renderContext: RenderParameters = {
                             canvasContext: context,
                             viewport: viewport,
-                        } as any;
+                            canvas,
+                        };
 
                         await page.render(renderContext).promise;
 

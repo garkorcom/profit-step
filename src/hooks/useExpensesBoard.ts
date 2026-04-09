@@ -14,7 +14,7 @@ import {
     collection, query, orderBy, onSnapshot,
     updateDoc, doc, addDoc, serverTimestamp,
     where, limit, startAfter, getDocs,
-    type DocumentSnapshot, arrayUnion,
+    type DocumentSnapshot, type QueryConstraint, arrayUnion,
     Timestamp,
 } from 'firebase/firestore';
 import { db } from '../firebase/firebase';
@@ -126,7 +126,7 @@ export const useExpensesBoard = () => {
 
     // ── Build Firestore query ──
     const buildQuery = useCallback((afterDoc?: DocumentSnapshot) => {
-        const constraints: any[] = [
+        const constraints: QueryConstraint[] = [
             where('companyId', '==', companyId),
             where('year', '==', filters.year),
             orderBy('date', 'desc'),

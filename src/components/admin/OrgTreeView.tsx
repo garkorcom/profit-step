@@ -19,7 +19,7 @@ import {
     } from '@mui/icons-material';
 import { UserProfile, DEPARTMENT_LABELS, Department } from '../../types/user.types';
 import { OrgTreeNode } from '../../types/rbac.types';
-import StatusIndicator from '../common/StatusIndicator';
+import StatusIndicator, { type StatusIndicatorStatus } from '../common/StatusIndicator';
 import { Timestamp } from 'firebase/firestore';
 
 interface OrgTreeViewProps {
@@ -114,7 +114,7 @@ const TreeNode: React.FC<TreeNodeProps> = ({ node, users, depth, onUserClick }) 
                 {/* Status */}
                 {user && (
                     <StatusIndicator
-                        status={user.status as any}
+                        status={user.status as StatusIndicatorStatus}
                         isOnline={isOnline}
                         showLabel={false}
                         size="small"

@@ -274,9 +274,10 @@ export async function sendTasksMenu(chatId: number, telegramId: number): Promise
             inline_keyboard: inlineKeyboard
         });
 
-    } catch (error) {
-        console.error('Error fetching tasks:', error);
-        await sendMessage(chatId, "⚠️ Error loading tasks. Please try again.");
+    } catch (error: any) {
+        console.error('Error fetching tasks:', error?.message || error, error?.code || '');
+        const hint = error?.code === 9 ? ' (missing Firestore index)' : '';
+        await sendMessage(chatId, `⚠️ Error loading tasks${hint}. Please try /start and then /tasks again.`);
     }
 }
 
@@ -352,9 +353,10 @@ export async function sendTaskList(chatId: number, telegramId: number, status: s
             inline_keyboard: inlineKeyboard
         });
 
-    } catch (error) {
-        console.error('Error fetching task list:', error);
-        await sendMessage(chatId, "⚠️ Error loading tasks.", {
+    } catch (error: any) {
+        console.error('Error fetching task list:', error?.message || error, error?.code || '');
+        const hint = error?.code === 9 ? ' (missing index — deploying fix)' : '';
+        await sendMessage(chatId, `⚠️ Error loading tasks${hint}.`, {
             inline_keyboard: [[{ text: '◀️ Back', callback_data: 'tasks_back' }]]
         });
     }

@@ -182,7 +182,15 @@ async function handleMessage(message: any) {
         return;
     }
 
-    // 2. Check for active PO flow (intercepts text + photo messages)
+    // 2a. Check for active GTD flow (comment, progress, delegate)
+    const gtdState = await GtdHandler.getGtdState(chatId);
+    if (gtdState) {
+        const consumed = await GtdHandler.handleGtdFlowMessage(chatId, userId, text, message, gtdState);
+        if (consumed) return;
+        // If not consumed (e.g. /start, /menu), fall through to main handler
+    }
+
+    // 2b. Check for active PO flow (intercepts text + photo messages)
     const poState = await POHandler.getPOState(chatId);
     if (poState) {
         // /start and /menu should clear PO state AND continue to main handler

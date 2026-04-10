@@ -11,6 +11,12 @@ import { sendMessage, findPlatformUser } from '../telegramUtils';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { getTemplateList, instantiateTemplate } from '../../../callable/gtd/projectTemplates';
 import { getTaskFinancialSummary } from '../../../callable/gtd/taskFinancials';
+import {
+    getTeamOverviewForBot,
+    getUnassignedTasksForBot,
+    suggestAssignee,
+    getShiftHandoffSummary,
+} from '../../../callable/gtd/teamOverview';
 const db = admin.firestore();
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
 
@@ -571,6 +577,10 @@ export async function handleGtdCallback(
     // Phase 4 callbacks (templates, waiting reasons, phase tags, proof, approval)
     const handled4 = await handlePhase4Callback(chatId, userId, data);
     if (handled4) return true;
+
+    // Phase 6 callbacks (team, pool, self-assign, smart-assign, handoff)
+    const handled6 = await handlePhase6Callback(chatId, userId, data);
+    if (handled6) return true;
 
     return false;
 }
@@ -1313,6 +1323,10 @@ async function sendTaskCardExtended(chatId: number, userId: number, taskId: stri
 
         keyboard.push([
             { text: '👤 Делегировать', callback_data: `task_delegate:${taskId}` },
+            { text: '🧠 Кому?', callback_data: `task_suggest:${taskId}` },
+        ]);
+
+        keyboard.push([
             { text: '📷 Фото', callback_data: `task_photo:${taskId}` },
         ]);
 
@@ -1662,6 +1676,304 @@ export async function handlePhase2Callback(
             }),
         });
         await sendMessage(chatId, '❌ *Задача отклонена.*\nВладелец задачи будет уведомлён.');
+        return true;
+    }
+
+    return false;
+}
+
+// ═══════════════════════════════════════════════════════════
+// PHASE 6 — MANAGER & TEAM
+// ═══════════════════════════════════════════════════════════
+
+/**
+ * /team command — manager sees team task overview
+ */
+export async function handleTeamCommand(chatId: number, userId: number): Promise<void> {
+    const platformUser = await findPlatformUser(userId);
+    if (!platformUser) {
+        await sendMessage(chatId, '❌ Аккаунт не привязан.');
+        return;
+    }
+
+    await sendMessage(chatId, '⏳ *Загружаю данные команды...*');
+
+    try {
+        const { text, teamMembers } = await getTeamOverviewForBot(platformUser.id);
+
+        const keyboard: any[][] = [];
+
+        // Add buttons for each team member to see their tasks
+        for (const member of teamMembers.slice(0, 6)) {
+            keyboard.push([{
+                text: `👤 ${member.name} (${member.totalOpen})${member.overdue > 0 ? ' ⚠️' : ''}`,
+                callback_data: `team_member:${member.userId}`,
+            }]);
+        }
+
+        keyboard.push([
+            { text: '📋 Свободные задачи', callback_data: 'team_pool' },
+            { text: '📋 Итоги дня', callback_data: 'team_handoff' },
+        ]);
+
+        await sendMessage(chatId, text, { inline_keyboard: keyboard });
+    } catch (error) {
+        logger.error('handleTeamCommand error', error);
+        await sendMessage(chatId, '❌ Ошибка загрузки данных команды.');
+    }
+}
+
+/**
+ * /pool command — show unassigned tasks for self-assign
+ */
+export async function handlePoolCommand(chatId: number, userId: number): Promise<void> {
+    const platformUser = await findPlatformUser(userId);
+    if (!platformUser) {
+        await sendMessage(chatId, '❌ Аккаунт не привязан.');
+        return;
+    }
+
+    try {
+        const { text, tasks } = await getUnassignedTasksForBot(platformUser.id);
+
+        const keyboard: any[][] = [];
+        for (const task of tasks.slice(0, 8)) {
+            const emoji = task.priority === 'high' ? '🔴' : task.priority === 'medium' ? '🟠' : '🔵';
+            keyboard.push([{
+                text: `${emoji} ${task.title.substring(0, 30)} — Взять`,
+                callback_data: `task_selfassign:${task.id}`,
+            }]);
+        }
+
+        if (keyboard.length > 0) {
+            keyboard.push([{ text: '◀️ Назад', callback_data: 'tasks_back' }]);
+        }
+
+        await sendMessage(chatId, text, keyboard.length > 0 ? { inline_keyboard: keyboard } : undefined);
+    } catch (error) {
+        logger.error('handlePoolCommand error', error);
+        await sendMessage(chatId, '❌ Ошибка загрузки свободных задач.');
+    }
+}
+
+/**
+ * Phase 6 Callback Router
+ */
+export async function handlePhase6Callback(
+    chatId: number,
+    userId: number,
+    data: string,
+): Promise<boolean> {
+    // View team member's tasks
+    if (data.startsWith('team_member:')) {
+        const memberId = data.substring(12);
+        const memberDoc = await db.collection('users').doc(memberId).get();
+        const memberName = memberDoc.data()?.displayName || 'Worker';
+
+        const tasksSnap = await db.collection('gtd_tasks')
+            .where('ownerId', '==', memberId)
+            .where('status', 'in', ['inbox', 'next_action', 'waiting', 'projects', 'pending_approval'])
+            .orderBy('createdAt', 'desc')
+            .limit(8)
+            .get();
+
+        if (tasksSnap.empty) {
+            await sendMessage(chatId, `👤 *${memberName}*\n\n_Нет открытых задач._`);
+            return true;
+        }
+
+        let msg = `👤 *Задачи ${memberName}:*\n\n`;
+        const keyboard: any[][] = [];
+
+        for (const doc of tasksSnap.docs) {
+            const task = doc.data();
+            const priority = PRIORITY_EMOJI[task.priority || 'none'];
+            const status = task.status === 'next_action' ? '▶️' :
+                task.status === 'waiting' ? '⏳' : '📥';
+            msg += `${priority}${status} ${task.title}\n`;
+
+            keyboard.push([{
+                text: `${priority} ${(task.title || '').substring(0, 28)}`,
+                callback_data: `task_view:${doc.id}`,
+            }]);
+        }
+
+        keyboard.push([{ text: '◀️ К команде', callback_data: 'team_back' }]);
+
+        await sendMessage(chatId, msg, { inline_keyboard: keyboard });
+        return true;
+    }
+
+    // Back to team overview
+    if (data === 'team_back') {
+        await handleTeamCommand(chatId, userId);
+        return true;
+    }
+
+    // Show unassigned task pool
+    if (data === 'team_pool') {
+        await handlePoolCommand(chatId, userId);
+        return true;
+    }
+
+    // Show shift handoff
+    if (data === 'team_handoff') {
+        const platformUser = await findPlatformUser(userId);
+        if (!platformUser) {
+            await sendMessage(chatId, '❌ Аккаунт не привязан.');
+            return true;
+        }
+        const summary = await getShiftHandoffSummary(platformUser.id);
+        await sendMessage(chatId, summary, {
+            inline_keyboard: [[{ text: '◀️ К команде', callback_data: 'team_back' }]],
+        });
+        return true;
+    }
+
+    // Self-assign task
+    if (data.startsWith('task_selfassign:')) {
+        const taskId = data.substring(16);
+        const platformUser = await findPlatformUser(userId);
+        if (!platformUser) {
+            await sendMessage(chatId, '❌ Аккаунт не привязан.');
+            return true;
+        }
+
+        const taskDoc = await db.collection('gtd_tasks').doc(taskId).get();
+        if (!taskDoc.exists) {
+            await sendMessage(chatId, '❌ Задача не найдена.');
+            return true;
+        }
+
+        const taskData = taskDoc.data()!;
+
+        // Check if already assigned
+        if (taskData.assigneeId) {
+            await sendMessage(chatId, `⚠️ Задача уже назначена: ${taskData.assigneeName || 'someone'}`);
+            return true;
+        }
+
+        // Self-assign
+        await db.collection('gtd_tasks').doc(taskId).update({
+            assigneeId: platformUser.id,
+            assigneeName: platformUser.displayName || platformUser.name || 'Worker',
+            status: 'next_action',
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            taskHistory: admin.firestore.FieldValue.arrayUnion({
+                type: 'self_assigned',
+                by: platformUser.displayName || 'Worker',
+                byId: platformUser.id,
+                at: new Date().toISOString(),
+                source: 'telegram',
+            }),
+        });
+
+        // Notify task owner
+        const ownerId = taskData.ownerId;
+        if (ownerId && ownerId !== platformUser.id) {
+            try {
+                const ownerDoc = await db.collection('users').doc(ownerId).get();
+                const ownerTgId = ownerDoc.data()?.telegramId;
+                if (ownerTgId) {
+                    const tId = typeof ownerTgId === 'number' ? ownerTgId : parseInt(ownerTgId);
+                    await sendMessage(tId,
+                        `✋ *Задача взята:*\n\n${taskData.title}\n\n👤 Взял: ${platformUser.displayName || 'Worker'}`
+                    );
+                }
+            } catch (_) { /* ignore */ }
+        }
+
+        await sendMessage(chatId, `✅ *Задача взята!*\n\n${taskData.title}`, {
+            inline_keyboard: [[
+                { text: '📋 К задаче', callback_data: `task_view:${taskId}` },
+                { text: '📋 Ещё свободные', callback_data: 'team_pool' },
+            ]],
+        });
+        return true;
+    }
+
+    // Smart assign suggestion
+    if (data.startsWith('task_suggest:')) {
+        const taskId = data.substring(13);
+        const platformUser = await findPlatformUser(userId);
+        if (!platformUser) return true;
+
+        const result = await suggestAssignee(platformUser.id, taskId);
+
+        if (result.suggestions.length === 0) {
+            await sendMessage(chatId, '❌ Нет доступных исполнителей.');
+            return true;
+        }
+
+        let msg = '🧠 *Предложения по назначению:*\n\n';
+        const keyboard: any[][] = [];
+
+        for (const s of result.suggestions) {
+            const loadEmoji = s.activeCount > 5 ? '🔴' : s.activeCount > 3 ? '🟡' : '🟢';
+            msg += `${loadEmoji} *${s.name}* — ${s.reason}\n`;
+
+            keyboard.push([{
+                text: `${loadEmoji} ${s.name} (${s.activeCount} задач)`,
+                callback_data: `task_assign_to:${taskId}:${s.userId}`,
+            }]);
+        }
+
+        keyboard.push([{ text: '◀️ К задаче', callback_data: `task_view:${taskId}` }]);
+
+        await sendMessage(chatId, msg, { inline_keyboard: keyboard });
+        return true;
+    }
+
+    // Direct assign to a specific user
+    if (data.startsWith('task_assign_to:')) {
+        const parts = data.substring(15).split(':');
+        const taskId = parts[0];
+        const assigneeId = parts[1];
+
+        const assigneeDoc = await db.collection('users').doc(assigneeId).get();
+        const assigneeName = assigneeDoc.data()?.displayName || 'Worker';
+
+        const platformUser = await findPlatformUser(userId);
+
+        await db.collection('gtd_tasks').doc(taskId).update({
+            assigneeId,
+            assigneeName,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            taskHistory: admin.firestore.FieldValue.arrayUnion({
+                type: 'assigned',
+                to: assigneeName,
+                toId: assigneeId,
+                by: platformUser?.displayName || 'Manager',
+                byId: platformUser?.id || String(userId),
+                at: new Date().toISOString(),
+                source: 'telegram',
+            }),
+        });
+
+        // Notify assignee
+        const assigneeTgId = assigneeDoc.data()?.telegramId;
+        if (assigneeTgId) {
+            const tId = typeof assigneeTgId === 'number' ? assigneeTgId : parseInt(assigneeTgId);
+            const taskDoc = await db.collection('gtd_tasks').doc(taskId).get();
+            const title = taskDoc.data()?.title || 'Задача';
+            try {
+                await sendMessage(tId,
+                    `📋 *Новая задача:*\n\n${title}\n\n👤 Назначил: ${platformUser?.displayName || 'Manager'}`,
+                    {
+                        inline_keyboard: [
+                            [
+                                { text: '✅ Принять', callback_data: `task_accept:${taskId}` },
+                                { text: '❌ Отклонить', callback_data: `task_decline:${taskId}` },
+                            ],
+                        ],
+                    }
+                );
+            } catch (_) { /* ignore */ }
+        }
+
+        await sendMessage(chatId, `✅ *Назначено:* ${assigneeName}`, {
+            inline_keyboard: [[{ text: '◀️ К задаче', callback_data: `task_view:${taskId}` }]],
+        });
         return true;
     }
 

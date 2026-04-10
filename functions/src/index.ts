@@ -614,6 +614,8 @@ export { scheduledDayPlan } from './scheduled/scheduledDayPlan';
 export { moveGtdTask } from './callable/gtd/moveGtdTask';
 export { createProjectFromTemplate } from './callable/gtd/projectTemplates';
 export { getTaskFinancials, linkCostToTask } from './callable/gtd/taskFinancials';
+export { getTeamTaskOverview } from './callable/gtd/teamOverview';
+export { sendShiftHandoff } from './scheduled/shiftHandoff';
 
 // ========================================
 // DATA WAREHOUSE & ANALYTICS

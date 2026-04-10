@@ -612,6 +612,7 @@ export { generateProjectDigest } from './exports/generateProjectDigest';
 export { generateDayPlan } from './callable/gtd/generateDayPlan';
 export { scheduledDayPlan } from './scheduled/scheduledDayPlan';
 export { moveGtdTask } from './callable/gtd/moveGtdTask';
+export { createProjectFromTemplate } from './callable/gtd/projectTemplates';
 
 // ========================================
 // DATA WAREHOUSE & ANALYTICS

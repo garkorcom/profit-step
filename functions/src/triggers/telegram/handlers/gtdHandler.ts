@@ -9,6 +9,7 @@ import * as admin from 'firebase-admin';
 import { logger } from 'firebase-functions';
 import { sendMessage, findPlatformUser } from '../telegramUtils';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { getTemplateList, instantiateTemplate } from '../../../callable/gtd/projectTemplates';
 const db = admin.firestore();
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
 
@@ -21,9 +22,29 @@ export const GTD_COLUMNS = [
     { id: 'next_action', title: '▶️ Next', emoji: '▶️' },
     { id: 'projects', title: '📂 Projects', emoji: '📂' },
     { id: 'waiting', title: '⏳ Waiting', emoji: '⏳' },
+    { id: 'pending_approval', title: '🔒 Approval', emoji: '🔒' },
     { id: 'someday', title: '💭 Someday', emoji: '💭' },
     { id: 'done', title: '✅ Done', emoji: '✅' }
 ];
+
+// Phase 4.2: Granular waiting sub-statuses
+export const WAITING_REASONS: Record<string, { emoji: string; label: string }> = {
+    materials: { emoji: '📦', label: 'Материалы' },
+    inspection: { emoji: '🔍', label: 'Инспекция' },
+    permit: { emoji: '📄', label: 'Пермит' },
+    client: { emoji: '👤', label: 'Клиент' },
+    subcontractor: { emoji: '👷', label: 'Субподрядчик' },
+    other: { emoji: '⏳', label: 'Другое' },
+};
+
+// Phase 4.3: Construction phase tags
+export const PHASE_TAGS: Record<string, { emoji: string; label: string }> = {
+    demo: { emoji: '🔨', label: 'Demo' },
+    rough: { emoji: '🔧', label: 'Rough' },
+    finish: { emoji: '✨', label: 'Finish' },
+    punch_list: { emoji: '📋', label: 'Punch List' },
+    warranty: { emoji: '🛡️', label: 'Warranty' },
+};
 
 export const PRIORITY_EMOJI: Record<string, string> = {
     high: '🔴',
@@ -60,7 +81,7 @@ export async function sendMyTasks(chatId: number, telegramId: number): Promise<v
     try {
         const tasksSnap = await db.collection('gtd_tasks')
             .where('ownerId', '==', platformUser.id)
-            .where('status', 'in', ['inbox', 'next_action', 'waiting', 'projects', 'estimate'])
+            .where('status', 'in', ['inbox', 'next_action', 'waiting', 'projects', 'estimate', 'pending_approval'])
             .get();
 
         if (tasksSnap.empty) {
@@ -437,7 +458,7 @@ export async function sendTaskList(chatId: number, telegramId: number, status: s
         for (const doc of tasksSnapshot.docs) {
             const task = doc.data();
             const priority = PRIORITY_EMOJI[task.priority || 'none'];
-            const title = (task.title || 'Untitled').substring(0, 30);
+            const title = (task.title || 'Untitled').substring(0, 25);
 
             // Format due date if exists
             let dueNote = '';
@@ -446,6 +467,16 @@ export async function sendTaskList(chatId: number, telegramId: number, status: s
                     const dueDate = task.dueDate.toDate();
                     dueNote = dueDate < new Date() ? ' ⚠️' : '';
                 } catch (e) { }
+            }
+
+            // Phase 4.2: Show waiting reason
+            if (task.waitingReason && WAITING_REASONS[task.waitingReason]) {
+                dueNote += ` ${WAITING_REASONS[task.waitingReason].emoji}`;
+            }
+
+            // Phase 4.3: Show phase tag
+            if (task.phaseTag && PHASE_TAGS[task.phaseTag]) {
+                dueNote += ` ${PHASE_TAGS[task.phaseTag].emoji}`;
             }
 
             // Add task button row
@@ -536,6 +567,10 @@ export async function handleGtdCallback(
     const handled = await handlePhase2Callback(chatId, userId, data);
     if (handled) return true;
 
+    // Phase 4 callbacks (templates, waiting reasons, phase tags, proof, approval)
+    const handled4 = await handlePhase4Callback(chatId, userId, data);
+    if (handled4) return true;
+
     return false;
 }
 
@@ -558,15 +593,79 @@ async function markTaskDone(chatId: number, userId: number, taskId: string): Pro
             return;
         }
 
-        const previousStatus = taskDoc.data()?.status || 'inbox';
+        const taskData = taskDoc.data()!;
+        const previousStatus = taskData.status || 'inbox';
 
+        // Phase 4.4: Check completion proof requirement
+        if (taskData.requiresCompletionProof && !taskData.completionProofPhotoId) {
+            const hasProof = (taskData.taskHistory || []).some(
+                (h: any) => h.type === 'completion_proof' || h.type === 'photo'
+            );
+            if (!hasProof) {
+                await sendMessage(chatId, '📸 *Нужно фото-подтверждение!*\n\nЭта задача требует фото перед закрытием.\nОтправьте фото выполненной работы:', {
+                    inline_keyboard: [
+                        [{ text: '📸 Отправить фото', callback_data: `task_proof:${taskId}` }],
+                        [{ text: '◀️ Назад', callback_data: `task_view:${taskId}` }],
+                    ],
+                });
+                return;
+            }
+        }
+
+        // Phase 4.5: Check approval requirement
+        if (taskData.requiresApproval && !taskData.approvedAt) {
+            await taskRef.update({
+                status: 'pending_approval',
+                submittedForApprovalAt: admin.firestore.FieldValue.serverTimestamp(),
+                submittedForApprovalBy: String(userId),
+                updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+                taskHistory: admin.firestore.FieldValue.arrayUnion({
+                    type: 'status_changed',
+                    description: 'Submitted for approval',
+                    at: new Date().toISOString(),
+                }),
+            });
+
+            await sendMessage(chatId, '🔒 *Задача отправлена на одобрение.*\n\nМенеджер получит уведомление.', {
+                inline_keyboard: [[{ text: '◀️ К задачам', callback_data: `tasks:${previousStatus}` }]],
+            });
+
+            // Notify owner/manager
+            const ownerId = taskData.ownerId;
+            if (ownerId) {
+                try {
+                    const ownerDoc = await db.collection('users').doc(ownerId).get();
+                    const ownerTgId = ownerDoc.data()?.telegramId;
+                    const platformUser = await findPlatformUser(userId);
+                    if (ownerTgId && ownerId !== (platformUser?.id || String(userId))) {
+                        const tId = typeof ownerTgId === 'number' ? ownerTgId : parseInt(ownerTgId);
+                        await sendMessage(tId,
+                            `🔒 *Задача ждёт одобрения:*\n\n${taskData.title}\n\n👤 Отправил: ${platformUser?.displayName || 'Worker'}`,
+                            {
+                                inline_keyboard: [
+                                    [
+                                        { text: '✅ Одобрить', callback_data: `task_approve:${taskId}` },
+                                        { text: '❌ Отклонить', callback_data: `task_reject:${taskId}` },
+                                    ],
+                                ],
+                            }
+                        );
+                    }
+                } catch (_) { /* ignore */ }
+            }
+
+            logger.info(`🔒 Task submitted for approval`, { taskId, userId });
+            return;
+        }
+
+        // Standard done flow
         await taskRef.update({
             status: 'done',
             completedAt: admin.firestore.FieldValue.serverTimestamp(),
             updatedAt: admin.firestore.FieldValue.serverTimestamp()
         });
 
-        const title = (taskDoc.data()?.title || 'Task').substring(0, 30);
+        const title = (taskData.title || 'Task').substring(0, 30);
 
         await sendMessage(chatId, `✅ *Done!*\n\n~${title}~`, {
             inline_keyboard: [[
@@ -590,10 +689,24 @@ export async function moveTask(chatId: number, userId: number, taskId: string, n
     try {
         const taskRef = db.collection('gtd_tasks').doc(taskId);
 
-        await taskRef.update({
+        // Phase 4.2: If moving to waiting, ask for reason
+        if (newStatus === 'waiting') {
+            await sendWaitingReasonPicker(chatId, taskId);
+            return;
+        }
+
+        const updateData: Record<string, any> = {
             status: newStatus,
-            updatedAt: admin.firestore.FieldValue.serverTimestamp()
-        });
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        };
+
+        // Clear waiting reason when leaving waiting
+        const taskDoc = await taskRef.get();
+        if (taskDoc.data()?.status === 'waiting' && newStatus !== 'waiting') {
+            updateData.waitingReason = null;
+        }
+
+        await taskRef.update(updateData);
 
         const column = GTD_COLUMNS.find(c => c.id === newStatus);
         await sendMessage(chatId, `✅ Moved to ${column?.title || newStatus}`);
@@ -1013,10 +1126,17 @@ export async function handleGtdFlowMessage(
 
     // --- Comment flow ---
     if (state.flow === 'comment') {
-        // Photo comment
+        // Photo — check if task requires completion proof (Phase 4.4)
         if (message.photo && message.photo.length > 0) {
             const fileId = message.photo[message.photo.length - 1].file_id;
-            await addTaskPhoto(chatId, userId, state.taskId!, fileId, message.caption);
+            // Check if this is a completion proof
+            const taskDoc = await db.collection('gtd_tasks').doc(state.taskId!).get();
+            const taskData = taskDoc.data();
+            if (taskData?.requiresCompletionProof && !taskData?.completionProofPhotoId) {
+                await handleCompletionProof(chatId, userId, state.taskId!, fileId, message.caption);
+            } else {
+                await addTaskPhoto(chatId, userId, state.taskId!, fileId, message.caption);
+            }
             await clearGtdState(chatId);
             return true;
         }
@@ -1082,7 +1202,20 @@ async function sendTaskCardExtended(chatId: number, userId: number, taskId: stri
 
         let cardText = `📋 *${task.title}*\n\n`;
         cardText += `${priority} Приоритет: ${task.priority || 'none'}\n`;
-        cardText += `📁 Статус: ${task.status}\n`;
+        cardText += `📁 Статус: ${task.status}`;
+
+        // Phase 4.2: Show waiting reason
+        if (task.status === 'waiting' && task.waitingReason) {
+            const wr = WAITING_REASONS[task.waitingReason];
+            if (wr) cardText += ` — ${wr.emoji} ${wr.label}`;
+        }
+        cardText += '\n';
+
+        // Phase 4.3: Show phase tag
+        if (task.phaseTag) {
+            const pt = PHASE_TAGS[task.phaseTag];
+            if (pt) cardText += `🏗 Фаза: ${pt.emoji} ${pt.label}\n`;
+        }
 
         if (task.description) {
             cardText += `\n📝 ${(task.description || '').substring(0, 200)}${(task.description || '').length > 200 ? '...' : ''}\n`;
@@ -1121,14 +1254,48 @@ async function sendTaskCardExtended(chatId: number, userId: number, taskId: stri
             cardText += `\n⏱ Время: ${h}ч ${m}мин`;
         }
 
+        // Phase 4.4: Show completion proof status
+        if (task.requiresCompletionProof) {
+            if (task.completionProofPhotoId) {
+                cardText += '\n📸 Фото-подтверждение: ✅';
+            } else {
+                cardText += '\n📸 Фото-подтверждение: ⚠️ *Требуется!*';
+            }
+        }
+
+        // Phase 4.5: Show approval status
+        if (task.requiresApproval) {
+            if (task.approvedAt) {
+                cardText += '\n🔒 Одобрение: ✅ Одобрено';
+            } else if (task.status === 'pending_approval') {
+                cardText += '\n🔒 Одобрение: ⏳ Ожидает';
+            } else {
+                cardText += '\n🔒 Одобрение: Потребуется';
+            }
+        }
+
         // Build action keyboard
         const keyboard: any[][] = [];
 
-        if (task.status !== 'done') {
+        // Phase 4.5: Approval buttons for pending_approval status
+        if (task.status === 'pending_approval') {
             keyboard.push([
-                { text: '✅ Done', callback_data: `task_done:${taskId}` },
-                { text: '▶️ → Next', callback_data: `task_move:${taskId}:next_action` },
+                { text: '✅ Одобрить', callback_data: `task_approve:${taskId}` },
+                { text: '❌ Отклонить', callback_data: `task_reject:${taskId}` },
             ]);
+        } else if (task.status !== 'done') {
+            // Phase 4.4: If needs proof but none yet, show proof button instead of Done
+            if (task.requiresCompletionProof && !task.completionProofPhotoId) {
+                keyboard.push([
+                    { text: '📸 Фото-подтверждение', callback_data: `task_proof:${taskId}` },
+                    { text: '▶️ → Next', callback_data: `task_move:${taskId}:next_action` },
+                ]);
+            } else {
+                keyboard.push([
+                    { text: '✅ Done', callback_data: `task_done:${taskId}` },
+                    { text: '▶️ → Next', callback_data: `task_move:${taskId}:next_action` },
+                ]);
+            }
         }
 
         // Phase 2 actions
@@ -1147,6 +1314,14 @@ async function sendTaskCardExtended(chatId: number, userId: number, taskId: stri
             { text: '👤 Делегировать', callback_data: `task_delegate:${taskId}` },
             { text: '📷 Фото', callback_data: `task_photo:${taskId}` },
         ]);
+
+        // Phase 4 actions: waiting reason + phase tag
+        if (task.status !== 'done' && task.status !== 'pending_approval') {
+            keyboard.push([
+                { text: '⏳ Ожидание', callback_data: `task_set_waiting:${taskId}` },
+                { text: '🏗 Фаза', callback_data: `task_set_phase:${taskId}` },
+            ]);
+        }
 
         keyboard.push([{ text: '◀️ Назад', callback_data: `tasks:${task.status}` }]);
 
@@ -1477,7 +1652,368 @@ export async function handlePhase2Callback(
     return false;
 }
 
-// --- Wire Phase 2 into existing callback router ---
-// (The main handleGtdCallback at top of file calls sendTaskCard.
-//  We override it by replacing task_view routing to use extended card,
-//  and adding Phase 2 callback routes.)
+// ═══════════════════════════════════════════════════════════
+// PHASE 4 — TEMPLATES & WORKFLOW
+// ═══════════════════════════════════════════════════════════
+
+// --- Phase 4.1: /template command — list & instantiate project templates ---
+
+export async function handleTemplateCommand(chatId: number, userId: number, args: string): Promise<void> {
+    const platformUser = await findPlatformUser(userId);
+    if (!platformUser) {
+        await sendMessage(chatId, '❌ Аккаунт не привязан. Привяжи Telegram в настройках.');
+        return;
+    }
+
+    const templates = getTemplateList();
+
+    let msg = '📦 *Шаблоны проектов:*\n\n';
+    msg += 'Выбери шаблон — и я создам все задачи автоматически:\n\n';
+
+    const keyboard: any[][] = [];
+
+    for (const tmpl of templates) {
+        msg += `${tmpl.emoji} *${tmpl.name}* — ${tmpl.taskCount} задач\n`;
+        msg += `   _${tmpl.description}_\n\n`;
+
+        keyboard.push([{
+            text: `${tmpl.emoji} ${tmpl.name} (${tmpl.taskCount})`,
+            callback_data: `tmpl_pick:${tmpl.id}`,
+        }]);
+    }
+
+    keyboard.push([{ text: '❌ Отмена', callback_data: 'tasks_back' }]);
+
+    await sendMessage(chatId, msg, { inline_keyboard: keyboard });
+}
+
+// --- Phase 4.2: Waiting reason selection ---
+
+async function sendWaitingReasonPicker(chatId: number, taskId: string): Promise<void> {
+    const keyboard: any[][] = [];
+    const reasons = Object.entries(WAITING_REASONS);
+
+    for (let i = 0; i < reasons.length; i += 2) {
+        const row: any[] = [];
+        row.push({
+            text: `${reasons[i][1].emoji} ${reasons[i][1].label}`,
+            callback_data: `task_wait_reason:${taskId}:${reasons[i][0]}`,
+        });
+        if (reasons[i + 1]) {
+            row.push({
+                text: `${reasons[i + 1][1].emoji} ${reasons[i + 1][1].label}`,
+                callback_data: `task_wait_reason:${taskId}:${reasons[i + 1][0]}`,
+            });
+        }
+        keyboard.push(row);
+    }
+
+    keyboard.push([{ text: '◀️ Назад', callback_data: `task_view:${taskId}` }]);
+
+    await sendMessage(chatId, '⏳ *Причина ожидания:*\n\nВыберите, чего ждём:', {
+        inline_keyboard: keyboard,
+    });
+}
+
+// --- Phase 4.3: Phase tag selection ---
+
+async function sendPhaseTagPicker(chatId: number, taskId: string): Promise<void> {
+    const keyboard: any[][] = [];
+    const phases = Object.entries(PHASE_TAGS);
+
+    for (let i = 0; i < phases.length; i += 2) {
+        const row: any[] = [];
+        row.push({
+            text: `${phases[i][1].emoji} ${phases[i][1].label}`,
+            callback_data: `task_phase:${taskId}:${phases[i][0]}`,
+        });
+        if (phases[i + 1]) {
+            row.push({
+                text: `${phases[i + 1][1].emoji} ${phases[i + 1][1].label}`,
+                callback_data: `task_phase:${taskId}:${phases[i + 1][0]}`,
+            });
+        }
+        keyboard.push(row);
+    }
+
+    // Option to clear phase tag
+    keyboard.push([{ text: '🚫 Убрать фазу', callback_data: `task_phase:${taskId}:clear` }]);
+    keyboard.push([{ text: '◀️ Назад', callback_data: `task_view:${taskId}` }]);
+
+    await sendMessage(chatId, '🏗 *Фаза строительства:*\n\nВыберите фазу для задачи:', {
+        inline_keyboard: keyboard,
+    });
+}
+
+// --- Phase 4.4: Completion proof handler ---
+
+async function handleCompletionProof(chatId: number, userId: number, taskId: string, fileId: string, caption?: string): Promise<void> {
+    const platformUser = await findPlatformUser(userId);
+    const userName = platformUser?.displayName || platformUser?.name || 'Worker';
+
+    await db.collection('gtd_tasks').doc(taskId).update({
+        completionProofPhotoId: fileId,
+        completionProofAt: admin.firestore.FieldValue.serverTimestamp(),
+        completionProofBy: platformUser?.id || String(userId),
+        taskHistory: admin.firestore.FieldValue.arrayUnion({
+            type: 'completion_proof',
+            photoFileId: fileId,
+            caption: caption || '',
+            by: userName,
+            byId: platformUser?.id || String(userId),
+            at: new Date().toISOString(),
+            source: 'telegram',
+        }),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    await sendMessage(chatId, '📸 *Фото-подтверждение добавлено!*\n\nТеперь задачу можно закрыть.', {
+        inline_keyboard: [
+            [
+                { text: '✅ Закрыть задачу', callback_data: `task_done:${taskId}` },
+                { text: '◀️ К задаче', callback_data: `task_view:${taskId}` },
+            ],
+        ],
+    });
+}
+
+// --- Phase 4.5: Approval flow ---
+
+async function handleApproveTask(chatId: number, userId: number, taskId: string): Promise<void> {
+    const platformUser = await findPlatformUser(userId);
+
+    await db.collection('gtd_tasks').doc(taskId).update({
+        status: 'done',
+        approvedAt: admin.firestore.FieldValue.serverTimestamp(),
+        approvedBy: platformUser?.id || String(userId),
+        completedAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        taskHistory: admin.firestore.FieldValue.arrayUnion({
+            type: 'approved',
+            by: platformUser?.displayName || 'Manager',
+            byId: platformUser?.id || String(userId),
+            at: new Date().toISOString(),
+            source: 'telegram',
+        }),
+    });
+
+    await sendMessage(chatId, '✅ *Задача одобрена и закрыта!*');
+
+    // Notify task owner
+    const taskDoc = await db.collection('gtd_tasks').doc(taskId).get();
+    const ownerId = taskDoc.data()?.ownerId;
+    if (ownerId && ownerId !== (platformUser?.id || String(userId))) {
+        try {
+            const ownerDoc = await db.collection('users').doc(ownerId).get();
+            const ownerTgId = ownerDoc.data()?.telegramId;
+            if (ownerTgId) {
+                const tId = typeof ownerTgId === 'number' ? ownerTgId : parseInt(ownerTgId);
+                await sendMessage(tId, `✅ *Задача одобрена:*\n\n${taskDoc.data()?.title}\n\n👤 Одобрил: ${platformUser?.displayName || 'Manager'}`);
+            }
+        } catch (_) { /* ignore */ }
+    }
+}
+
+async function handleRejectTask(chatId: number, userId: number, taskId: string): Promise<void> {
+    const platformUser = await findPlatformUser(userId);
+
+    await db.collection('gtd_tasks').doc(taskId).update({
+        status: 'next_action',
+        rejectedAt: admin.firestore.FieldValue.serverTimestamp(),
+        rejectedBy: platformUser?.id || String(userId),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        taskHistory: admin.firestore.FieldValue.arrayUnion({
+            type: 'rejected',
+            by: platformUser?.displayName || 'Manager',
+            byId: platformUser?.id || String(userId),
+            at: new Date().toISOString(),
+            source: 'telegram',
+        }),
+    });
+
+    await sendMessage(chatId, '❌ *Задача отклонена.*\nВозвращена в Next Action.', {
+        inline_keyboard: [[
+            { text: '💬 Комментарий', callback_data: `task_comment:${taskId}` },
+            { text: '◀️ К задаче', callback_data: `task_view:${taskId}` },
+        ]],
+    });
+
+    // Notify task owner about rejection
+    const taskDoc = await db.collection('gtd_tasks').doc(taskId).get();
+    const ownerId = taskDoc.data()?.ownerId;
+    if (ownerId && ownerId !== (platformUser?.id || String(userId))) {
+        try {
+            const ownerDoc = await db.collection('users').doc(ownerId).get();
+            const ownerTgId = ownerDoc.data()?.telegramId;
+            if (ownerTgId) {
+                const tId = typeof ownerTgId === 'number' ? ownerTgId : parseInt(ownerTgId);
+                await sendMessage(tId,
+                    `❌ *Задача отклонена:*\n\n${taskDoc.data()?.title}\n\n👤 Отклонил: ${platformUser?.displayName || 'Manager'}\n\nПроверьте и исправьте.`
+                );
+            }
+        } catch (_) { /* ignore */ }
+    }
+}
+
+// --- Phase 4 Callback Router ---
+
+export async function handlePhase4Callback(
+    chatId: number,
+    userId: number,
+    data: string
+): Promise<boolean> {
+    // Template picked
+    if (data.startsWith('tmpl_pick:')) {
+        const templateId = data.substring(10);
+        const platformUser = await findPlatformUser(userId);
+        if (!platformUser) {
+            await sendMessage(chatId, '❌ Аккаунт не привязан.');
+            return true;
+        }
+
+        await sendMessage(chatId, '⏳ *Создаю задачи из шаблона...*');
+
+        try {
+            const result = await instantiateTemplate({
+                templateId,
+                ownerId: platformUser.id,
+                ownerName: platformUser.displayName || platformUser.name || 'Worker',
+            });
+
+            await sendMessage(chatId, `✅ *Проект создан!*\n\n📦 Создано задач: *${result.taskCount}*\n\nЗадачи распределены по фазам и статусам.\n\n💡 /tasks — посмотреть все задачи`);
+        } catch (error: any) {
+            logger.error('Template instantiation error', error);
+            await sendMessage(chatId, `❌ Ошибка создания проекта: ${error.message}`);
+        }
+        return true;
+    }
+
+    // Template with client — tmpl_client:{templateId}:{clientId}
+    if (data.startsWith('tmpl_client:')) {
+        const parts = data.substring(12).split(':');
+        const templateId = parts[0];
+        const clientId = parts[1] || null;
+        const platformUser = await findPlatformUser(userId);
+        if (!platformUser) {
+            await sendMessage(chatId, '❌ Аккаунт не привязан.');
+            return true;
+        }
+
+        let clientName: string | undefined;
+        if (clientId) {
+            const clientDoc = await db.collection('clients').doc(clientId).get();
+            clientName = clientDoc.data()?.name || clientDoc.data()?.companyName;
+        }
+
+        try {
+            const result = await instantiateTemplate({
+                templateId,
+                ownerId: platformUser.id,
+                ownerName: platformUser.displayName || platformUser.name || 'Worker',
+                clientId: clientId || undefined,
+                clientName,
+            });
+
+            await sendMessage(chatId, `✅ *Проект создан!*\n\n📦 Задач: *${result.taskCount}*${clientName ? `\n🏢 Клиент: ${clientName}` : ''}\n\n💡 /tasks`);
+        } catch (error: any) {
+            logger.error('Template with client error', error);
+            await sendMessage(chatId, `❌ Ошибка: ${error.message}`);
+        }
+        return true;
+    }
+
+    // Waiting reason selected
+    if (data.startsWith('task_wait_reason:')) {
+        const parts = data.substring(17).split(':');
+        const taskId = parts[0];
+        const reason = parts[1];
+
+        const reasonInfo = WAITING_REASONS[reason];
+        if (!reasonInfo) return true;
+
+        await db.collection('gtd_tasks').doc(taskId).update({
+            status: 'waiting',
+            waitingReason: reason,
+            waitingStartedAt: admin.firestore.FieldValue.serverTimestamp(),
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            taskHistory: admin.firestore.FieldValue.arrayUnion({
+                type: 'waiting_set',
+                reason,
+                reasonLabel: reasonInfo.label,
+                at: new Date().toISOString(),
+            }),
+        });
+
+        await sendMessage(chatId, `⏳ *Задача в ожидании:* ${reasonInfo.emoji} ${reasonInfo.label}`, {
+            inline_keyboard: [[{ text: '◀️ К задаче', callback_data: `task_view:${taskId}` }]],
+        });
+        return true;
+    }
+
+    // Phase tag selected
+    if (data.startsWith('task_phase:')) {
+        const parts = data.substring(11).split(':');
+        const taskId = parts[0];
+        const phase = parts[1];
+
+        if (phase === 'clear') {
+            await db.collection('gtd_tasks').doc(taskId).update({
+                phaseTag: admin.firestore.FieldValue.delete(),
+                updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+            await sendMessage(chatId, '🚫 *Фаза убрана.*');
+        } else {
+            const phaseInfo = PHASE_TAGS[phase];
+            if (!phaseInfo) return true;
+
+            await db.collection('gtd_tasks').doc(taskId).update({
+                phaseTag: phase,
+                updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+            await sendMessage(chatId, `${phaseInfo.emoji} *Фаза:* ${phaseInfo.label}`);
+        }
+
+        await sendTaskCardExtended(chatId, userId, taskId);
+        return true;
+    }
+
+    // Waiting reason picker from task card
+    if (data.startsWith('task_set_waiting:')) {
+        const taskId = data.substring(17);
+        await sendWaitingReasonPicker(chatId, taskId);
+        return true;
+    }
+
+    // Phase tag picker from task card
+    if (data.startsWith('task_set_phase:')) {
+        const taskId = data.substring(15);
+        await sendPhaseTagPicker(chatId, taskId);
+        return true;
+    }
+
+    // Completion proof — redirect to photo flow
+    if (data.startsWith('task_proof:')) {
+        const taskId = data.substring(11);
+        const taskDoc = await db.collection('gtd_tasks').doc(taskId).get();
+        const title = taskDoc.data()?.title || 'Задача';
+        await setGtdState(chatId, { userId, flow: 'comment', taskId, taskTitle: title });
+        await sendMessage(chatId, `📸 *Фото-подтверждение:* ${title}\n\n⚠️ Эта задача требует фото перед закрытием.\nОтправьте фото выполненной работы:`);
+        return true;
+    }
+
+    // Approve task
+    if (data.startsWith('task_approve:')) {
+        const taskId = data.substring(13);
+        await handleApproveTask(chatId, userId, taskId);
+        return true;
+    }
+
+    // Reject task
+    if (data.startsWith('task_reject:')) {
+        const taskId = data.substring(12);
+        await handleRejectTask(chatId, userId, taskId);
+        return true;
+    }
+
+    return false;
+}

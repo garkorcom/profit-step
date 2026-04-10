@@ -26,7 +26,7 @@ export const autoTaskPriority = functions.pubsub
         try {
             // Query open tasks with due dates
             const snapshot = await db.collection('gtd_tasks')
-                .where('status', 'in', ['inbox', 'next_action', 'waiting', 'projects', 'estimate'])
+                .where('status', 'in', ['inbox', 'next_action', 'waiting', 'projects', 'estimate', 'pending_approval'])
                 .get();
 
             if (snapshot.empty) {

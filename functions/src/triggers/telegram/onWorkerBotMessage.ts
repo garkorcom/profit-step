@@ -560,7 +560,7 @@ async function handleCallbackQuery(query: any) {
             data.startsWith('tmpl_') || data.startsWith('task_wait_reason:') ||
             data.startsWith('task_phase:') || data.startsWith('task_set_') ||
             data.startsWith('task_proof:') || data.startsWith('task_approve:') ||
-            data.startsWith('task_reject:');
+            data.startsWith('task_reject:') || data.startsWith('task_finance:');
         if (!isAlwaysValid) {
             logger.info(`🔇 Zombie callback rejected from user ${userId}: "${data}" (age: ${Math.floor(Date.now() / 1000) - messageDate}s)`);
             try {

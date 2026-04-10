@@ -10,6 +10,7 @@ import { logger } from 'firebase-functions';
 import { sendMessage, findPlatformUser } from '../telegramUtils';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { getTemplateList, instantiateTemplate } from '../../../callable/gtd/projectTemplates';
+import { getTaskFinancialSummary } from '../../../callable/gtd/taskFinancials';
 const db = admin.firestore();
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
 
@@ -1323,6 +1324,11 @@ async function sendTaskCardExtended(chatId: number, userId: number, taskId: stri
             ]);
         }
 
+        // Phase 5: Financial button
+        keyboard.push([
+            { text: '💰 Финансы', callback_data: `task_finance:${taskId}` },
+        ]);
+
         keyboard.push([{ text: '◀️ Назад', callback_data: `tasks:${task.status}` }]);
 
         await sendMessage(chatId, cardText, { inline_keyboard: keyboard });
@@ -1614,6 +1620,16 @@ export async function handlePhase2Callback(
         const title = taskDoc.data()?.title || 'Задача';
         await setGtdState(chatId, { userId, flow: 'comment', taskId, taskTitle: title });
         await sendMessage(chatId, `📷 *Фото к задаче:* ${title}\n\nОтправьте фото (можно с подписью):`);
+        return true;
+    }
+
+    // Phase 5: Financial summary
+    if (data.startsWith('task_finance:')) {
+        const taskId = data.substring(13);
+        const summary = await getTaskFinancialSummary(taskId);
+        await sendMessage(chatId, summary, {
+            inline_keyboard: [[{ text: '◀️ К задаче', callback_data: `task_view:${taskId}` }]],
+        });
         return true;
     }
 

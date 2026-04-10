@@ -230,7 +230,7 @@ export function buildStatusAndKeyboard(
                 [{ text: '▶️ Начать смену' }],
                 [{ text: '📊 Мой статус' }, { text: '❓ Помощь' }],
                 [{ text: '🛒 Shopping' }, { text: '📥 Inbox' }],
-                [{ text: '📋 Tasks' }]
+                [{ text: '📋 Tasks' }, { text: '📦 PO / Авансы' }]
             ]
         };
     }
@@ -257,7 +257,8 @@ export function buildStatusAndKeyboard(
             keyboard: [
                 [{ text: '▶️ Продолжить работу' }],
                 [{ text: '⏹ Завершить смену' }],
-                [{ text: '📊 Мой статус' }, { text: '❓ Помощь' }]
+                [{ text: '📊 Мой статус' }, { text: '❓ Помощь' }],
+                [{ text: '📦 PO / Авансы' }]
             ]
         };
     }
@@ -291,7 +292,8 @@ export function buildStatusAndKeyboard(
         keyboard: [
             [{ text: '⏹ Завершить смену' }, { text: '⏸ Перерыв' }],
             [{ text: '📊 Мой статус' }, { text: '❓ Помощь' }],
-            [{ text: '🛒 Shopping' }, { text: '📥 Inbox' }]
+            [{ text: '🛒 Shopping' }, { text: '📥 Inbox' }],
+            [{ text: '📦 PO / Авансы' }]
         ]
     };
 }

@@ -8,6 +8,7 @@ import { findNearbyProject, saveProjectLocation, updateLocationLastUsed } from '
 import * as ShoppingHandler from './handlers/shoppingHandler';
 import * as InboxHandler from './handlers/inboxHandler';
 import * as GtdHandler from './handlers/gtdHandler';
+import * as POHandler from './handlers/poHandler';
 import { sendMessage, getActiveSession, getActiveSessionStrict, sendMainMenu, findPlatformUser, logBotAction, calculateDistanceMeters } from './telegramUtils';
 import { resolveHourlyRate } from './rateUtils';
 import { verifyEmployeeFace } from '../../services/faceVerificationService';
@@ -181,7 +182,20 @@ async function handleMessage(message: any) {
         return;
     }
 
-    // 2. Main Logic
+    // 2. Check for active PO flow (intercepts text + photo messages)
+    const poState = await POHandler.getPOState(chatId);
+    if (poState) {
+        // /start and /menu should clear PO state AND continue to main handler
+        if (text === '/start' || text === '/menu') {
+            await POHandler.handlePOFlowMessage(chatId, userId, text, message, poState);
+            // Fall through to main handler below
+        } else {
+            await POHandler.handlePOFlowMessage(chatId, userId, text, message, poState);
+            return;
+        }
+    }
+
+    // 3. Main Logic
     if (text === '/start' || text === '/menu') {
         // --- EMERGENCY RESET (ZERO-BLOCK) --- Fix 3 (Wave 2): Covers ALL awaiting states
         const activeSession = await getActiveSession(userId);
@@ -433,6 +447,8 @@ async function handleMessage(message: any) {
 • 📎 Файл — сохраню документ
 
 Всё попадёт в твой Inbox для дальнейшей обработки.`);
+    } else if (text === '/po' || text === '📦 PO / Авансы') {
+        await POHandler.handlePOCommand(chatId, userId);
     } else if (text && text.length > 0) {
         // Handle text descriptions if awaiting, OR send to AI Assistant
         const activeSession = await getActiveSession(userId);
@@ -528,7 +544,7 @@ async function handleCallbackQuery(query: any) {
         const isAlwaysValid = data.startsWith('tasks:') || data.startsWith('task_view:') ||
             data.startsWith('task_done:') || data.startsWith('task_move:') ||
             data.startsWith('shop:') || data.startsWith('draft:') || data === 'tasks_back' ||
-            data.startsWith('checklist_');
+            data.startsWith('checklist_') || data.startsWith('po_');
         if (!isAlwaysValid) {
             logger.info(`🔇 Zombie callback rejected from user ${userId}: "${data}" (age: ${Math.floor(Date.now() / 1000) - messageDate}s)`);
             try {
@@ -615,6 +631,10 @@ async function handleCallbackQuery(query: any) {
             const action = parts[1];
             const params = parts.slice(2);
             await ShoppingHandler.handleDraftCallback(chatId, userId, action, params);
+        }
+        // --- PO (ADVANCE) HANDLERS ---
+        else if (data.startsWith('po_')) {
+            await POHandler.handlePOCallback(chatId, userId, data, query.message.message_id);
         }
 
     } catch (error) {

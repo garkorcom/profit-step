@@ -629,6 +629,12 @@ service cloud.firestore {
       allow delete: if false; // Never delete — void instead
     }
 
+    // ==================== BOT PO STATE (temp conversation state) ====================
+    // Written/read by Cloud Functions only. Client access denied.
+    match /bot_po_state/{docId} {
+      allow read, write: if false;
+    }
+
     // ==================== DEFAULT DENY ====================
 
     // Запретить доступ ко всем остальным документам

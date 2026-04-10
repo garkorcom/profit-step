@@ -563,6 +563,8 @@ export { autoCloseStaleSessions } from './triggers/crons/autoCloseStaleSessions'
 export { scheduledAutoStopStaleTimers } from './scheduled/autoStopStaleTimers';
 // export { sendSessionReminders } from './scheduled/sendSessionReminders'; // DISABLED: Session reminders turned off
 export { sendDeadlineReminders } from './scheduled/deadlineReminders'; // GTD task deadline notifications
+export { sendDailyTaskDigest } from './scheduled/dailyTaskDigest'; // Morning task digest at 7:00 AM
+export { autoTaskPriority } from './scheduled/autoTaskPriority'; // Auto-escalate priority by deadline
 
 export { forceFinishAllSessions } from './callable/admin/forceFinishAllSessions';
 export { closePayrollPeriod } from './callable/payroll/closePayrollPeriod';

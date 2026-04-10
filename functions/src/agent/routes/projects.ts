@@ -131,7 +131,21 @@ router.get('/api/projects/list', async (req, res, next) => {
 
     q = q.orderBy('updatedAt', 'desc').limit(params.limit);
 
-    const snap = await q.get();
+    let snap;
+    try {
+      snap = await q.get();
+    } catch (queryErr: any) {
+      logger.error('🏗️ projects:list — Firestore query failed', {
+        companyId,
+        clientId,
+        status: params.status,
+        type: params.type,
+        errorCode: queryErr.code,
+        errorMessage: queryErr.message,
+        errorDetails: queryErr.details,
+      });
+      throw queryErr;
+    }
     const projects = snap.docs.map(d => {
       const p = d.data();
       return {

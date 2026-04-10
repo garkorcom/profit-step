@@ -25,6 +25,16 @@ import {
 import docsRoutes from './routes/docs';
 import portalRoutes from './routes/portal';
 
+// ─── Validate required environment variables ───────────────────────
+
+const logger = functions.logger;
+const REQUIRED_ENV = ['OWNER_UID', 'AGENT_API_KEY'];
+for (const key of REQUIRED_ENV) {
+  if (!process.env[key]) {
+    logger.error(`❌ Missing required environment variable: ${key}`);
+  }
+}
+
 // ─── Express App ────────────────────────────────────────────────────
 
 const app = express();

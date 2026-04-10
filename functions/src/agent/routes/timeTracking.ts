@@ -605,7 +605,20 @@ router.get('/api/time-tracking/summary', async (req, res, next) => {
       q = q.where('employeeId', '==', params.employeeId);
     }
 
-    const snap = await q.get();
+    let snap;
+    try {
+      snap = await q.get();
+    } catch (queryErr: any) {
+      logger.error('⏱️ timer:summary — Firestore query failed', {
+        from: params.from,
+        to: params.to,
+        employeeId: params.employeeId,
+        errorCode: queryErr.code,
+        errorMessage: queryErr.message,
+        errorDetails: queryErr.details,
+      });
+      throw queryErr;
+    }
 
     // Aggregate per employee
     const byEmployee: Record<string, {

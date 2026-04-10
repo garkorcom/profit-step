@@ -176,7 +176,39 @@ export const errorHandler = (err: any, req: Request, res: Response, _next: NextF
     return;
   }
 
-  // ─── Firebase / Firestore errors ───────────────────────
+  // ─── Firebase / Firestore errors (Admin SDK uses gRPC numeric codes) ───
+  const GRPC_ERROR_MAP: Record<number, { status: number; message: string }> = {
+    3:  { status: 400, message: 'Invalid argument' },
+    5:  { status: 404, message: 'Resource not found' },
+    6:  { status: 409, message: 'Resource already exists' },
+    7:  { status: 403, message: 'Permission denied' },
+    9:  { status: 400, message: 'Failed precondition (missing index or invalid query)' },
+    13: { status: 500, message: 'Internal Firestore error' },
+    14: { status: 503, message: 'Database temporarily unavailable' },
+    16: { status: 401, message: 'Unauthenticated' },
+  };
+
+  if (err.code !== undefined && typeof err.code === 'number' && GRPC_ERROR_MAP[err.code]) {
+    const mapped = GRPC_ERROR_MAP[err.code];
+    logger.error('🔥 Firestore/gRPC error', {
+      requestId,
+      grpcCode: err.code,
+      message: err.message,
+      details: err.details || null,
+      path: req.path,
+      query: req.query,
+    });
+    res.status(mapped.status).json({
+      error: mapped.message,
+      code: 'DATABASE_ERROR',
+      grpcCode: err.code,
+      requestId,
+      hint: err.code === 9 ? 'A required Firestore composite index may be missing. Check the error details or Firebase Console.' : undefined,
+    });
+    return;
+  }
+
+  // Keep existing string-based check for backwards compatibility (client SDK edge cases)
   if (err.code && typeof err.code === 'string' && err.code.startsWith('firestore/')) {
     logger.error('🔥 Firestore error', { requestId, code: err.code, message: err.message, path: req.path });
     res.status(503).json({

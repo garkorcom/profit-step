@@ -24,6 +24,29 @@
 
 import { Router, Request, Response, NextFunction } from 'express';
 import { db, FieldValue, logger } from '../routeContext';
+
+// ─── Telegram admin notification (fire-and-forget) ──────────────────
+
+const WORKER_BOT_TOKEN = process.env.WORKER_BOT_TOKEN || '';
+const ADMIN_GROUP_ID = process.env.ADMIN_GROUP_ID || '';
+
+async function notifyAdmin(text: string): Promise<void> {
+  if (!WORKER_BOT_TOKEN || !ADMIN_GROUP_ID) return;
+  try {
+    const url = `https://api.telegram.org/bot${WORKER_BOT_TOKEN}/sendMessage`;
+    await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: Number(ADMIN_GROUP_ID),
+        text,
+        parse_mode: 'Markdown',
+      }),
+    });
+  } catch (err) {
+    logger.error('portal:telegram-notify-failed', { err: String(err) });
+  }
+}
 import {
   buildPortalResponse,
   type InternalDashboardData,
@@ -142,7 +165,8 @@ router.get('/api/portal/:slug', async (req: Request, res: Response, next: NextFu
     // Filter through security boundary
     const portalData = buildPortalResponse(internal);
 
-    // Fire-and-forget: log the view + update token usage
+    // Fire-and-forget: log the view + update token usage + notify admin
+    const clientName = (client.name as string) || slug;
     Promise.all([
       db.collection('portal_views').add({
         clientId,
@@ -156,6 +180,7 @@ router.get('/api/portal/:slug', async (req: Request, res: Response, next: NextFu
         lastUsedAt: FieldValue.serverTimestamp(),
         useCount: FieldValue.increment(1),
       }),
+      notifyAdmin(`👁 *${clientName}* opened the portal`),
     ]).catch(err => {
       logger.error('portal:logging-failed', { err: String(err), tokenId: tokenDoc.id });
     });
@@ -217,6 +242,13 @@ router.post('/api/portal/:slug/approve', async (req: Request, res: Response, nex
     });
 
     logger.info('🌐 portal:approve:recorded', { approvalId: approvalRef.id });
+
+    // Notify team via Telegram
+    const clientDoc = await db.collection('clients').doc(tokenDoc.clientId).get();
+    const cName = (clientDoc.data()?.name as string) || slug;
+    const emoji = decision === 'approved' ? '✅' : '❓';
+    const commentText = comment ? `\n💬 ${comment}` : '';
+    notifyAdmin(`${emoji} *${cName}* ${decision} section \`${sectionId}\`${commentText}`).catch(() => {});
 
     res.status(201).json({
       ok: true,

@@ -67,8 +67,8 @@ function buildStagesFromTasks(
     entry.total++;
     if (t.status === 'done') entry.done++;
 
-    const created = t.createdAt?.seconds || 0;
-    const updated = t.updatedAt?.seconds || 0;
+    const created = (t.createdAt as { seconds?: number } | null)?.seconds || 0;
+    const updated = (t.updatedAt as { seconds?: number } | null)?.seconds || 0;
     if (created < entry.earliest) entry.earliest = created;
     if (updated > entry.latest) entry.latest = updated;
 
@@ -113,14 +113,16 @@ function buildPaymentsFromLedger(
   // Real payments: credits from ledger
   const credits = ledger.filter(e => e.type === 'credit');
   credits.forEach(entry => {
+    const amt = entry.amount || 0;
     const pct =
-      totalFromEstimates > 0 ? Math.round((entry.amount / totalFromEstimates) * 100) : 0;
-    const dateStr = entry.date?.seconds
-      ? new Date(entry.date.seconds * 1000).toISOString().split('T')[0]
+      totalFromEstimates > 0 ? Math.round((amt / totalFromEstimates) * 100) : 0;
+    const dateObj = entry.date as { seconds?: number } | null;
+    const dateStr = dateObj?.seconds
+      ? new Date(dateObj.seconds * 1000).toISOString().split('T')[0]
       : '';
     payments.push({
       stage: entry.description || 'Payment',
-      amount: entry.amount,
+      amount: amt,
       percentage: pct,
       status: 'paid',
       dueDate: dateStr,
@@ -181,13 +183,14 @@ function buildInspectionsFromTasks(
       if (t.status === 'done') status = 'passed';
       else if (t.status === 'next_action') status = 'in-progress';
 
-      const dateStr = t.createdAt?.seconds
-        ? new Date(t.createdAt.seconds * 1000).toISOString().split('T')[0]
+      const createdAt = t.createdAt as { seconds?: number } | null;
+      const dateStr = createdAt?.seconds
+        ? new Date(createdAt.seconds * 1000).toISOString().split('T')[0]
         : '';
 
       return {
         id: idx + 1,
-        name: t.title,
+        name: t.title || 'Inspection',
         date: dateStr,
         status,
         notes: t.description || undefined,
@@ -201,24 +204,17 @@ const ClientPortalPage: React.FC = () => {
   const { slug } = useParams<{ slug: string }>();
   const {
     client,
-    estimates: allEstimates,
+    estimates,
     tasks,
     ledger,
     photos,
     loading,
     notFound,
+    error,
   } = useClientPortal(slug);
 
-  // Filter out internal (cost-only) estimates — client sees only commercial ones
-  const estimates = useMemo(() => {
-    const internalPattern = /internal|внутренн/i;
-    return allEstimates.filter(e => {
-      if (e.estimateType === 'internal') return false;
-      if (e.notes && internalPattern.test(e.notes)) return false;
-      if (e.number && internalPattern.test(e.number)) return false;
-      return true;
-    });
-  }, [allEstimates]);
+  // NOTE: estimates are already filtered by the backend portalFilter —
+  // internal estimates are stripped server-side. No client-side filtering needed.
 
   const stages = useMemo(() => buildStagesFromTasks(tasks), [tasks]);
   const { payments, totalEstimate } = useMemo(
@@ -274,11 +270,10 @@ const ClientPortalPage: React.FC = () => {
       >
         <Alert severity="error" sx={{ maxWidth: 480 }}>
           <Typography variant="h6" gutterBottom>
-            Project not found
+            {error ? 'Access Denied' : 'Project not found'}
           </Typography>
           <Typography variant="body2">
-            The link you followed may be incorrect. Please contact your project manager
-            for the correct portal link.
+            {error || 'The link you followed may be incorrect. Please contact your project manager for the correct portal link.'}
           </Typography>
         </Alert>
       </Box>
@@ -290,7 +285,7 @@ const ClientPortalPage: React.FC = () => {
 
   const header: DashboardHeader = {
     title: client.name,
-    subtitle: client.address || client.workLocation?.address || '',
+    subtitle: client.projectAddress || client.address || '',
     totalAmount: totalEstimateAmount > 0 ? `$${totalEstimateAmount.toLocaleString()}` : undefined,
     stage: currentStage,
     progress: overallProgress,
@@ -300,7 +295,7 @@ const ClientPortalPage: React.FC = () => {
     {
       label: 'Estimate',
       icon: <MoneyIcon />,
-      content: <EstimateSection estimates={estimates} />,
+      content: <EstimateSection estimates={estimates as Parameters<typeof EstimateSection>[0]['estimates']} />,
     },
     {
       label: 'Timeline',

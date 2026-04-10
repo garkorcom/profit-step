@@ -565,6 +565,10 @@ export { scheduledAutoStopStaleTimers } from './scheduled/autoStopStaleTimers';
 export { sendDeadlineReminders } from './scheduled/deadlineReminders'; // GTD task deadline notifications
 export { sendDailyTaskDigest } from './scheduled/dailyTaskDigest'; // Morning task digest at 7:00 AM
 export { autoTaskPriority } from './scheduled/autoTaskPriority'; // Auto-escalate priority by deadline
+export { taskHealthCheck } from './scheduled/taskAutomation'; // Stale/overrun/WIP checks every 6h
+export { weeklyTaskSummary } from './scheduled/taskAutomation'; // Friday 17:00 weekly report
+export { generateRecurringTasks } from './scheduled/taskAutomation'; // Daily recurring task generation
+export { onAdvanceCreated } from './scheduled/taskAutomation'; // PO → auto-task trigger
 
 export { forceFinishAllSessions } from './callable/admin/forceFinishAllSessions';
 export { closePayrollPeriod } from './callable/payroll/closePayrollPeriod';

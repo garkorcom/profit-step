@@ -638,6 +638,13 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // ==================== GTD TASK TEMPLATES (recurring) ====================
+    match /gtd_task_templates/{docId} {
+      allow read: if isSignedIn();
+      allow create, update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
     // ==================== DEFAULT DENY ====================
 
     // Запретить доступ ко всем остальным документам

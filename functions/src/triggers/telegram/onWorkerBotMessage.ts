@@ -459,6 +459,10 @@ async function handleMessage(message: any) {
 Всё попадёт в твой Inbox для дальнейшей обработки.`);
     } else if (text === '/template' || text === '/templates') {
         await GtdHandler.handleTemplateCommand(chatId, userId, '');
+    } else if (text === '/team') {
+        await GtdHandler.handleTeamCommand(chatId, userId);
+    } else if (text === '/pool') {
+        await GtdHandler.handlePoolCommand(chatId, userId);
     } else if (text === '/po' || text === '📦 PO / Авансы') {
         await POHandler.handlePOCommand(chatId, userId);
     } else if (text && text.length > 0) {
@@ -560,7 +564,9 @@ async function handleCallbackQuery(query: any) {
             data.startsWith('tmpl_') || data.startsWith('task_wait_reason:') ||
             data.startsWith('task_phase:') || data.startsWith('task_set_') ||
             data.startsWith('task_proof:') || data.startsWith('task_approve:') ||
-            data.startsWith('task_reject:') || data.startsWith('task_finance:');
+            data.startsWith('task_reject:') || data.startsWith('task_finance:') ||
+            data.startsWith('team_') || data.startsWith('task_selfassign:') ||
+            data.startsWith('task_suggest:') || data.startsWith('task_assign_to:');
         if (!isAlwaysValid) {
             logger.info(`🔇 Zombie callback rejected from user ${userId}: "${data}" (age: ${Math.floor(Date.now() / 1000) - messageDate}s)`);
             try {

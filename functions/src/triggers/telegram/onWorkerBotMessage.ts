@@ -422,6 +422,8 @@ async function handleMessage(message: any) {
         await handleTimezone(chatId, userId, timezone);
     } else if (text === '/tasks' || text === '📋 Tasks') {
         await GtdHandler.sendTasksMenu(chatId, userId);
+    } else if (text === '/mytasks') {
+        await GtdHandler.sendMyTasks(chatId, userId);
     } else if (text && text.startsWith('/task ')) {
         // Quick task creation: /task <description>
         const taskDescription = text.substring(6).trim();

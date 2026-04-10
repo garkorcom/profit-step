@@ -43,6 +43,121 @@ const TYPE_EMOJI: Record<string, string> = {
 
 
 // ═══════════════════════════════════════════════════════════
+// /mytasks — QUICK VIEW (top 3 urgent tasks)
+// ═══════════════════════════════════════════════════════════
+
+/**
+ * Show top 3 most urgent tasks without entering the full /tasks menu.
+ * Priority: overdue > due today > high priority > next_action.
+ */
+export async function sendMyTasks(chatId: number, telegramId: number): Promise<void> {
+    const platformUser = await findPlatformUser(telegramId);
+    if (!platformUser) {
+        await sendMessage(chatId, '❌ Аккаунт не привязан. Привяжи Telegram в настройках профиля.');
+        return;
+    }
+
+    try {
+        const tasksSnap = await db.collection('gtd_tasks')
+            .where('ownerId', '==', platformUser.id)
+            .where('status', 'in', ['inbox', 'next_action', 'waiting', 'projects', 'estimate'])
+            .get();
+
+        if (tasksSnap.empty) {
+            await sendMessage(chatId, '📭 *Нет открытых задач!*\n\nДобавь: `/task Описание`');
+            return;
+        }
+
+        const now = new Date();
+        const todayStart = new Date(now);
+        todayStart.setHours(0, 0, 0, 0);
+
+        interface QuickTask {
+            id: string;
+            title: string;
+            priority: string;
+            status: string;
+            clientName?: string;
+            isOverdue: boolean;
+            isDueToday: boolean;
+            score: number;
+        }
+
+        const tasks: QuickTask[] = [];
+
+        for (const doc of tasksSnap.docs) {
+            const data = doc.data();
+            if (data.isSubtask) continue; // Skip subtasks
+
+            let isOverdue = false;
+            let isDueToday = false;
+            if (data.dueDate) {
+                try {
+                    const dd = data.dueDate.toDate ? data.dueDate.toDate() : new Date(data.dueDate);
+                    const ddOnly = new Date(dd);
+                    ddOnly.setHours(0, 0, 0, 0);
+                    isOverdue = ddOnly < todayStart;
+                    isDueToday = ddOnly.getTime() === todayStart.getTime();
+                } catch (_) { /* ignore */ }
+            }
+
+            let score = 100;
+            if (isOverdue) score = 0;
+            if (isDueToday) score = 10;
+            if (data.priority === 'high') score -= 30;
+            else if (data.priority === 'medium') score -= 10;
+            if (data.status === 'next_action') score -= 20;
+
+            tasks.push({
+                id: doc.id,
+                title: data.title || 'Без названия',
+                priority: data.priority || 'none',
+                status: data.status,
+                clientName: data.clientName,
+                isOverdue,
+                isDueToday,
+                score,
+            });
+        }
+
+        tasks.sort((a, b) => a.score - b.score);
+        const top3 = tasks.slice(0, 3);
+        const overdueCount = tasks.filter(t => t.isOverdue).length;
+
+        let msg = '⚡ *Мои задачи:*\n\n';
+        if (overdueCount > 0) {
+            msg += `⚠️ ${overdueCount} просроченных!\n\n`;
+        }
+
+        const inlineKeyboard: any[][] = [];
+
+        top3.forEach((task, idx) => {
+            const emoji = PRIORITY_EMOJI[task.priority] || '⚪';
+            const flag = task.isOverdue ? ' ⚠️' : task.isDueToday ? ' 📅' : '';
+            const client = task.clientName ? ` (${task.clientName})` : '';
+            msg += `${idx + 1}. ${emoji} ${task.title}${client}${flag}\n`;
+
+            inlineKeyboard.push([
+                { text: `${emoji} ${task.title.substring(0, 25)}`, callback_data: `task_view:${task.id}` },
+                { text: '✅', callback_data: `task_done:${task.id}` },
+            ]);
+        });
+
+        msg += `\n📊 Всего открытых: ${tasks.length}`;
+
+        inlineKeyboard.push([
+            { text: '📋 Все задачи', callback_data: 'tasks_back' },
+            { text: '📅 План дня', callback_data: 'tasks_plan' },
+        ]);
+
+        await sendMessage(chatId, msg, { inline_keyboard: inlineKeyboard });
+    } catch (error: any) {
+        logger.error('sendMyTasks error', error?.message || error);
+        await sendMessage(chatId, '⚠️ Ошибка загрузки задач. Попробуй /tasks');
+    }
+}
+
+// ═══════════════════════════════════════════════════════════
 // /task COMMAND
 // ═══════════════════════════════════════════════════════════
 
@@ -399,6 +514,12 @@ export async function handleGtdCallback(
     if (data.startsWith('task_done:')) {
         const taskId = data.substring(10);
         await markTaskDone(chatId, userId, taskId);
+        return true;
+    }
+
+    // Plan from mytasks quick view
+    if (data === 'tasks_plan') {
+        await handlePlanCommand(chatId, userId, '');
         return true;
     }
 

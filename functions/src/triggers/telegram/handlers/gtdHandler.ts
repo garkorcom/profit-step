@@ -503,10 +503,10 @@ export async function handleGtdCallback(
         return true;
     }
 
-    // View task details
+    // View task details (Phase 2: extended card)
     if (data.startsWith('task_view:')) {
         const taskId = data.substring(10);
-        await sendTaskCard(chatId, userId, taskId);
+        await sendTaskCardExtended(chatId, userId, taskId);
         return true;
     }
 
@@ -532,72 +532,14 @@ export async function handleGtdCallback(
         return true;
     }
 
+    // Phase 2 callbacks (comment, progress, checklist, delegate, photo, accept, decline)
+    const handled = await handlePhase2Callback(chatId, userId, data);
+    if (handled) return true;
+
     return false;
 }
 
-// ═══════════════════════════════════════════════════════════
-// TASK CARD (VIEW DETAILS)
-// ═══════════════════════════════════════════════════════════
-
-/**
- * Show detailed task card
- */
-async function sendTaskCard(chatId: number, userId: number, taskId: string): Promise<void> {
-    try {
-        const taskDoc = await db.collection('gtd_tasks').doc(taskId).get();
-
-        if (!taskDoc.exists) {
-            await sendMessage(chatId, "❌ Task not found.");
-            return;
-        }
-
-        const task = taskDoc.data()!;
-        const priority = PRIORITY_EMOJI[task.priority || 'none'];
-
-        let cardText = `📋 *${task.title}*\n\n`;
-        cardText += `${priority} Priority: ${task.priority || 'none'}\n`;
-        cardText += `📁 Status: ${task.status}\n`;
-
-        if (task.description) {
-            cardText += `\n📝 ${task.description.substring(0, 200)}${task.description.length > 200 ? '...' : ''}\n`;
-        }
-
-        if (task.dueDate) {
-            try {
-                const dueDate = task.dueDate.toDate();
-                const dateStr = dueDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-                cardText += `\n📅 Due: ${dateStr}`;
-            } catch (e) { }
-        }
-
-        if (task.clientName) {
-            cardText += `\n🏢 Client: ${task.clientName}`;
-        }
-
-        if (task.estimatedHours || task.estimatedDurationMinutes) {
-            const mins = task.estimatedDurationMinutes || (task.estimatedHours * 60);
-            cardText += `\n⏱ Est: ${mins >= 60 ? Math.round(mins / 60) + 'h' : mins + 'm'}`;
-        }
-
-        // Build action buttons
-        const keyboard: any[][] = [];
-
-        if (task.status !== 'done') {
-            keyboard.push([
-                { text: '✅ Mark Done', callback_data: `task_done:${taskId}` },
-                { text: '▶️ Move to Next', callback_data: `task_move:${taskId}:next_action` }
-            ]);
-        }
-
-        keyboard.push([{ text: '◀️ Back', callback_data: `tasks:${task.status}` }]);
-
-        await sendMessage(chatId, cardText, { inline_keyboard: keyboard });
-
-    } catch (error) {
-        console.error('Error fetching task:', error);
-        await sendMessage(chatId, "⚠️ Error loading task.");
-    }
-}
+// TASK CARD (VIEW DETAILS) — replaced by sendTaskCardExtended in Phase 2
 
 // ═══════════════════════════════════════════════════════════
 // TASK ACTIONS
@@ -1005,3 +947,537 @@ async function sendWeekPlanMessage(chatId: number, weekPlan: any): Promise<void>
 function escapeMarkdown(text: string): string {
     return text.replace(/[_*[\]()~`>#+\-=|{}.!]/g, '\\$&');
 }
+
+// ═══════════════════════════════════════════════════════════
+// PHASE 2 — EXTENDED BOT UX
+// ═══════════════════════════════════════════════════════════
+
+// --- GTD Bot State (for multi-step flows) ---
+
+interface GtdBotState {
+    chatId: number;
+    userId: number;
+    flow: 'comment' | 'progress' | 'delegate';
+    taskId: string;
+    taskTitle?: string;
+    expiresAt: FirebaseFirestore.Timestamp;
+}
+
+export async function getGtdState(chatId: number): Promise<GtdBotState | null> {
+    try {
+        const doc = await db.collection('bot_gtd_state').doc(String(chatId)).get();
+        if (!doc.exists) return null;
+        const data = doc.data() as GtdBotState;
+        if (data.expiresAt && data.expiresAt.toMillis() < Date.now()) {
+            await clearGtdState(chatId);
+            return null;
+        }
+        return data;
+    } catch (_) { return null; }
+}
+
+async function setGtdState(chatId: number, state: Partial<GtdBotState>): Promise<void> {
+    await db.collection('bot_gtd_state').doc(String(chatId)).set({
+        ...state,
+        chatId,
+        expiresAt: admin.firestore.Timestamp.fromMillis(Date.now() + 30 * 60 * 1000), // 30 min TTL
+    }, { merge: true });
+}
+
+async function clearGtdState(chatId: number): Promise<void> {
+    try { await db.collection('bot_gtd_state').doc(String(chatId)).delete(); }
+    catch (_) { /* ignore */ }
+}
+
+/**
+ * Handle text/photo messages during active GTD flow.
+ * Called from onWorkerBotMessage when GTD state exists.
+ */
+export async function handleGtdFlowMessage(
+    chatId: number,
+    userId: number,
+    text: string | undefined,
+    message: any,
+    state: GtdBotState
+): Promise<boolean> {
+    // Cancel commands
+    if (text === '/cancel' || text === '❌ Cancel') {
+        await clearGtdState(chatId);
+        await sendMessage(chatId, '❌ Отменено.');
+        return true;
+    }
+    if (text === '/start' || text === '/menu') {
+        await clearGtdState(chatId);
+        return false; // Let main handler process /start
+    }
+
+    // --- Comment flow ---
+    if (state.flow === 'comment') {
+        // Photo comment
+        if (message.photo && message.photo.length > 0) {
+            const fileId = message.photo[message.photo.length - 1].file_id;
+            await addTaskPhoto(chatId, userId, state.taskId!, fileId, message.caption);
+            await clearGtdState(chatId);
+            return true;
+        }
+        // Voice comment
+        if (message.voice) {
+            await addTaskVoiceComment(chatId, userId, state.taskId!, message.voice.file_id);
+            await clearGtdState(chatId);
+            return true;
+        }
+        // Text comment
+        if (text && text.length > 0) {
+            await addTaskComment(chatId, userId, state.taskId!, text);
+            await clearGtdState(chatId);
+            return true;
+        }
+        return true;
+    }
+
+    // --- Progress flow ---
+    if (state.flow === 'progress') {
+        if (text) {
+            const pct = parseInt(text.replace('%', '').trim());
+            if (!isNaN(pct) && pct >= 0 && pct <= 100) {
+                await updateTaskProgress(chatId, userId, state.taskId!, pct);
+                await clearGtdState(chatId);
+                return true;
+            }
+            await sendMessage(chatId, '⚠️ Введите число от 0 до 100 (например: 75)');
+            return true;
+        }
+        return true;
+    }
+
+    // --- Delegate flow ---
+    if (state.flow === 'delegate') {
+        if (text && text.length > 0) {
+            await delegateTask(chatId, userId, state.taskId!, text);
+            await clearGtdState(chatId);
+            return true;
+        }
+        return true;
+    }
+
+    return false;
+}
+
+// --- Enhanced Task Card (Phase 2) ---
+
+/**
+ * Extended task card with all Phase 2 action buttons.
+ * Replaces the original sendTaskCard.
+ */
+async function sendTaskCardExtended(chatId: number, userId: number, taskId: string): Promise<void> {
+    try {
+        const taskDoc = await db.collection('gtd_tasks').doc(taskId).get();
+        if (!taskDoc.exists) {
+            await sendMessage(chatId, '❌ Задача не найдена.');
+            return;
+        }
+
+        const task = taskDoc.data()!;
+        const priority = PRIORITY_EMOJI[task.priority || 'none'];
+
+        let cardText = `📋 *${task.title}*\n\n`;
+        cardText += `${priority} Приоритет: ${task.priority || 'none'}\n`;
+        cardText += `📁 Статус: ${task.status}\n`;
+
+        if (task.description) {
+            cardText += `\n📝 ${(task.description || '').substring(0, 200)}${(task.description || '').length > 200 ? '...' : ''}\n`;
+        }
+
+        if (task.dueDate) {
+            try {
+                const dd = task.dueDate.toDate ? task.dueDate.toDate() : new Date(task.dueDate);
+                const dateStr = dd.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
+                const overdue = dd < new Date() ? ' ⚠️ Просрочена!' : '';
+                cardText += `\n📅 Дедлайн: ${dateStr}${overdue}`;
+            } catch (_) { /* ignore */ }
+        }
+
+        if (task.clientName) cardText += `\n🏢 Клиент: ${task.clientName}`;
+        if (task.assigneeName) cardText += `\n👤 Исполнитель: ${task.assigneeName}`;
+
+        // Progress
+        if (task.progressPercentage !== undefined && task.progressPercentage > 0) {
+            const pct = task.progressPercentage;
+            const bar = '█'.repeat(Math.round(pct / 10)) + '░'.repeat(10 - Math.round(pct / 10));
+            cardText += `\n📊 Прогресс: ${bar} ${pct}%`;
+        }
+
+        // Checklist summary
+        if (task.checklistItems && task.checklistItems.length > 0) {
+            const done = task.checklistItems.filter((i: any) => i.isDone).length;
+            const total = task.checklistItems.length;
+            cardText += `\n☑️ Чеклист: ${done}/${total}`;
+        }
+
+        // Time tracked
+        if (task.totalTimeSpentMinutes && task.totalTimeSpentMinutes > 0) {
+            const h = Math.floor(task.totalTimeSpentMinutes / 60);
+            const m = task.totalTimeSpentMinutes % 60;
+            cardText += `\n⏱ Время: ${h}ч ${m}мин`;
+        }
+
+        // Build action keyboard
+        const keyboard: any[][] = [];
+
+        if (task.status !== 'done') {
+            keyboard.push([
+                { text: '✅ Done', callback_data: `task_done:${taskId}` },
+                { text: '▶️ → Next', callback_data: `task_move:${taskId}:next_action` },
+            ]);
+        }
+
+        // Phase 2 actions
+        keyboard.push([
+            { text: '💬 Коммент', callback_data: `task_comment:${taskId}` },
+            { text: '📊 Прогресс', callback_data: `task_progress:${taskId}` },
+        ]);
+
+        if (task.checklistItems && task.checklistItems.length > 0) {
+            keyboard.push([
+                { text: '☑️ Чеклист', callback_data: `task_checklist:${taskId}` },
+            ]);
+        }
+
+        keyboard.push([
+            { text: '👤 Делегировать', callback_data: `task_delegate:${taskId}` },
+            { text: '📷 Фото', callback_data: `task_photo:${taskId}` },
+        ]);
+
+        keyboard.push([{ text: '◀️ Назад', callback_data: `tasks:${task.status}` }]);
+
+        await sendMessage(chatId, cardText, { inline_keyboard: keyboard });
+    } catch (error) {
+        logger.error('sendTaskCardExtended error', error);
+        await sendMessage(chatId, '⚠️ Ошибка загрузки задачи.');
+    }
+}
+
+// --- Phase 2.1: Task Comments ---
+
+async function addTaskComment(chatId: number, userId: number, taskId: string, text: string): Promise<void> {
+    const platformUser = await findPlatformUser(userId);
+    const userName = platformUser?.displayName || platformUser?.name || 'Worker';
+
+    await db.collection('gtd_tasks').doc(taskId).update({
+        taskHistory: admin.firestore.FieldValue.arrayUnion({
+            type: 'comment',
+            text: text.slice(0, 1000),
+            by: userName,
+            byId: platformUser?.id || String(userId),
+            at: new Date().toISOString(),
+            source: 'telegram',
+        }),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    await sendMessage(chatId, `💬 *Комментарий добавлен!*\n\n"${text.slice(0, 100)}${text.length > 100 ? '...' : ''}"`);
+}
+
+// --- Phase 2.7: Voice comment → text (just save link, transcription done by AI elsewhere) ---
+
+async function addTaskVoiceComment(chatId: number, userId: number, taskId: string, voiceFileId: string): Promise<void> {
+    const platformUser = await findPlatformUser(userId);
+    const userName = platformUser?.displayName || platformUser?.name || 'Worker';
+
+    await db.collection('gtd_tasks').doc(taskId).update({
+        taskHistory: admin.firestore.FieldValue.arrayUnion({
+            type: 'voice_comment',
+            voiceFileId,
+            by: userName,
+            byId: platformUser?.id || String(userId),
+            at: new Date().toISOString(),
+            source: 'telegram',
+        }),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    await sendMessage(chatId, '🎙 *Голосовой комментарий добавлен!*');
+}
+
+// --- Phase 2.8: Photo attached to task ---
+
+async function addTaskPhoto(chatId: number, userId: number, taskId: string, fileId: string, caption?: string): Promise<void> {
+    const platformUser = await findPlatformUser(userId);
+    const userName = platformUser?.displayName || platformUser?.name || 'Worker';
+
+    await db.collection('gtd_tasks').doc(taskId).update({
+        taskHistory: admin.firestore.FieldValue.arrayUnion({
+            type: 'photo',
+            photoFileId: fileId,
+            caption: caption || '',
+            by: userName,
+            byId: platformUser?.id || String(userId),
+            at: new Date().toISOString(),
+            source: 'telegram',
+        }),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    await sendMessage(chatId, `📷 *Фото прикреплено к задаче!*${caption ? '\n📝 ' + caption : ''}`);
+}
+
+// --- Phase 2.2: Checklist interaction ---
+
+async function sendChecklist(chatId: number, userId: number, taskId: string): Promise<void> {
+    const taskDoc = await db.collection('gtd_tasks').doc(taskId).get();
+    if (!taskDoc.exists) {
+        await sendMessage(chatId, '❌ Задача не найдена.');
+        return;
+    }
+
+    const task = taskDoc.data()!;
+    const items = task.checklistItems || [];
+
+    if (items.length === 0) {
+        await sendMessage(chatId, '☑️ *Чеклист пуст*\n\nДобавьте пункты через CRM.', {
+            inline_keyboard: [[{ text: '◀️ Назад', callback_data: `task_view:${taskId}` }]],
+        });
+        return;
+    }
+
+    let msg = `☑️ *Чеклист:* ${task.title}\n\n`;
+    const keyboard: any[][] = [];
+
+    items.forEach((item: any, idx: number) => {
+        const check = item.isDone ? '✅' : '☐';
+        const strike = item.isDone ? '~' : '';
+        msg += `${check} ${strike}${item.text || item.title || `Пункт ${idx + 1}`}${strike}\n`;
+
+        keyboard.push([{
+            text: `${item.isDone ? '↩️' : '✅'} ${(item.text || item.title || `#${idx + 1}`).substring(0, 30)}`,
+            callback_data: `task_cl_toggle:${taskId}:${idx}`,
+        }]);
+    });
+
+    const done = items.filter((i: any) => i.isDone).length;
+    msg += `\n📊 ${done}/${items.length} выполнено`;
+
+    keyboard.push([{ text: '◀️ Назад к задаче', callback_data: `task_view:${taskId}` }]);
+
+    await sendMessage(chatId, msg, { inline_keyboard: keyboard });
+}
+
+async function toggleChecklistItem(chatId: number, userId: number, taskId: string, index: number): Promise<void> {
+    const taskDoc = await db.collection('gtd_tasks').doc(taskId).get();
+    if (!taskDoc.exists) return;
+
+    const task = taskDoc.data()!;
+    const items = [...(task.checklistItems || [])];
+    if (index < 0 || index >= items.length) return;
+
+    items[index] = { ...items[index], isDone: !items[index].isDone };
+
+    await db.collection('gtd_tasks').doc(taskId).update({
+        checklistItems: items,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    // Refresh checklist view
+    await sendChecklist(chatId, userId, taskId);
+}
+
+// --- Phase 2.5: Progress update ---
+
+async function updateTaskProgress(chatId: number, userId: number, taskId: string, pct: number): Promise<void> {
+    await db.collection('gtd_tasks').doc(taskId).update({
+        progressPercentage: pct,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    const bar = '█'.repeat(Math.round(pct / 10)) + '░'.repeat(10 - Math.round(pct / 10));
+    await sendMessage(chatId, `📊 *Прогресс обновлён!*\n\n${bar} ${pct}%`);
+}
+
+// --- Phase 2.3: Delegate task ---
+
+async function delegateTask(chatId: number, userId: number, taskId: string, assigneeName: string): Promise<void> {
+    // Try to find user by name
+    const usersSnap = await db.collection('users')
+        .where('displayName', '>=', assigneeName)
+        .where('displayName', '<=', assigneeName + '\uf8ff')
+        .limit(5)
+        .get();
+
+    // Also search employees collection
+    const empSnap = await db.collection('employees')
+        .where('name', '>=', assigneeName)
+        .where('name', '<=', assigneeName + '\uf8ff')
+        .limit(5)
+        .get();
+
+    let assigneeId: string | null = null;
+    let resolvedName = assigneeName;
+
+    if (!usersSnap.empty) {
+        const user = usersSnap.docs[0];
+        assigneeId = user.id;
+        resolvedName = user.data().displayName || user.data().name || assigneeName;
+    } else if (!empSnap.empty) {
+        const emp = empSnap.docs[0];
+        assigneeId = emp.id;
+        resolvedName = emp.data().name || assigneeName;
+    }
+
+    const updateData: Record<string, any> = {
+        assigneeName: resolvedName,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        taskHistory: admin.firestore.FieldValue.arrayUnion({
+            type: 'delegated',
+            to: resolvedName,
+            toId: assigneeId,
+            at: new Date().toISOString(),
+            source: 'telegram',
+        }),
+    };
+    if (assigneeId) updateData.assigneeId = assigneeId;
+
+    await db.collection('gtd_tasks').doc(taskId).update(updateData);
+
+    // Notify assignee via Telegram if possible
+    if (assigneeId) {
+        const assigneeDoc = await db.collection('users').doc(assigneeId).get();
+        const telegramId = assigneeDoc.data()?.telegramId;
+        if (telegramId) {
+            const tId = typeof telegramId === 'number' ? telegramId : parseInt(telegramId);
+            const taskDoc = await db.collection('gtd_tasks').doc(taskId).get();
+            const title = taskDoc.data()?.title || 'Задача';
+            try {
+                await sendMessage(tId, `📋 *Новая задача для тебя:*\n\n${title}\n\n👤 От: ${(await findPlatformUser(userId))?.displayName || 'Manager'}`);
+            } catch (_) { /* bot blocked or chat not found */ }
+        }
+    }
+
+    await sendMessage(chatId, `👤 *Задача делегирована!*\n\n→ ${resolvedName}${assigneeId ? '' : '\n⚠️ Пользователь не найден в системе, имя записано как текст.'}`);
+}
+
+// --- Phase 2 Callback Extensions ---
+
+/**
+ * Handle Phase 2 task callbacks. Returns true if handled.
+ * Called from the main handleGtdCallback.
+ */
+export async function handlePhase2Callback(
+    chatId: number,
+    userId: number,
+    data: string
+): Promise<boolean> {
+    // Comment
+    if (data.startsWith('task_comment:')) {
+        const taskId = data.substring(13);
+        const taskDoc = await db.collection('gtd_tasks').doc(taskId).get();
+        const title = taskDoc.data()?.title || 'Задача';
+        await setGtdState(chatId, { userId, flow: 'comment', taskId, taskTitle: title });
+        await sendMessage(chatId, `💬 *Комментарий к:* ${title}\n\nОтправьте текст, фото или голосовое:`);
+        return true;
+    }
+
+    // Progress
+    if (data.startsWith('task_progress:')) {
+        const taskId = data.substring(14);
+        const taskDoc = await db.collection('gtd_tasks').doc(taskId).get();
+        const title = taskDoc.data()?.title || 'Задача';
+        const current = taskDoc.data()?.progressPercentage || 0;
+        await setGtdState(chatId, { userId, flow: 'progress', taskId, taskTitle: title });
+        await sendMessage(chatId, `📊 *Прогресс:* ${title}\n\nТекущий: ${current}%\nВведите новый % (0-100):`, {
+            inline_keyboard: [
+                [
+                    { text: '25%', callback_data: `task_pct:${taskId}:25` },
+                    { text: '50%', callback_data: `task_pct:${taskId}:50` },
+                    { text: '75%', callback_data: `task_pct:${taskId}:75` },
+                    { text: '100%', callback_data: `task_pct:${taskId}:100` },
+                ],
+            ],
+        });
+        return true;
+    }
+
+    // Quick progress buttons
+    if (data.startsWith('task_pct:')) {
+        const parts = data.substring(9).split(':');
+        const taskId = parts[0];
+        const pct = parseInt(parts[1]);
+        await clearGtdState(chatId);
+        await updateTaskProgress(chatId, userId, taskId, pct);
+        return true;
+    }
+
+    // Checklist
+    if (data.startsWith('task_checklist:')) {
+        const taskId = data.substring(15);
+        await sendChecklist(chatId, userId, taskId);
+        return true;
+    }
+
+    // Toggle checklist item
+    if (data.startsWith('task_cl_toggle:')) {
+        const parts = data.substring(15).split(':');
+        const taskId = parts[0];
+        const index = parseInt(parts[1]);
+        await toggleChecklistItem(chatId, userId, taskId, index);
+        return true;
+    }
+
+    // Delegate
+    if (data.startsWith('task_delegate:')) {
+        const taskId = data.substring(14);
+        const taskDoc = await db.collection('gtd_tasks').doc(taskId).get();
+        const title = taskDoc.data()?.title || 'Задача';
+        await setGtdState(chatId, { userId, flow: 'delegate', taskId, taskTitle: title });
+        await sendMessage(chatId, `👤 *Делегировать:* ${title}\n\nВведите имя исполнителя:`);
+        return true;
+    }
+
+    // Photo
+    if (data.startsWith('task_photo:')) {
+        const taskId = data.substring(11);
+        const taskDoc = await db.collection('gtd_tasks').doc(taskId).get();
+        const title = taskDoc.data()?.title || 'Задача';
+        await setGtdState(chatId, { userId, flow: 'comment', taskId, taskTitle: title });
+        await sendMessage(chatId, `📷 *Фото к задаче:* ${title}\n\nОтправьте фото (можно с подписью):`);
+        return true;
+    }
+
+    // Accept task
+    if (data.startsWith('task_accept:')) {
+        const taskId = data.substring(12);
+        await db.collection('gtd_tasks').doc(taskId).update({
+            acceptedAt: admin.firestore.FieldValue.serverTimestamp(),
+            acceptedBy: String(userId),
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        await sendMessage(chatId, '✅ *Задача принята!*');
+        await sendTaskCardExtended(chatId, userId, taskId);
+        return true;
+    }
+
+    // Decline task
+    if (data.startsWith('task_decline:')) {
+        const taskId = data.substring(13);
+        const platformUser = await findPlatformUser(userId);
+        await db.collection('gtd_tasks').doc(taskId).update({
+            assigneeId: null,
+            assigneeName: null,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            taskHistory: admin.firestore.FieldValue.arrayUnion({
+                type: 'declined',
+                by: platformUser?.displayName || 'Worker',
+                byId: platformUser?.id || String(userId),
+                at: new Date().toISOString(),
+            }),
+        });
+        await sendMessage(chatId, '❌ *Задача отклонена.*\nВладелец задачи будет уведомлён.');
+        return true;
+    }
+
+    return false;
+}
+
+// --- Wire Phase 2 into existing callback router ---
+// (The main handleGtdCallback at top of file calls sendTaskCard.
+//  We override it by replacing task_view routing to use extended card,
+//  and adding Phase 2 callback routes.)

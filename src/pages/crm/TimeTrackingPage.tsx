@@ -568,6 +568,7 @@ const TimeTrackingPage: React.FC = () => {
                 onClose={() => setEditSession(null)}
                 onSave={handleEditSession}
                 currentUserId={currentUser?.uid}
+                isAdmin={isAdmin}
             />
 
             <CreateSessionDialog

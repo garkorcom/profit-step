@@ -104,6 +104,57 @@
 6. **Стёпа** → `test-results.md`
 7. **Маша** → `summary.md` → отчёт Денису
 
+### 3.1. Bridge Никита/Маша/Стёпа → Claude Code (добавлено 2026-04-09)
+
+**Проблема (которую решает bridge):** Никита и Стёпа работают в ограниченном окружении без Firebase auth, без file writes на произвольные пути, без git push и без `firebase deploy`. Их "implementation" часто останавливается на handoff package'ах (как `~/Desktop/Warehouse_API_Handoff/` 2026-04-08, который пришлось руками доделывать). Они могут *описать* работу, но не *сделать* её целиком.
+
+**Решение:** они пишут task spec в `~/projects/pipeline/{date}/task-{slug}.md`, а Claude Code в main worktree подхватывает и выполняет end-to-end через slash command.
+
+**Поток:**
+
+1. **Маша / Никита** пишет `~/projects/pipeline/{YYYY-MM-DD}/task-{slug}.md` по шаблону `~/projects/pipeline/TASK_TEMPLATE.md`. Содержит goal, scope, API contract, acceptance criteria, out-of-scope, open questions.
+
+2. **Денис** открывает Claude Code в main worktree и вызывает:
+   ```
+   /pickup task-{slug}
+   ```
+   Без аргументов — интерактивный режим: Claude Code сканирует pipeline, показывает список pending tasks, спрашивает какую взять.
+
+3. **Claude Code** выполняет задачу end-to-end (см. `.claude/commands/pickup.md`):
+   - Sync integration branch → cut feature branch
+   - Read spec + find existing patterns
+   - Implement + verify (tsc + oxlint + vite build + tests)
+   - Commit + push + `gh pr create`
+   - Написать implementation log в `~/projects/pipeline/{date}/nikita-{slug}-log.md` (и синхронизировать в `projects/pipeline/...` копию, если существует)
+
+4. **Claude Code НЕ деплоит** — даже если task спеку говорит "deploy it". Деплой только через Дениса по CLAUDE.md §5.
+
+5. **Стёпа / Маша** читают `nikita-{slug}-log.md` для QA/review/summary. Статус `SHIPPED` / `IN_REVIEW` / `IN_PROGRESS` / `TODO` в `Status:` метаданных log файла — единый источник правды для всех агентов.
+
+**Files живущие за этот bridge:**
+
+- `.claude/commands/pickup.md` — slash command definition (полный workflow)
+- `~/projects/pipeline/TASK_TEMPLATE.md` — canonical template для Маши
+- `~/projects/pipeline/{date}/task-*.md` — task specs
+- `~/projects/pipeline/{date}/nikita-{slug}-log.md` — implementation logs (writable by Claude Code via pickup)
+- `~/projects/pipeline/{date}/stepa-*.md` — QA artifacts (writable by Styopa, not touched by pickup)
+
+**Важные safety constraints внутри `/pickup`:**
+
+- Один task за invocation — даже если несколько pending, Claude Code берёт одну, завершает, потом спрашивает Дениса о следующей
+- Не трогать `claude/confident-lewin` ветку (stale)
+- Не `git push --force`
+- Если task просит prohibited action (deploy, create account, handle credentials) — остановиться и спросить Дениса вместо того чтобы следовать спецу слепо
+- Если task уже shipped (как warehouse 2026-04-09) но spec всё ещё TODO — обновить log в SHIPPED с ссылками на existing git trail, НЕ реимплементировать
+
+**Пример задачи 2026-04-08 "warehouse"** — canonical case использования bridge'а:
+- `task-warehouse.md` был создан Машей 2026-04-06 (неявно, через `task-inventory.md`)
+- Никита написал `nikita-warehouse-api-log.md` на 2026-04-08 но не смог задеплоить
+- Handoff пакет на Desktop — 4 ошибки компиляции, collisions с existing inventory module
+- 2026-04-09 Claude Code через ручной workflow (предшественник `/pickup`) распарсил task, merge'нул в existing inventory.ts, добавил 28 unit tests, deployed через Дениса
+- Log файл обновлён со статусом SHIPPED + ссылками на PR #2 и #5
+- Desktop marker `~/Desktop/Warehouse_API_SHIPPED.md` остановил попытки агентов воссоздать handoff
+
 ### Worktrees
 
 Если работаешь над изолированной задачей — используй worktree:

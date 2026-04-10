@@ -1,10 +1,12 @@
 /**
- * Inventory Routes — warehouse & stock management (13 endpoints)
+ * Inventory Routes — warehouse & stock management (15 endpoints)
  *
- * Warehouses:
+ * Warehouses (supports physical + vehicle/fleet types):
  *   POST   /api/inventory/warehouses      — create warehouse
- *   GET    /api/inventory/warehouses      — list warehouses
+ *   GET    /api/inventory/warehouses      — list warehouses (type/archived filters)
  *   GET    /api/inventory/warehouses/:id  — warehouse details + items
+ *   PATCH  /api/inventory/warehouses/:id  — update warehouse
+ *   DELETE /api/inventory/warehouses/:id  — archive warehouse (soft-delete)
  *
  * Items:
  *   POST   /api/inventory/items           — add item
@@ -30,6 +32,7 @@ import { db, FieldValue, logger, logAgentActivity } from '../routeContext';
 import { logAudit, AuditHelpers, extractAuditContext } from '../utils/auditLogger';
 import {
   CreateWarehouseSchema,
+  UpdateWarehouseSchema,
   CreateInventoryItemSchema,
   UpdateInventoryItemSchema,
   ListInventoryItemsQuerySchema,
@@ -50,7 +53,7 @@ const router = Router();
 router.post('/api/inventory/warehouses', async (req, res, next) => {
   try {
     const data = CreateWarehouseSchema.parse(req.body);
-    logger.info('🏭 warehouse:create', { name: data.name });
+    logger.info('🏭 warehouse:create', { name: data.name, type: data.type });
 
     // Dedup
     if (data.idempotencyKey) {
@@ -65,11 +68,18 @@ router.post('/api/inventory/warehouses', async (req, res, next) => {
 
     const auditCtx = extractAuditContext(req);
     const docRef = await db.collection('warehouses').add({
+      // Existing fields
       name: data.name,
       clientId: data.clientId || null,
       projectId: data.projectId || null,
       address: data.address || '',
       description: data.description || '',
+      // New fields for vehicle/fleet support
+      type: data.type,                          // 'physical' (default) or 'vehicle'
+      location: data.location || null,          // free-text (for vehicles or supplemental for physical)
+      licensePlate: data.licensePlate || null,  // required-on-create when type='vehicle'
+      archived: false,                          // soft-delete flag
+      // Audit
       createdBy: auditCtx.performedBy,
       createdBySource: auditCtx.source,
       createdAt: FieldValue.serverTimestamp(),
@@ -85,17 +95,22 @@ router.post('/api/inventory/warehouses', async (req, res, next) => {
       });
     }
 
-    logger.info('🏭 warehouse:created', { warehouseId: docRef.id });
+    logger.info('🏭 warehouse:created', { warehouseId: docRef.id, type: data.type });
     await logAgentActivity({
       userId: req.agentUserId!,
       action: 'warehouse_created',
       endpoint: '/api/inventory/warehouses',
-      metadata: { warehouseId: docRef.id, name: data.name, clientId: data.clientId },
+      metadata: { warehouseId: docRef.id, name: data.name, type: data.type, clientId: data.clientId },
     });
 
-    await logAudit(AuditHelpers.create('warehouse', docRef.id, { name: data.name, clientId: data.clientId }, auditCtx.performedBy, auditCtx.source as any));
+    await logAudit(AuditHelpers.create('warehouse', docRef.id, { name: data.name, type: data.type, clientId: data.clientId }, auditCtx.performedBy, auditCtx.source as any));
 
-    res.status(201).json({ warehouseId: docRef.id, name: data.name });
+    res.status(201).json({
+      warehouseId: docRef.id,
+      name: data.name,
+      type: data.type,
+      licensePlate: data.licensePlate || null,
+    });
   } catch (e) {
     next(e);
   }
@@ -105,30 +120,47 @@ router.post('/api/inventory/warehouses', async (req, res, next) => {
 
 router.get('/api/inventory/warehouses', async (req, res, next) => {
   try {
-    const { clientId, projectId } = req.query;
+    const { clientId, projectId, type, includeArchived } = req.query;
     const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
 
-    logger.info('🏭 warehouse:list', { clientId, limit });
+    logger.info('🏭 warehouse:list', { clientId, projectId, type, includeArchived, limit });
 
     let q: admin.firestore.Query = db.collection('warehouses');
     if (clientId) q = q.where('clientId', '==', clientId);
     if (projectId) q = q.where('projectId', '==', projectId);
+    if (type) q = q.where('type', '==', type);
     q = q.orderBy('createdAt', 'desc').limit(limit);
 
     const snap = await q.get();
-    const warehouses = snap.docs.map(d => {
-      const w = d.data();
-      return {
-        id: d.id,
-        name: w.name,
-        clientId: w.clientId || null,
-        projectId: w.projectId || null,
-        address: w.address || null,
-        description: w.description || null,
-        createdAt: w.createdAt?.toDate?.()?.toISOString() || null,
-        updatedAt: w.updatedAt?.toDate?.()?.toISOString() || null,
-      };
-    });
+
+    // Filter archived in JS rather than Firestore `where` — legacy
+    // documents (created before this field existed) will not match a
+    // `where('archived', '==', false)` query, so we'd drop them.
+    // Trade-off: extra reads for archived docs; acceptable given low
+    // expected archive volume. Can switch to Firestore filter after
+    // a one-time backfill of the field.
+    const warehouses = snap.docs
+      .map(d => {
+        const w = d.data();
+        return {
+          id: d.id,
+          name: w.name,
+          // existing fields
+          clientId: w.clientId || null,
+          projectId: w.projectId || null,
+          address: w.address || null,
+          description: w.description || null,
+          // new fields with on-read defaults for backward compatibility
+          type: w.type || 'physical',
+          location: w.location || null,
+          licensePlate: w.licensePlate || null,
+          archived: w.archived ?? false,
+          // timestamps
+          createdAt: w.createdAt?.toDate?.()?.toISOString() || null,
+          updatedAt: w.updatedAt?.toDate?.()?.toISOString() || null,
+        };
+      })
+      .filter(w => includeArchived === 'true' || !w.archived);
 
     res.json({ warehouses, count: warehouses.length });
   } catch (e) {
@@ -141,7 +173,8 @@ router.get('/api/inventory/warehouses', async (req, res, next) => {
 router.get('/api/inventory/warehouses/:id', async (req, res, next) => {
   try {
     const warehouseId = req.params.id;
-    logger.info('🏭 warehouse:details', { warehouseId });
+    const { includeArchived } = req.query;
+    logger.info('🏭 warehouse:details', { warehouseId, includeArchived });
 
     const whDoc = await db.collection('warehouses').doc(warehouseId).get();
     if (!whDoc.exists) {
@@ -149,7 +182,29 @@ router.get('/api/inventory/warehouses/:id', async (req, res, next) => {
       return;
     }
 
-    const warehouse = { id: whDoc.id, ...whDoc.data() };
+    const w = whDoc.data()!;
+
+    // Hide archived warehouses unless explicitly requested
+    if (w.archived === true && includeArchived !== 'true') {
+      res.status(404).json({ error: 'Склад архивирован' });
+      return;
+    }
+
+    const warehouse = {
+      id: whDoc.id,
+      name: w.name,
+      clientId: w.clientId || null,
+      projectId: w.projectId || null,
+      address: w.address || null,
+      description: w.description || null,
+      // New fields with on-read defaults
+      type: w.type || 'physical',
+      location: w.location || null,
+      licensePlate: w.licensePlate || null,
+      archived: w.archived ?? false,
+      createdAt: w.createdAt?.toDate?.()?.toISOString() || null,
+      updatedAt: w.updatedAt?.toDate?.()?.toISOString() || null,
+    };
 
     // Fetch items in this warehouse
     const itemsSnap = await db.collection('inventory_items')
@@ -173,6 +228,128 @@ router.get('/api/inventory/warehouses/:id', async (req, res, next) => {
     });
 
     res.json({ warehouse, items, itemCount: items.length });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// ─── PATCH /api/inventory/warehouses/:id ───────────────────────────
+
+router.patch('/api/inventory/warehouses/:id', async (req, res, next) => {
+  try {
+    const data = UpdateWarehouseSchema.parse(req.body);
+    const warehouseId = req.params.id;
+    logger.info('🏭 warehouse:update', { warehouseId, fields: Object.keys(data) });
+
+    const docRef = db.collection('warehouses').doc(warehouseId);
+    const doc = await docRef.get();
+    if (!doc.exists) {
+      res.status(404).json({ error: 'Склад не найден' });
+      return;
+    }
+    const existing = doc.data()!;
+    if (existing.archived === true) {
+      res.status(409).json({ error: 'Нельзя редактировать архивированный склад' });
+      return;
+    }
+
+    // Server-side "vehicle => licensePlate" guard. Applies to the
+    // MERGED state (existing + patch), not just the patch, so partial
+    // updates don't accidentally violate the invariant.
+    const finalType = data.type ?? existing.type ?? 'physical';
+    const finalPlate = data.licensePlate ?? existing.licensePlate;
+    if (finalType === 'vehicle' && (!finalPlate || finalPlate.length === 0)) {
+      res.status(400).json({
+        error: 'licensePlate is required when type is "vehicle"',
+        path: ['licensePlate'],
+      });
+      return;
+    }
+
+    // Build update payload — only include fields explicitly in the request
+    const updatePayload: Record<string, unknown> = {
+      updatedAt: FieldValue.serverTimestamp(),
+    };
+    if (data.name !== undefined) updatePayload.name = data.name;
+    if (data.clientId !== undefined) updatePayload.clientId = data.clientId;
+    if (data.projectId !== undefined) updatePayload.projectId = data.projectId;
+    if (data.address !== undefined) updatePayload.address = data.address;
+    if (data.description !== undefined) updatePayload.description = data.description;
+    if (data.type !== undefined) updatePayload.type = data.type;
+    if (data.location !== undefined) updatePayload.location = data.location;
+    if (data.licensePlate !== undefined) updatePayload.licensePlate = data.licensePlate;
+
+    await docRef.update(updatePayload);
+
+    const auditCtx = extractAuditContext(req);
+    await logAgentActivity({
+      userId: req.agentUserId!,
+      action: 'warehouse_updated',
+      endpoint: `/api/inventory/warehouses/${warehouseId}`,
+      metadata: { warehouseId, fields: Object.keys(data) },
+    });
+    await logAudit(AuditHelpers.update('warehouse', warehouseId, existing, data, auditCtx.performedBy, auditCtx.source as any));
+
+    res.json({ warehouseId, updated: true });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// ─── DELETE /api/inventory/warehouses/:id ──────────────────────────
+
+router.delete('/api/inventory/warehouses/:id', async (req, res, next) => {
+  try {
+    const warehouseId = req.params.id;
+    const force = req.query.force === 'true';
+    logger.info('🏭 warehouse:archive', { warehouseId, force });
+
+    const docRef = db.collection('warehouses').doc(warehouseId);
+    const doc = await docRef.get();
+    if (!doc.exists) {
+      res.status(404).json({ error: 'Склад не найден' });
+      return;
+    }
+    const existing = doc.data()!;
+    if (existing.archived === true) {
+      res.status(409).json({ error: 'Склад уже архивирован' });
+      return;
+    }
+
+    // Safety: refuse to archive a warehouse that still has stocked items
+    // unless the caller explicitly passes ?force=true. Prevents orphaning
+    // inventory_items whose warehouseId points at an archived warehouse.
+    if (!force) {
+      const itemsSnap = await db.collection('inventory_items')
+        .where('warehouseId', '==', warehouseId)
+        .where('quantity', '>', 0)
+        .limit(1)
+        .get();
+      if (!itemsSnap.empty) {
+        res.status(409).json({
+          error: 'Нельзя архивировать склад с остатками. Обнулите inventory_items или передайте ?force=true',
+        });
+        return;
+      }
+    }
+
+    await docRef.update({
+      archived: true,
+      archivedAt: FieldValue.serverTimestamp(),
+      archivedBy: req.agentUserId,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+
+    const auditCtx = extractAuditContext(req);
+    await logAgentActivity({
+      userId: req.agentUserId!,
+      action: 'warehouse_archived',
+      endpoint: `/api/inventory/warehouses/${warehouseId}`,
+      metadata: { warehouseId, name: existing.name, forced: force },
+    });
+    await logAudit(AuditHelpers.delete('warehouse', warehouseId, { name: existing.name, type: existing.type }, auditCtx.performedBy, auditCtx.source as any));
+
+    res.json({ warehouseId, archived: true });
   } catch (e) {
     next(e);
   }

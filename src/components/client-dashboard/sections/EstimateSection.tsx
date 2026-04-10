@@ -38,7 +38,8 @@ import {
   serverTimestamp,
 } from 'firebase/firestore';
 import { db } from '../../../firebase/firebase';
-import type { Estimate } from '../../../types/estimate.types';
+// Note: LooseEstimate (below) replaces the strict Estimate type here to support
+// both full internal data and filtered portal data.
 
 // Re-export legacy types for backward compatibility
 export interface EstimateComment {
@@ -67,8 +68,29 @@ export interface EstimateCategory {
   status: string;
 }
 
+/**
+ * Loose estimate shape accepted by the section — works with both the full
+ * internal Estimate type AND the stripped PortalEstimate type.
+ * Uses index signature to allow extra fields from either source.
+ */
+interface LooseEstimate {
+  id: string;
+  number?: string | null;
+  status?: string | null;
+  total?: number | null;
+  notes?: string | null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  items?: any[];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  clientItems?: any[];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  internalItems?: any[];
+  estimateType?: string;
+  [key: string]: unknown;
+}
+
 interface EstimateSectionProps {
-  estimates: Estimate[];
+  estimates: LooseEstimate[];
   /**
    * Internal mode: show cost-price columns and margin.
    * Default false — client portal must NEVER set this to true.
@@ -247,9 +269,9 @@ const EstimateSection: React.FC<EstimateSectionProps> = ({ estimates, showIntern
         const items = showInternalCost
           ? (estimate.internalItems || estimate.clientItems || estimate.items || [])
           : (estimate.clientItems || estimate.items || []);
-        const total = showInternalCost
-          ? ((estimate.internalTotal as number | undefined) ?? estimate.total ?? 0)
-          : (estimate.clientSubtotal || estimate.total || 0);
+        const total: number = showInternalCost
+          ? Number(estimate.internalTotal ?? estimate.total ?? 0)
+          : Number(estimate.clientSubtotal || estimate.total || 0);
         const isApproved = estimate.status === 'approved' || estimate.status === 'locked';
 
         return (
@@ -324,15 +346,14 @@ const EstimateSection: React.FC<EstimateSectionProps> = ({ estimates, showIntern
                             ${total.toLocaleString()}
                           </TableCell>
                           {showInternalCost && (() => {
-                            const estimateWithInternal = estimate as { internalTotal?: number };
-                            const costTotal = estimateWithInternal.internalTotal
-                              ?? (items as FlexibleEstimateItem[]).reduce(
-                                (s, it) => s + (it.totalCost ?? 0),
+                            const costTotal = Number(estimate.internalTotal ?? 0) ||
+                              (items as FlexibleEstimateItem[]).reduce(
+                                (s: number, it) => s + (it.totalCost ?? 0),
                                 0
                               );
                             const marginPct =
-                              costTotal > 0 && total > 0
-                                ? ((total - costTotal) / total) * 100
+                              Number(costTotal) > 0 && total > 0
+                                ? ((total - Number(costTotal)) / total) * 100
                                 : null;
                             const marginColor =
                               marginPct === null
@@ -400,7 +421,7 @@ const EstimateSection: React.FC<EstimateSectionProps> = ({ estimates, showIntern
                     control={
                       <Checkbox
                         checked={isApproved}
-                        onChange={() => handleApproveEstimate(estimate.id, estimate.status)}
+                        onChange={() => handleApproveEstimate(estimate.id, estimate.status || '')}
                         color="success"
                       />
                     }

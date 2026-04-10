@@ -22,6 +22,7 @@ import { PayrollReport } from './PayrollReport';
 import { WorkSession } from '../../types/timeTracking.types';
 
 const PnLView = React.lazy(() => import('../../components/finance/PnLView'));
+const AdvancesOverview = React.lazy(() => import('../../components/finance/advances/AdvancesOverview'));
 
 interface Employee {
     id: string;
@@ -89,6 +90,9 @@ const FinancePage: React.FC = () => {
     // Employee Payment History Dialog
     const [historyEmployee, setHistoryEmployee] = useState<{ id: string; name: string } | null>(null);
 
+    // YTD Balance — independent of date filters, always from Jan 1 of current year
+    const [ytdBalance, setYtdBalance] = useState<{ earned: number; payments: number; balance: number } | null>(null);
+
     useEffect(() => {
         const loadData = async () => {
             await fetchEmployees(); // Must run first to build telegramId mapping
@@ -119,36 +123,31 @@ const FinancePage: React.FC = () => {
             const snapshot = await getDocs(q);
             const allSessions = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as WorkSession));
 
-            // Filter to only show finalized or processed sessions (or legacy sessions without status)
-            // Sessions from today/yesterday are still within edit window and won't appear
-            const getStartOfDay = (date: Date): Date => {
-                const d = new Date(date);
-                d.setHours(0, 0, 0, 0);
-                return d;
-            };
-
-            const today = getStartOfDay(new Date());
-            const dayBeforeYesterday = new Date(today);
-            dayBeforeYesterday.setDate(dayBeforeYesterday.getDate() - 2);
-            dayBeforeYesterday.setHours(23, 59, 59, 999); // End of day-before-yesterday
-
+            // Filter sessions for the finance ledger.
+            // Show all completed/finalized sessions immediately (no 2-day delay).
+            // Only exclude sessions that are still active or paused (in progress).
             const finalizedSessions = allSessions.filter(session => {
                 // Always show corrections and manual adjustments
                 if (session.type === 'correction' || session.type === 'manual_adjustment') {
                     return true;
                 }
 
-                // If explicitly finalized or processed, show it
+                // Show any explicitly finalized or processed session
                 if (session.finalizationStatus === 'finalized' || session.finalizationStatus === 'processed') {
                     return true;
                 }
 
-                // For legacy data without finalizationStatus, check if from day-before-yesterday or earlier
-                if (!session.finalizationStatus || session.finalizationStatus === 'pending') {
-                    const sessionDate = new Date((session.startTime?.seconds || 0) * 1000);
-                    return sessionDate <= dayBeforeYesterday;
+                // Show completed sessions immediately (even from today)
+                if (session.status === 'completed') {
+                    return true;
                 }
 
+                // For legacy data without status field, show it (it's old enough)
+                if (!session.status) {
+                    return true;
+                }
+
+                // Exclude active/paused sessions (still in progress)
                 return false;
             });
 
@@ -182,8 +181,55 @@ const FinancePage: React.FC = () => {
     };
 
     /**
+     * Fetch YTD balance for the selected employee (or all).
+     * ALWAYS from Jan 1 of current year — independent of startDate/endDate filters.
+     * This ensures the Balance card shows the true year-to-date balance
+     * regardless of the selected period.
+     */
+    const fetchYtdBalance = async (employeeFilter: string, idGroups: Map<string, Set<string>>) => {
+        try {
+            const yearStart = new Date(new Date().getFullYear(), 0, 1);
+            const now = endOfDay(new Date());
+
+            const q = query(
+                collection(db, 'work_sessions'),
+                where('startTime', '>=', Timestamp.fromDate(yearStart)),
+                where('startTime', '<=', Timestamp.fromDate(now)),
+                orderBy('startTime', 'desc')
+            );
+
+            const snapshot = await getDocs(q);
+            let earned = 0;
+            let payments = 0;
+
+            snapshot.docs.forEach(d => {
+                const data = d.data();
+                if (data.isVoided) return;
+
+                // Apply employee filter if specific employee selected
+                if (employeeFilter !== 'all') {
+                    const groupIds = idGroups.get(employeeFilter);
+                    const empId = String(data.employeeId);
+                    if (!(groupIds?.has(empId) ?? empId === employeeFilter)) return;
+                }
+
+                if (data.type === 'payment') {
+                    payments += Math.abs(data.sessionEarnings || 0);
+                } else if (data.type !== 'correction' || !data.description?.startsWith('VOID REF:')) {
+                    // Include regular sessions, manual adjustments, and non-void corrections
+                    earned += (data.sessionEarnings || 0);
+                }
+            });
+
+            setYtdBalance({ earned, payments, balance: earned - payments });
+        } catch (error) {
+            console.error('Error fetching YTD balance:', error);
+        }
+    };
+
+    /**
      * Fetch employees/workers from Firestore.
-     * 
+     *
      * UNIFIED RATE SYSTEM (2026-01-26):
      * - Previously used separate 'employees' collection for rates
      * - Now unified with 'users' collection to sync with Timer/Bot
@@ -493,6 +539,15 @@ const FinancePage: React.FC = () => {
     // Reset page on filter change
     useEffect(() => { setPage(0); }, [filterEmployee, filterClient, hideVoided]);
 
+    // Fetch YTD balance whenever employee filter or ID groups change
+    // This is independent of date filters — always Jan 1 → now
+    useEffect(() => {
+        if (employeeIdGroups.size > 0 || filterEmployee === 'all') {
+            fetchYtdBalance(filterEmployee, employeeIdGroups);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [filterEmployee, employeeIdGroups]);
+
     const stats = useMemo(() => {
         let salary = 0;
         let payments = 0;
@@ -607,6 +662,7 @@ const FinancePage: React.FC = () => {
             <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 3 }}>
                 <Tabs value={tabIndex} onChange={(e, v) => setTabIndex(v)} aria-label="finance tabs">
                     <Tab label="Overview (Payroll)" />
+                    <Tab label="Advances (PO)" />
                     <Tab label="Invoices (Billing)" />
                     <Tab label="Expenses" />
                     <Tab label="P&L" />
@@ -644,12 +700,14 @@ const FinancePage: React.FC = () => {
                             </Card>
                         </Box>
                         <Box sx={{ flex: 1, minWidth: 200 }}>
-                            <Card sx={{ bgcolor: stats.balance >= 0 ? '#4caf50' : '#f44336', color: 'white', height: '100%' }}>
+                            <Card sx={{ bgcolor: (ytdBalance?.balance ?? stats.balance) >= 0 ? '#4caf50' : '#f44336', color: 'white', height: '100%' }}>
                                 <CardContent>
-                                    <Tooltip title="Salary − Payments − Expenses" arrow>
+                                    <Tooltip title="YTD: начисления с начала года − выплаты с начала года (не зависит от фильтра дат)" arrow>
                                         <Typography variant="body2" sx={{ opacity: 0.8 }}>Balance</Typography>
                                     </Tooltip>
-                                    <Typography variant="h4" fontWeight="bold">${stats.balance.toFixed(2)}</Typography>
+                                    <Typography variant="h4" fontWeight="bold">
+                                        ${(ytdBalance?.balance ?? stats.balance).toFixed(2)}
+                                    </Typography>
                                 </CardContent>
                             </Card>
                         </Box>
@@ -910,8 +968,13 @@ const FinancePage: React.FC = () => {
                 </Box>
             )}
 
-            {tabIndex === 1 && <InvoicesTab />}
-            {tabIndex === 2 && (
+            {tabIndex === 1 && (
+                <React.Suspense fallback={<CircularProgress sx={{ mt: 4, display: 'block', mx: 'auto' }} />}>
+                    <AdvancesOverview employees={employees} />
+                </React.Suspense>
+            )}
+            {tabIndex === 2 && <InvoicesTab />}
+            {tabIndex === 3 && (
                 <ExpensesTab
                     costs={costs}
                     loading={loading}
@@ -919,7 +982,7 @@ const FinancePage: React.FC = () => {
                     endDate={endDate}
                 />
             )}
-            {tabIndex === 3 && (
+            {tabIndex === 4 && (
                 <React.Suspense fallback={<CircularProgress sx={{ mt: 4, display: 'block', mx: 'auto' }} />}>
                     <PnLView startDate={startDate} endDate={endDate} />
                 </React.Suspense>
@@ -1147,6 +1210,7 @@ const FinancePage: React.FC = () => {
                 <DialogContent>
                     {historyEmployee && (() => {
                         const groupIds = employeeIdGroups.get(historyEmployee.id);
+                        // Period-level entries (for table display)
                         const employeeEntries = entries.filter(e =>
                             groupIds?.has(String(e.employeeId)) ?? String(e.employeeId) === historyEmployee.id
                         );
@@ -1157,7 +1221,8 @@ const FinancePage: React.FC = () => {
                         const totalEarned = sessions.reduce((sum, e) => sum + (e.sessionEarnings || 0), 0);
                         const totalPaid = payments.reduce((sum, e) => sum + Math.abs(e.sessionEarnings || 0), 0);
                         const totalAdj = adjustments.reduce((sum, e) => sum + (e.sessionEarnings || 0), 0);
-                        const balance = totalEarned + totalAdj - totalPaid;
+                        // Use YTD balance (independent of date filters) when viewing specific employee
+                        const balance = ytdBalance?.balance ?? (totalEarned + totalAdj - totalPaid);
 
                         return (
                             <Box>

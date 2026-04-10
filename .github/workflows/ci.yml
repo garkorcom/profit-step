@@ -80,6 +80,16 @@ jobs:
           cache: 'npm'
           cache-dependency-path: functions/package-lock.json
 
+      # Firebase CLI's Firestore emulator requires Java 21+ as of
+      # firebase-tools@14+. Without this, `firebase emulators:exec` fails with:
+      #   "firebase-tools no longer supports Java version before 21.
+      #    Please install a JDK at version 21 or above..."
+      - name: Set up Java 21 for Firebase emulators
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
       - name: Install dependencies
         run: npm ci
 

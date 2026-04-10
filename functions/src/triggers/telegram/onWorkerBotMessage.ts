@@ -2028,32 +2028,10 @@ async function finalizeSession(chatId: number, userId: number, activeSession: an
         throw txError; // Re-throw unexpected errors
     }
 
-    // Fix #2: Calculate salary balance (inline)
-    let balanceInfo = '';
-    try {
-        const yearStart = new Date(new Date().getFullYear(), 0, 1);
-        const sessionsSnap = await admin.firestore().collection('work_sessions')
-            .where('employeeId', '==', userId)
-            .where('status', '==', 'completed')
-            .where('startTime', '>=', admin.firestore.Timestamp.fromDate(yearStart))
-            .get();
-        const totalEarned = sessionsSnap.docs.reduce((sum: number, d: any) => sum + (d.data().sessionEarnings || 0), 0);
-        
-        const paymentsSnap = await admin.firestore().collection('payments')
-            .where('employeeId', '==', String(userId))
-            .get();
-        const totalPayments = paymentsSnap.docs.reduce((sum: number, d: any) => sum + Math.abs(d.data().amount || 0), 0);
-        
-        const balance = totalEarned - totalPayments;
-        balanceInfo = `\n💳 Баланс: $${balance.toFixed(2)} (начислено $${totalEarned.toFixed(2)} - выплачено $${totalPayments.toFixed(2)})`;
-    } catch (e) {
-        console.error('Balance calc error:', e);
-    }
-
-    // V2: Time-of-day flavor + Russian
+    // V2: Time-of-day flavor + Russian — session summary (without balance)
     const finishHour = new Date().getHours();
     const finishGreeting = finishHour >= 17 ? '🌙 Отличная работа!' : '🏁 Смена завершена!';
-    await sendMessage(chatId, `${finishGreeting}\n\n⏱ Сессия: ${Math.floor(totalMinutes / 60)}ч ${totalMinutes % 60}мин\n💰 Заработано: $${sessionEarnings}\n💵 Ставка: $${hourlyRate}/ч\n📅 *За сегодня: ${dailyHours}ч ${dailyMins}мин ($${dailyStats.earnings.toFixed(2)})*\n📍 Объект: ${sessionData.clientName}\n📝 ${description}${extraMessage}\n\n${balanceInfo}`);
+    await sendMessage(chatId, `${finishGreeting}\n\n⏱ Сессия: ${Math.floor(totalMinutes / 60)}ч ${totalMinutes % 60}мин\n💰 Заработано: $${sessionEarnings}\n💵 Ставка: $${hourlyRate}/ч\n📅 *За сегодня: ${dailyHours}ч ${dailyMins}мин ($${dailyStats.earnings.toFixed(2)})*\n📍 Объект: ${sessionData.clientName}\n📝 ${description}${extraMessage}`);
 
     logger.info(`[${sessionData.employeeName}] 🏁 Work Finished — ${sessionData.clientName} (${Math.floor(totalMinutes / 60)}h ${totalMinutes % 60}m, $${sessionEarnings})`);
 
@@ -2061,8 +2039,77 @@ async function finalizeSession(chatId: number, userId: number, activeSession: an
     const sanitizedDesc = safeDescription.replace(/[*_`\[\]()~>#+\-=|{}.!]/g, '').substring(0, 500);
     await sendAdminNotification(`👤 *${sessionData.employeeName}:*\n🏁 *Work Finished*\n📍 ${sessionData.clientName}\n⏱ ${Math.floor(totalMinutes / 60)}h ${totalMinutes % 60}m\n💵 Earned: $${sessionEarnings}\n📝 ${sanitizedDesc}`);
 
-    // Return to main menu after finishing
+    // Return to main menu after finishing ("Ты сейчас не на смене")
     await sendMainMenu(chatId, userId);
+
+    // Calculate and send YTD salary balance as a separate follow-up message.
+    // Uses work_sessions collection (unified ledger) instead of the unused 'payments' collection.
+    // Queries both Telegram numeric ID and Firebase UID to cover all sessions.
+    try {
+        const yearStart = new Date(new Date().getFullYear(), 0, 1);
+
+        // Resolve Firebase UID for cross-ID matching
+        const platformUser = await findPlatformUser(userId);
+        const searchIds: (string | number)[] = [userId, String(userId)];
+        if (platformUser) searchIds.push(platformUser.id);
+
+        // Query all work_sessions for this employee from YTD
+        const ytdSnap = await admin.firestore().collection('work_sessions')
+            .where('employeeId', 'in', searchIds)
+            .where('startTime', '>=', admin.firestore.Timestamp.fromDate(yearStart))
+            .get();
+
+        let totalEarned = 0;
+        let totalPayments = 0;
+
+        ytdSnap.docs.forEach((d: any) => {
+            const data = d.data();
+            if (data.isVoided) return;
+
+            if (data.type === 'payment') {
+                totalPayments += Math.abs(data.sessionEarnings || 0);
+            } else if (data.status === 'completed' || data.type === 'manual_adjustment') {
+                totalEarned += (data.sessionEarnings || 0);
+            }
+        });
+
+        const balance = totalEarned - totalPayments;
+        const balanceEmoji = balance >= 0 ? '💚' : '🔴';
+
+        // Query PO (advance) balance for the same employee
+        let poLine = '';
+        try {
+            const advSnap = await admin.firestore().collection('advance_accounts')
+                .where('employeeId', 'in', searchIds)
+                .where('status', '==', 'open')
+                .get();
+
+            if (!advSnap.empty) {
+                const advTxSnap = await admin.firestore().collection('advance_transactions')
+                    .where('employeeId', 'in', searchIds)
+                    .where('status', '==', 'active')
+                    .get();
+
+                const totalIssued = advSnap.docs.reduce((s: number, d: any) => s + (d.data().amount || 0), 0);
+                const totalSpent = advTxSnap.docs
+                    .filter((d: any) => advSnap.docs.some((a: any) => a.id === d.data().advanceId))
+                    .reduce((s: number, d: any) => s + (d.data().amount || 0), 0);
+                const poBalance = Math.round((totalIssued - totalSpent) * 100) / 100;
+
+                if (poBalance !== 0) {
+                    const poEmoji = poBalance > 0 ? '📦' : '⚠️';
+                    poLine = `\n${poEmoji} Баланс ПО: *$${poBalance.toFixed(2)}* (${advSnap.size} авансов)`;
+                }
+            }
+        } catch (poErr) {
+            console.error('PO balance calc error:', poErr);
+        }
+
+        await sendMessage(chatId, `${balanceEmoji} Баланс ЗП: *$${balance.toFixed(2)}*\n📊 Начислено с начала года: $${totalEarned.toFixed(2)}\n💸 Выплачено: $${totalPayments.toFixed(2)}${poLine}`);
+    } catch (e) {
+        console.error('Balance calc error:', e);
+        // Non-critical — don't fail the session finalization
+    }
 }
 
 /**

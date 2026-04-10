@@ -126,68 +126,91 @@ export const onWorkSessionUpdate = functions.firestore
 
         if (!relatedTaskId) {
             console.log(`⏭️ No related task ID, skipping accuracy log`);
-            return;
+            // Still continue to ledger entry below (no return here)
         }
 
-        try {
-            const taskDoc = await db.collection('gtd_tasks').doc(relatedTaskId).get();
+        // ═══════════════════════════════════════════════════
+        // Phase 5: Sync session time/cost into GTD task
+        // ═══════════════════════════════════════════════════
+        if (relatedTaskId) {
+            try {
+                const taskDoc = await db.collection('gtd_tasks').doc(relatedTaskId).get();
+                if (taskDoc.exists) {
+                    const taskData = taskDoc.data()!;
+                    const sessionEarnings = after.sessionEarnings || (actualMinutes / 60 * (after.hourlyRate || 0));
 
-            if (!taskDoc.exists) {
-                console.log(`⏭️ Task ${relatedTaskId} not found, skipping accuracy log`);
-                return;
+                    // Increment task totals atomically
+                    await db.collection('gtd_tasks').doc(relatedTaskId).update({
+                        totalTimeSpentMinutes: admin.firestore.FieldValue.increment(actualMinutes),
+                        totalEarnings: admin.firestore.FieldValue.increment(
+                            Math.round(sessionEarnings * 100) / 100
+                        ),
+                        lastSessionAt: admin.firestore.FieldValue.serverTimestamp(),
+                        lastSessionBy: after.employeeId || '',
+                        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+                    });
+
+                    console.log(`💰 [Phase 5] Task ${relatedTaskId} updated: +${actualMinutes}min, +$${sessionEarnings.toFixed(2)}`);
+
+                    // Check if AI accuracy logging is needed
+                    if (!taskData.aiEstimateUsed || !taskData.estimatedDurationMinutes) {
+                        console.log(`⏭️ Task ${relatedTaskId} has no AI estimate, skipping accuracy log`);
+                    }
+                }
+            } catch (err) {
+                console.error(`❌ [Phase 5] Error updating task financials for ${relatedTaskId}:`, err);
             }
+        }
 
-            const taskData = taskDoc.data();
+        // ═══════════════════════════════════════════════════
+        // AI Accuracy logging (existing logic)
+        // ═══════════════════════════════════════════════════
+        if (relatedTaskId) {
+            try {
+                const taskDoc = await db.collection('gtd_tasks').doc(relatedTaskId).get();
 
-            // Check if task has AI estimation
-            if (!taskData?.aiEstimateUsed || !taskData?.estimatedDurationMinutes) {
-                console.log(`⏭️ Task ${relatedTaskId} has no AI estimate, skipping`);
-                return;
+                if (taskDoc.exists) {
+                    const taskData = taskDoc.data();
+
+                    if (taskData?.aiEstimateUsed && taskData?.estimatedDurationMinutes) {
+                        const predictedMinutes = taskData.estimatedDurationMinutes;
+                        const accuracyRatio = predictedMinutes / actualMinutes;
+                        const errorMinutes = Math.abs(predictedMinutes - actualMinutes);
+
+                        if (accuracyRatio <= ACCURACY_CONFIG.MAX_RATIO && accuracyRatio >= 1 / ACCURACY_CONFIG.MAX_RATIO) {
+                            const accuracyLog: AIAccuracyLog = {
+                                taskId: relatedTaskId,
+                                taskTitle: taskData.title || after.description || 'Unknown',
+                                normalizedDescription: normalizeDescription(taskData.title || ''),
+                                sessionId: sessionId,
+                                predictedMinutes,
+                                actualMinutes,
+                                accuracyRatio,
+                                errorMinutes,
+                                employeeRole: taskData.assigneeRole || after.employeeRole || '',
+                                employeeId: after.employeeId || '',
+                                clientId: taskData.clientId || after.clientId || '',
+                                createdAt: admin.firestore.Timestamp.now(),
+                            };
+
+                            await db.collection(ACCURACY_CONFIG.COLLECTION).add(accuracyLog);
+
+                            const accuracyPercent = (accuracyRatio * 100).toFixed(0);
+                            const direction = accuracyRatio > 1 ? 'overestimated' : 'underestimated';
+                            console.log(`✅ AI Accuracy logged: Predicted ${predictedMinutes}min vs Actual ${actualMinutes}min`);
+                            console.log(`   → Accuracy: ${accuracyPercent}% (AI ${direction} by ${errorMinutes}min)`);
+                        } else {
+                            console.log(`⏭️ Extreme ratio ${accuracyRatio.toFixed(2)}, skipping (outlier)`);
+                        }
+                    } else {
+                        console.log(`⏭️ Task ${relatedTaskId} has no AI estimate, skipping accuracy log`);
+                    }
+                } else {
+                    console.log(`⏭️ Task ${relatedTaskId} not found, skipping accuracy log`);
+                }
+            } catch (error) {
+                console.error('❌ Error logging AI accuracy:', error);
             }
-
-            const predictedMinutes = taskData.estimatedDurationMinutes;
-
-            // Calculate accuracy metrics
-            const accuracyRatio = predictedMinutes / actualMinutes;
-            const errorMinutes = Math.abs(predictedMinutes - actualMinutes);
-
-            // Filter extreme outliers
-            if (accuracyRatio > ACCURACY_CONFIG.MAX_RATIO || accuracyRatio < 1 / ACCURACY_CONFIG.MAX_RATIO) {
-                console.log(`⏭️ Extreme ratio ${accuracyRatio.toFixed(2)}, skipping (outlier)`);
-                return;
-            }
-
-            // ═══════════════════════════════════════════════════
-            // Log the accuracy data
-            // ═══════════════════════════════════════════════════
-            const accuracyLog: AIAccuracyLog = {
-                taskId: relatedTaskId,
-                taskTitle: taskData.title || after.description || 'Unknown',
-                normalizedDescription: normalizeDescription(taskData.title || ''),
-                sessionId: sessionId,
-
-                predictedMinutes,
-                actualMinutes,
-                accuracyRatio,
-                errorMinutes,
-
-                employeeRole: taskData.assigneeRole || after.employeeRole || '',
-                employeeId: after.employeeId || '',
-                clientId: taskData.clientId || after.clientId || '',
-
-                createdAt: admin.firestore.Timestamp.now(),
-            };
-
-            await db.collection(ACCURACY_CONFIG.COLLECTION).add(accuracyLog);
-
-            const accuracyPercent = (accuracyRatio * 100).toFixed(0);
-            const direction = accuracyRatio > 1 ? 'overestimated' : 'underestimated';
-
-            console.log(`✅ AI Accuracy logged: Predicted ${predictedMinutes}min vs Actual ${actualMinutes}min`);
-            console.log(`   → Accuracy: ${accuracyPercent}% (AI ${direction} by ${errorMinutes}min)`);
-
-        } catch (error) {
-            console.error('❌ Error logging AI accuracy:', error);
         }
 
         // ═══════════════════════════════════════════════════

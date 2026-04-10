@@ -457,6 +457,8 @@ async function handleMessage(message: any) {
 • 📎 Файл — сохраню документ
 
 Всё попадёт в твой Inbox для дальнейшей обработки.`);
+    } else if (text === '/template' || text === '/templates') {
+        await GtdHandler.handleTemplateCommand(chatId, userId, '');
     } else if (text === '/po' || text === '📦 PO / Авансы') {
         await POHandler.handlePOCommand(chatId, userId);
     } else if (text && text.length > 0) {
@@ -554,7 +556,11 @@ async function handleCallbackQuery(query: any) {
         const isAlwaysValid = data.startsWith('tasks:') || data.startsWith('task_view:') ||
             data.startsWith('task_done:') || data.startsWith('task_move:') ||
             data.startsWith('shop:') || data.startsWith('draft:') || data === 'tasks_back' ||
-            data.startsWith('checklist_') || data.startsWith('po_');
+            data.startsWith('checklist_') || data.startsWith('po_') ||
+            data.startsWith('tmpl_') || data.startsWith('task_wait_reason:') ||
+            data.startsWith('task_phase:') || data.startsWith('task_set_') ||
+            data.startsWith('task_proof:') || data.startsWith('task_approve:') ||
+            data.startsWith('task_reject:');
         if (!isAlwaysValid) {
             logger.info(`🔇 Zombie callback rejected from user ${userId}: "${data}" (age: ${Math.floor(Date.now() / 1000) - messageDate}s)`);
             try {
@@ -607,7 +613,9 @@ async function handleCallbackQuery(query: any) {
             await extendSession(chatId, userId, 30); // Snooze for 30 mins
         }
         // --- GTD TASKS HANDLERS ---
-        else if (data === 'tasks_back' || data.startsWith('tasks:') || data.startsWith('task_view:') || data.startsWith('task_done:') || data.startsWith('task_move:')) {
+        else if (data === 'tasks_back' || data === 'tasks_plan' ||
+            data.startsWith('tasks:') || data.startsWith('task_') ||
+            data.startsWith('tmpl_')) {
             await GtdHandler.handleGtdCallback(chatId, userId, data);
         }
         // --- LOCATION FLOW HANDLERS ---

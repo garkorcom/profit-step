@@ -73,7 +73,7 @@ async function sendDigestForUser(chatId: number, userId: string, userName: strin
     // Query active tasks (not done, not cancelled)
     const tasksSnap = await db.collection('gtd_tasks')
         .where('ownerId', '==', userId)
-        .where('status', 'in', ['inbox', 'next_action', 'waiting', 'projects', 'estimate', 'someday'])
+        .where('status', 'in', ['inbox', 'next_action', 'waiting', 'projects', 'estimate', 'someday', 'pending_approval'])
         .get();
 
     if (tasksSnap.empty) return; // No open tasks — skip digest
@@ -97,7 +97,7 @@ async function sendDigestForUser(chatId: number, userId: string, userName: strin
 
     const tasks: ScoredTask[] = [];
     const statusCounts: Record<string, number> = {
-        inbox: 0, next_action: 0, waiting: 0, projects: 0, estimate: 0, someday: 0,
+        inbox: 0, next_action: 0, waiting: 0, projects: 0, estimate: 0, someday: 0, pending_approval: 0,
     };
 
     for (const doc of tasksSnap.docs) {

@@ -64,7 +64,7 @@ export const taskHealthCheck = functions.pubsub
 
         try {
             const snapshot = await db.collection('gtd_tasks')
-                .where('status', 'in', ['inbox', 'next_action', 'waiting', 'projects', 'estimate'])
+                .where('status', 'in', ['inbox', 'next_action', 'waiting', 'projects', 'estimate', 'pending_approval'])
                 .get();
 
             if (snapshot.empty) return null;
@@ -182,7 +182,7 @@ export const weeklyTaskSummary = functions.pubsub
 
             // Count all open
             const openSnap = await db.collection('gtd_tasks')
-                .where('status', 'in', ['inbox', 'next_action', 'waiting', 'projects', 'estimate'])
+                .where('status', 'in', ['inbox', 'next_action', 'waiting', 'projects', 'estimate', 'pending_approval'])
                 .get();
 
             // Count overdue

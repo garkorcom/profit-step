@@ -874,7 +874,9 @@ async function handleChecklistCallback(chatId: number, userId: number, data: str
             checklistStep: nextStep,
             checklistAnswers: answers,
             awaitingChecklist: false,
-            awaitingStartPhoto: true,
+            // Case 5: Deferred photo — don't block timer, just request
+            awaitingStartPhoto: false,
+            awaitingDeferredPhoto: true,
         });
 
         const allYes = Object.values(answers).every((v: any) => v === true);
@@ -886,12 +888,11 @@ async function handleChecklistCallback(chatId: number, userId: number, data: str
         await sendMessage(chatId,
             `📋 *Чеклист завершён:*\n${summary}\n\n` +
             (allYes ? '👍 Всё готово!\n\n' : '⚠️ Есть нерешённые вопросы. Админ уведомлён.\n\n') +
-            `📸 Теперь отправь **фото** начала работ.`,
-            {
-                keyboard: [[{ text: '⏩ Пропустить фото' }]],
-                resize_keyboard: true
-            }
+            `🚀 *Таймер запущен!*\n📸 Когда будет удобно — отправь фото с объекта.`
         );
+
+        // Show main menu immediately — timer is running
+        await sendMainMenu(chatId, userId);
 
         // Notify admin if something is missing
         if (!allYes) {
@@ -1301,6 +1302,21 @@ async function handleLocationConfirmStart(chatId: number, userId: number) {
 
     const { hourlyRate, platformUserId, companyId, employeeName } = await resolveHourlyRate(userId);
 
+    // Case 4: Skip checklist if same project within 24h
+    let skipChecklist = false;
+    try {
+        const yesterday = new Date();
+        yesterday.setHours(yesterday.getHours() - 24);
+        const recentSnap = await db.collection('work_sessions')
+            .where('employeeId', 'in', [userId, String(userId)])
+            .where('clientId', '==', clientId)
+            .where('status', '==', 'completed')
+            .where('endTime', '>=', admin.firestore.Timestamp.fromDate(yesterday))
+            .limit(1)
+            .get();
+        skipChecklist = !recentSnap.empty;
+    } catch (_) { /* ignore */ }
+
     await db.collection('work_sessions').add({
         employeeId: userId,
         employeeName: employeeName,
@@ -1313,10 +1329,13 @@ async function handleLocationConfirmStart(chatId: number, userId: number) {
         service: serviceName || null,
         startLocation: location,
         awaitingLocation: false,
-        awaitingChecklist: true,
-        checklistStep: 0,
-        checklistAnswers: {},
+        // Case 4: Skip checklist for repeat visits within 24h
+        awaitingChecklist: !skipChecklist,
+        checklistStep: skipChecklist ? CHECKLIST_QUESTIONS.length : 0,
+        checklistAnswers: skipChecklist ? Object.fromEntries(CHECKLIST_QUESTIONS.map(q => [q.key, true])) : {},
+        // Case 5: Don't block on photo — timer starts immediately
         awaitingStartPhoto: false,
+        awaitingDeferredPhoto: true, // Photo requested but non-blocking
         hourlyRate: hourlyRate,
         taskId: null,
         taskTitle: null
@@ -1329,14 +1348,24 @@ async function handleLocationConfirmStart(chatId: number, userId: number) {
         await sendMessage(chatId, '⚠️ Внимание! Ваша почасовая ставка не установлена ($0/ч). Пожалуйста, свяжитесь с руководителем для уточнения.');
     }
 
-    await sendMessage(chatId,
-        `✅ *Смена начата!*\n\n` +
-        `🏢 Объект: *${clientName}${serviceName ? ' - ' + serviceName : ''}*\n\n` +
-        `📋 Пройди чеклист перед началом работы:`
-    );
-
-    // Send first checklist question
-    await sendChecklistQuestion(chatId, 0);
+    if (skipChecklist) {
+        // Case 4: Repeat visit — skip checklist, just send menu
+        await sendMessage(chatId,
+            `✅ *Смена начата!*\n\n` +
+            `🏢 Объект: *${clientName}${serviceName ? ' - ' + serviceName : ''}*\n` +
+            `📋 Чеклист пропущен (повторный визит)\n\n` +
+            `📸 Когда будет удобно — отправь фото с объекта.`
+        );
+        await sendMainMenu(chatId, userId);
+    } else {
+        await sendMessage(chatId,
+            `✅ *Смена начата!*\n\n` +
+            `🏢 Объект: *${clientName}${serviceName ? ' - ' + serviceName : ''}*\n\n` +
+            `📋 Пройди чеклист перед началом работы:`
+        );
+        // Send first checklist question
+        await sendChecklistQuestion(chatId, 0);
+    }
 
     await sendAdminNotification(`👤 *${employeeName}:*\n▶️ *Work Started (Location)*\n📍 ${clientName}`);
 
@@ -1845,6 +1874,33 @@ async function handleMediaUpload(chatId: number, userId: number, message: any) {
             }
         );
 
+    } else if (sessionData.awaitingDeferredPhoto) {
+        // Case 5: Deferred start photo — non-blocking, timer already running
+        if (message.photo) {
+            const url = await saveTelegramFile(fileId!, `work_photos/${activeSession.id}/start_${Date.now()}.${extension}`);
+            await activeSession.ref.update({
+                startPhotoId: fileId,
+                startPhotoUrl: url,
+                startMediaType: 'photo',
+                awaitingDeferredPhoto: false,
+            });
+            await sendMessage(chatId, "📸 Фото принято! Спасибо.");
+
+            // Face verification (async, non-blocking)
+            const platformUserUrl = (await findPlatformUser(userId))?.referenceFacePhotoUrl;
+            if (platformUserUrl && url) {
+                verifyEmployeeFace(platformUserUrl, url).then(async (matchResult) => {
+                    await activeSession.ref.update({
+                        faceMatch: matchResult.match,
+                        faceConfidence: matchResult.confidence,
+                        faceMismatchReason: matchResult.reason
+                    });
+                    if (!matchResult.match) {
+                        await sendMessage(chatId, `⚠️ Система не смогла сопоставить ваше лицо с профилем (${Math.round(matchResult.confidence)}%). Админ уведомлен.`);
+                    }
+                }).catch(e => console.error("Face verification failed", e));
+            }
+        }
     } else {
         // Fix 3: Handle media group (album) spam silently
         if (message.media_group_id) {

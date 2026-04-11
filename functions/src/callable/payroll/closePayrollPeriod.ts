@@ -96,6 +96,18 @@ export const closePayrollPeriod = functions.https.onCall(
             }
 
             // 6. Check all sessions are finalized and calculate aggregates
+            // B15 fix: normalize employee IDs (telegramId → UID mapping)
+            const usersForIdMap = await db.collection('users').get();
+            const telegramToUid: Record<string, string> = {};
+            usersForIdMap.docs.forEach(doc => {
+                const tgId = doc.data().telegramId;
+                if (tgId) telegramToUid[String(tgId)] = doc.id;
+            });
+            const normalizeEmployeeId = (id: string | number): string => {
+                const str = String(id);
+                return telegramToUid[str] || str;
+            };
+
             let totalSessions = 0;
             let totalMinutes = 0;
             let totalAmount = 0;
@@ -136,7 +148,7 @@ export const closePayrollPeriod = functions.https.onCall(
                 totalSessions++;
                 totalMinutes += session.durationMinutes || 0;
                 totalAmount += session.sessionEarnings || 0;
-                employeeSet.add(String(session.employeeId));
+                employeeSet.add(normalizeEmployeeId(session.employeeId));
                 sessionsToUpdate.push(doc.ref);
             }
 
@@ -157,7 +169,7 @@ export const closePayrollPeriod = functions.https.onCall(
                 const s = doc.data();
                 if (s.type === 'correction' || s.type === 'manual_adjustment' || s.type === 'payment') continue;
                 if (s.isVoided) continue;
-                const eid = String(s.employeeId);
+                const eid = normalizeEmployeeId(s.employeeId);
                 if (!employeeGross[eid]) {
                     employeeGross[eid] = { gross: 0, hours: 0, name: s.employeeName || 'Unknown' };
                 }
@@ -187,7 +199,7 @@ export const closePayrollPeriod = functions.https.onCall(
 
                         for (const advDoc of advancesSnapshot.docs) {
                             const adv = advDoc.data();
-                            const advEmpId = String(adv.employeeId);
+                            const advEmpId = normalizeEmployeeId(adv.employeeId);
 
                             // Only deduct for employees who worked this period
                             if (!employeeGross[advEmpId]) continue;

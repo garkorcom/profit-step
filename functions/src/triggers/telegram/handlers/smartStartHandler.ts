@@ -11,7 +11,7 @@
  */
 
 import * as admin from 'firebase-admin';
-import { sendMessage, getActiveSession } from '../telegramUtils';
+import { sendMessage, getActiveSession, sendMainMenu } from '../telegramUtils';
 
 const db = admin.firestore();
 
@@ -268,6 +268,7 @@ export async function handleStartTaskCallback(
             {
                 inline_keyboard: [
                     [{ text: '✅ Задача готова', callback_data: `done_task:${taskId}` }],
+                    [{ text: '⚠️ Заблокирована', callback_data: `block_task:${taskId}` }],
                     [{ text: '🔄 Другая задача', callback_data: 'switch_task' }],
                 ]
             }
@@ -584,5 +585,560 @@ export async function quickCloseSession(chatId: number, userId: number): Promise
     } catch (error) {
         console.error('[smartStartHandler] quickCloseSession error:', error);
         await sendMessage(chatId, '❌ Ошибка закрытия смены.');
+    }
+}
+
+// ──────────────────────────────────────────────
+// Case 17: Blocked Task with Reason Picker
+// ──────────────────────────────────────────────
+
+const BLOCK_REASONS: Record<string, { emoji: string; label: string }> = {
+    materials: { emoji: '📦', label: 'Нужны материалы' },
+    help: { emoji: '👷', label: 'Нужна помощь' },
+    waiting: { emoji: '⏳', label: 'Жду другую задачу' },
+    access: { emoji: '🔑', label: 'Нет доступа' },
+    weather: { emoji: '🌧', label: 'Погода' },
+    other: { emoji: '❓', label: 'Другое' },
+};
+
+/**
+ * Show block reason picker for a task
+ */
+export async function handleBlockTask(chatId: number, taskId: string): Promise<void> {
+    const buttons = Object.entries(BLOCK_REASONS).map(([key, { emoji, label }]) => ([{
+        text: `${emoji} ${label}`,
+        callback_data: `block_reason:${taskId}:${key}`,
+    }]));
+    buttons.push([{ text: '❌ Отмена', callback_data: `task_view:${taskId}` }]);
+
+    await sendMessage(chatId, '⚠️ *Почему задача заблокирована?*', { inline_keyboard: buttons });
+}
+
+/**
+ * Handle block reason selection
+ */
+export async function handleBlockReasonCallback(
+    chatId: number,
+    userId: number,
+    taskId: string,
+    reason: string
+): Promise<void> {
+    try {
+        const taskDoc = await db.collection('gtd_tasks').doc(taskId).get();
+        if (!taskDoc.exists) {
+            await sendMessage(chatId, '❌ Задача не найдена.');
+            return;
+        }
+
+        const taskData = taskDoc.data()!;
+        const reasonInfo = BLOCK_REASONS[reason] || BLOCK_REASONS.other;
+
+        // Update task status to waiting with reason
+        await taskDoc.ref.update({
+            status: 'waiting',
+            waitingReason: reason,
+            blockedAt: admin.firestore.FieldValue.serverTimestamp(),
+            blockedBy: String(userId),
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            taskHistory: admin.firestore.FieldValue.arrayUnion({
+                type: 'blocked',
+                description: `Blocked: ${reasonInfo.label}`,
+                by: String(userId),
+                at: new Date().toISOString(),
+            }),
+        });
+
+        // If materials — prompt for details
+        if (reason === 'materials') {
+            await taskDoc.ref.update({ awaitingBlockDetails: true });
+            await sendMessage(chatId,
+                `${reasonInfo.emoji} *Задача заблокирована: ${reasonInfo.label}*\n\n` +
+                `🎤 Отправь голосовое или текст: какие материалы нужны?`
+            );
+            return;
+        }
+
+        // Notify admin
+        const ADMIN_GROUP_ID = process.env.ADMIN_GROUP_ID || '';
+        if (ADMIN_GROUP_ID) {
+            try {
+                const empDoc = await db.collection('employees').doc(String(userId)).get();
+                const empName = empDoc.data()?.name || 'Работник';
+                await sendMessage(Number(ADMIN_GROUP_ID),
+                    `⚠️ *Задача заблокирована*\n\n` +
+                    `📋 ${taskData.title}\n` +
+                    `👤 ${empName}\n` +
+                    `❗ Причина: ${reasonInfo.emoji} ${reasonInfo.label}`
+                );
+            } catch (_) { /* ignore */ }
+        }
+
+        await sendMessage(chatId,
+            `${reasonInfo.emoji} *Задача заблокирована: ${reasonInfo.label}*\n` +
+            `Админ уведомлён.`,
+            {
+                inline_keyboard: [
+                    [{ text: '🔓 Разблокировать', callback_data: `unblock_task:${taskId}` }],
+                    [{ text: '🔄 Другая задача', callback_data: 'switch_task' }],
+                ]
+            }
+        );
+
+        // Unlink from session if blocked
+        const activeSession = await getActiveSession(userId);
+        if (activeSession && activeSession.data().relatedTaskId === taskId) {
+            await activeSession.ref.update({
+                relatedTaskId: null,
+                relatedTaskTitle: null,
+            });
+        }
+    } catch (error) {
+        console.error('[smartStartHandler] blockReason error:', error);
+        await sendMessage(chatId, '❌ Ошибка.');
+    }
+}
+
+/**
+ * Unblock a task
+ */
+export async function handleUnblockTask(chatId: number, userId: number, taskId: string): Promise<void> {
+    try {
+        const taskDoc = await db.collection('gtd_tasks').doc(taskId).get();
+        if (!taskDoc.exists) {
+            await sendMessage(chatId, '❌ Задача не найдена.');
+            return;
+        }
+
+        await taskDoc.ref.update({
+            status: 'next_action',
+            waitingReason: admin.firestore.FieldValue.delete(),
+            blockedAt: admin.firestore.FieldValue.delete(),
+            blockedBy: admin.firestore.FieldValue.delete(),
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            taskHistory: admin.firestore.FieldValue.arrayUnion({
+                type: 'unblocked',
+                description: 'Unblocked',
+                by: String(userId),
+                at: new Date().toISOString(),
+            }),
+        });
+
+        const title = taskDoc.data()?.title || 'Задача';
+        await sendMessage(chatId,
+            `🔓 *${title}* разблокирована!`,
+            {
+                inline_keyboard: [
+                    [{ text: '▶️ Начать', callback_data: `start_task:${taskId}` }],
+                    [{ text: '◀️ К задачам', callback_data: 'tasks_back' }],
+                ]
+            }
+        );
+    } catch (error) {
+        console.error('[smartStartHandler] unblock error:', error);
+        await sendMessage(chatId, '❌ Ошибка.');
+    }
+}
+
+// ──────────────────────────────────────────────
+// Case 23: Timeline View (/timeline)
+// ──────────────────────────────────────────────
+
+/**
+ * Show today's timeline with all sessions
+ */
+export async function handleTimeline(chatId: number, userId: number): Promise<void> {
+    try {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        const sessionsSnap = await db.collection('work_sessions')
+            .where('employeeId', 'in', [userId, String(userId)])
+            .where('startTime', '>=', admin.firestore.Timestamp.fromDate(today))
+            .orderBy('startTime', 'asc')
+            .get();
+
+        if (sessionsSnap.empty) {
+            await sendMessage(chatId, '📊 Сегодня ещё нет записей. Начни смену!');
+            return;
+        }
+
+        let msg = `📊 *Таймлайн сегодня:*\n\n`;
+        let totalMinutes = 0;
+        let totalEarnings = 0;
+        let totalBreaks = 0;
+        let prevEndMs: number | null = null;
+
+        for (const doc of sessionsSnap.docs) {
+            const data = doc.data();
+            if (data.isVoided || data.type === 'payment' || data.type === 'correction') continue;
+
+            const startDate = data.startTime?.toDate?.();
+            if (!startDate) continue;
+
+            const startTime = startDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+
+            // Travel gap detection
+            if (prevEndMs) {
+                const gapMin = Math.floor((startDate.getTime() - prevEndMs) / 60000);
+                if (gapMin > 5) {
+                    msg += `  🚗 _${gapMin}мин_\n`;
+                }
+            }
+
+            let sessionMinutes: number;
+            let sessionEarnings: number;
+            let endTime: string;
+
+            if (data.status === 'completed') {
+                sessionMinutes = data.durationMinutes || 0;
+                sessionEarnings = data.sessionEarnings || 0;
+                const endDate = data.endTime?.toDate?.();
+                endTime = endDate ? endDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false }) : '?';
+                prevEndMs = endDate?.getTime() || null;
+            } else {
+                // Active session
+                const elapsed = Math.floor((Date.now() - startDate.getTime()) / 60000);
+                const breaks = data.totalBreakMinutes || 0;
+                sessionMinutes = Math.max(0, elapsed - breaks);
+                sessionEarnings = parseFloat(((sessionMinutes / 60) * (data.hourlyRate || 0)).toFixed(2));
+                endTime = data.status === 'paused' ? '☕' : '▶️';
+                prevEndMs = null;
+            }
+
+            const h = Math.floor(sessionMinutes / 60);
+            const m = sessionMinutes % 60;
+            const clientName = data.clientName || 'Unknown';
+            const statusIcon = data.status === 'active' ? '▶️' :
+                data.status === 'paused' ? '☕' : '✅';
+
+            msg += `${statusIcon} ${startTime}-${endTime}  *${clientName}*  ${h}ч${m}мин  $${sessionEarnings.toFixed(2)}\n`;
+
+            if (data.relatedTaskTitle) {
+                msg += `  └─ ${data.relatedTaskTitle}\n`;
+            }
+
+            totalMinutes += sessionMinutes;
+            totalEarnings += sessionEarnings;
+            totalBreaks += (data.totalBreakMinutes || 0);
+        }
+
+        const totalH = Math.floor(totalMinutes / 60);
+        const totalM = totalMinutes % 60;
+
+        msg += `\n═══════════════════════\n`;
+        msg += `⏱ Итого: *${totalH}ч ${totalM}мин*  |  💰 *$${totalEarnings.toFixed(2)}*\n`;
+        if (totalBreaks > 0) {
+            msg += `☕ Перерывы: ${totalBreaks}мин`;
+        }
+
+        await sendMessage(chatId, msg);
+    } catch (error) {
+        console.error('[smartStartHandler] timeline error:', error);
+        await sendMessage(chatId, '❌ Ошибка загрузки таймлайна.');
+    }
+}
+
+// ──────────────────────────────────────────────
+// Case 45: Photo Categories During Shift
+// ──────────────────────────────────────────────
+
+/**
+ * When worker sends photo mid-shift, ask what it is
+ */
+export async function showPhotoCategoryPicker(chatId: number, sessionId: string, photoFileId: string): Promise<void> {
+    await sendMessage(chatId,
+        '📸 Фото сохранено! Что это?',
+        {
+            inline_keyboard: [
+                [
+                    { text: '📈 Прогресс', callback_data: `photo_cat:${sessionId}:progress:${photoFileId}` },
+                    { text: '⚠️ Проблема', callback_data: `photo_cat:${sessionId}:problem:${photoFileId}` },
+                ],
+                [
+                    { text: '🧾 Чек', callback_data: `photo_cat:${sessionId}:receipt:${photoFileId}` },
+                    { text: '💾 Просто сохранить', callback_data: `photo_cat:${sessionId}:general:${photoFileId}` },
+                ],
+            ]
+        }
+    );
+}
+
+/**
+ * Handle photo category selection
+ */
+export async function handlePhotoCategoryCallback(
+    chatId: number,
+    sessionId: string,
+    category: string,
+    photoFileId: string
+): Promise<void> {
+    try {
+        // Update the media record with category
+        const mediaSnap = await db.collection('work_session_media')
+            .where('sessionId', '==', sessionId)
+            .where('fileId', '==', photoFileId)
+            .limit(1)
+            .get();
+
+        if (!mediaSnap.empty) {
+            await mediaSnap.docs[0].ref.update({ category });
+        }
+
+        const labels: Record<string, string> = {
+            progress: '📈 Прогресс',
+            problem: '⚠️ Проблема',
+            receipt: '🧾 Чек',
+            general: '💾 Сохранено',
+        };
+
+        await sendMessage(chatId, `${labels[category] || '📸'} — отмечено!`);
+
+        // If problem — offer to create task
+        if (category === 'problem') {
+            await sendMessage(chatId,
+                '🔧 Создать задачу из этой проблемы?',
+                {
+                    inline_keyboard: [
+                        [{ text: '📋 Создать задачу', callback_data: `photo_task:${sessionId}:${photoFileId}` }],
+                        [{ text: '⏭ Пропустить', callback_data: 'photo_task:skip' }],
+                    ]
+                }
+            );
+        }
+    } catch (error) {
+        console.error('[smartStartHandler] photoCategory error:', error);
+    }
+}
+
+// ──────────────────────────────────────────────
+// Case 37: Quick Report Menu
+// ──────────────────────────────────────────────
+
+/**
+ * Show quick report menu
+ */
+export async function showReportMenu(chatId: number): Promise<void> {
+    await sendMessage(chatId,
+        '📢 *Быстрый отчёт*\nВыбери тип:',
+        {
+            inline_keyboard: [
+                [
+                    { text: '📦 Нужны материалы', callback_data: 'report:materials' },
+                    { text: '⚠️ Проблема', callback_data: 'report:problem' },
+                ],
+                [
+                    { text: '🚨 Безопасность', callback_data: 'report:safety' },
+                    { text: '🕐 Опаздываю', callback_data: 'report:late' },
+                ],
+                [
+                    { text: '👷 Нужна помощь', callback_data: 'report:help' },
+                    { text: '❌ Отмена', callback_data: 'report:cancel' },
+                ],
+            ]
+        }
+    );
+}
+
+/**
+ * Handle report type selection
+ */
+export async function handleReportCallback(
+    chatId: number,
+    userId: number,
+    reportType: string
+): Promise<void> {
+    if (reportType === 'cancel') {
+        await sendMessage(chatId, '✅ Отменено.');
+        await sendMainMenu(chatId, userId);
+        return;
+    }
+
+    const activeSession = await getActiveSession(userId);
+    const projectName = activeSession?.data()?.clientName || 'без проекта';
+
+    const ADMIN_GROUP_ID = process.env.ADMIN_GROUP_ID || '';
+
+    // Resolve employee name
+    let empName = 'Работник';
+    try {
+        const empDoc = await db.collection('employees').doc(String(userId)).get();
+        if (empDoc.exists) empName = empDoc.data()?.name || empName;
+    } catch (_) { /* ignore */ }
+
+    if (reportType === 'late') {
+        // Quick late notification with time picker
+        await sendMessage(chatId,
+            '🕐 На сколько опаздываешь?',
+            {
+                inline_keyboard: [
+                    [
+                        { text: '15 мин', callback_data: 'late:15' },
+                        { text: '30 мин', callback_data: 'late:30' },
+                        { text: '1 час', callback_data: 'late:60' },
+                    ],
+                    [{ text: '❌ Отмена', callback_data: 'report:cancel' }],
+                ]
+            }
+        );
+        return;
+    }
+
+    if (reportType === 'safety') {
+        // Immediate safety alert
+        if (ADMIN_GROUP_ID) {
+            try {
+                await sendMessage(Number(ADMIN_GROUP_ID),
+                    `🚨🚨🚨 *SAFETY ALERT*\n\n` +
+                    `👤 ${empName}\n` +
+                    `📍 ${projectName}\n\n` +
+                    `⚠️ Требуется немедленное внимание!`
+                );
+            } catch (_) { /* ignore */ }
+        }
+
+        // Save to Firestore
+        await db.collection('safety_reports').add({
+            employeeId: String(userId),
+            employeeName: empName,
+            projectName,
+            clientId: activeSession?.data()?.clientId || null,
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            status: 'open',
+            awaitingDetails: true,
+        });
+
+        await sendMessage(chatId,
+            `🚨 *Отчёт о безопасности*\n\n` +
+            `Админ уведомлён НЕМЕДЛЕННО.\n\n` +
+            `🎤 Отправь голосовое или текст с деталями.\n` +
+            `📸 Приложи фото если возможно.`
+        );
+        return;
+    }
+
+    // For materials, problem, help — prompt for details
+    const prompts: Record<string, string> = {
+        materials: '📦 *Запрос материалов*\n\n🎤 Отправь голосовое или текст: какие материалы нужны?',
+        problem: '⚠️ *Отчёт о проблеме*\n\n🎤 Опиши проблему голосом или текстом.\n📸 Приложи фото если есть.',
+        help: '👷 *Нужна помощь*\n\n🎤 Опиши что нужно голосом или текстом.',
+    };
+
+    // Mark session as awaiting report details
+    if (activeSession) {
+        await activeSession.ref.update({
+            awaitingReportDetails: true,
+            reportType: reportType,
+        });
+    }
+
+    await sendMessage(chatId, prompts[reportType] || '📝 Опиши ситуацию.');
+}
+
+/**
+ * Handle late time selection
+ */
+export async function handleLateCallback(
+    chatId: number,
+    userId: number,
+    minutes: number
+): Promise<void> {
+    const ADMIN_GROUP_ID = process.env.ADMIN_GROUP_ID || '';
+    let empName = 'Работник';
+    try {
+        const empDoc = await db.collection('employees').doc(String(userId)).get();
+        if (empDoc.exists) empName = empDoc.data()?.name || empName;
+    } catch (_) { /* ignore */ }
+
+    if (ADMIN_GROUP_ID) {
+        try {
+            const label = minutes >= 60 ? `${minutes / 60}ч` : `${minutes}мин`;
+            await sendMessage(Number(ADMIN_GROUP_ID),
+                `🕐 *${empName}* опаздывает на *${label}*`
+            );
+        } catch (_) { /* ignore */ }
+    }
+
+    const label = minutes >= 60 ? `${minutes / 60} час` : `${minutes} мин`;
+    await sendMessage(chatId, `✅ Бригадир уведомлён: опоздание ${label}`);
+    await sendMainMenu(chatId, userId);
+}
+
+/**
+ * Handle report details text (materials/problem/help descriptions)
+ */
+export async function handleReportDetails(
+    chatId: number,
+    userId: number,
+    text: string,
+    reportType: string,
+    projectName: string,
+    clientId: string | null
+): Promise<void> {
+    const ADMIN_GROUP_ID = process.env.ADMIN_GROUP_ID || '';
+    let empName = 'Работник';
+    try {
+        const empDoc = await db.collection('employees').doc(String(userId)).get();
+        if (empDoc.exists) empName = empDoc.data()?.name || empName;
+    } catch (_) { /* ignore */ }
+
+    const typeLabels: Record<string, string> = {
+        materials: '📦 Запрос материалов',
+        problem: '⚠️ Проблема',
+        help: '👷 Нужна помощь',
+    };
+
+    // Save report
+    await db.collection('quick_reports').add({
+        employeeId: String(userId),
+        employeeName: empName,
+        type: reportType,
+        description: text,
+        projectName,
+        clientId,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        status: 'open',
+    });
+
+    // Notify admin
+    if (ADMIN_GROUP_ID) {
+        try {
+            await sendMessage(Number(ADMIN_GROUP_ID),
+                `${typeLabels[reportType] || '📝 Отчёт'}\n\n` +
+                `👤 ${empName}\n` +
+                `📍 ${projectName}\n\n` +
+                `_"${text.substring(0, 200)}"_`
+            );
+        } catch (_) { /* ignore */ }
+    }
+
+    // If materials — also create shopping list item
+    if (reportType === 'materials' && clientId) {
+        try {
+            await db.collection('shopping_items').add({
+                name: text,
+                clientId,
+                clientName: projectName,
+                addedBy: String(userId),
+                addedByName: empName,
+                status: 'pending',
+                priority: 'normal',
+                source: 'bot_report',
+                createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+        } catch (_) { /* ignore */ }
+    }
+
+    await sendMessage(chatId,
+        `✅ *${typeLabels[reportType]}* — отправлено!\n` +
+        `Админ получил уведомление.`
+    );
+
+    // Clear the awaiting flag
+    const activeSession = await getActiveSession(userId);
+    if (activeSession) {
+        await activeSession.ref.update({
+            awaitingReportDetails: false,
+            reportType: admin.firestore.FieldValue.delete(),
+        });
     }
 }

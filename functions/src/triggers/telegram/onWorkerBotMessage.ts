@@ -276,11 +276,16 @@ async function handleMessage(message: any) {
 ⏹️ Finish Work - Завершить работу
 ☕ Break - Перерыв
 /switch - Сменить проект (без остановки)
+🏁 Конец дня - Быстрое завершение
 
 *Самообслуживание:*
 /mybalance - 💰 Мой баланс ЗП
 /myhours - ⏱ Часы за неделю
-/mypay - 📃 Расчётный лист`);
+/mypay - 📃 Расчётный лист
+/timeline - 📊 Таймлайн дня
+
+*Отчёты:*
+/report - 📢 Быстрый отчёт (материалы, проблемы, безопасность)`);
     } else if (text === '▶️ Начать смену') {
         // V2: Start shift button → photo instruction
         const activeSession = await getActiveSession(userId);
@@ -488,14 +493,30 @@ async function handleMessage(message: any) {
         await SelfServiceHandler.handleMyHours(chatId, userId);
     } else if (text === '/mypay') {
         await SelfServiceHandler.handleMyPay(chatId, userId);
+    } else if (text === '/timeline') {
+        await SmartStartHandler.handleTimeline(chatId, userId);
+    } else if (text === '/report' || text === '📢 Отчёт') {
+        await SmartStartHandler.showReportMenu(chatId);
     } else if (text === '/switch' || text === '🔄 Сменить объект') {
         await SelfServiceHandler.handleSwitchProject(chatId, userId);
     } else if (text && text.length > 0) {
         // Handle text descriptions if awaiting, OR send to AI Assistant
         const activeSession = await getActiveSession(userId);
-        
+
         if (activeSession) {
             const sessionData = activeSession.data();
+
+            // Case 37: Quick report details
+            if (sessionData.awaitingReportDetails && sessionData.reportType) {
+                await SmartStartHandler.handleReportDetails(
+                    chatId, userId, text,
+                    sessionData.reportType,
+                    sessionData.clientName || 'Unknown',
+                    sessionData.clientId || null
+                );
+                return;
+            }
+
             const isExpectedInput = sessionData.awaitingLocation ||
                                   sessionData.awaitingChecklist ||
                                   sessionData.awaitingStartPhoto ||
@@ -594,7 +615,10 @@ async function handleCallbackQuery(query: any) {
             data.startsWith('task_suggest:') || data.startsWith('task_assign_to:') ||
             data.startsWith('switch_project:') || data.startsWith('quick_start:') ||
             data.startsWith('start_task:') || data.startsWith('done_task:') ||
-            data === 'switch_task' || data.startsWith('end_day:');
+            data === 'switch_task' || data.startsWith('end_day:') ||
+            data.startsWith('block_task:') || data.startsWith('block_reason:') ||
+            data.startsWith('unblock_task:') || data.startsWith('photo_cat:') ||
+            data.startsWith('report:') || data.startsWith('late:');
         if (!isAlwaysValid) {
             logger.info(`🔇 Zombie callback rejected from user ${userId}: "${data}" (age: ${Math.floor(Date.now() / 1000) - messageDate}s)`);
             try {
@@ -723,6 +747,38 @@ async function handleCallbackQuery(query: any) {
                 await SmartStartHandler.quickCloseSession(chatId, userId);
                 await sendMainMenu(chatId, userId);
             }
+        }
+        // --- BLOCKED TASK HANDLERS (Case 17) ---
+        else if (data.startsWith('block_task:')) {
+            const taskId = data.split('block_task:')[1];
+            await SmartStartHandler.handleBlockTask(chatId, taskId);
+        }
+        else if (data.startsWith('block_reason:')) {
+            const parts = data.split(':');
+            const taskId = parts[1];
+            const reason = parts[2];
+            await SmartStartHandler.handleBlockReasonCallback(chatId, userId, taskId, reason);
+        }
+        else if (data.startsWith('unblock_task:')) {
+            const taskId = data.split('unblock_task:')[1];
+            await SmartStartHandler.handleUnblockTask(chatId, userId, taskId);
+        }
+        // --- PHOTO CATEGORY HANDLERS (Case 45) ---
+        else if (data.startsWith('photo_cat:')) {
+            const parts = data.split(':');
+            const sessionId = parts[1];
+            const category = parts[2];
+            const photoFileId = parts[3];
+            await SmartStartHandler.handlePhotoCategoryCallback(chatId, sessionId, category, photoFileId);
+        }
+        // --- QUICK REPORT HANDLERS (Cases 37-42) ---
+        else if (data.startsWith('report:')) {
+            const reportType = data.split('report:')[1];
+            await SmartStartHandler.handleReportCallback(chatId, userId, reportType);
+        }
+        else if (data.startsWith('late:')) {
+            const minutes = parseInt(data.split('late:')[1]);
+            await SmartStartHandler.handleLateCallback(chatId, userId, minutes);
         }
 
     } catch (error) {
@@ -1799,6 +1855,18 @@ async function handleMediaUpload(chatId: number, userId: number, message: any) {
                 currentPhotos.push(url);
                 await activeSession.ref.update({ photoUrls: currentPhotos });
 
+                // Save to work_session_media for categorization
+                await db.collection('work_session_media').add({
+                    sessionId: activeSession.id,
+                    employeeId: userId,
+                    fileId: photoFileId,
+                    url: url,
+                    type: 'photo',
+                    context: 'mid_shift',
+                    clientId: sessionData.clientId,
+                    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                });
+
                 // Also log in activity_logs for time-lapse
                 if (sessionData.clientId !== 'no_project') {
                     await db.collection('activity_logs').add({
@@ -1813,7 +1881,8 @@ async function handleMediaUpload(chatId: number, userId: number, message: any) {
                     });
                 }
 
-                await sendMessage(chatId, "📸 Фото сохранено");
+                // Case 45: Photo category picker for mid-shift photos
+                await SmartStartHandler.showPhotoCategoryPicker(chatId, activeSession.id, photoFileId);
             } else {
                 await sendMessage(chatId, "⚠️ Не удалось сохранить фото. Попробуй ещё раз.");
             }

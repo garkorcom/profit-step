@@ -6,6 +6,8 @@ import * as admin from 'firebase-admin';
 
 import { db, FieldValue, Timestamp, logger, logAgentActivity, fuzzySearchClient } from '../routeContext';
 import { logAudit, AuditHelpers, extractAuditContext } from '../utils/auditLogger';
+import { requireScope } from '../agentMiddleware';
+import { publishTaskEvent } from '../utils/eventPublisher';
 import {
   CreateGTDTaskSchema,
   ListTasksQuerySchema,
@@ -17,7 +19,7 @@ const router = Router();
 
 // ─── POST /api/gtd-tasks/batch-update ──────────────────────────────
 
-router.post('/api/gtd-tasks/batch-update', async (req, res, next) => {
+router.post('/api/gtd-tasks/batch-update', requireScope('tasks:write', 'admin'), async (req, res, next) => {
   try {
     const data = BatchUpdateTasksSchema.parse(req.body);
     logger.info('📋 tasks:batch-update', { count: data.taskIds.length, fields: Object.keys(data.update) });
@@ -72,7 +74,7 @@ router.post('/api/gtd-tasks/batch-update', async (req, res, next) => {
 
 // ─── POST /api/gtd-tasks ───────────────────────────────────────────
 
-router.post('/api/gtd-tasks', async (req, res, next) => {
+router.post('/api/gtd-tasks', requireScope('tasks:write', 'admin'), async (req, res, next) => {
   try {
     const data = CreateGTDTaskSchema.parse(req.body);
     logger.info('📋 tasks:create', { title: data.title, key: data.idempotencyKey });
@@ -133,6 +135,11 @@ router.post('/api/gtd-tasks', async (req, res, next) => {
 
     await logAudit(AuditHelpers.create('gtd_task', docRef.id, { title: data.title, status: data.status, priority: data.priority }, createAuditCtx.performedBy, createAuditCtx.source as any));
 
+    // Publish event for agent consumption
+    publishTaskEvent('created', docRef.id, `Task created: ${data.title}`, {
+      title: data.title, clientId: data.clientId, assigneeId: data.assigneeId, priority: data.priority,
+    }, data.assigneeId || null);
+
     res.status(201).json({ taskId: docRef.id });
   } catch (e) {
     next(e);
@@ -142,7 +149,7 @@ router.post('/api/gtd-tasks', async (req, res, next) => {
 
 // ─── GET /api/gtd-tasks/list ───────────────────────────────────────
 
-router.get('/api/gtd-tasks/list', async (req, res, next) => {
+router.get('/api/gtd-tasks/list', requireScope('tasks:read', 'admin'), async (req, res, next) => {
   try {
     const params = ListTasksQuerySchema.parse(req.query);
     let clientId = params.clientId;
@@ -160,6 +167,16 @@ router.get('/api/gtd-tasks/list', async (req, res, next) => {
     logger.info('📋 tasks:list', { clientId, status: params.status, limit: params.limit });
 
     let q: admin.firestore.Query = db.collection('gtd_tasks');
+
+    // Scope: non-admin agents only see tasks assigned to them
+    const isAdmin = (req.agentScopes || []).includes('admin');
+    const role = req.agentRole || 'user';
+    const isManagerOrAbove = ['superadmin', 'company_admin', 'admin', 'manager'].includes(role);
+
+    if (!isAdmin && !isManagerOrAbove && !params.assigneeId) {
+      // Workers see only their own tasks (assigned or owned)
+      q = q.where('assigneeId', '==', req.agentUserId);
+    }
 
     if (clientId) {
       q = q.where('clientId', '==', clientId);
@@ -251,7 +268,7 @@ router.get('/api/gtd-tasks/list', async (req, res, next) => {
 
 // ─── PATCH /api/gtd-tasks/:id ──────────────────────────────────────
 
-router.patch('/api/gtd-tasks/:id', async (req, res, next) => {
+router.patch('/api/gtd-tasks/:id', requireScope('tasks:write', 'admin'), async (req, res, next) => {
   try {
     const taskId = req.params.id;
     const data = UpdateTaskSchema.parse(req.body);
@@ -324,6 +341,12 @@ router.patch('/api/gtd-tasks/:id', async (req, res, next) => {
     }
     await logAudit(AuditHelpers.update('gtd_task', taskId, changedFrom, changedTo, updateAuditCtx.performedBy, updateAuditCtx.source as any));
 
+    // Publish event
+    const action = data.status === 'done' ? 'completed' : data.assigneeId ? 'assigned' : 'updated';
+    publishTaskEvent(action, taskId, `Task ${action}: ${oldData.title}`, {
+      title: oldData.title, status: data.status, assigneeId: data.assigneeId || oldData.assigneeId,
+    }, data.assigneeId || oldData.assigneeId || null);
+
     res.json({ taskId, updated: true });
   } catch (e) {
     next(e);
@@ -333,7 +356,7 @@ router.patch('/api/gtd-tasks/:id', async (req, res, next) => {
 
 // ─── DELETE /api/gtd-tasks/:id (Phase 2) ───────────────────────────
 
-router.delete('/api/gtd-tasks/:id', async (req, res, next) => {
+router.delete('/api/gtd-tasks/:id', requireScope('tasks:write', 'admin'), async (req, res, next) => {
   try {
     const taskId = req.params.id;
     logger.info('📋 tasks:archive-delete', { taskId });

@@ -10,12 +10,14 @@ import {
   CreateCostSchema,
   ListCostsQuerySchema,
 } from '../schemas';
+import { requireScope } from '../agentMiddleware';
+import { publishCostEvent } from '../utils/eventPublisher';
 
 const router = Router();
 
 // ─── POST /api/costs ────────────────────────────────────────────────
 
-router.post('/api/costs', async (req, res, next) => {
+router.post('/api/costs', requireScope('costs:write', 'admin'), async (req, res, next) => {
   try {
     const data = CreateCostSchema.parse(req.body);
     logger.info('💰 costs:create', { clientId: data.clientId, category: data.category, amount: data.amount });
@@ -92,6 +94,13 @@ router.post('/api/costs', async (req, res, next) => {
 
     await logAudit(AuditHelpers.create('cost', docRef.id, { category: data.category, amount: effectiveAmount, clientId: data.clientId }, costAuditCtx.performedBy, costAuditCtx.source as any));
 
+    // Publish event
+    publishCostEvent('created', docRef.id,
+      `Cost $${effectiveAmount} (${data.category}) added`,
+      { category: data.category, amount: effectiveAmount, clientId: data.clientId },
+      null, // broadcast — admin sees all costs
+    );
+
     res.status(201).json({ costId: docRef.id });
   } catch (e) {
     next(e);
@@ -101,7 +110,7 @@ router.post('/api/costs', async (req, res, next) => {
 
 // ─── GET /api/costs/list ───────────────────────────────────────────
 
-router.get('/api/costs/list', async (req, res, next) => {
+router.get('/api/costs/list', requireScope('costs:read', 'admin'), async (req, res, next) => {
   try {
     const params = ListCostsQuerySchema.parse(req.query);
     let clientId = params.clientId;
@@ -205,7 +214,7 @@ router.get('/api/costs/list', async (req, res, next) => {
 
 // ─── DELETE /api/costs/:id (Phase 2) ────────────────────────────────
 
-router.delete('/api/costs/:id', async (req, res, next) => {
+router.delete('/api/costs/:id', requireScope('costs:write', 'admin'), async (req, res, next) => {
   try {
     const costId = req.params.id;
     logger.info('💰 costs:void', { costId });

@@ -17,12 +17,14 @@ import {
   TimeSummaryQuerySchema,
   AdminStopSchema,
 } from '../schemas';
+import { requireScope } from '../agentMiddleware';
+import { publishSessionEvent } from '../utils/eventPublisher';
 
 const router = Router();
 
 // ─── POST /api/time-tracking ────────────────────────────────────────
 
-router.post('/api/time-tracking', async (req, res, next) => {
+router.post('/api/time-tracking', requireScope('time:write', 'admin'), async (req, res, next) => {
   try {
     const data = TimeTrackingSchema.parse(req.body);
     const userId = req.agentUserId!;
@@ -219,6 +221,11 @@ router.post('/api/time-tracking', async (req, res, next) => {
           warnings.push('⚠️ Ставка $0/ч. Обратитесь к руководителю.');
         }
 
+        // Publish session started event
+        publishSessionEvent('started', result.sessionId, `Session started for ${data.clientName || data.clientId || 'unknown'}`, {
+          clientId: data.clientId, employeeId: userId, employeeName: userName,
+        }, userId);
+
         res.status(201).json({
           sessionId: result.sessionId,
           message: 'Таймер запущен',
@@ -344,6 +351,11 @@ router.post('/api/time-tracking', async (req, res, next) => {
           endpoint: '/api/time-tracking',
           metadata: result,
         });
+
+        // Publish session stopped event
+        publishSessionEvent('stopped', result.sessionId, `Session stopped: ${result.mins}min, $${result.earn}`, {
+          durationMinutes: result.mins, earnings: result.earn, employeeId: userId,
+        }, userId);
 
         res.json({
           durationMinutes: result.mins,
@@ -540,7 +552,7 @@ router.post('/api/time-tracking', async (req, res, next) => {
 
 // ─── GET /api/time-tracking/active-all ──────────────────────────────
 
-router.get('/api/time-tracking/active-all', async (req, res, next) => {
+router.get('/api/time-tracking/active-all', requireScope('time:read', 'admin'), async (req, res, next) => {
   try {
     const query = ActiveSessionsQuerySchema.parse(req.query);
     logger.info('⏱️ timer:active-all', { clientId: query.clientId });
@@ -582,7 +594,7 @@ router.get('/api/time-tracking/active-all', async (req, res, next) => {
 
 // ─── GET /api/time-tracking/summary (Phase 2) ──────────────────────
 
-router.get('/api/time-tracking/summary', async (req, res, next) => {
+router.get('/api/time-tracking/summary', requireScope('time:read', 'admin'), async (req, res, next) => {
   try {
     const params = TimeSummaryQuerySchema.parse(req.query);
     logger.info('⏱️ timer:summary', { from: params.from, to: params.to, employeeId: params.employeeId });
@@ -677,10 +689,11 @@ router.get('/api/time-tracking/summary', async (req, res, next) => {
 
 // ─── POST /api/time-tracking/admin-stop (Phase 2) ──────────────────
 
-router.post('/api/time-tracking/admin-stop', async (req, res, next) => {
+router.post('/api/time-tracking/admin-stop', requireScope('admin'), async (req, res, next) => {
   try {
-    // Security: only OWNER can admin-stop
-    if (req.agentUserId !== process.env.OWNER_UID) {
+    // Security: only admin role can admin-stop
+    const isAdminUser = ['superadmin', 'company_admin', 'admin'].includes(req.agentRole || '');
+    if (!isAdminUser && req.agentUserId !== process.env.OWNER_UID) {
       res.status(403).json({ error: 'Только владелец может останавливать чужие сессии' });
       return;
     }

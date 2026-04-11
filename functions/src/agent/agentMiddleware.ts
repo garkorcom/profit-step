@@ -21,15 +21,20 @@ declare global {
     interface Request {
       agentUserId?: string;
       agentUserName?: string;
+      agentRole?: string;          // user role: superadmin | admin | manager | user | worker
+      agentScopes?: string[];      // permission scopes from agent_tokens
+      agentCompanyId?: string;     // company ID from user profile
+      agentTokenId?: string;       // agent_tokens doc ID (for audit)
     }
   }
 }
 
 /**
  * Bearer token authentication.
- * Supports two modes:
- *   1. Static AGENT_API_KEY (for OpenClaw / server-to-server)
+ * Supports three modes:
+ *   1. Static AGENT_API_KEY (for OpenClaw owner / server-to-server — full admin)
  *   2. Firebase Auth JWT (for browser / ReconciliationPage)
+ *   3. Per-employee agent token (from agent_tokens collection — scoped)
  */
 export const authMiddleware = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   const token = req.headers.authorization?.replace('Bearer ', '');
@@ -39,12 +44,62 @@ export const authMiddleware = async (req: Request, res: Response, next: NextFunc
     return;
   }
 
-  // Mode 1: Static API key (agent / server calls)
+  // Mode 1: Static API key (owner / server calls — full admin access)
   if (token === process.env.AGENT_API_KEY) {
     req.agentUserId = process.env.OWNER_UID;
     req.agentUserName = process.env.OWNER_DISPLAY_NAME;
+    req.agentRole = 'superadmin';
+    req.agentScopes = ['admin'];
     next();
     return;
+  }
+
+  // Mode 3: Per-employee agent token (lookup in agent_tokens collection)
+  // Tokens are 40-hex-char strings — check format before DB lookup
+  if (/^[a-f0-9]{40}$/.test(token)) {
+    try {
+      const tokenSnap = await db.collection('agent_tokens')
+        .where('token', '==', token)
+        .where('revokedAt', '==', null)
+        .limit(1)
+        .get();
+
+      if (!tokenSnap.empty) {
+        const tokenDoc = tokenSnap.docs[0];
+        const tokenData = tokenDoc.data();
+
+        // Check expiry
+        const expiresAt = tokenData.expiresAt?.toMillis ? tokenData.expiresAt.toMillis() : tokenData.expiresAt;
+        if (expiresAt && Date.now() > expiresAt) {
+          logger.warn('🔐 Agent token expired', { tokenId: tokenDoc.id, employeeId: tokenData.employeeId });
+          res.status(401).json({ error: 'Agent token expired' });
+          return;
+        }
+
+        // Lookup employee profile for role & company
+        const userDoc = await db.collection('users').doc(tokenData.employeeId).get();
+        const userData = userDoc.exists ? userDoc.data() : null;
+
+        req.agentUserId = tokenData.employeeId;
+        req.agentUserName = tokenData.employeeName || userData?.displayName || tokenData.employeeId;
+        req.agentRole = userData?.role || 'user';
+        req.agentScopes = tokenData.scopes || [];
+        req.agentCompanyId = userData?.companyId || null;
+        req.agentTokenId = tokenDoc.id;
+
+        // Update lastUsedAt (fire-and-forget, don't block request)
+        tokenDoc.ref.update({
+          lastUsedAt: FieldValue.serverTimestamp(),
+          useCount: FieldValue.increment(1),
+        }).catch(() => {});
+
+        next();
+        return;
+      }
+    } catch (e: any) {
+      logger.error('🔐 Agent token lookup error', { error: e.message });
+      // Fall through to Firebase JWT check
+    }
   }
 
   // Mode 2: Firebase Auth JWT (browser calls)
@@ -52,6 +107,14 @@ export const authMiddleware = async (req: Request, res: Response, next: NextFunc
     const decoded = await admin.auth().verifyIdToken(token);
     req.agentUserId = decoded.uid;
     req.agentUserName = decoded.name || decoded.email || decoded.uid;
+
+    // Lookup role from Firestore profile
+    const userDoc = await db.collection('users').doc(decoded.uid).get();
+    const userData = userDoc.exists ? userDoc.data() : null;
+    req.agentRole = userData?.role || 'user';
+    req.agentScopes = ['admin']; // JWT users get full access (same as before)
+    req.agentCompanyId = userData?.companyId || null;
+
     next();
   } catch (e: any) {
     logger.warn('🔐 Auth failed: invalid token', { ip: req.ip, error: e.message });
@@ -116,6 +179,58 @@ export const rateLimitMiddleware = async (req: Request, res: Response, next: Nex
     next();
   }
 };
+
+// ─── Scope Check Helper ─────────────────────────────────────────────
+
+/**
+ * Middleware factory: require specific scope(s).
+ * Admin tokens and JWT users bypass scope checks.
+ * Per-employee tokens must have at least one of the listed scopes.
+ *
+ * Usage: router.get('/api/tasks/list', requireScope('tasks:read'), handler)
+ */
+export function requireScope(...scopes: string[]) {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    const userScopes = req.agentScopes || [];
+
+    // Admin scope grants everything
+    if (userScopes.includes('admin')) {
+      next();
+      return;
+    }
+
+    // Check if user has at least one required scope
+    const hasScope = scopes.some(s => userScopes.includes(s));
+    if (!hasScope) {
+      logger.warn('🔐 Scope denied', {
+        userId: req.agentUserId,
+        required: scopes,
+        actual: userScopes,
+        path: req.path,
+      });
+      res.status(403).json({
+        error: 'Insufficient permissions',
+        required: scopes,
+        hint: 'Ask admin to update your agent token scopes',
+      });
+      return;
+    }
+
+    next();
+  };
+}
+
+/**
+ * Check if the requesting user is admin (superadmin, company_admin, admin).
+ */
+export function requireAdmin(req: Request, res: Response, next: NextFunction): void {
+  const role = req.agentRole || 'user';
+  if (['superadmin', 'company_admin', 'admin'].includes(role)) {
+    next();
+    return;
+  }
+  res.status(403).json({ error: 'Admin access required' });
+}
 
 /**
  * Request logger: logs method, path, status, duration on response finish.

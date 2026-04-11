@@ -33,6 +33,108 @@ async function resolveEmployeeIds(userId: number): Promise<string[]> {
 }
 
 /**
+ * /myweek — Weekly summary (Case 36)
+ */
+export async function handleMyWeek(chatId: number, userId: number): Promise<void> {
+    try {
+        const empIds = await resolveEmployeeIds(userId);
+
+        // Calculate current week (Monday-Sunday)
+        const now = new Date();
+        const dayOfWeek = now.getDay(); // 0=Sun, 1=Mon
+        const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+        const monday = new Date(now);
+        monday.setDate(now.getDate() - daysToMonday);
+        monday.setHours(0, 0, 0, 0);
+
+        const sessionsSnap = await db.collection('work_sessions')
+            .where('startTime', '>=', admin.firestore.Timestamp.fromDate(monday))
+            .get();
+
+        let totalMinutes = 0;
+        let totalEarnings = 0;
+        let tasksCompleted = 0;
+        const projects: Record<string, { minutes: number; earnings: number }> = {};
+        const dailyHours: number[] = [0, 0, 0, 0, 0, 0, 0];
+
+        for (const doc of sessionsSnap.docs) {
+            const data = doc.data();
+            if (data.isVoided) continue;
+            if (data.type === 'payment' || data.type === 'correction') continue;
+            if (!empIds.includes(String(data.employeeId))) continue;
+
+            const minutes = data.durationMinutes || 0;
+            const earnings = data.sessionEarnings || 0;
+            totalMinutes += minutes;
+            totalEarnings += earnings;
+
+            const projName = data.clientName || 'Unknown';
+            if (!projects[projName]) projects[projName] = { minutes: 0, earnings: 0 };
+            projects[projName].minutes += minutes;
+            projects[projName].earnings += earnings;
+
+            const endDate = data.endTime?.toDate?.() || data.startTime?.toDate?.();
+            if (endDate) {
+                const idx = endDate.getDay() === 0 ? 6 : endDate.getDay() - 1;
+                dailyHours[idx] += minutes / 60;
+            }
+        }
+
+        // Count completed tasks this week
+        try {
+            const tasksSnap = await db.collection('gtd_tasks')
+                .where('completedAt', '>=', admin.firestore.Timestamp.fromDate(monday))
+                .where('completedBy', 'in', empIds)
+                .get();
+            tasksCompleted = tasksSnap.size;
+        } catch (_) { /* ignore */ }
+
+        const totalH = Math.floor(totalMinutes / 60);
+        const totalM = totalMinutes % 60;
+
+        let msg = `📊 *Итоги недели*\n\n`;
+
+        // Daily bar chart
+        const dayNames = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+        for (let i = 0; i < 7; i++) {
+            const h = dailyHours[i];
+            if (h > 0) {
+                const bars = '█'.repeat(Math.min(Math.round(h), 12));
+                msg += `${dayNames[i]}  ${bars}  ${h.toFixed(1)}h\n`;
+            }
+        }
+
+        msg += `\n`;
+
+        // Per-project breakdown
+        for (const [name, data] of Object.entries(projects)) {
+            const pH = Math.floor(data.minutes / 60);
+            const pM = data.minutes % 60;
+            msg += `📍 ${name}: ${pH}ч${pM}мин  $${data.earnings.toFixed(2)}\n`;
+        }
+
+        msg += `━━━━━━━━━━━━━━━━━━\n`;
+        msg += `⏱ Часы: *${totalH}ч ${totalM}мин*\n`;
+        msg += `💰 Заработано: *$${totalEarnings.toFixed(2)}*\n`;
+        if (tasksCompleted > 0) {
+            msg += `✅ Задач выполнено: *${tasksCompleted}*\n`;
+        }
+
+        const remaining = 40 * 60 - totalMinutes;
+        if (remaining > 0) {
+            const rH = Math.floor(remaining / 60);
+            const rM = remaining % 60;
+            msg += `\n⏳ До 40ч: ${rH}ч ${rM}мин`;
+        }
+
+        await sendMessage(chatId, msg);
+    } catch (error) {
+        console.error('[selfServiceHandler] myweek error:', error);
+        await sendMessage(chatId, '❌ Ошибка загрузки итогов недели.');
+    }
+}
+
+/**
  * /mybalance — YTD salary balance
  */
 export async function handleMyBalance(chatId: number, userId: number): Promise<void> {
@@ -462,8 +564,103 @@ export async function handleSwitchProjectCallback(
             `Удачной работы!`
         );
 
+        // Case 22: Offer travel time logging if switching to different project
+        if (oldData.clientId !== clientId) {
+            await sendMessage(chatId,
+                `🚗 Время в пути?`,
+                {
+                    inline_keyboard: [
+                        [
+                            { text: '15мин', callback_data: `log_travel:${oldData.clientId}:${clientId}:15` },
+                            { text: '30мин', callback_data: `log_travel:${oldData.clientId}:${clientId}:30` },
+                            { text: '45мин', callback_data: `log_travel:${oldData.clientId}:${clientId}:45` },
+                        ],
+                        [{ text: '⏭ Пропустить', callback_data: 'log_travel:skip' }],
+                    ]
+                }
+            );
+        }
+
     } catch (error) {
         console.error('[selfServiceHandler] switchProjectCallback error:', error);
         await sendMessage(chatId, '❌ Ошибка переключения проекта.');
+    }
+}
+
+/**
+ * Case 22: Log travel time between projects
+ */
+export async function handleLogTravelCallback(
+    chatId: number,
+    userId: number,
+    data: string
+): Promise<void> {
+    if (data === 'skip') {
+        await sendMessage(chatId, '⏭ Принято.');
+        return;
+    }
+
+    try {
+        const parts = data.split(':');
+        const fromClientId = parts[0];
+        const toClientId = parts[1];
+        const travelMinutes = parseInt(parts[2]);
+
+        // Resolve names
+        const fromDoc = await db.collection('clients').doc(fromClientId).get();
+        const toDoc = await db.collection('clients').doc(toClientId).get();
+        const fromName = fromDoc.data()?.name || fromClientId;
+        const toName = toDoc.data()?.name || toClientId;
+
+        // Resolve employee info
+        let empName = 'Worker';
+        let empRate = 0;
+        try {
+            const empDoc = await db.collection('employees').doc(String(userId)).get();
+            if (empDoc.exists) empName = empDoc.data()?.name || empName;
+        } catch (_) { /* ignore */ }
+
+        // Get rate from latest session
+        const latestSnap = await db.collection('work_sessions')
+            .where('employeeId', 'in', [userId, String(userId)])
+            .where('status', '==', 'active')
+            .limit(1)
+            .get();
+        if (!latestSnap.empty) {
+            empRate = latestSnap.docs[0].data().hourlyRate || 0;
+        }
+
+        const earnings = parseFloat(((travelMinutes / 60) * empRate).toFixed(2));
+
+        // Create travel session
+        const now = admin.firestore.Timestamp.now();
+        const startTime = new admin.firestore.Timestamp(
+            now.seconds - (travelMinutes * 60), now.nanoseconds
+        );
+
+        await db.collection('work_sessions').add({
+            employeeId: userId,
+            employeeName: empName,
+            clientId: 'travel',
+            clientName: `🚗 ${fromName} → ${toName}`,
+            startTime: startTime,
+            endTime: now,
+            status: 'completed',
+            type: 'travel',
+            durationMinutes: travelMinutes,
+            sessionEarnings: earnings,
+            hourlyRate: empRate,
+            source: 'telegram_bot',
+            fromProjectId: fromClientId,
+            toProjectId: toClientId,
+        });
+
+        await sendMessage(chatId,
+            `🚗 Дорога: *${travelMinutes}мин* (${fromName} → ${toName})\n` +
+            `💰 $${earnings.toFixed(2)}`
+        );
+    } catch (error) {
+        console.error('[selfServiceHandler] logTravel error:', error);
+        await sendMessage(chatId, '❌ Ошибка записи.');
     }
 }

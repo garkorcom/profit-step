@@ -493,6 +493,8 @@ async function handleMessage(message: any) {
         await SelfServiceHandler.handleMyHours(chatId, userId);
     } else if (text === '/mypay') {
         await SelfServiceHandler.handleMyPay(chatId, userId);
+    } else if (text === '/myweek') {
+        await SelfServiceHandler.handleMyWeek(chatId, userId);
     } else if (text === '/timeline') {
         await SmartStartHandler.handleTimeline(chatId, userId);
     } else if (text === '/report' || text === '📢 Отчёт') {
@@ -618,7 +620,8 @@ async function handleCallbackQuery(query: any) {
             data === 'switch_task' || data.startsWith('end_day:') ||
             data.startsWith('block_task:') || data.startsWith('block_reason:') ||
             data.startsWith('unblock_task:') || data.startsWith('photo_cat:') ||
-            data.startsWith('report:') || data.startsWith('late:');
+            data.startsWith('report:') || data.startsWith('late:') ||
+            data.startsWith('log_travel:') || data.startsWith('photo_task:');
         if (!isAlwaysValid) {
             logger.info(`🔇 Zombie callback rejected from user ${userId}: "${data}" (age: ${Math.floor(Date.now() / 1000) - messageDate}s)`);
             try {
@@ -716,6 +719,11 @@ async function handleCallbackQuery(query: any) {
         else if (data.startsWith('switch_project:')) {
             const clientId = data.split('switch_project:')[1];
             await SelfServiceHandler.handleSwitchProjectCallback(chatId, userId, clientId, query.id);
+        }
+        // --- TRAVEL TIME HANDLER (Case 22) ---
+        else if (data.startsWith('log_travel:')) {
+            const travelData = data.substring('log_travel:'.length);
+            await SelfServiceHandler.handleLogTravelCallback(chatId, userId, travelData);
         }
         // --- QUICK START HANDLER (Case 1) ---
         else if (data.startsWith('quick_start:')) {

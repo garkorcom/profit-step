@@ -7,7 +7,7 @@ import {
 } from '@mui/material';
 import { InvoicesTab } from '../../components/finance/invoices/InvoicesTab';
 import { ExpensesTab } from '../../components/finance/expenses/ExpensesTab';
-import { collection, query, orderBy, getDocs, where, Timestamp, addDoc, doc, updateDoc } from 'firebase/firestore';
+import { collection, query, orderBy, getDocs, where, Timestamp, addDoc, doc, updateDoc, increment } from 'firebase/firestore';
 import { db } from '../../firebase/firebase';
 import { startOfDay, endOfDay, subDays, format, isValid } from 'date-fns';
 import AddIcon from '@mui/icons-material/Add';
@@ -16,6 +16,8 @@ import PrintIcon from '@mui/icons-material/Print';
 import DeleteIcon from '@mui/icons-material/Delete';
 import PaymentIcon from '@mui/icons-material/Payment';
 import { PayrollReport } from './PayrollReport';
+import { PayStub } from '../../components/finance/PayStub';
+import ReceiptLongIcon from '@mui/icons-material/ReceiptLong';
 
 // ... (existing code)
 
@@ -77,8 +79,9 @@ const FinancePage: React.FC = () => {
     // Mapping: user doc ID (UID) -> canonical displayName
     const uidToNameRef = useRef<Map<string, string>>(new Map());
 
-    // Payroll Report
+    // Payroll Report & Pay Stubs
     const [showReport, setShowReport] = useState(false);
+    const [showPayStubs, setShowPayStubs] = useState(false);
 
     // Payment Dialog
     const [openPaymentDialog, setOpenPaymentDialog] = useState(false);
@@ -86,9 +89,12 @@ const FinancePage: React.FC = () => {
     const [paymentAmount, setPaymentAmount] = useState('');
     const [paymentNote, setPaymentNote] = useState('');
     const [paymentDate, setPaymentDate] = useState<Date>(new Date());
+    const [paymentMethod, setPaymentMethod] = useState<'cash' | 'check' | 'direct_deposit' | 'zelle'>('cash');
 
     // Employee Payment History Dialog
     const [historyEmployee, setHistoryEmployee] = useState<{ id: string; name: string } | null>(null);
+    // B2 fix: per-employee YTD balance for the dialog (independent of global ytdBalance)
+    const [dialogYtd, setDialogYtd] = useState<{ earned: number; payments: number; balance: number } | null>(null);
 
     // YTD Balance — independent of date filters, always from Jan 1 of current year
     const [ytdBalance, setYtdBalance] = useState<{ earned: number; payments: number; balance: number } | null>(null);
@@ -343,6 +349,15 @@ const FinancePage: React.FC = () => {
 
                     await addDoc(collection(db, 'work_sessions'), adjustmentSession);
 
+                    // Update cached running balance on user doc
+                    try {
+                        await updateDoc(doc(db, 'users', adjEmployee), {
+                            runningBalance: increment(amt),
+                        });
+                    } catch (balErr) {
+                        console.warn('Could not update running balance on adjustment:', balErr);
+                    }
+
                     setOpenAdjDialog(false);
                     setAdjEmployee('');
                     setAdjAmount('');
@@ -380,28 +395,42 @@ const FinancePage: React.FC = () => {
                 type: 'payment',
                 summary: `${employee?.name || 'Unknown'}: -$${Math.abs(amount).toFixed(2)} (${format(paymentDate, 'dd.MM.yyyy')})${paymentNote ? ` — ${paymentNote}` : ''}`,
                 execute: async () => {
+                    const methodLabels: Record<string, string> = {
+                        cash: 'Cash', check: 'Check', direct_deposit: 'Direct Deposit', zelle: 'Zelle',
+                    };
                     const paymentSession: Partial<WorkSession> = {
                         type: 'payment',
+                        paymentMethod,
                         startTime: Timestamp.fromDate(paymentDate),
                         employeeId: paymentEmployee,
                         employeeName: employee?.name || 'Unknown',
-                        clientName: 'Payment',
+                        clientName: `Payment (${methodLabels[paymentMethod]})`,
                         clientId: 'payment',
                         status: 'completed',
                         finalizationStatus: 'finalized',
                         durationMinutes: 0,
                         hourlyRate: 0,
                         sessionEarnings: -Math.abs(amount),
-                        description: paymentNote || 'Salary payment',
+                        description: paymentNote || `Salary payment via ${methodLabels[paymentMethod]}`,
                     };
 
                     await addDoc(collection(db, 'work_sessions'), paymentSession);
+
+                    // Update cached running balance on user doc (decrement by payment)
+                    try {
+                        await updateDoc(doc(db, 'users', paymentEmployee), {
+                            runningBalance: increment(-Math.abs(amount)),
+                        });
+                    } catch (balErr) {
+                        console.warn('Could not update running balance on payment:', balErr);
+                    }
 
                     setOpenPaymentDialog(false);
                     setPaymentEmployee('');
                     setPaymentAmount('');
                     setPaymentNote('');
                     setPaymentDate(new Date());
+                    setPaymentMethod('cash');
                     fetchLedger();
                 }
             });
@@ -524,7 +553,12 @@ const FinancePage: React.FC = () => {
             // Use employeeIdGroups to match all IDs for a deduped employee
             const matchesEmployee = filterEmployee === 'all' ||
                 (employeeIdGroups.get(filterEmployee)?.has(String(entry.employeeId)) ?? String(entry.employeeId) === filterEmployee);
-            const matchesClient = filterClient === 'all' || entry.clientName === filterClient;
+            // B6 fix: payments and adjustments always pass client filter
+            // (they have clientName='Payment'/'Manual Adjustment', not a real client)
+            const matchesClient = filterClient === 'all'
+                || entry.clientName === filterClient
+                || entry.type === 'payment'
+                || entry.type === 'manual_adjustment';
 
             if (!matchesEmployee || !matchesClient) return false;
 
@@ -547,6 +581,54 @@ const FinancePage: React.FC = () => {
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [filterEmployee, employeeIdGroups]);
+
+    // B2 fix: Fetch employee-specific YTD when dialog opens
+    useEffect(() => {
+        if (!historyEmployee) {
+            setDialogYtd(null);
+            return;
+        }
+
+        const fetchDialogYtd = async () => {
+            try {
+                const yearStart = new Date(new Date().getFullYear(), 0, 1);
+                const now = endOfDay(new Date());
+                const groupIds = employeeIdGroups.get(historyEmployee.id);
+                const allIds = groupIds ? Array.from(groupIds) : [historyEmployee.id];
+
+                let earned = 0;
+                let payments = 0;
+
+                // Query for each employee ID variant (UID + Telegram IDs)
+                for (const empId of allIds) {
+                    const q = query(
+                        collection(db, 'work_sessions'),
+                        where('employeeId', '==', empId),
+                        where('startTime', '>=', Timestamp.fromDate(yearStart)),
+                        where('startTime', '<=', Timestamp.fromDate(now)),
+                    );
+                    const snap = await getDocs(q);
+                    snap.docs.forEach(d => {
+                        const data = d.data();
+                        if (data.isVoided) return;
+                        if (data.type === 'payment') {
+                            payments += Math.abs(data.sessionEarnings || 0);
+                        } else if (data.type !== 'correction' || !data.description?.startsWith('VOID REF:')) {
+                            earned += (data.sessionEarnings || 0);
+                        }
+                    });
+                }
+
+                setDialogYtd({ earned, payments, balance: earned - payments });
+            } catch (error) {
+                console.error('Error fetching dialog YTD:', error);
+                setDialogYtd(null);
+            }
+        };
+
+        fetchDialogYtd();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [historyEmployee, employeeIdGroups]);
 
     const stats = useMemo(() => {
         let salary = 0;
@@ -635,6 +717,13 @@ const FinancePage: React.FC = () => {
                         Print Report
                     </Button>
                     <Button
+                        startIcon={<ReceiptLongIcon />}
+                        variant="outlined"
+                        onClick={() => setShowPayStubs(true)}
+                    >
+                        Pay Stubs
+                    </Button>
+                    <Button
                         startIcon={<SettingsIcon />}
                         variant="outlined"
                         onClick={() => setOpenRatesDialog(true)}
@@ -671,23 +760,35 @@ const FinancePage: React.FC = () => {
 
             {tabIndex === 0 && (
                 <Box>
-                    {/* Stats */}
+                    {/* Stats — B1 fix: all 3 financial cards use YTD data for consistency */}
                     <Box sx={{ display: 'flex', gap: 3, mb: 4, flexWrap: 'wrap' }}>
                         <Box sx={{ flex: 1, minWidth: 200 }}>
                             <Card sx={{ bgcolor: '#2196f3', color: 'white', height: '100%' }}>
                                 <CardContent>
-                                    <Tooltip title="Начисления за период (с учётом коррекций)" arrow>
-                                        <Typography variant="body2" sx={{ opacity: 0.8 }}>Salary (Period)</Typography>
+                                    <Tooltip title="Начисления с начала года (YTD)" arrow>
+                                        <Typography variant="body2" sx={{ opacity: 0.8 }}>Salary (YTD)</Typography>
                                     </Tooltip>
-                                    <Typography variant="h4" fontWeight="bold">${stats.salary.toFixed(2)}</Typography>
+                                    <Typography variant="h4" fontWeight="bold">
+                                        ${(ytdBalance?.earned ?? stats.salary).toFixed(2)}
+                                    </Typography>
+                                    <Typography variant="caption" sx={{ opacity: 0.7 }}>
+                                        Period: ${stats.salary.toFixed(0)}
+                                    </Typography>
                                 </CardContent>
                             </Card>
                         </Box>
                         <Box sx={{ flex: 1, minWidth: 200 }}>
                             <Card sx={{ bgcolor: '#9e9e9e', color: 'white', height: '100%' }}>
                                 <CardContent>
-                                    <Typography variant="body2" sx={{ opacity: 0.8 }}>Payments</Typography>
-                                    <Typography variant="h4" fontWeight="bold">${stats.payments.toFixed(2)}</Typography>
+                                    <Tooltip title="Выплаты с начала года (YTD)" arrow>
+                                        <Typography variant="body2" sx={{ opacity: 0.8 }}>Payments (YTD)</Typography>
+                                    </Tooltip>
+                                    <Typography variant="h4" fontWeight="bold">
+                                        ${(ytdBalance?.payments ?? stats.payments).toFixed(2)}
+                                    </Typography>
+                                    <Typography variant="caption" sx={{ opacity: 0.7 }}>
+                                        Period: ${stats.payments.toFixed(0)}
+                                    </Typography>
                                 </CardContent>
                             </Card>
                         </Box>
@@ -702,8 +803,8 @@ const FinancePage: React.FC = () => {
                         <Box sx={{ flex: 1, minWidth: 200 }}>
                             <Card sx={{ bgcolor: (ytdBalance?.balance ?? stats.balance) >= 0 ? '#4caf50' : '#f44336', color: 'white', height: '100%' }}>
                                 <CardContent>
-                                    <Tooltip title="YTD: начисления с начала года − выплаты с начала года (не зависит от фильтра дат)" arrow>
-                                        <Typography variant="body2" sx={{ opacity: 0.8 }}>Balance</Typography>
+                                    <Tooltip title="Баланс = Salary YTD − Payments YTD (не зависит от фильтра дат)" arrow>
+                                        <Typography variant="body2" sx={{ opacity: 0.8 }}>Balance (YTD)</Typography>
                                     </Tooltip>
                                     <Typography variant="h4" fontWeight="bold">
                                         ${(ytdBalance?.balance ?? stats.balance).toFixed(2)}
@@ -1159,10 +1260,23 @@ const FinancePage: React.FC = () => {
                             fullWidth
                             size="small"
                             required
-                            helperText="Enter payment amount (can be negative for deductions)"
+                            helperText="Enter payment amount"
                             value={paymentAmount}
                             onChange={(e) => setPaymentAmount(e.target.value)}
                         />
+                        <FormControl fullWidth size="small">
+                            <InputLabel>Payment Method</InputLabel>
+                            <Select
+                                value={paymentMethod}
+                                label="Payment Method"
+                                onChange={(e) => setPaymentMethod(e.target.value as typeof paymentMethod)}
+                            >
+                                <MenuItem value="cash">💵 Cash</MenuItem>
+                                <MenuItem value="check">📝 Check</MenuItem>
+                                <MenuItem value="direct_deposit">🏦 Direct Deposit</MenuItem>
+                                <MenuItem value="zelle">⚡ Zelle</MenuItem>
+                            </Select>
+                        </FormControl>
                         <TextField
                             label="Note (optional)"
                             fullWidth
@@ -1197,6 +1311,18 @@ const FinancePage: React.FC = () => {
                 />
             )}
 
+            {/* Pay Stubs Overlay */}
+            {showPayStubs && (
+                <PayStub
+                    entries={filteredEntries}
+                    periodLabel={format(startDate, 'MMMM yyyy')}
+                    periodId={format(startDate, 'yyyy-MM')}
+                    onClose={() => setShowPayStubs(false)}
+                    employeeIdGroups={employeeIdGroups}
+                    uniqueEmployees={uniqueEmployees}
+                />
+            )}
+
             {/* Employee Payment History Dialog */}
             <Dialog
                 open={!!historyEmployee}
@@ -1210,38 +1336,43 @@ const FinancePage: React.FC = () => {
                 <DialogContent>
                     {historyEmployee && (() => {
                         const groupIds = employeeIdGroups.get(historyEmployee.id);
-                        // Period-level entries (for table display)
+                        // Period-level entries (for table display) — B2 fix: exclude voided
                         const employeeEntries = entries.filter(e =>
-                            groupIds?.has(String(e.employeeId)) ?? String(e.employeeId) === historyEmployee.id
+                            !e.isVoided &&
+                            (groupIds?.has(String(e.employeeId)) ?? String(e.employeeId) === historyEmployee.id)
                         );
                         const payments = employeeEntries.filter(e => e.type === 'payment');
                         const adjustments = employeeEntries.filter(e => e.type === 'manual_adjustment');
                         const sessions = employeeEntries.filter(e => !e.type || e.type === 'regular');
 
-                        const totalEarned = sessions.reduce((sum, e) => sum + (e.sessionEarnings || 0), 0);
-                        const totalPaid = payments.reduce((sum, e) => sum + Math.abs(e.sessionEarnings || 0), 0);
-                        const totalAdj = adjustments.reduce((sum, e) => sum + (e.sessionEarnings || 0), 0);
-                        // Use YTD balance (independent of date filters) when viewing specific employee
-                        const balance = ytdBalance?.balance ?? (totalEarned + totalAdj - totalPaid);
+                        // B2 fix: use employee-specific dialogYtd (not global ytdBalance)
+                        const periodEarned = sessions.reduce((sum, e) => sum + (e.sessionEarnings || 0), 0);
+                        const periodPaid = payments.reduce((sum, e) => sum + Math.abs(e.sessionEarnings || 0), 0);
+                        const periodAdj = adjustments.reduce((sum, e) => sum + (e.sessionEarnings || 0), 0);
+
+                        // YTD values for summary cards; fallback to period if not loaded yet
+                        const totalEarned = dialogYtd?.earned ?? (periodEarned + periodAdj);
+                        const totalPaid = dialogYtd?.payments ?? periodPaid;
+                        const balance = dialogYtd?.balance ?? (periodEarned + periodAdj - periodPaid);
 
                         return (
                             <Box>
                                 {/* Summary Cards */}
                                 <Box sx={{ display: 'flex', gap: 2, mb: 3, flexWrap: 'wrap' }}>
                                     <Paper sx={{ p: 2, flex: 1, minWidth: 120, bgcolor: '#e3f2fd' }}>
-                                        <Typography variant="caption" color="text.secondary">Заработано</Typography>
+                                        <Typography variant="caption" color="text.secondary">Заработано (YTD)</Typography>
                                         <Typography variant="h6" fontWeight="bold" color="info.main">
                                             ${totalEarned.toFixed(2)}
                                         </Typography>
                                     </Paper>
                                     <Paper sx={{ p: 2, flex: 1, minWidth: 120, bgcolor: '#fff3e0' }}>
-                                        <Typography variant="caption" color="text.secondary">Выплачено</Typography>
+                                        <Typography variant="caption" color="text.secondary">Выплачено (YTD)</Typography>
                                         <Typography variant="h6" fontWeight="bold" color="warning.main">
                                             ${totalPaid.toFixed(2)}
                                         </Typography>
                                     </Paper>
                                     <Paper sx={{ p: 2, flex: 1, minWidth: 120, bgcolor: balance >= 0 ? '#e8f5e9' : '#ffebee' }}>
-                                        <Typography variant="caption" color="text.secondary">Баланс</Typography>
+                                        <Typography variant="caption" color="text.secondary">Баланс (YTD)</Typography>
                                         <Typography variant="h6" fontWeight="bold" color={balance >= 0 ? 'success.main' : 'error.main'}>
                                             ${balance.toFixed(2)}
                                         </Typography>

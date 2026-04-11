@@ -12,7 +12,9 @@ export interface PayrollPeriod {
     month: number;                  // 1 (January)
 
     // Period Status
-    status: 'open' | 'closed' | 'paid';
+    // open → closed → locked → paid
+    // 'locked' prevents ANY changes (sessions, corrections) without explicit admin override
+    status: 'open' | 'closed' | 'locked' | 'paid';
 
     // Date Range
     startDate: Timestamp;           // First day of month (00:00:00)
@@ -28,6 +30,8 @@ export interface PayrollPeriod {
     createdAt: Timestamp;
     closedAt?: Timestamp;           // When period was closed
     closedBy?: string;              // Admin UID who closed
+    lockedAt?: Timestamp;           // When period was locked (no further changes)
+    lockedBy?: string;              // Admin UID who locked
     paidAt?: Timestamp;             // When marked as paid
     paidBy?: string;                // Admin UID who marked as paid
 

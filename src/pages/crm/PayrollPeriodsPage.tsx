@@ -5,8 +5,10 @@ import {
     DialogTitle, DialogContent, DialogActions, DialogContentText
 } from '@mui/material';
 import LockIcon from '@mui/icons-material/Lock';
+import LockOpenIcon from '@mui/icons-material/LockOpen';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import PendingIcon from '@mui/icons-material/Pending';
+import DownloadIcon from '@mui/icons-material/Download';
 import { collection, getDocs, query, orderBy } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { db, functions } from '../../firebase/firebase';
@@ -31,11 +33,13 @@ const PayrollPeriodsPage: React.FC = () => {
     const [periods, setPeriods] = useState<PayrollPeriod[]>([]);
     const [loading, setLoading] = useState(true);
     const [closing, setClosing] = useState(false);
+    const [locking, setLocking] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [success, setSuccess] = useState<string | null>(null);
 
-    // Close period dialog
+    // Close / Lock period dialogs
     const [closePeriodDialog, setClosePeriodDialog] = useState<string | null>(null);
+    const [lockPeriodDialog, setLockPeriodDialog] = useState<string | null>(null);
 
     // Generate list of last 12 months
     const recentPeriodIds = useMemo(() => {
@@ -87,6 +91,25 @@ const PayrollPeriodsPage: React.FC = () => {
         }
     };
 
+    const handleLockPeriod = async (periodId: string) => {
+        setLocking(true);
+        setError(null);
+        setSuccess(null);
+        setLockPeriodDialog(null);
+
+        try {
+            const lockPayrollPeriod = httpsCallable(functions, 'lockPayrollPeriod');
+            await lockPayrollPeriod({ periodId });
+            setSuccess(`Period ${periodId} locked! No further changes allowed.`);
+            fetchPeriods();
+        } catch (err: unknown) {
+            console.error('Error locking period:', err);
+            setError(errorMessage(err) || 'Failed to lock period');
+        } finally {
+            setLocking(false);
+        }
+    };
+
     const getStatusChip = (period: PayrollPeriod | undefined) => {
         if (!period) {
             return <Chip label="Not Created" size="small" color="default" icon={<PendingIcon />} />;
@@ -94,8 +117,10 @@ const PayrollPeriodsPage: React.FC = () => {
         switch (period.status) {
             case 'paid':
                 return <Chip label="Paid" size="small" color="success" icon={<CheckCircleIcon />} />;
+            case 'locked':
+                return <Chip label="Locked" size="small" color="error" icon={<LockIcon />} />;
             case 'closed':
-                return <Chip label="Closed" size="small" color="primary" icon={<LockIcon />} />;
+                return <Chip label="Closed" size="small" color="primary" icon={<LockOpenIcon />} />;
             default:
                 return <Chip label="Open" size="small" color="warning" icon={<PendingIcon />} />;
         }
@@ -169,22 +194,41 @@ const PayrollPeriodsPage: React.FC = () => {
                                         </TableCell>
                                         <TableCell align="right">{period?.employeeCount ?? '-'}</TableCell>
                                         <TableCell align="center">
-                                            {showClose && (
-                                                <Button
-                                                    variant="contained"
-                                                    size="small"
-                                                    color="warning"
-                                                    disabled={closing}
-                                                    onClick={() => setClosePeriodDialog(periodId)}
-                                                >
-                                                    Close Period
-                                                </Button>
-                                            )}
-                                            {period?.status === 'closed' && (
-                                                <Typography variant="caption" color="text.secondary">
-                                                    Closed {period.closedAt?.toDate?.()?.toLocaleDateString() || ''}
-                                                </Typography>
-                                            )}
+                                            <Box display="flex" gap={1} justifyContent="center" alignItems="center" flexWrap="wrap">
+                                                {showClose && (
+                                                    <Button
+                                                        variant="contained"
+                                                        size="small"
+                                                        color="warning"
+                                                        disabled={closing || locking}
+                                                        onClick={() => setClosePeriodDialog(periodId)}
+                                                    >
+                                                        Close
+                                                    </Button>
+                                                )}
+                                                {period?.status === 'closed' && (
+                                                    <Button
+                                                        variant="outlined"
+                                                        size="small"
+                                                        color="error"
+                                                        startIcon={<LockIcon />}
+                                                        disabled={closing || locking}
+                                                        onClick={() => setLockPeriodDialog(periodId)}
+                                                    >
+                                                        Lock
+                                                    </Button>
+                                                )}
+                                                {period?.status === 'locked' && (
+                                                    <Typography variant="caption" color="error.main">
+                                                        Locked {period.lockedAt?.toDate?.()?.toLocaleDateString() || ''}
+                                                    </Typography>
+                                                )}
+                                                {period?.status === 'paid' && (
+                                                    <Typography variant="caption" color="success.main">
+                                                        Paid {period.paidAt?.toDate?.()?.toLocaleDateString() || ''}
+                                                    </Typography>
+                                                )}
+                                            </Box>
                                         </TableCell>
                                     </TableRow>
                                 );
@@ -219,6 +263,35 @@ const PayrollPeriodsPage: React.FC = () => {
                         disabled={closing}
                     >
                         {closing ? 'Closing...' : 'Close Period'}
+                    </Button>
+                </DialogActions>
+            </Dialog>
+            {/* Lock Period Confirmation Dialog */}
+            <Dialog open={!!lockPeriodDialog} onClose={() => setLockPeriodDialog(null)}>
+                <DialogTitle>Lock Payroll Period?</DialogTitle>
+                <DialogContent>
+                    <DialogContentText>
+                        Are you sure you want to <strong>lock</strong> <strong>{lockPeriodDialog && formatPeriodName(lockPeriodDialog)}</strong>?
+                        <br /><br />
+                        This will:
+                        <ul>
+                            <li>Prevent any new sessions from being added to this period</li>
+                            <li>Block corrections and adjustments</li>
+                            <li>Flag any backdated sessions as violations</li>
+                        </ul>
+                        <strong>This cannot be undone without database admin access.</strong>
+                    </DialogContentText>
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setLockPeriodDialog(null)}>Cancel</Button>
+                    <Button
+                        onClick={() => lockPeriodDialog && handleLockPeriod(lockPeriodDialog)}
+                        variant="contained"
+                        color="error"
+                        startIcon={<LockIcon />}
+                        disabled={locking}
+                    >
+                        {locking ? 'Locking...' : 'Lock Period'}
                     </Button>
                 </DialogActions>
             </Dialog>

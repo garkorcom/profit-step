@@ -572,7 +572,9 @@ export { onAdvanceCreated } from './scheduled/taskAutomation'; // PO → auto-ta
 
 export { forceFinishAllSessions } from './callable/admin/forceFinishAllSessions';
 export { closePayrollPeriod } from './callable/payroll/closePayrollPeriod';
+export { lockPayrollPeriod } from './callable/payroll/lockPayrollPeriod';
 export { generateDailyPayroll } from './scheduled/generateDailyPayroll';
+export { reconcileBalances } from './scheduled/reconcileBalances';
 export { onWorkSessionCreate } from './triggers/workSessions/onWorkSessionCreate';
 export { onWorkSessionUpdate } from './triggers/workSessions/onWorkSessionUpdate';
 

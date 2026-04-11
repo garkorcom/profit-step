@@ -497,8 +497,97 @@ async function saveCostEntry(
         source: 'costs_bot'
     };
 
-    await db.collection('costs').add(costEntry);
+    const costDocRef = await db.collection('costs').add(costEntry);
     await clearSession(userId);
+
+    // ════════════════════════════════════════════════
+    // Auto-link to open advance (PO) if employee has one
+    // Checks for open advances for this employee, deducts the cost amount
+    // ════════════════════════════════════════════════
+    let advanceLinkInfo = '';
+    try {
+        // Find open advances for this user (by telegramId or userId)
+        const userIdStr = userId.toString();
+        const advancesSnap = await db.collection('advance_accounts')
+            .where('status', '==', 'open')
+            .get();
+
+        // Filter advances that belong to this employee (match by employeeId or telegramId)
+        const userAdvances = advancesSnap.docs.filter(d => {
+            const empId = String(d.data().employeeId);
+            return empId === userIdStr;
+        });
+
+        // Also check if userId maps to a Firebase UID
+        let firebaseUid: string | null = null;
+        const usersSnap = await db.collection('users')
+            .where('telegramId', '==', userIdStr)
+            .limit(1)
+            .get();
+        if (!usersSnap.empty) {
+            firebaseUid = usersSnap.docs[0].id;
+            // Add advances for the Firebase UID too
+            const uidAdvances = advancesSnap.docs.filter(d => {
+                const empId = String(d.data().employeeId);
+                return empId === firebaseUid && !userAdvances.some(ua => ua.id === d.id);
+            });
+            userAdvances.push(...uidAdvances);
+        }
+
+        if (userAdvances.length > 0) {
+            // Pick the oldest open advance (FIFO)
+            const sortedAdvances = userAdvances.sort((a, b) =>
+                (a.data().issuedAt?.toMillis?.() || 0) - (b.data().issuedAt?.toMillis?.() || 0)
+            );
+
+            // Get existing transactions for this advance
+            const targetAdvance = sortedAdvances[0];
+            const txSnap = await db.collection('advance_transactions')
+                .where('advanceId', '==', targetAdvance.id)
+                .where('status', '==', 'active')
+                .get();
+            const totalSpent = txSnap.docs.reduce((sum, td) => sum + (td.data().amount || 0), 0);
+            const advanceBalance = (targetAdvance.data().amount || 0) - totalSpent;
+            const costAmount = Math.abs(session.amount || 0);
+
+            if (advanceBalance > 0 && costAmount > 0) {
+                // Create advance_transaction linking this cost to the advance
+                const deductAmount = Math.min(costAmount, advanceBalance);
+                await db.collection('advance_transactions').add({
+                    advanceId: targetAdvance.id,
+                    employeeId: firebaseUid || userIdStr,
+                    employeeName: userName,
+                    type: 'expense_report',
+                    amount: deductAmount,
+                    projectId: session.clientId || null,
+                    projectName: session.clientName || null,
+                    category: session.category,
+                    description: `Bot cost: ${description || session.categoryLabel || 'N/A'} (${session.clientName})`,
+                    receiptUrl: session.receiptPhotoUrl || null,
+                    hasReceipt: !!session.receiptPhotoUrl,
+                    createdBy: 'costs_bot',
+                    createdAt: admin.firestore.Timestamp.now(),
+                    status: 'active',
+                    costDocId: costDocRef.id,
+                });
+
+                // Check if advance is now fully settled
+                const newBalance = advanceBalance - deductAmount;
+                if (newBalance <= 0) {
+                    await db.collection('advance_accounts').doc(targetAdvance.id).update({
+                        status: 'settled',
+                        settledAt: admin.firestore.Timestamp.now(),
+                    });
+                    advanceLinkInfo = `\n\n✅ Аванс "${targetAdvance.data().description}" полностью закрыт!`;
+                } else {
+                    advanceLinkInfo = `\n\n📋 Списано с аванса "${targetAdvance.data().description}": $${deductAmount.toFixed(2)} (остаток: $${newBalance.toFixed(2)})`;
+                }
+                // advance linked successfully
+            }
+        }
+    } catch (advErr) {
+        console.error('[saveCostEntry] Advance auto-link error (non-fatal):', advErr);
+    }
 
     const categoryObj = COST_CATEGORIES.find(c => c.id === session.category);
     const date = new Date();
@@ -511,7 +600,7 @@ async function saveCostEntry(
 🏢 Клиент: ${session.clientName}
 📂 Категория: ${categoryObj?.label || session.category}
 💵 Сумма: $${Math.abs(session.amount || 0).toFixed(2)}${session.category === 'reimbursement' ? ' (возврат)' : ''}
-📝 Описание: ${description || 'Не указано'}`
+📝 Описание: ${description || 'Не указано'}${advanceLinkInfo}`
     );
 
     await sendMainMenu(chatId);

@@ -228,9 +228,9 @@ export function buildStatusAndKeyboard(
             message: `${greeting}, ${employeeName}! Ты сейчас не на смене.`,
             keyboard: [
                 [{ text: '▶️ Начать смену' }],
-                [{ text: '📊 Мой статус' }, { text: '❓ Помощь' }],
-                [{ text: '🛒 Shopping' }, { text: '📥 Inbox' }],
-                [{ text: '📋 Tasks' }, { text: '📦 PO / Авансы' }]
+                [{ text: '💰 Баланс' }, { text: '📊 Мой статус' }],
+                [{ text: '📋 Tasks' }, { text: '❓ Помощь' }],
+                [{ text: '🛒 Shopping' }, { text: '📦 PO / Авансы' }]
             ]
         };
     }
@@ -291,8 +291,9 @@ export function buildStatusAndKeyboard(
         message: msg,
         keyboard: [
             [{ text: '⏹ Завершить смену' }, { text: '⏸ Перерыв' }],
-            [{ text: '📊 Мой статус' }, { text: '❓ Помощь' }],
-            [{ text: '🛒 Shopping' }, { text: '📥 Inbox' }],
+            [{ text: '🔄 Сменить объект' }, { text: '🏁 Конец дня' }],
+            [{ text: '💰 Баланс' }, { text: '📊 Мой статус' }],
+            [{ text: '🛒 Shopping' }, { text: '📋 Tasks' }],
             [{ text: '📦 PO / Авансы' }]
         ]
     };

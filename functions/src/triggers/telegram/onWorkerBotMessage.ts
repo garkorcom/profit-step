@@ -9,6 +9,8 @@ import * as ShoppingHandler from './handlers/shoppingHandler';
 import * as InboxHandler from './handlers/inboxHandler';
 import * as GtdHandler from './handlers/gtdHandler';
 import * as POHandler from './handlers/poHandler';
+import * as SelfServiceHandler from './handlers/selfServiceHandler';
+import * as SmartStartHandler from './handlers/smartStartHandler';
 import { sendMessage, getActiveSession, getActiveSessionStrict, sendMainMenu, findPlatformUser, logBotAction, calculateDistanceMeters } from './telegramUtils';
 import { resolveHourlyRate } from './rateUtils';
 import { verifyEmployeeFace } from '../../services/faceVerificationService';
@@ -231,6 +233,14 @@ async function handleMessage(message: any) {
             }
         }
         await sendMainMenu(chatId, userId);
+
+        // Case 1+43: Smart quick-start suggestion when idle
+        if (!activeSession) {
+            await SmartStartHandler.suggestQuickStart(chatId, userId);
+        }
+    } else if (text === '🏁 Конец дня') {
+        // Case 31: One-tap end day with auto-summary
+        await SmartStartHandler.handleEndDay(chatId, userId);
     } else if (text === '/?' || text === '/help') {
         // Help command with instructions for adding new users
         await sendMessage(chatId, `📚 *Справка*
@@ -263,8 +273,14 @@ async function handleMessage(message: any) {
 
 *Работа с таймером:*
 📎 Геолокация — Начать/Завершить смену
-⏹️ Finish Work - Завершить работу  
-☕ Break - Перерыв`);
+⏹️ Finish Work - Завершить работу
+☕ Break - Перерыв
+/switch - Сменить проект (без остановки)
+
+*Самообслуживание:*
+/mybalance - 💰 Мой баланс ЗП
+/myhours - ⏱ Часы за неделю
+/mypay - 📃 Расчётный лист`);
     } else if (text === '▶️ Начать смену') {
         // V2: Start shift button → photo instruction
         const activeSession = await getActiveSession(userId);
@@ -465,6 +481,15 @@ async function handleMessage(message: any) {
         await GtdHandler.handlePoolCommand(chatId, userId);
     } else if (text === '/po' || text === '📦 PO / Авансы') {
         await POHandler.handlePOCommand(chatId, userId);
+    // --- SELF-SERVICE COMMANDS ---
+    } else if (text === '/mybalance' || text === '💰 Баланс') {
+        await SelfServiceHandler.handleMyBalance(chatId, userId);
+    } else if (text === '/myhours') {
+        await SelfServiceHandler.handleMyHours(chatId, userId);
+    } else if (text === '/mypay') {
+        await SelfServiceHandler.handleMyPay(chatId, userId);
+    } else if (text === '/switch' || text === '🔄 Сменить объект') {
+        await SelfServiceHandler.handleSwitchProject(chatId, userId);
     } else if (text && text.length > 0) {
         // Handle text descriptions if awaiting, OR send to AI Assistant
         const activeSession = await getActiveSession(userId);
@@ -566,7 +591,10 @@ async function handleCallbackQuery(query: any) {
             data.startsWith('task_proof:') || data.startsWith('task_approve:') ||
             data.startsWith('task_reject:') || data.startsWith('task_finance:') ||
             data.startsWith('team_') || data.startsWith('task_selfassign:') ||
-            data.startsWith('task_suggest:') || data.startsWith('task_assign_to:');
+            data.startsWith('task_suggest:') || data.startsWith('task_assign_to:') ||
+            data.startsWith('switch_project:') || data.startsWith('quick_start:') ||
+            data.startsWith('start_task:') || data.startsWith('done_task:') ||
+            data === 'switch_task' || data.startsWith('end_day:');
         if (!isAlwaysValid) {
             logger.info(`🔇 Zombie callback rejected from user ${userId}: "${data}" (age: ${Math.floor(Date.now() / 1000) - messageDate}s)`);
             try {
@@ -659,6 +687,42 @@ async function handleCallbackQuery(query: any) {
         // --- PO (ADVANCE) HANDLERS ---
         else if (data.startsWith('po_')) {
             await POHandler.handlePOCallback(chatId, userId, data, query.message.message_id);
+        }
+        // --- SWITCH PROJECT HANDLER ---
+        else if (data.startsWith('switch_project:')) {
+            const clientId = data.split('switch_project:')[1];
+            await SelfServiceHandler.handleSwitchProjectCallback(chatId, userId, clientId, query.id);
+        }
+        // --- QUICK START HANDLER (Case 1) ---
+        else if (data.startsWith('quick_start:')) {
+            const clientId = data.split('quick_start:')[1];
+            const result = await SmartStartHandler.handleQuickStartCallback(chatId, userId, clientId);
+            if (result === 'started') {
+                await initWorkSession(chatId, userId, clientId);
+            } else if (result === 'show_list') {
+                await handleLocationPickOther(chatId, userId);
+            }
+        }
+        // --- TASK LINKING HANDLERS (Cases 9, 10) ---
+        else if (data.startsWith('start_task:')) {
+            const taskId = data.split('start_task:')[1];
+            await SmartStartHandler.handleStartTaskCallback(chatId, userId, taskId);
+        }
+        else if (data.startsWith('done_task:')) {
+            const taskId = data.split('done_task:')[1];
+            await SmartStartHandler.handleDoneTaskCallback(chatId, userId, taskId);
+        }
+        else if (data === 'switch_task') {
+            await SmartStartHandler.handleSwitchTaskCallback(chatId, userId);
+        }
+        // --- END DAY HANDLER (Case 31) ---
+        else if (data.startsWith('end_day:')) {
+            const action = data.split('end_day:')[1];
+            const result = await SmartStartHandler.handleEndDayCallback(chatId, userId, action);
+            if (result === 'confirm') {
+                await SmartStartHandler.quickCloseSession(chatId, userId);
+                await sendMainMenu(chatId, userId);
+            }
         }
 
     } catch (error) {
@@ -928,6 +992,9 @@ async function initWorkSession(chatId: number, userId: number, clientId: string,
         }
     );
     await sendAdminNotification(`👤 *${employeeName}:*\n▶️ *Work Started*\n📍 ${clientName}`);
+
+    // Case 9: Auto-show project tasks after clock-in
+    await SmartStartHandler.showProjectTasks(chatId, userId, clientId);
 }
 
 async function handleLocation(chatId: number, userId: number, location: any) {
@@ -1208,6 +1275,9 @@ async function handleLocationConfirmStart(chatId: number, userId: number) {
     await sendChecklistQuestion(chatId, 0);
 
     await sendAdminNotification(`👤 *${employeeName}:*\n▶️ *Work Started (Location)*\n📍 ${clientName}`);
+
+    // Case 9: Auto-show project tasks after clock-in
+    await SmartStartHandler.showProjectTasks(chatId, userId, data.matchedClientId);
 }
 
 /**

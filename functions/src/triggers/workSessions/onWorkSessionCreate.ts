@@ -11,6 +11,37 @@ export const onWorkSessionCreate = functions.firestore
         const employeeId = sessionData.employeeId;
         const description = sessionData.description || 'No description';
 
+        // ═══════════════════════════════════════════════════
+        // Period Lock Guard: reject sessions in locked/paid periods
+        // If session endTime falls in a locked period, flag it
+        // ═══════════════════════════════════════════════════
+        if (sessionData.endTime && sessionData.status === 'completed') {
+            try {
+                const endDate = sessionData.endTime.toDate ? sessionData.endTime.toDate() : new Date(sessionData.endTime);
+                const year = endDate.getFullYear();
+                const month = String(endDate.getMonth() + 1).padStart(2, '0');
+                const periodId = `${year}-${month}`;
+
+                const periodDoc = await db.collection('payroll_periods').doc(periodId).get();
+                if (periodDoc.exists) {
+                    const periodStatus = periodDoc.data()?.status;
+                    if (periodStatus === 'locked' || periodStatus === 'paid') {
+                        // Don't delete the session — flag it for admin review
+                        await snap.ref.update({
+                            periodLockViolation: true,
+                            periodLockViolationPeriod: periodId,
+                            periodLockViolationStatus: periodStatus,
+                            requiresAdminReview: true,
+                            description: (description || '') + ` [LOCKED PERIOD: ${periodId}]`,
+                        });
+                        console.warn(`[onWorkSessionCreate] Session ${context.params.sessionId} falls in ${periodStatus} period ${periodId}. Flagged for admin review.`);
+                    }
+                }
+            } catch (err) {
+                console.error('[onWorkSessionCreate] Period lock check error:', err);
+            }
+        }
+
         // Only notify if status is 'active' (in case we create completed sessions for history)
         if (sessionData.status !== 'active') {
             return;

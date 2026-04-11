@@ -140,3 +140,20 @@ export const WriteOffByNormSchema = z.object({
   quantity: z.number().positive(),
   notes: z.string().optional(),
 });
+
+// ─── Search / Dashboard / Alerts Schemas ─────────────────────────
+
+export const SearchInventoryItemsQuerySchema = z.object({
+  q: z.string().min(1),
+  warehouseId: z.string().optional(),
+  limit: z.coerce.number().min(1).max(100).default(20),
+});
+
+export const InventoryDashboardQuerySchema = z.object({
+  warehouseId: z.string().optional(),
+});
+
+export const InventoryAlertsQuerySchema = z.object({
+  warehouseId: z.string().optional(),
+  limit: z.coerce.number().min(1).max(200).default(50),
+});

@@ -929,6 +929,14 @@
         { "fieldPath": "status", "order": "ASCENDING" },
         { "fieldPath": "startTime", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "inventory_catalog",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "category", "order": "ASCENDING" },
+        { "fieldPath": "name", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

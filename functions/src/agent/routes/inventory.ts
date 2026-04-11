@@ -1,5 +1,5 @@
 /**
- * Inventory Routes — warehouse & stock management (15 endpoints)
+ * Inventory Routes — warehouse & stock management (18 endpoints)
  *
  * Warehouses (supports physical + vehicle/fleet types):
  *   POST   /api/inventory/warehouses      — create warehouse
@@ -24,6 +24,11 @@
  *   GET    /api/inventory/norms              — list norms
  *   GET    /api/inventory/norms/:id          — norm details
  *   POST   /api/inventory/write-off-by-norm  — write off by norm
+ *
+ * AI Agent integration:
+ *   GET    /api/inventory/items/search    — fuzzy search items by name/barcode/category
+ *   GET    /api/inventory/dashboard       — aggregated stock overview
+ *   GET    /api/inventory/alerts          — low-stock alerts with reorder suggestions
  */
 import { Router } from 'express';
 import * as admin from 'firebase-admin';
@@ -40,7 +45,11 @@ import {
   ListInventoryTransactionsQuerySchema,
   CreateNormSchema,
   WriteOffByNormSchema,
+  SearchInventoryItemsQuerySchema,
+  InventoryDashboardQuerySchema,
+  InventoryAlertsQuerySchema,
 } from '../schemas';
+import Fuse from 'fuse.js';
 
 const router = Router();
 
@@ -1061,6 +1070,189 @@ router.post('/api/inventory/write-off-by-norm', async (req, res, next) => {
       transactionsCreated: results.length,
       transactions: results,
       message: `Списано по нормативу "${norm.name}" x${data.quantity} на задачу ${data.taskId}`,
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════
+//  SEARCH / DASHBOARD / ALERTS (AI Agent integration endpoints)
+// ═══════════════════════════════════════════════════════════════════
+
+// ─── GET /api/inventory/items/search ──────────────────────────────
+
+router.get('/api/inventory/items/search', async (req, res, next) => {
+  try {
+    const params = SearchInventoryItemsQuerySchema.parse(req.query);
+    logger.info('🔍 item:search', { q: params.q, warehouseId: params.warehouseId, limit: params.limit });
+
+    let q: admin.firestore.Query = db.collection('inventory_items');
+    if (params.warehouseId) q = q.where('warehouseId', '==', params.warehouseId);
+
+    const snap = await q.get();
+    const allItems = snap.docs.map(d => {
+      const it = d.data();
+      return {
+        id: d.id,
+        warehouseId: it.warehouseId,
+        name: it.name,
+        quantity: it.quantity,
+        unit: it.unit,
+        category: it.category,
+        minStock: it.minStock || null,
+        barcode: it.barcode || null,
+        notes: it.notes || null,
+        createdAt: it.createdAt?.toDate?.()?.toISOString() || null,
+      };
+    });
+
+    const fuse = new Fuse(allItems, {
+      keys: ['name', 'barcode', 'category', 'notes'],
+      threshold: 0.4,
+      includeScore: true,
+    });
+
+    const results = fuse.search(params.q, { limit: params.limit });
+
+    res.json({
+      items: results.map(r => ({ ...r.item, score: r.score })),
+      query: params.q,
+      total: results.length,
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// ─── GET /api/inventory/dashboard ─────────────────────────────────
+
+router.get('/api/inventory/dashboard', async (req, res, next) => {
+  try {
+    const params = InventoryDashboardQuerySchema.parse(req.query);
+    logger.info('📊 inventory:dashboard', { warehouseId: params.warehouseId });
+
+    // Warehouses summary
+    const whSnap = await db.collection('warehouses').where('archived', '==', false).get();
+    const warehouses = whSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const physicalCount = warehouses.filter((w: any) => (w as any).type !== 'vehicle').length;
+    const vehicleCount = warehouses.filter((w: any) => (w as any).type === 'vehicle').length;
+
+    // Items
+    let itemQuery: admin.firestore.Query = db.collection('inventory_items');
+    if (params.warehouseId) itemQuery = itemQuery.where('warehouseId', '==', params.warehouseId);
+    const itemSnap = await itemQuery.get();
+
+    let totalStockValue = 0;
+    let uniqueItemCount = 0;
+    const lowStockItems: Array<{
+      id: string; name: string; warehouseId: string;
+      currentStock: number; minStock: number; unit: string; category: string;
+    }> = [];
+
+    itemSnap.docs.forEach(d => {
+      const it = d.data();
+      uniqueItemCount++;
+      if (it.unitPrice) {
+        totalStockValue += (it.quantity || 0) * it.unitPrice;
+      }
+      if (it.minStock != null && it.minStock > 0 && (it.quantity || 0) < it.minStock) {
+        lowStockItems.push({
+          id: d.id,
+          name: it.name,
+          warehouseId: it.warehouseId,
+          currentStock: it.quantity || 0,
+          minStock: it.minStock,
+          unit: it.unit || 'pcs',
+          category: it.category || 'other',
+        });
+      }
+    });
+
+    // Recent transactions (last 10)
+    let txQuery: admin.firestore.Query = db.collection('inventory_transactions')
+      .orderBy('createdAt', 'desc')
+      .limit(10);
+    if (params.warehouseId) {
+      txQuery = db.collection('inventory_transactions')
+        .where('warehouseId', '==', params.warehouseId)
+        .orderBy('createdAt', 'desc')
+        .limit(10);
+    }
+    const txSnap = await txQuery.get();
+    const recentTransactions = txSnap.docs.map(d => {
+      const tx = d.data();
+      return {
+        id: d.id,
+        itemName: tx.itemName,
+        type: tx.type,
+        quantity: tx.quantity,
+        warehouseId: tx.warehouseId,
+        createdAt: tx.createdAt?.toDate?.()?.toISOString() || null,
+      };
+    });
+
+    res.json({
+      warehouses: {
+        total: warehouses.length,
+        physical: physicalCount,
+        vehicle: vehicleCount,
+      },
+      items: {
+        uniqueCount: uniqueItemCount,
+        totalStockValue: Math.round(totalStockValue * 100) / 100,
+        lowStockCount: lowStockItems.length,
+      },
+      lowStockItems,
+      recentTransactions,
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// ─── GET /api/inventory/alerts ────────────────────────────────────
+
+router.get('/api/inventory/alerts', async (req, res, next) => {
+  try {
+    const params = InventoryAlertsQuerySchema.parse(req.query);
+    logger.info('🚨 inventory:alerts', { warehouseId: params.warehouseId, limit: params.limit });
+
+    let q: admin.firestore.Query = db.collection('inventory_items');
+    if (params.warehouseId) q = q.where('warehouseId', '==', params.warehouseId);
+
+    const snap = await q.get();
+
+    const alerts: Array<{
+      id: string; name: string; sku: string | null; warehouseId: string;
+      currentStock: number; minStock: number; unit: string; category: string;
+      suggestedOrderQuantity: number;
+    }> = [];
+
+    snap.docs.forEach(d => {
+      const it = d.data();
+      if (it.minStock != null && it.minStock > 0 && (it.quantity || 0) < it.minStock) {
+        alerts.push({
+          id: d.id,
+          name: it.name,
+          sku: it.barcode || null,
+          warehouseId: it.warehouseId,
+          currentStock: it.quantity || 0,
+          minStock: it.minStock,
+          unit: it.unit || 'pcs',
+          category: it.category || 'other',
+          suggestedOrderQuantity: it.minStock - (it.quantity || 0),
+        });
+      }
+    });
+
+    // Sort by urgency (largest deficit first)
+    alerts.sort((a, b) => b.suggestedOrderQuantity - a.suggestedOrderQuantity);
+
+    res.json({
+      alerts: alerts.slice(0, params.limit),
+      total: alerts.length,
+      hasMore: alerts.length > params.limit,
     });
   } catch (e) {
     next(e);

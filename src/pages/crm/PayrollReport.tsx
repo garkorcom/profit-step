@@ -43,6 +43,8 @@ export const PayrollReport: React.FC<PayrollReportProps> = ({ entries, onClose, 
 
         entries.forEach(entry => {
             if (entry.isVoided) return; // Skip voided in report
+            // B10 fix: exclude payment entries from payroll report project breakdown
+            if (entry.type === 'payment') return;
 
             const date = entry.startTime ? new Date(entry.startTime.seconds * 1000) : new Date();
             const monthKey = format(date, 'yyyy-MM'); // Sortable key

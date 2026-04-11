@@ -34,6 +34,10 @@ export interface WorkSession {
     hourlyRate?: number;
     sessionEarnings?: number;
     type?: 'regular' | 'correction' | 'manual_adjustment' | 'payment';
+    /** Payment method — only for type='payment' entries */
+    paymentMethod?: 'cash' | 'check' | 'direct_deposit' | 'zelle';
+    /** Reference to advance account — for advance deduction entries */
+    advanceId?: string;
     relatedSessionId?: string;
     correctionNote?: string;
     isVoided?: boolean;

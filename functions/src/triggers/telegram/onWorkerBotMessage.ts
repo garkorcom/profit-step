@@ -9,6 +9,8 @@ import * as ShoppingHandler from './handlers/shoppingHandler';
 import * as InboxHandler from './handlers/inboxHandler';
 import * as GtdHandler from './handlers/gtdHandler';
 import * as POHandler from './handlers/poHandler';
+import * as SelfServiceHandler from './handlers/selfServiceHandler';
+import * as SmartStartHandler from './handlers/smartStartHandler';
 import { sendMessage, getActiveSession, getActiveSessionStrict, sendMainMenu, findPlatformUser, logBotAction, calculateDistanceMeters } from './telegramUtils';
 import { resolveHourlyRate } from './rateUtils';
 import { verifyEmployeeFace } from '../../services/faceVerificationService';
@@ -231,6 +233,14 @@ async function handleMessage(message: any) {
             }
         }
         await sendMainMenu(chatId, userId);
+
+        // Case 1+43: Smart quick-start suggestion when idle
+        if (!activeSession) {
+            await SmartStartHandler.suggestQuickStart(chatId, userId);
+        }
+    } else if (text === '🏁 Конец дня') {
+        // Case 31: One-tap end day with auto-summary
+        await SmartStartHandler.handleEndDay(chatId, userId);
     } else if (text === '/?' || text === '/help') {
         // Help command with instructions for adding new users
         await sendMessage(chatId, `📚 *Справка*
@@ -263,8 +273,19 @@ async function handleMessage(message: any) {
 
 *Работа с таймером:*
 📎 Геолокация — Начать/Завершить смену
-⏹️ Finish Work - Завершить работу  
-☕ Break - Перерыв`);
+⏹️ Finish Work - Завершить работу
+☕ Break - Перерыв
+/switch - Сменить проект (без остановки)
+🏁 Конец дня - Быстрое завершение
+
+*Самообслуживание:*
+/mybalance - 💰 Мой баланс ЗП
+/myhours - ⏱ Часы за неделю
+/mypay - 📃 Расчётный лист
+/timeline - 📊 Таймлайн дня
+
+*Отчёты:*
+/report - 📢 Быстрый отчёт (материалы, проблемы, безопасность)`);
     } else if (text === '▶️ Начать смену') {
         // V2: Start shift button → photo instruction
         const activeSession = await getActiveSession(userId);
@@ -465,12 +486,39 @@ async function handleMessage(message: any) {
         await GtdHandler.handlePoolCommand(chatId, userId);
     } else if (text === '/po' || text === '📦 PO / Авансы') {
         await POHandler.handlePOCommand(chatId, userId);
+    // --- SELF-SERVICE COMMANDS ---
+    } else if (text === '/mybalance' || text === '💰 Баланс') {
+        await SelfServiceHandler.handleMyBalance(chatId, userId);
+    } else if (text === '/myhours') {
+        await SelfServiceHandler.handleMyHours(chatId, userId);
+    } else if (text === '/mypay') {
+        await SelfServiceHandler.handleMyPay(chatId, userId);
+    } else if (text === '/myweek') {
+        await SelfServiceHandler.handleMyWeek(chatId, userId);
+    } else if (text === '/timeline') {
+        await SmartStartHandler.handleTimeline(chatId, userId);
+    } else if (text === '/report' || text === '📢 Отчёт') {
+        await SmartStartHandler.showReportMenu(chatId);
+    } else if (text === '/switch' || text === '🔄 Сменить объект') {
+        await SelfServiceHandler.handleSwitchProject(chatId, userId);
     } else if (text && text.length > 0) {
         // Handle text descriptions if awaiting, OR send to AI Assistant
         const activeSession = await getActiveSession(userId);
-        
+
         if (activeSession) {
             const sessionData = activeSession.data();
+
+            // Case 37: Quick report details
+            if (sessionData.awaitingReportDetails && sessionData.reportType) {
+                await SmartStartHandler.handleReportDetails(
+                    chatId, userId, text,
+                    sessionData.reportType,
+                    sessionData.clientName || 'Unknown',
+                    sessionData.clientId || null
+                );
+                return;
+            }
+
             const isExpectedInput = sessionData.awaitingLocation ||
                                   sessionData.awaitingChecklist ||
                                   sessionData.awaitingStartPhoto ||
@@ -566,7 +614,14 @@ async function handleCallbackQuery(query: any) {
             data.startsWith('task_proof:') || data.startsWith('task_approve:') ||
             data.startsWith('task_reject:') || data.startsWith('task_finance:') ||
             data.startsWith('team_') || data.startsWith('task_selfassign:') ||
-            data.startsWith('task_suggest:') || data.startsWith('task_assign_to:');
+            data.startsWith('task_suggest:') || data.startsWith('task_assign_to:') ||
+            data.startsWith('switch_project:') || data.startsWith('quick_start:') ||
+            data.startsWith('start_task:') || data.startsWith('done_task:') ||
+            data === 'switch_task' || data.startsWith('end_day:') ||
+            data.startsWith('block_task:') || data.startsWith('block_reason:') ||
+            data.startsWith('unblock_task:') || data.startsWith('photo_cat:') ||
+            data.startsWith('report:') || data.startsWith('late:') ||
+            data.startsWith('log_travel:') || data.startsWith('photo_task:');
         if (!isAlwaysValid) {
             logger.info(`🔇 Zombie callback rejected from user ${userId}: "${data}" (age: ${Math.floor(Date.now() / 1000) - messageDate}s)`);
             try {
@@ -660,6 +715,79 @@ async function handleCallbackQuery(query: any) {
         else if (data.startsWith('po_')) {
             await POHandler.handlePOCallback(chatId, userId, data, query.message.message_id);
         }
+        // --- SWITCH PROJECT HANDLER ---
+        else if (data.startsWith('switch_project:')) {
+            const clientId = data.split('switch_project:')[1];
+            await SelfServiceHandler.handleSwitchProjectCallback(chatId, userId, clientId, query.id);
+        }
+        // --- TRAVEL TIME HANDLER (Case 22) ---
+        else if (data.startsWith('log_travel:')) {
+            const travelData = data.substring('log_travel:'.length);
+            await SelfServiceHandler.handleLogTravelCallback(chatId, userId, travelData);
+        }
+        // --- QUICK START HANDLER (Case 1) ---
+        else if (data.startsWith('quick_start:')) {
+            const clientId = data.split('quick_start:')[1];
+            const result = await SmartStartHandler.handleQuickStartCallback(chatId, userId, clientId);
+            if (result === 'started') {
+                await initWorkSession(chatId, userId, clientId);
+            } else if (result === 'show_list') {
+                await handleLocationPickOther(chatId, userId);
+            }
+        }
+        // --- TASK LINKING HANDLERS (Cases 9, 10) ---
+        else if (data.startsWith('start_task:')) {
+            const taskId = data.split('start_task:')[1];
+            await SmartStartHandler.handleStartTaskCallback(chatId, userId, taskId);
+        }
+        else if (data.startsWith('done_task:')) {
+            const taskId = data.split('done_task:')[1];
+            await SmartStartHandler.handleDoneTaskCallback(chatId, userId, taskId);
+        }
+        else if (data === 'switch_task') {
+            await SmartStartHandler.handleSwitchTaskCallback(chatId, userId);
+        }
+        // --- END DAY HANDLER (Case 31) ---
+        else if (data.startsWith('end_day:')) {
+            const action = data.split('end_day:')[1];
+            const result = await SmartStartHandler.handleEndDayCallback(chatId, userId, action);
+            if (result === 'confirm') {
+                await SmartStartHandler.quickCloseSession(chatId, userId);
+                await sendMainMenu(chatId, userId);
+            }
+        }
+        // --- BLOCKED TASK HANDLERS (Case 17) ---
+        else if (data.startsWith('block_task:')) {
+            const taskId = data.split('block_task:')[1];
+            await SmartStartHandler.handleBlockTask(chatId, taskId);
+        }
+        else if (data.startsWith('block_reason:')) {
+            const parts = data.split(':');
+            const taskId = parts[1];
+            const reason = parts[2];
+            await SmartStartHandler.handleBlockReasonCallback(chatId, userId, taskId, reason);
+        }
+        else if (data.startsWith('unblock_task:')) {
+            const taskId = data.split('unblock_task:')[1];
+            await SmartStartHandler.handleUnblockTask(chatId, userId, taskId);
+        }
+        // --- PHOTO CATEGORY HANDLERS (Case 45) ---
+        else if (data.startsWith('photo_cat:')) {
+            const parts = data.split(':');
+            const sessionId = parts[1];
+            const category = parts[2];
+            const photoFileId = parts[3];
+            await SmartStartHandler.handlePhotoCategoryCallback(chatId, sessionId, category, photoFileId);
+        }
+        // --- QUICK REPORT HANDLERS (Cases 37-42) ---
+        else if (data.startsWith('report:')) {
+            const reportType = data.split('report:')[1];
+            await SmartStartHandler.handleReportCallback(chatId, userId, reportType);
+        }
+        else if (data.startsWith('late:')) {
+            const minutes = parseInt(data.split('late:')[1]);
+            await SmartStartHandler.handleLateCallback(chatId, userId, minutes);
+        }
 
     } catch (error) {
         logger.error('Error in handleCallbackQuery', error);
@@ -746,7 +874,9 @@ async function handleChecklistCallback(chatId: number, userId: number, data: str
             checklistStep: nextStep,
             checklistAnswers: answers,
             awaitingChecklist: false,
-            awaitingStartPhoto: true,
+            // Case 5: Deferred photo — don't block timer, just request
+            awaitingStartPhoto: false,
+            awaitingDeferredPhoto: true,
         });
 
         const allYes = Object.values(answers).every((v: any) => v === true);
@@ -758,12 +888,11 @@ async function handleChecklistCallback(chatId: number, userId: number, data: str
         await sendMessage(chatId,
             `📋 *Чеклист завершён:*\n${summary}\n\n` +
             (allYes ? '👍 Всё готово!\n\n' : '⚠️ Есть нерешённые вопросы. Админ уведомлён.\n\n') +
-            `📸 Теперь отправь **фото** начала работ.`,
-            {
-                keyboard: [[{ text: '⏩ Пропустить фото' }]],
-                resize_keyboard: true
-            }
+            `🚀 *Таймер запущен!*\n📸 Когда будет удобно — отправь фото с объекта.`
         );
+
+        // Show main menu immediately — timer is running
+        await sendMainMenu(chatId, userId);
 
         // Notify admin if something is missing
         if (!allYes) {
@@ -928,6 +1057,9 @@ async function initWorkSession(chatId: number, userId: number, clientId: string,
         }
     );
     await sendAdminNotification(`👤 *${employeeName}:*\n▶️ *Work Started*\n📍 ${clientName}`);
+
+    // Case 9: Auto-show project tasks after clock-in
+    await SmartStartHandler.showProjectTasks(chatId, userId, clientId);
 }
 
 async function handleLocation(chatId: number, userId: number, location: any) {
@@ -1170,6 +1302,21 @@ async function handleLocationConfirmStart(chatId: number, userId: number) {
 
     const { hourlyRate, platformUserId, companyId, employeeName } = await resolveHourlyRate(userId);
 
+    // Case 4: Skip checklist if same project within 24h
+    let skipChecklist = false;
+    try {
+        const yesterday = new Date();
+        yesterday.setHours(yesterday.getHours() - 24);
+        const recentSnap = await db.collection('work_sessions')
+            .where('employeeId', 'in', [userId, String(userId)])
+            .where('clientId', '==', clientId)
+            .where('status', '==', 'completed')
+            .where('endTime', '>=', admin.firestore.Timestamp.fromDate(yesterday))
+            .limit(1)
+            .get();
+        skipChecklist = !recentSnap.empty;
+    } catch (_) { /* ignore */ }
+
     await db.collection('work_sessions').add({
         employeeId: userId,
         employeeName: employeeName,
@@ -1182,10 +1329,13 @@ async function handleLocationConfirmStart(chatId: number, userId: number) {
         service: serviceName || null,
         startLocation: location,
         awaitingLocation: false,
-        awaitingChecklist: true,
-        checklistStep: 0,
-        checklistAnswers: {},
+        // Case 4: Skip checklist for repeat visits within 24h
+        awaitingChecklist: !skipChecklist,
+        checklistStep: skipChecklist ? CHECKLIST_QUESTIONS.length : 0,
+        checklistAnswers: skipChecklist ? Object.fromEntries(CHECKLIST_QUESTIONS.map(q => [q.key, true])) : {},
+        // Case 5: Don't block on photo — timer starts immediately
         awaitingStartPhoto: false,
+        awaitingDeferredPhoto: true, // Photo requested but non-blocking
         hourlyRate: hourlyRate,
         taskId: null,
         taskTitle: null
@@ -1198,16 +1348,29 @@ async function handleLocationConfirmStart(chatId: number, userId: number) {
         await sendMessage(chatId, '⚠️ Внимание! Ваша почасовая ставка не установлена ($0/ч). Пожалуйста, свяжитесь с руководителем для уточнения.');
     }
 
-    await sendMessage(chatId,
-        `✅ *Смена начата!*\n\n` +
-        `🏢 Объект: *${clientName}${serviceName ? ' - ' + serviceName : ''}*\n\n` +
-        `📋 Пройди чеклист перед началом работы:`
-    );
-
-    // Send first checklist question
-    await sendChecklistQuestion(chatId, 0);
+    if (skipChecklist) {
+        // Case 4: Repeat visit — skip checklist, just send menu
+        await sendMessage(chatId,
+            `✅ *Смена начата!*\n\n` +
+            `🏢 Объект: *${clientName}${serviceName ? ' - ' + serviceName : ''}*\n` +
+            `📋 Чеклист пропущен (повторный визит)\n\n` +
+            `📸 Когда будет удобно — отправь фото с объекта.`
+        );
+        await sendMainMenu(chatId, userId);
+    } else {
+        await sendMessage(chatId,
+            `✅ *Смена начата!*\n\n` +
+            `🏢 Объект: *${clientName}${serviceName ? ' - ' + serviceName : ''}*\n\n` +
+            `📋 Пройди чеклист перед началом работы:`
+        );
+        // Send first checklist question
+        await sendChecklistQuestion(chatId, 0);
+    }
 
     await sendAdminNotification(`👤 *${employeeName}:*\n▶️ *Work Started (Location)*\n📍 ${clientName}`);
+
+    // Case 9: Auto-show project tasks after clock-in
+    await SmartStartHandler.showProjectTasks(chatId, userId, data.matchedClientId);
 }
 
 /**
@@ -1711,6 +1874,33 @@ async function handleMediaUpload(chatId: number, userId: number, message: any) {
             }
         );
 
+    } else if (sessionData.awaitingDeferredPhoto) {
+        // Case 5: Deferred start photo — non-blocking, timer already running
+        if (message.photo) {
+            const url = await saveTelegramFile(fileId!, `work_photos/${activeSession.id}/start_${Date.now()}.${extension}`);
+            await activeSession.ref.update({
+                startPhotoId: fileId,
+                startPhotoUrl: url,
+                startMediaType: 'photo',
+                awaitingDeferredPhoto: false,
+            });
+            await sendMessage(chatId, "📸 Фото принято! Спасибо.");
+
+            // Face verification (async, non-blocking)
+            const platformUserUrl = (await findPlatformUser(userId))?.referenceFacePhotoUrl;
+            if (platformUserUrl && url) {
+                verifyEmployeeFace(platformUserUrl, url).then(async (matchResult) => {
+                    await activeSession.ref.update({
+                        faceMatch: matchResult.match,
+                        faceConfidence: matchResult.confidence,
+                        faceMismatchReason: matchResult.reason
+                    });
+                    if (!matchResult.match) {
+                        await sendMessage(chatId, `⚠️ Система не смогла сопоставить ваше лицо с профилем (${Math.round(matchResult.confidence)}%). Админ уведомлен.`);
+                    }
+                }).catch(e => console.error("Face verification failed", e));
+            }
+        }
     } else {
         // Fix 3: Handle media group (album) spam silently
         if (message.media_group_id) {
@@ -1729,6 +1919,18 @@ async function handleMediaUpload(chatId: number, userId: number, message: any) {
                 currentPhotos.push(url);
                 await activeSession.ref.update({ photoUrls: currentPhotos });
 
+                // Save to work_session_media for categorization
+                await db.collection('work_session_media').add({
+                    sessionId: activeSession.id,
+                    employeeId: userId,
+                    fileId: photoFileId,
+                    url: url,
+                    type: 'photo',
+                    context: 'mid_shift',
+                    clientId: sessionData.clientId,
+                    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                });
+
                 // Also log in activity_logs for time-lapse
                 if (sessionData.clientId !== 'no_project') {
                     await db.collection('activity_logs').add({
@@ -1743,7 +1945,8 @@ async function handleMediaUpload(chatId: number, userId: number, message: any) {
                     });
                 }
 
-                await sendMessage(chatId, "📸 Фото сохранено");
+                // Case 45: Photo category picker for mid-shift photos
+                await SmartStartHandler.showPhotoCategoryPicker(chatId, activeSession.id, photoFileId);
             } else {
                 await sendMessage(chatId, "⚠️ Не удалось сохранить фото. Попробуй ещё раз.");
             }

@@ -5,9 +5,14 @@
  * Used by API routes and Firestore triggers to notify agents about CRM changes.
  *
  * Events auto-expire after 7 days (cleanup via scheduled function).
+ *
+ * Phase 10: Also dispatches webhook deliveries and Telegram notifications.
  */
 import * as admin from 'firebase-admin';
 import * as functions from 'firebase-functions';
+
+import { dispatchWebhooks } from './webhookDelivery';
+import { notifyViaTelegram } from './telegramBridge';
 
 const db = admin.firestore();
 const FieldValue = admin.firestore.FieldValue;
@@ -39,13 +44,19 @@ export function publishEvent(event: AgentEvent): void {
     expiresAt: admin.firestore.Timestamp.fromMillis(Date.now() + 7 * 24 * 60 * 60 * 1000),
   };
 
-  db.collection('agent_events').add(doc).catch((e: any) => {
-    logger.error('⚠️ Failed to publish agent event', {
-      error: e.message,
-      eventType: event.type,
-      eventAction: event.action,
+  db.collection('agent_events').add(doc)
+    .then((ref) => {
+      // Phase 10: dispatch webhook + Telegram notifications after event is persisted
+      dispatchWebhooks({ ...event, id: ref.id });
+      notifyViaTelegram(event);
+    })
+    .catch((e: any) => {
+      logger.error('⚠️ Failed to publish agent event', {
+        error: e.message,
+        eventType: event.type,
+        eventAction: event.action,
+      });
     });
-  });
 }
 
 /**

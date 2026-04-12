@@ -1,6 +1,6 @@
 # ТЗ: Мульти-агентная инфраструктура CRM Profit Step
 
-> Статус: Phase 1-5, 7-9 SHIPPED (2026-04-11), Phase 6, 10 TODO
+> Статус: Phase 1-10 SHIPPED (2026-04-12)
 > Автор: Денис + Claude Code
 > Задача: каждый сотрудник имеет персонального AI-агента на своём компьютере
 > Версия: 3.0 (2026-04-11) — добавлены: детальные планы Phase 4-10, API контракты, Zod schemas, sequence diagrams, тест-план, timeline, SDK architecture, payroll endpoints
@@ -16,11 +16,11 @@
 | **3** | SHIPPED | Agent event queue | Новое |
 | **4** | SHIPPED | Scoped queries для всех routes | Новое |
 | **5** | SHIPPED | Event queue расширение (triggers, cleanup) | Новое |
-| **6** | TODO | Python Agent SDK | Новое |
+| **6** | SHIPPED | Python Agent SDK | Новое |
 | **7** | SHIPPED | Bot ↔ Agent conflict resolution | Анализ onWorkerBotMessage.ts |
 | **8** | SHIPPED | Новые бизнес-эндпоинты (/my-balance, overtime, etc.) | `FINANCE_PAYROLL_IMPROVEMENTS.md` |
 | **9** | SHIPPED | OpenAPI / Swagger авто-документация | `TODO_FUTURE_IMPROVEMENTS.md` §21 |
-| **10** | TODO | Push-уведомления (webhooks, Telegram bridge, FCM) | `TODO_FUTURE_IMPROVEMENTS.md` §10 |
+| **10** | SHIPPED | Push-уведомления (webhooks, Telegram bridge, FCM) | `TODO_FUTURE_IMPROVEMENTS.md` §10 |
 
 ### Связанные документы
 
@@ -503,7 +503,7 @@ class CreateTask(BaseModel):
 
 ---
 
-## Phase 10: Agent Notifications → Telegram/Email — TODO
+## Phase 10: Agent Notifications → Telegram/Email — SHIPPED
 
 > Источник: `docs/legacy-nov2025/TODO_FUTURE_IMPROVEMENTS.md` §10
 
@@ -1776,7 +1776,7 @@ router.get('/api/docs/openapi.json', (_req, res) => res.json(spec));
 
 ---
 
-## Phase 10: Детальный план — Push Notifications
+## Phase 10: Детальный план — Push Notifications — SHIPPED 2026-04-12
 
 ### 10.1 Webhook registration
 

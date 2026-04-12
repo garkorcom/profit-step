@@ -131,6 +131,37 @@ const spec = {
         responses: { 200: { description: 'New token issued' } },
       },
     },
+    '/api/agent-tokens/{tokenId}/webhook': {
+      patch: {
+        tags: ['Agent Tokens'], summary: 'Update webhook config for a token',
+        description: 'Set or update the webhook URL and event filter patterns. Pass webhookUrl: null to disable. A new HMAC-SHA256 signing secret is generated when the URL changes.',
+        'x-required-scopes': ['admin'],
+        parameters: [pathParam('tokenId', 'Token document ID')],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  webhookUrl: { type: 'string', nullable: true, description: 'HTTPS URL or null to disable' },
+                  webhookEvents: {
+                    type: 'array', items: { type: 'string' }, nullable: true,
+                    description: 'Event filter patterns (e.g. ["task.*", "alert.budget_warning"])',
+                  },
+                },
+                required: ['webhookUrl'],
+              },
+            },
+          },
+        },
+        responses: {
+          200: { description: 'Webhook config updated. New secret returned if URL changed.' },
+          404: { description: 'Token not found' },
+          400: { description: 'Token is revoked' },
+        },
+      },
+    },
 
     // ═══════════════════════════════════════════════════════════
     // EVENT QUEUE

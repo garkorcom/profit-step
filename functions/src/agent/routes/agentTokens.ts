@@ -24,7 +24,7 @@ import * as crypto from 'crypto';
 
 import { db, FieldValue, Timestamp, logger, logAgentActivity } from '../routeContext';
 import { requireAdmin } from '../agentMiddleware';
-import { CreateAgentTokenSchema, ListAgentTokensSchema } from '../schemas/agentTokenSchemas';
+import { CreateAgentTokenSchema, ListAgentTokensSchema, UpdateWebhookSchema } from '../schemas/agentTokenSchemas';
 
 const router = Router();
 
@@ -54,6 +54,13 @@ router.post('/api/agent-tokens', async (req, res, next) => {
       Date.now() + data.expiresInDays * 24 * 60 * 60 * 1000
     );
 
+    // Phase 10: Generate webhook secret if webhookUrl is provided
+    const webhookUrl = data.webhookUrl || null;
+    const webhookSecret = webhookUrl
+      ? crypto.randomBytes(32).toString('hex')
+      : null;
+    const webhookEvents = data.webhookEvents || null;
+
     const docRef = db.collection('agent_tokens').doc();
     await docRef.set({
       token,
@@ -68,6 +75,10 @@ router.post('/api/agent-tokens', async (req, res, next) => {
       revokedBy: null,
       lastUsedAt: null,
       useCount: 0,
+      // Phase 10: webhook config
+      webhookUrl,
+      webhookSecret,
+      webhookEvents,
     });
 
     await logAgentActivity({
@@ -91,7 +102,11 @@ router.post('/api/agent-tokens', async (req, res, next) => {
       label: data.label,
       scopes: data.scopes,
       expiresAt: expiresAt.toDate().toISOString(),
-      warning: 'Save this token now — it will not be shown again.',
+      // Phase 10: webhook info (secret only shown once at creation)
+      webhookUrl,
+      webhookSecret,
+      webhookEvents,
+      warning: 'Save this token and webhook secret now — they will not be shown again.',
     });
   } catch (e) {
     next(e);
@@ -130,6 +145,10 @@ router.get('/api/agent-tokens', async (req, res, next) => {
         lastUsedAt: data.lastUsedAt?.toDate?.()?.toISOString() || null,
         useCount: data.useCount || 0,
         isExpired: data.expiresAt && Date.now() > (data.expiresAt.toMillis?.() || data.expiresAt),
+        // Phase 10: webhook config (secret never exposed in list)
+        webhookUrl: data.webhookUrl || null,
+        webhookEvents: data.webhookEvents || null,
+        hasWebhook: !!data.webhookUrl,
         // Token value is NEVER returned in list — only at creation
       };
     });
@@ -218,6 +237,79 @@ router.post('/api/agent-tokens/:id/rotate', async (req, res, next) => {
       token: newToken,
       employeeId: data.employeeId,
       warning: 'Old token is now invalid. Save the new token — it will not be shown again.',
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// ─── PATCH /api/agent-tokens/:id/webhook — Update webhook config ─────
+
+router.patch('/api/agent-tokens/:id/webhook', async (req, res, next) => {
+  try {
+    const tokenId = req.params.id;
+    const data = UpdateWebhookSchema.parse(req.body);
+
+    const ref = db.collection('agent_tokens').doc(tokenId);
+    const doc = await ref.get();
+
+    if (!doc.exists) {
+      res.status(404).json({ error: 'Token not found' });
+      return;
+    }
+
+    const tokenData = doc.data()!;
+    if (tokenData.revokedAt) {
+      res.status(400).json({ error: 'Cannot update webhook on revoked token' });
+      return;
+    }
+
+    const update: Record<string, any> = {
+      webhookUrl: data.webhookUrl,
+      webhookEvents: data.webhookEvents !== undefined ? data.webhookEvents : tokenData.webhookEvents || null,
+    };
+
+    // Generate new secret if URL is being set (and wasn't set before, or is changing)
+    if (data.webhookUrl && data.webhookUrl !== tokenData.webhookUrl) {
+      update.webhookSecret = crypto.randomBytes(32).toString('hex');
+    }
+
+    // Clear secret if URL is being removed
+    if (data.webhookUrl === null) {
+      update.webhookSecret = null;
+      update.webhookEvents = null;
+    }
+
+    await ref.update(update);
+
+    await logAgentActivity({
+      userId: req.agentUserId!,
+      action: 'agent_token_webhook_updated',
+      endpoint: `/api/agent-tokens/${tokenId}/webhook`,
+      metadata: {
+        tokenId,
+        employeeId: tokenData.employeeId,
+        webhookUrl: data.webhookUrl,
+        hasEvents: !!(data.webhookEvents && data.webhookEvents.length),
+      },
+    });
+
+    logger.info('🔔 agent-tokens:webhook-updated', {
+      tokenId,
+      employeeId: tokenData.employeeId,
+      webhookUrl: data.webhookUrl ? '***' : null,
+    });
+
+    res.json({
+      updated: true,
+      tokenId,
+      webhookUrl: data.webhookUrl,
+      webhookEvents: update.webhookEvents,
+      // New secret only returned when URL changes
+      ...(update.webhookSecret ? {
+        webhookSecret: update.webhookSecret,
+        warning: 'Save this webhook secret now — it will not be shown again.',
+      } : {}),
     });
   } catch (e) {
     next(e);

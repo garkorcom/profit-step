@@ -1,9 +1,9 @@
 # ТЗ: Мульти-агентная инфраструктура CRM Profit Step
 
-> Статус: Phase 1-3 SHIPPED (2026-04-11), Phase 4-7 TODO
+> Статус: Phase 1-5, 7-9 SHIPPED (2026-04-11), Phase 6, 10 TODO
 > Автор: Денис + Claude Code
 > Задача: каждый сотрудник имеет персонального AI-агента на своём компьютере
-> Версия: 2.0 (2026-04-11) — добавлены: indexes, error catalog, bot conflicts, billing, migration, monitoring, edge cases
+> Версия: 3.0 (2026-04-11) — добавлены: детальные планы Phase 4-10, API контракты, Zod schemas, sequence diagrams, тест-план, timeline, SDK architecture, payroll endpoints
 
 ---
 
@@ -14,12 +14,12 @@
 | **1** | SHIPPED | Per-employee API tokens | Новое |
 | **2** | SHIPPED | RBAC scope enforcement | Новое |
 | **3** | SHIPPED | Agent event queue | Новое |
-| **4** | TODO | Scoped queries для всех routes | Новое |
-| **5** | TODO | Event queue расширение (triggers, cleanup) | Новое |
+| **4** | SHIPPED | Scoped queries для всех routes | Новое |
+| **5** | SHIPPED | Event queue расширение (triggers, cleanup) | Новое |
 | **6** | TODO | Python Agent SDK | Новое |
-| **7** | TODO | Bot ↔ Agent conflict resolution | Анализ onWorkerBotMessage.ts |
-| **8** | TODO | Новые бизнес-эндпоинты (/my-balance, overtime, etc.) | `FINANCE_PAYROLL_IMPROVEMENTS.md` |
-| **9** | TODO | OpenAPI / Swagger авто-документация | `TODO_FUTURE_IMPROVEMENTS.md` §21 |
+| **7** | SHIPPED | Bot ↔ Agent conflict resolution | Анализ onWorkerBotMessage.ts |
+| **8** | SHIPPED | Новые бизнес-эндпоинты (/my-balance, overtime, etc.) | `FINANCE_PAYROLL_IMPROVEMENTS.md` |
+| **9** | SHIPPED | OpenAPI / Swagger авто-документация | `TODO_FUTURE_IMPROVEMENTS.md` §21 |
 | **10** | TODO | Push-уведомления (webhooks, Telegram bridge, FCM) | `TODO_FUTURE_IMPROVEMENTS.md` §10 |
 
 ### Связанные документы
@@ -869,3 +869,1077 @@ firebase firestore:indexes  # check agent_events collection size in Console
 | `functions/src/agent/routes/tasks.ts` | + scope checks + scoped queries + event publish |
 | `functions/src/agent/routes/costs.ts` | + scope checks + event publish |
 | `functions/src/agent/routes/timeTracking.ts` | + scope checks + event publish |
+
+---
+---
+
+# ДЕТАЛЬНЫЕ ПЛАНЫ РЕАЛИЗАЦИИ (Phase 4–10)
+
+---
+
+## Phase 4: Детальный план — Scoped queries для всех routes
+
+### 4.1 Текущий аудит scope enforcement
+
+| Route файл | requireScope | Scopes | Data scoping (userId filter) | Endpoints |
+|-----------|:--:|--------|:--:|-----------|
+| **tasks.ts** | ✅ | `tasks:read/write` | ✅ assigneeId | 5 endpoints |
+| **costs.ts** | ✅ | `costs:read/write` | ❌ глобальные запросы | 3 endpoints |
+| **timeTracking.ts** | ✅ | `time:read/write` | ✅ partial | 6 endpoints |
+| **events.ts** | ✅ | `events:read` | ✅ employeeId | 2 endpoints |
+| **agentTokens.ts** | ✅ | admin via requireAdmin() | ✅ admin-only | 4 endpoints |
+| **clients.ts** | ❌ | — | ❌ | 5 endpoints |
+| **projects.ts** | ❌ | — | ❌ (companyId only) | 8 endpoints |
+| **estimates.ts** | ❌ | — | ❌ (companyId only) | 4 endpoints |
+| **inventory.ts** | ❌ | — | ❌ | 15 endpoints |
+| **erp.ts** | ❌ | — | ❌ (companyId only) | 6 endpoints |
+| **dashboard.ts** | ❌ | — | ❌ | 1 endpoint |
+| **dashboardClient.ts** | ❌ | — | ❌ (clientId param) | 4 endpoints |
+| **finance.ts** | ❌ | — | ❌ | 5 endpoints |
+| **users.ts** | ❌ | — | ❌ | 2 endpoints |
+| **sites.ts** | ❌ | — | ❌ | 3 endpoints |
+| **contacts.ts** | — | — | — | (in users.ts) 2 endpoints |
+
+**Итого: 12 route-файлов без scope enforcement, ~55 endpoints без защиты.**
+
+### 4.2 План добавления scopes (по приоритету)
+
+**Tier 1 (P1 — данные сотрудников):**
+
+| Файл | Добавить import | GET endpoints | Write endpoints |
+|------|----------------|---------------|-----------------|
+| `costs.ts` | уже есть | Добавить: worker видит только `WHERE userId == agentUserId` | OK (уже scoped) |
+| `timeTracking.ts` | уже есть | `active-all`: worker → только свои сессии | `admin-stop`: уже requireScope('admin') |
+| `dashboard.ts` | `requireScope` | `GET /api/dashboard`: worker → только свой KPI | — |
+
+**Конкретные изменения для costs.ts scoped query:**
+```typescript
+// GET /api/costs/list — добавить после line ~130:
+const isAdmin = (req.agentScopes || []).includes('admin');
+const role = req.agentRole || 'user';
+const isManagerOrAbove = ['superadmin', 'company_admin', 'admin', 'manager'].includes(role);
+
+if (!isAdmin && !isManagerOrAbove) {
+  q = q.where('userId', '==', req.agentUserId);
+}
+```
+
+**Tier 2 (P2 — бизнес-данные):**
+
+| Файл | GET scopes | Write scopes | Data scoping |
+|------|-----------|-------------|-------------|
+| `clients.ts` | `clients:read` | `clients:write` | Все видят клиентов (company-level) |
+| `projects.ts` | `projects:read` | `projects:write` | Все видят проекты (company-level) |
+| `sites.ts` | `projects:read` | `projects:write` | По clientId из проекта |
+| `users.ts` | `admin` (search) | `admin` (create) | Admin-only |
+| `contacts.ts` | `clients:read` | `clients:write` | Company-level |
+
+**Tier 3 (P3 — финансы, ERP):**
+
+| Файл | GET scopes | Write scopes | Data scoping |
+|------|-----------|-------------|-------------|
+| `estimates.ts` | `estimates:read` | `estimates:write` | Company-level |
+| `erp.ts` | `erp:read` | `erp:write` | Company-level |
+| `inventory.ts` | `inventory:read` | `inventory:write` | Company-level |
+| `finance.ts` | `admin` | `admin` | Admin-only (sensitive) |
+| `dashboardClient.ts` | `dashboard:read` | — | Company-level |
+
+### 4.3 Шаблон добавления scope к существующему route
+
+```typescript
+// 1. Добавить import:
+import { requireScope } from '../agentMiddleware';
+
+// 2. Добавить audit imports:
+import { logAudit, AuditHelpers, extractAuditContext } from '../utils/auditLogger';
+
+// 3. На каждый GET endpoint:
+router.get('/api/XXX/list', requireScope('XXX:read', 'admin'), async (req, res, next) => { ... });
+
+// 4. На каждый POST/PATCH/DELETE endpoint:
+router.post('/api/XXX', requireScope('XXX:write', 'admin'), async (req, res, next) => { ... });
+
+// 5. Для worker-scoped data — добавить фильтр:
+const isAdmin = (req.agentScopes || []).includes('admin');
+const isManager = ['superadmin','company_admin','admin','manager'].includes(req.agentRole || '');
+if (!isAdmin && !isManager) {
+  q = q.where('createdBy', '==', req.agentUserId); // или assigneeId, userId
+}
+```
+
+### 4.4 Acceptance criteria Phase 4
+
+- [ ] Все 55+ endpoints имеют `requireScope()` middleware
+- [ ] Worker с `tasks:read` токеном получает 403 на `GET /api/costs/list`
+- [ ] Worker видит только свои costs (userId filter)
+- [ ] Admin token обходит все проверки
+- [ ] Тесты: 1 test per route file (scope deny + scope allow + data scoping)
+- [ ] Backward compatible: Mode 1 (AGENT_API_KEY) работает как раньше
+
+### 4.5 Effort estimate
+
+- **Tier 1:** 2-3 часа (3 файла, простые изменения)
+- **Tier 2:** 3-4 часа (5 файлов, нужно решить какие данные company-level)
+- **Tier 3:** 4-5 часов (5 файлов, finance = sensitive, нужны тесты)
+- **Тесты:** 4-6 часов (12 test files, по 2-3 теста каждый)
+- **ИТОГО:** ~15-18 часов работы
+
+---
+
+## Phase 5: Детальный план — Event Queue расширение
+
+### 5a: Firestore triggers → event queue
+
+**Текущее состояние:** события публикуются ТОЛЬКО из API routes (tasks.ts, costs.ts, timeTracking.ts). Telegram бот и Firestore triggers НЕ публикуют.
+
+**Нужно подключить:**
+
+| Trigger | Файл | Событие | Приоритет |
+|---------|------|---------|-----------|
+| `onTaskCreate` | `functions/src/triggers/onTaskCreate.ts` (новый) | `task.created` | P1 |
+| `onWorkSessionUpdate` | `functions/src/triggers/onWorkSessionUpdate.ts` (существующий?) | `session.stopped` | P1 |
+| Telegram bot start/stop | `handlers/selfServiceHandler.ts` | `session.started/stopped` source='bot' | P1 |
+| `onCostCreated` | Новый или существующий trigger | `cost.created` | P2 |
+| `onEstimateUpdated` | Новый trigger | `estimate.approved/rejected` | P2 |
+| `onProjectStatusChange` | Новый trigger | `project.completed` | P3 |
+
+**Реализация для Telegram бота:**
+
+```typescript
+// В selfServiceHandler.ts после createSession:
+import { publishSessionEvent } from '../../agent/utils/eventPublisher';
+
+// После успешного создания сессии через бота:
+publishSessionEvent('started', sessionRef.id, 
+  `Timer started via bot: ${taskTitle}`,
+  { taskTitle, clientId, source: 'bot' },
+  firebaseUid // или telegramId → resolve to UID
+);
+```
+
+**⚠️ Idempotency guard для triggers:**
+
+```typescript
+// Каждый trigger ОБЯЗАН проверять:
+const eventKey = `${context.eventId}_${context.eventType}`;
+const processed = await db.doc(`_processedEvents/${eventKey}`).get();
+if (processed.exists) return null; // Already processed
+
+// ... publish event ...
+
+await db.doc(`_processedEvents/${eventKey}`).set({
+  processedAt: FieldValue.serverTimestamp(),
+  expiresAt: Date.now() + 24 * 3600_000,
+});
+```
+
+### 5b: Cleanup scheduled function
+
+```typescript
+// functions/src/scheduled/cleanupAgentEvents.ts
+// Schedule: every 24 hours (3 AM ET)
+
+export const cleanupAgentEvents = functions
+  .runWith({ timeoutSeconds: 120, memory: '256MB' })
+  .pubsub.schedule('0 3 * * *')
+  .timeZone('America/New_York')
+  .onRun(async () => {
+    const now = Timestamp.now();
+    const expiredQuery = db.collection('agent_events')
+      .where('expiresAt', '<', now)
+      .limit(500);
+    
+    let totalDeleted = 0;
+    let batch = db.batch();
+    let count = 0;
+    
+    while (true) {
+      const snap = await expiredQuery.get();
+      if (snap.empty) break;
+      
+      snap.docs.forEach(doc => {
+        batch.delete(doc.ref);
+        count++;
+      });
+      
+      await batch.commit();
+      totalDeleted += count;
+      batch = db.batch();
+      count = 0;
+      
+      if (snap.docs.length < 500) break; // No more
+    }
+    
+    logger.info(`🧹 cleanupAgentEvents: deleted ${totalDeleted} expired events`);
+  });
+```
+
+**Также:** cleanup для `_processedEvents` и `_idempotency` (TTL 24h):
+
+```typescript
+// В том же scheduled function:
+const expiredIdempotency = db.collection('_idempotency')
+  .where('expiresAt', '<', Date.now())
+  .limit(500);
+// ... batch delete ...
+```
+
+### 5c: Расширение типов событий
+
+**Новые publishEventX() helpers:**
+
+```typescript
+// eventPublisher.ts — добавить:
+export function publishEstimateEvent(action, estimateId, summary, data, employeeId)
+export function publishProjectEvent(action, projectId, summary, data, employeeId)
+export function publishInventoryEvent(action, entityId, summary, data, employeeId)
+export function publishPayrollEvent(action, periodId, summary, data, employeeId)
+```
+
+### 5d: Acceptance criteria Phase 5
+
+- [ ] Telegram бот публикует events при start/stop через бота
+- [ ] Firestore trigger на `work_sessions` публикует session events
+- [ ] Cleanup удаляет expired events ежедневно
+- [ ] Cleanup удаляет expired `_processedEvents` и `_idempotency`
+- [ ] Все triggers имеют idempotency guard
+- [ ] `GET /api/events/types` отражает новые типы
+- [ ] Нет infinite loops (trigger → event → trigger)
+
+### 5e: Effort estimate
+
+- **Triggers (5a):** 4-6 часов
+- **Cleanup (5b):** 2 часа
+- **Event expansion (5c):** 2 часа
+- **Testing:** 3-4 часа
+- **ИТОГО:** ~12-14 часов
+
+---
+
+## Phase 6: Детальный план — Python Agent SDK
+
+### 6.1 Package структура
+
+```
+profit-step-agent/
+├── pyproject.toml
+├── README.md
+├── profit_step_agent/
+│   ├── __init__.py
+│   ├── client.py          # CRMClient — HTTP клиент
+│   ├── auth.py             # Token management
+│   ├── models/
+│   │   ├── __init__.py
+│   │   ├── tasks.py        # Task, CreateTask, UpdateTask, ListTasksParams
+│   │   ├── time.py         # Session, StartSession, StopSession, TimeSummary
+│   │   ├── costs.py        # Cost, CreateCost, ListCostsParams
+│   │   ├── events.py       # Event, EventQuery
+│   │   ├── clients.py      # Client, CreateClient, SearchParams
+│   │   ├── projects.py     # Project, CreateProject
+│   │   ├── estimates.py    # Estimate, CreateEstimate
+│   │   └── common.py       # Pagination, ErrorResponse, SortDir
+│   ├── domains/
+│   │   ├── __init__.py
+│   │   ├── tasks.py        # TasksDomain — .list(), .create(), .update(), .delete()
+│   │   ├── time.py         # TimeDomain — .start(), .stop(), .status(), .summary()
+│   │   ├── costs.py        # CostsDomain — .list(), .create(), .void()
+│   │   ├── events.py       # EventsDomain — .poll(), .stream(), .types()
+│   │   ├── clients.py      # ClientsDomain
+│   │   └── projects.py     # ProjectsDomain
+│   ├── exceptions.py       # CRMError, ValidationError, ScopeError, RateLimitError
+│   └── cli.py              # CLI entry point
+└── tests/
+    ├── test_client.py
+    ├── test_tasks.py
+    └── conftest.py
+```
+
+### 6.2 Core Client
+
+```python
+# profit_step_agent/client.py
+import httpx
+from typing import Optional
+
+class CRMClient:
+    """HTTP client for Profit Step CRM API."""
+    
+    def __init__(
+        self,
+        token: str,
+        base_url: str = "https://profit-step.web.app/api",
+        timeout: float = 30.0,
+        max_retries: int = 3,
+    ):
+        self.base_url = base_url.rstrip("/")
+        self._client = httpx.Client(
+            base_url=self.base_url,
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            timeout=timeout,
+        )
+        self._max_retries = max_retries
+    
+    def get(self, path: str, params: dict = None) -> dict:
+        return self._request("GET", path, params=params)
+    
+    def post(self, path: str, json: dict = None) -> dict:
+        return self._request("POST", path, json=json)
+    
+    def patch(self, path: str, json: dict = None) -> dict:
+        return self._request("PATCH", path, json=json)
+    
+    def delete(self, path: str) -> dict:
+        return self._request("DELETE", path)
+    
+    def _request(self, method, path, **kwargs) -> dict:
+        for attempt in range(self._max_retries):
+            resp = self._client.request(method, path, **kwargs)
+            if resp.status_code == 429:
+                retry_after = resp.json().get("retryAfterMs", 5000) / 1000
+                time.sleep(retry_after)
+                continue
+            if resp.status_code == 503:
+                time.sleep(2 ** attempt)
+                continue
+            resp.raise_for_status()
+            return resp.json()
+        raise CRMError("Max retries exceeded")
+```
+
+### 6.3 Domain example (Tasks)
+
+```python
+# profit_step_agent/domains/tasks.py
+from ..models.tasks import Task, CreateTask, UpdateTask, ListTasksParams
+from ..client import CRMClient
+
+class TasksDomain:
+    def __init__(self, client: CRMClient):
+        self._client = client
+    
+    def list(self, *, status: str = None, client_name: str = None, 
+             priority: str = None, limit: int = 50) -> list[Task]:
+        params = ListTasksParams(status=status, clientName=client_name, 
+                                  priority=priority, limit=limit)
+        resp = self._client.get("/api/gtd-tasks/list", params=params.to_query())
+        return [Task(**t) for t in resp["tasks"]]
+    
+    def create(self, *, title: str, client_id: str = None, 
+               priority: str = "medium", **kwargs) -> str:
+        data = CreateTask(title=title, clientId=client_id, priority=priority, **kwargs)
+        resp = self._client.post("/api/gtd-tasks", json=data.model_dump(exclude_none=True))
+        return resp["taskId"]
+    
+    def update(self, task_id: str, **fields) -> bool:
+        data = UpdateTask(**fields)
+        resp = self._client.patch(f"/api/gtd-tasks/{task_id}", json=data.model_dump(exclude_none=True))
+        return resp.get("updated", False)
+    
+    def complete(self, task_id: str) -> bool:
+        return self.update(task_id, status="done")
+```
+
+### 6.4 Event streaming
+
+```python
+# profit_step_agent/domains/events.py
+import asyncio
+from datetime import datetime, timezone
+
+class EventsDomain:
+    def __init__(self, client):
+        self._client = client
+    
+    def poll(self, since: str, types: list[str] = None, limit: int = 50) -> list[dict]:
+        params = {"since": since, "limit": limit}
+        if types:
+            params["types"] = ",".join(types)
+        return self._client.get("/api/events", params=params)["events"]
+    
+    async def stream(self, types: list[str] = None, 
+                     interval: float = 15.0,
+                     since: str = None):
+        """Async generator — yields events as they arrive."""
+        cursor = since or datetime.now(timezone.utc).isoformat()
+        while True:
+            events = self.poll(cursor, types=types)
+            for event in events:
+                yield event
+                cursor = event["createdAt"]
+            await asyncio.sleep(interval)
+```
+
+### 6.5 Main CRMAgent class
+
+```python
+# profit_step_agent/__init__.py
+from .client import CRMClient
+from .domains.tasks import TasksDomain
+from .domains.time import TimeDomain
+from .domains.costs import CostsDomain
+from .domains.events import EventsDomain
+from .domains.clients import ClientsDomain
+
+class CRMAgent:
+    """Main entry point for Profit Step CRM integration."""
+    
+    def __init__(self, token: str, base_url: str = "https://profit-step.web.app/api"):
+        self._client = CRMClient(token=token, base_url=base_url)
+        self.tasks = TasksDomain(self._client)
+        self.time = TimeDomain(self._client)
+        self.costs = CostsDomain(self._client)
+        self.events = EventsDomain(self._client)
+        self.clients = ClientsDomain(self._client)
+    
+    def health(self) -> dict:
+        return self._client.get("/api/health")
+```
+
+### 6.6 CLI tool
+
+```bash
+# Installation:
+pip install profit-step-agent
+
+# Setup:
+psa auth setup --token <your-40-hex-token>
+psa auth test  # → "✅ Connected as Vasya (worker)"
+
+# Usage:
+psa tasks list --status next_action
+psa tasks create "Fix wiring at Site B" --client "Farmer's Milk" --priority high
+psa time start --client "Farmer's Milk" --task "Fix wiring"
+psa time stop
+psa time status
+psa costs add --amount 150 --category materials --client "Farmer's Milk"
+psa events watch --types task,session  # live stream
+```
+
+### 6.7 Effort estimate
+
+- **Core client + auth:** 4 часа
+- **Pydantic models (all domains):** 6 часов
+- **Domain classes (7 domains):** 8 часов
+- **Event streaming:** 3 часа
+- **CLI:** 4 часа
+- **Tests:** 6 часов
+- **Packaging + docs:** 3 часа
+- **ИТОГО:** ~34 часа
+
+---
+
+## Phase 7: Детальный план — Bot ↔ Agent Conflict Resolution
+
+### 7.1 Sequence Diagram: Current Problem
+
+```
+Telegram Bot                 Firestore                Agent API
+    │                           │                         │
+    │  getActiveSession(tgId)   │                         │
+    │ ─────────────────────────>│                         │
+    │  ← null (no active)      │                         │
+    │                           │  resolveEmployeeIds(uid)│
+    │                           │<────────────────────────│
+    │                           │  ← null (no active)     │
+    │  .add({empId: tgId})     │                         │
+    │ ─────────────────────────>│                         │
+    │  ← sessionA created      │                         │
+    │                           │  .add({empId: uid})     │
+    │                           │<────────────────────────│
+    │                           │  ← sessionB created     │
+    │                           │                         │
+    │  ⚠️ TWO ACTIVE SESSIONS  │  ⚠️ CONFLICT           │
+```
+
+### 7.2 Sequence Diagram: After Fix
+
+```
+Telegram Bot                 Firestore                Agent API
+    │                           │                         │
+    │  resolve(tgId → uid)     │                         │
+    │ ─────────────────────────>│                         │
+    │  ← uid                   │                         │
+    │                           │                         │
+    │  runTransaction {         │                         │
+    │    check lock             │                         │
+    │    check active(uid)      │                         │
+    │    set lock               │                         │
+    │    .add({empId: uid})     │                         │
+    │  }                        │                         │
+    │ ─────────────────────────>│                         │
+    │  ← sessionA (uid)        │                         │
+    │  publishEvent(started)   │                         │
+    │ ─────────────────────────>│                         │
+    │                           │                         │
+    │                           │  resolveEmployeeIds(uid)│
+    │                           │<────────────────────────│
+    │                           │  ← sessionA found!      │
+    │                           │  auto-close + new       │
+    │                           │  publishEvent(stopped)  │
+    │                           │<────────────────────────│
+    │  [receives event: stopped]│                         │
+    │  notify user via Telegram │                         │
+```
+
+### 7.3 Конкретные изменения
+
+**7.3a: `onWorkerBotMessage.ts` — initWorkSession → transaction**
+
+```typescript
+// Текущий код (упрощённо):
+async function initWorkSession(telegramId, ...) {
+  const existing = await getActiveSession(telegramId); // ← Race window!
+  if (existing) await closeSession(existing);
+  const ref = await db.collection('work_sessions').add({...}); // ← No transaction!
+}
+
+// Новый код:
+async function initWorkSession(firebaseUid, telegramId, ...) {
+  return db.runTransaction(async (tx) => {
+    // 1. Check lock
+    const lockRef = db.doc(`users/${firebaseUid}`);
+    const lockDoc = await tx.get(lockRef);
+    const lock = lockDoc.data()?.activeSessionLock;
+    if (lock && Date.now() - lock.timestamp < 60_000) {
+      throw new Error('Session start in progress from another source');
+    }
+    
+    // 2. Set lock
+    tx.update(lockRef, { activeSessionLock: { source: 'bot', timestamp: Date.now() } });
+    
+    // 3. Find active sessions (ALL employee IDs)
+    const ids = [firebaseUid, telegramId, String(telegramId)];
+    for (const id of ids) {
+      const active = await db.collection('work_sessions')
+        .where('employeeId', '==', id)
+        .where('status', '==', 'active')
+        .limit(1).get();
+      if (!active.empty) {
+        // Close existing within transaction
+        tx.update(active.docs[0].ref, { status: 'completed', endTime: Timestamp.now() });
+      }
+    }
+    
+    // 4. Create new session with Firebase UID (не telegramId!)
+    const ref = db.collection('work_sessions').doc();
+    tx.set(ref, {
+      employeeId: firebaseUid,  // ← Единый формат!
+      telegramId: telegramId,   // ← Для обратного lookup
+      status: 'active',
+      ...sessionData,
+    });
+    
+    // 5. Clear lock, set activeSessionId
+    tx.update(lockRef, { 
+      activeSessionId: ref.id,
+      activeSessionLock: null,
+    });
+    
+    return ref.id;
+  });
+}
+```
+
+**⚠️ ВАЖНО:** Это изменение в `onWorkerBotMessage.ts` (1200+ строк, живой бот). Нужны:
+1. Полное юнит-тестирование с mock Firestore
+2. Тестирование в emulators
+3. Деплой в off-peak (ночью)
+4. Мониторинг первые 48ч
+
+**7.3b: employeeId migration script**
+
+```typescript
+// scripts/migrateEmployeeIds.ts
+// One-time batch: work_sessions where employeeId is number → resolve to Firebase UID
+
+const sessions = await db.collection('work_sessions')
+  .where('employeeId', '>=', 0)  // numeric telegramId
+  .get();
+
+const batch = db.batch();
+for (const doc of sessions.docs) {
+  const tgId = doc.data().employeeId;
+  // Lookup users collection for telegramId mapping
+  const user = await db.collection('users')
+    .where('telegramId', '==', tgId)
+    .limit(1).get();
+  
+  if (!user.empty) {
+    batch.update(doc.ref, {
+      employeeId: user.docs[0].id,      // Firebase UID
+      telegramId: tgId,                   // Preserve original
+      _migratedEmployeeId: true,
+    });
+  }
+}
+await batch.commit();
+```
+
+### 7.4 Acceptance criteria Phase 7
+
+- [ ] Bot создаёт сессии с Firebase UID (не telegramId)
+- [ ] Bot использует `runTransaction()` для создания сессий
+- [ ] Lock-документ предотвращает одновременный старт
+- [ ] Bot публикует events в agent_events
+- [ ] Migration script выполнен для существующих сессий
+- [ ] Cross-notification: API closes bot session → Telegram message
+- [ ] Тесты: unit tests для transaction logic, mock Firestore
+- [ ] 48ч мониторинг после деплоя
+
+### 7.5 Effort estimate
+
+- **Transaction rewrite (7.3a):** 8-10 часов (sensitive code, нужна осторожность)
+- **Migration script (7.3b):** 2 часа
+- **Event publish from bot:** 3 часа
+- **Cross-notification:** 4 часа
+- **Lock mechanism:** 3 часа
+- **Unit tests:** 6-8 часов
+- **Emulator testing + deploy:** 3 часа
+- **ИТОГО:** ~30-34 часа
+
+---
+
+## Phase 8: Детальный план — Payroll API Endpoints
+
+### 8.1 Текущее состояние payroll
+
+**Уже реализовано:**
+- `generateDailyPayroll.ts` — ежедневно 4 AM, создаёт `payroll_ledger` entries
+- `reconcileBalances.ts` — еженедельно Sun 2 AM, проверяет `runningBalance`
+- `closePayrollPeriod.ts` — callable, закрывает период
+- `selfServiceHandler.ts` — Telegram команды `/myweek`, `/mybalance`, `/myhours`, `/mypay`
+- Коллекции: `payroll_periods`, `payroll_ledger`, `work_sessions`, `advance_accounts`
+
+**Не реализовано:**
+- ❌ API endpoints для self-service (агент не может запросить данные)
+- ❌ FLSA overtime auto-calculation
+- ❌ Per-project hourly rates
+- ❌ Anomaly detection endpoint
+- ❌ CSV/PDF export
+
+### 8.2 Новые endpoints — Zod schemas
+
+```typescript
+// functions/src/agent/schemas/payrollSchemas.ts
+
+export const MyBalanceQuerySchema = z.object({
+  // Никаких параметров — данные привязаны к req.agentUserId
+}).strict();
+
+export const MyHoursQuerySchema = z.object({
+  weekOf: z.string().optional(), // ISO date, default = current week (Monday)
+}).strict();
+
+export const MyPayQuerySchema = z.object({
+  period: z.string().optional(), // "2026-03", default = last closed period
+}).strict();
+
+export const OvertimeCheckQuerySchema = z.object({
+  weekOf: z.string().optional(), // ISO date, default = current week
+}).strict();
+
+export const PeriodValidateSchema = z.object({
+  checks: z.array(z.enum([
+    'hours_over_60',
+    'session_over_12h', 
+    'rate_changes',
+    'zero_hours',
+    'duplicate_sessions',
+    'unsigned_sessions',
+  ])).optional(), // default = all checks
+}).strict();
+
+export const PeriodExportSchema = z.object({
+  format: z.enum(['csv', 'json']).default('json'),
+  includeDetails: z.boolean().default(false), // include per-session breakdown
+}).strict();
+```
+
+### 8.3 Endpoint specifications
+
+#### `GET /api/payroll/my-balance`
+**Scope:** `time:read` | **Data:** self-only
+
+```json
+// Response:
+{
+  "employeeId": "uid123",
+  "employeeName": "Vasya",
+  "ytdEarned": 15430.00,
+  "ytdPaid": 14200.00,
+  "balance": 1230.00,
+  "pendingPO": 350.00,    // advance_accounts balance
+  "netBalance": 880.00,   // balance - pendingPO
+  "lastPayment": {
+    "amount": 2800.00,
+    "date": "2026-04-01T00:00:00Z",
+    "method": "check"
+  },
+  "currentPeriod": "2026-04",
+  "periodStatus": "open"
+}
+```
+
+**Реализация:** Query `users/{uid}` для `runningBalance`, `ytdEarned`, `ytdPaid` + `advance_accounts` для PO balance.
+
+#### `GET /api/payroll/my-hours`
+**Scope:** `time:read` | **Data:** self-only
+
+```json
+// Response:
+{
+  "weekOf": "2026-04-06",  // Monday
+  "totalHours": 38.5,
+  "overtimeHours": 0,
+  "days": [
+    { "date": "2026-04-06", "hours": 8.0, "sessions": 1, "projects": ["Farmer's Milk"] },
+    { "date": "2026-04-07", "hours": 7.5, "sessions": 1, "projects": ["ABC Manufacturing"] },
+    { "date": "2026-04-08", "hours": 8.0, "sessions": 2, "projects": ["Farmer's Milk", "Johnson"] },
+    { "date": "2026-04-09", "hours": 7.5, "sessions": 1, "projects": ["ABC Manufacturing"] },
+    { "date": "2026-04-10", "hours": 7.5, "sessions": 1, "projects": ["Farmer's Milk"] }
+  ],
+  "earnings": {
+    "regular": 962.50,
+    "overtime": 0,
+    "total": 962.50
+  },
+  "warnings": []  // ["⚠️ Approaching 40h overtime threshold"] if hours > 35
+}
+```
+
+#### `GET /api/payroll/my-pay`
+**Scope:** `time:read` | **Data:** self-only
+
+```json
+// Response:
+{
+  "period": "2026-03",
+  "periodStatus": "paid",
+  "gross": 3850.00,
+  "regularHours": 152.0,
+  "overtimeHours": 8.0,
+  "regularPay": 3800.00,
+  "overtimePay": 300.00,
+  "deductions": {
+    "advances": 200.00,
+    "other": 0
+  },
+  "net": 3650.00,
+  "payments": [
+    { "date": "2026-03-15", "amount": 1800.00, "method": "check" },
+    { "date": "2026-04-01", "amount": 1850.00, "method": "check" }
+  ]
+}
+```
+
+#### `GET /api/payroll/overtime-check` (admin)
+**Scope:** `admin` | **Data:** all employees
+
+```json
+// Response:
+{
+  "weekOf": "2026-04-06",
+  "employees": [
+    {
+      "employeeId": "uid123",
+      "name": "Vasya",
+      "hoursThisWeek": 42.5,
+      "overtimeHours": 2.5,
+      "overtimeCost": 93.75,
+      "status": "over_threshold",
+      "projects": ["Farmer's Milk", "Johnson"]
+    },
+    {
+      "employeeId": "uid456", 
+      "name": "Petya",
+      "hoursThisWeek": 38.0,
+      "overtimeHours": 0,
+      "status": "approaching",  // > 35h
+      "projects": ["ABC Manufacturing"]
+    }
+  ],
+  "summary": {
+    "totalOvertime": 2.5,
+    "totalOvertimeCost": 93.75,
+    "employeesOverThreshold": 1,
+    "employeesApproaching": 1
+  }
+}
+```
+
+#### `POST /api/payroll/period/:id/validate` (admin)
+**Scope:** `admin` | **Callable: pre-close validation**
+
+```json
+// Request body:
+{ "checks": ["hours_over_60", "session_over_12h", "rate_changes"] }
+
+// Response:
+{
+  "period": "2026-03",
+  "valid": false,
+  "anomalies": [
+    {
+      "type": "session_over_12h",
+      "severity": "warning",
+      "employeeId": "uid789",
+      "employeeName": "Kolya",
+      "details": "Session sess123: 14.5 hours on 2026-03-15",
+      "sessionId": "sess123"
+    },
+    {
+      "type": "hours_over_60",
+      "severity": "error",
+      "employeeId": "uid789",
+      "employeeName": "Kolya",
+      "details": "Week of 2026-03-11: 63.5 hours",
+      "weekOf": "2026-03-11"
+    }
+  ],
+  "stats": {
+    "totalSessions": 245,
+    "totalHours": 1230.5,
+    "employees": 12,
+    "anomalyCount": 2
+  }
+}
+```
+
+### 8.4 Новые scopes
+
+Добавить в `agentTokenSchemas.ts`:
+
+```typescript
+// Добавить в ScopeEnum:
+'payroll:read',   // my-balance, my-hours, my-pay (self-only)
+'payroll:write',  // admin: close period, validate, export
+```
+
+### 8.5 Effort estimate
+
+- **Schemas:** 2 часа
+- **my-balance, my-hours, my-pay:** 6 часов (3 endpoints, query payroll_ledger + work_sessions)
+- **overtime-check:** 4 часа (aggregate across employees, weekly window)
+- **period validate:** 6 часов (complex anomaly detection logic)
+- **period export (CSV):** 4 часа
+- **Tests:** 6 часов
+- **ИТОГО:** ~28-30 часов
+
+---
+
+## Phase 9: Детальный план — OpenAPI Auto-Documentation
+
+### 9.1 Подход
+
+```bash
+npm install zod-to-openapi swagger-ui-express --save --prefix functions
+```
+
+### 9.2 Регистрация schemas
+
+```typescript
+// functions/src/agent/routes/docs.ts
+import { OpenAPIRegistry, OpenApiGeneratorV3, extendZodWithOpenApi } from '@asteasolutions/zod-to-openapi';
+import { z } from 'zod';
+import * as schemas from '../schemas';
+
+extendZodWithOpenApi(z);
+
+const registry = new OpenAPIRegistry();
+
+// Register all schemas
+registry.registerPath({
+  method: 'post',
+  path: '/api/gtd-tasks',
+  request: { body: { content: { 'application/json': { schema: schemas.CreateGTDTaskSchema } } } },
+  responses: { 201: { description: 'Task created' } },
+});
+// ... repeat for all endpoints
+
+// Generate spec
+const generator = new OpenApiGeneratorV3(registry.definitions);
+const spec = generator.generateDocument({
+  openapi: '3.0.0',
+  info: { title: 'Profit Step CRM API', version: '2.0.0' },
+  servers: [{ url: 'https://profit-step.web.app' }],
+});
+
+router.get('/api/docs/openapi.json', (_req, res) => res.json(spec));
+```
+
+### 9.3 Effort estimate
+
+- **Setup + registration:** 8 часов (62+ endpoints to register)
+- **Swagger UI:** 2 часа
+- **Testing:** 2 часа
+- **ИТОГО:** ~12 часов
+
+---
+
+## Phase 10: Детальный план — Push Notifications
+
+### 10.1 Webhook registration
+
+Добавить поле в `agent_tokens`:
+
+```typescript
+{
+  ...existingFields,
+  webhookUrl: string | null,  // "https://vasya-pc:8080/webhook"
+  webhookSecret: string | null, // HMAC-SHA256 signing key
+  webhookEvents: string[] | null, // ["task.assigned", "alert.*"]
+}
+```
+
+### 10.2 Webhook delivery
+
+```typescript
+// functions/src/agent/utils/webhookDelivery.ts
+export async function deliverWebhook(tokenDoc, event) {
+  const { webhookUrl, webhookSecret, webhookEvents } = tokenDoc;
+  if (!webhookUrl) return;
+  
+  // Check event filter
+  const eventKey = `${event.type}.${event.action}`;
+  if (webhookEvents && !webhookEvents.some(p => matchPattern(p, eventKey))) return;
+  
+  // Sign payload
+  const payload = JSON.stringify(event);
+  const signature = crypto.createHmac('sha256', webhookSecret).update(payload).digest('hex');
+  
+  // Deliver (3 retries, exponential backoff)
+  for (let i = 0; i < 3; i++) {
+    try {
+      await fetch(webhookUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Webhook-Signature': signature,
+          'X-Event-Type': eventKey,
+        },
+        body: payload,
+      });
+      return; // Success
+    } catch (e) {
+      await sleep(1000 * 2 ** i);
+    }
+  }
+  logger.warn('Webhook delivery failed after 3 retries', { webhookUrl, eventType: eventKey });
+}
+```
+
+### 10.3 Telegram bridge
+
+```typescript
+// При publish event → если сотрудник имеет telegramId:
+const user = await db.doc(`users/${event.employeeId}`).get();
+const tgId = user.data()?.telegramId;
+if (tgId) {
+  await bot.sendMessage(tgId, formatEventForTelegram(event));
+}
+```
+
+### 10.4 Effort estimate
+
+- **Webhook registration (schema + API):** 4 часа
+- **Webhook delivery + retry:** 6 часов
+- **Telegram bridge:** 4 часа
+- **FCM (PWA push):** 8 часов
+- **Tests:** 4 часа
+- **ИТОГО:** ~26 часов
+
+---
+
+## Тест-план
+
+### Unit Tests (по фазам)
+
+| Phase | Test file | Tests | Что проверяем |
+|-------|-----------|-------|---------------|
+| 1 | `agentTokens.test.ts` | 8 | CRUD: create/list/revoke/rotate, 401 non-admin, token format, expiry |
+| 2 | `scopeMiddleware.test.ts` | 10 | requireScope allow/deny, admin bypass, combined scopes, Mode 1/2/3 |
+| 3 | `events.test.ts` | 6 | Poll with since, types filter, scoped (admin vs worker), empty result |
+| 4 | `scopedRoutes.test.ts` | 24 | 2 tests × 12 routes (scope deny + data scoping) |
+| 5 | `eventPublisher.test.ts` | 8 | Trigger events, idempotency, cleanup |
+| 7 | `botTransaction.test.ts` | 10 | Transaction: lock, double-start, cross-platform, migration |
+| 8 | `payroll.test.ts` | 12 | my-balance, my-hours, my-pay, overtime, validate, export |
+
+### Integration Tests
+
+| Scenario | Что проверяем |
+|----------|---------------|
+| Worker agent lifecycle | Create token → start timer → create task → poll events → stop timer |
+| Admin manages team | Create 3 tokens → list → revoke 1 → verify 401 on revoked |
+| Bot + API coexistence | Bot starts session → API polls events → sees bot session |
+| Scope escalation attempt | Worker token → try admin endpoint → 403 |
+| Token rotation | Create → use → rotate → old token 401 → new token 200 |
+| Event expiry | Create event → wait TTL → cleanup → event gone |
+
+### Load Tests (Artillery)
+
+```yaml
+# tests/load/multi-agent.yml
+phases:
+  - duration: 60
+    arrivalRate: 20  # 20 agents connecting simultaneously
+
+scenarios:
+  - name: "Agent polling loop"
+    flow:
+      - get:
+          url: "/api/events?since=2026-01-01T00:00:00Z"
+          headers:
+            Authorization: "Bearer {{ $randomToken }}"
+      - get:
+          url: "/api/gtd-tasks/list?status=next_action"
+      - think: 15  # 15 sec polling interval
+```
+
+---
+
+## Timeline (рекомендуемый)
+
+| Неделя | Phase | Задачи | Часы |
+|--------|-------|--------|------|
+| **W1** | Phase 4 Tier 1 | Scope enforcement: costs, timeTracking, dashboard | 8h |
+| **W1** | Phase 4 Tier 2 | Scope enforcement: clients, projects, sites, users, contacts | 10h |
+| **W2** | Phase 4 Tier 3 | Scope enforcement: estimates, erp, inventory, finance, dashboardClient | 10h |
+| **W2** | Phase 4 Tests | Unit tests for scoped routes | 6h |
+| **W3** | Phase 5 | Event triggers + cleanup + expansion | 14h |
+| **W4** | Phase 8 P1 | my-balance, my-hours, my-pay endpoints | 12h |
+| **W5** | Phase 8 P2 | overtime-check, period validate, export | 14h |
+| **W6** | Phase 7 | Bot transaction rewrite + migration + cross-notification | 30h |
+| **W7-8** | Phase 6 | Python SDK | 34h |
+| **W9** | Phase 9 | OpenAPI docs | 12h |
+| **W10** | Phase 10 | Webhooks + Telegram bridge | 26h |
+
+**Общий estimate:** ~176 часов = 22 рабочих дня = ~5 недель при full-time
+
+### Приоритеты (если ресурсов мало)
+
+1. **P0 (must):** Phase 4 — без этого worker-токены видят всё → security issue
+2. **P1 (should):** Phase 8 (payroll self-service) — workers спрашивают каждый день
+3. **P1 (should):** Phase 5 (events from bot) — без этого агенты не видят bot-сессии
+4. **P2 (nice):** Phase 7 (bot conflicts) — редкие race conditions, есть cron cleanup
+5. **P2 (nice):** Phase 6 (SDK) — ускоряет разработку агентов, но не блокирует
+6. **P3 (later):** Phase 9 (OpenAPI) — удобство, не функционал
+7. **P3 (later):** Phase 10 (webhooks) — polling работает, push = оптимизация
+
+---
+
+## Глоссарий
+
+| Термин | Значение |
+|--------|----------|
+| **Mode 1** | Auth через `AGENT_API_KEY` env variable (legacy admin) |
+| **Mode 2** | Auth через Firebase JWT token (web/mobile UI) |
+| **Mode 3** | Auth через per-employee 40-hex agent token |
+| **Scope** | Granular permission (e.g. `tasks:read`) attached to token |
+| **Scoped query** | Firestore query filtered by `req.agentUserId` for non-admin |
+| **Event queue** | `agent_events` collection, polled via `GET /api/events` |
+| **Fire-and-forget** | Async write без await — не блокирует response |
+| **Idempotency key** | Client-provided key to prevent duplicate creates |
+| **TTL** | Time-to-live — auto-expiry of events (7d), tokens (90d) |
+| **RBAC** | Role-Based Access Control |
+| **FLSA** | Fair Labor Standards Act (US overtime law: >40h/week = 1.5x) |
+| **Burdened cost** | Labor cost × burden multiplier (insurance, taxes, etc.) |

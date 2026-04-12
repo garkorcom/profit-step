@@ -30,6 +30,7 @@ import {
   type CostCategory,
   type CostsBreakdownResponse,
 } from '../schemas/dashboardClientSchemas';
+import { requireScope } from '../agentMiddleware';
 
 const router = Router();
 const db = admin.firestore();
@@ -178,6 +179,7 @@ function computeRedFlags(snap: FinancialSnapshot): RedFlag[] {
 
 router.get(
   '/api/dashboard/client/:id/summary',
+  requireScope('dashboard:read', 'admin'),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { id: clientId } = ClientIdParamSchema.parse(req.params);
@@ -305,6 +307,7 @@ router.get(
 
 router.get(
   '/api/dashboard/client/:id/labor-log',
+  requireScope('dashboard:read', 'admin'),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { id: clientId } = ClientIdParamSchema.parse(req.params);
@@ -386,6 +389,7 @@ router.get(
 
 router.get(
   '/api/dashboard/client/:id/timeline',
+  requireScope('dashboard:read', 'admin'),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { id: clientId } = ClientIdParamSchema.parse(req.params);
@@ -504,6 +508,7 @@ router.get(
 
 router.get(
   '/api/dashboard/client/:id/costs-breakdown',
+  requireScope('dashboard:read', 'admin'),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { id: clientId } = ClientIdParamSchema.parse(req.params);

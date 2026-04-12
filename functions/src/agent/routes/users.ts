@@ -10,12 +10,13 @@ import {
   CreateContactSchema,
   SearchContactsQuerySchema,
 } from '../schemas';
+import { requireScope } from '../agentMiddleware';
 
 const router = Router();
 
 // ─── GET /api/users/search (Phase 2) ───────────────────────────────
 
-router.get('/api/users/search', async (req, res, next) => {
+router.get('/api/users/search', requireScope('admin'), async (req, res, next) => {
   try {
     const params = UserSearchQuerySchema.parse(req.query);
     logger.info('👤 users:search', { q: params.q });
@@ -51,7 +52,7 @@ router.get('/api/users/search', async (req, res, next) => {
 
 // ─── POST /api/users/create-from-bot ────────────────────────────────
 
-router.post('/api/users/create-from-bot', async (req, res, next) => {
+router.post('/api/users/create-from-bot', requireScope('admin'), async (req, res, next) => {
   try {
     const data = CreateUserFromBotSchema.parse(req.body);
     const telegramIdStr = String(data.telegramId);
@@ -118,7 +119,7 @@ router.post('/api/users/create-from-bot', async (req, res, next) => {
 
 // ─── POST /api/contacts ────────────────────────────────────────────
 
-router.post('/api/contacts', async (req, res, next) => {
+router.post('/api/contacts', requireScope('clients:write', 'admin'), async (req, res, next) => {
   try {
     const data = CreateContactSchema.parse(req.body);
     logger.info('📇 contacts:create', { name: data.name });
@@ -152,7 +153,7 @@ router.post('/api/contacts', async (req, res, next) => {
 
 // ─── GET /api/contacts/search ──────────────────────────────────────
 
-router.get('/api/contacts/search', async (req, res, next) => {
+router.get('/api/contacts/search', requireScope('clients:read', 'admin'), async (req, res, next) => {
   try {
     const params = SearchContactsQuerySchema.parse(req.query);
     logger.info('📇 contacts:search', { q: params.q, role: params.role, projectId: params.projectId });

@@ -135,3 +135,91 @@ export function publishAlertEvent(
     source: 'scheduled',
   });
 }
+
+/**
+ * Publish an estimate event.
+ */
+export function publishEstimateEvent(
+  action: 'created' | 'sent' | 'approved' | 'rejected' | 'converted',
+  estimateId: string,
+  summary: string,
+  data?: Record<string, any>,
+  employeeId?: string | null,
+): void {
+  publishEvent({
+    type: 'estimate',
+    action,
+    entityId: estimateId,
+    entityType: 'estimate',
+    summary,
+    data,
+    employeeId,
+    source: 'api',
+  });
+}
+
+/**
+ * Publish a project event.
+ */
+export function publishProjectEvent(
+  action: 'created' | 'updated' | 'completed',
+  projectId: string,
+  summary: string,
+  data?: Record<string, any>,
+  employeeId?: string | null,
+): void {
+  publishEvent({
+    type: 'project',
+    action,
+    entityId: projectId,
+    entityType: 'project',
+    summary,
+    data,
+    employeeId,
+    source: 'api',
+  });
+}
+
+/**
+ * Publish an inventory event.
+ */
+export function publishInventoryEvent(
+  action: 'transaction' | 'low_stock' | 'created' | 'updated',
+  entityId: string,
+  summary: string,
+  data?: Record<string, any>,
+  employeeId?: string | null,
+): void {
+  publishEvent({
+    type: 'inventory',
+    action,
+    entityId,
+    entityType: 'inventory',
+    summary,
+    data,
+    employeeId,
+    source: 'api',
+  });
+}
+
+/**
+ * Publish a payroll event.
+ */
+export function publishPayrollEvent(
+  action: 'period_closed' | 'period_locked' | 'period_paid' | 'overtime_alert',
+  entityId: string,
+  summary: string,
+  data?: Record<string, any>,
+  employeeId?: string | null,
+): void {
+  publishEvent({
+    type: 'payroll',
+    action,
+    entityId,
+    entityType: 'payroll_period',
+    summary,
+    data,
+    employeeId,
+    source: 'api',
+  });
+}

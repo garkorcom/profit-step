@@ -13,6 +13,7 @@ import {
   ListPurchaseOrdersQuerySchema,
   PlanVsFactQuerySchema,
 } from '../schemas';
+import { requireScope } from '../agentMiddleware';
 
 const router = Router();
 
@@ -22,7 +23,7 @@ const router = Router();
 
 // ─── POST /api/change-orders ────────────────────────────────────────
 
-router.post('/api/change-orders', async (req, res, next) => {
+router.post('/api/change-orders', requireScope('erp:write', 'admin'), async (req, res, next) => {
   try {
     const data = CreateChangeOrderSchema.parse(req.body);
     logger.info('📋 change-orders:create', { projectId: data.projectId, title: data.title });
@@ -97,7 +98,7 @@ router.post('/api/change-orders', async (req, res, next) => {
 
 // ─── GET /api/change-orders ─────────────────────────────────────────
 
-router.get('/api/change-orders', async (req, res, next) => {
+router.get('/api/change-orders', requireScope('erp:read', 'admin'), async (req, res, next) => {
   try {
     const params = ListChangeOrdersQuerySchema.parse(req.query);
     let clientId = params.clientId;
@@ -166,7 +167,7 @@ router.get('/api/change-orders', async (req, res, next) => {
 
 // ─── PATCH /api/change-orders/:id ───────────────────────────────────
 
-router.patch('/api/change-orders/:id', async (req, res, next) => {
+router.patch('/api/change-orders/:id', requireScope('erp:write', 'admin'), async (req, res, next) => {
   try {
     const coId = req.params.id;
     const data = UpdateChangeOrderSchema.parse(req.body);
@@ -228,7 +229,7 @@ router.patch('/api/change-orders/:id', async (req, res, next) => {
 
 // ─── POST /api/purchase-orders ──────────────────────────────────────
 
-router.post('/api/purchase-orders', async (req, res, next) => {
+router.post('/api/purchase-orders', requireScope('erp:write', 'admin'), async (req, res, next) => {
   try {
     const data = CreatePurchaseOrderSchema.parse(req.body);
     logger.info('🧾 purchase-orders:create', { projectId: data.projectId, vendor: data.vendor });
@@ -318,7 +319,7 @@ router.post('/api/purchase-orders', async (req, res, next) => {
 
 // ─── GET /api/purchase-orders ───────────────────────────────────────
 
-router.get('/api/purchase-orders', async (req, res, next) => {
+router.get('/api/purchase-orders', requireScope('erp:read', 'admin'), async (req, res, next) => {
   try {
     const params = ListPurchaseOrdersQuerySchema.parse(req.query);
     let clientId = params.clientId;
@@ -402,7 +403,7 @@ router.get('/api/purchase-orders', async (req, res, next) => {
 
 // ─── GET /api/plan-vs-fact ──────────────────────────────────────────
 
-router.get('/api/plan-vs-fact', async (req, res, next) => {
+router.get('/api/plan-vs-fact', requireScope('erp:read', 'dashboard:read', 'admin'), async (req, res, next) => {
   try {
     const params = PlanVsFactQuerySchema.parse(req.query);
     let clientId = params.clientId;

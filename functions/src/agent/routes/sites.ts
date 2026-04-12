@@ -9,6 +9,7 @@ import {
   CreateSiteSchema,
   UpdateSiteSchema,
 } from '../schemas';
+import { requireScope } from '../agentMiddleware';
 
 const router = Router();
 
@@ -18,7 +19,7 @@ const router = Router();
 
 // ─── POST /api/sites ────────────────────────────────────────────────
 
-router.post('/api/sites', async (req, res, next) => {
+router.post('/api/sites', requireScope('projects:write', 'admin'), async (req, res, next) => {
   try {
     const data = CreateSiteSchema.parse(req.body);
     logger.info('🏗️ sites:create', { clientId: data.clientId, name: data.name });
@@ -67,7 +68,7 @@ router.post('/api/sites', async (req, res, next) => {
 
 // ─── GET /api/sites ─────────────────────────────────────────────────
 
-router.get('/api/sites', async (req, res, next) => {
+router.get('/api/sites', requireScope('projects:read', 'admin'), async (req, res, next) => {
   try {
     const clientId = req.query.clientId as string;
     if (!clientId) {
@@ -109,7 +110,7 @@ router.get('/api/sites', async (req, res, next) => {
 
 // ─── PATCH /api/sites/:id ───────────────────────────────────────────
 
-router.patch('/api/sites/:id', async (req, res, next) => {
+router.patch('/api/sites/:id', requireScope('projects:write', 'admin'), async (req, res, next) => {
   try {
     const siteId = req.params.id;
     const data = UpdateSiteSchema.parse(req.body);

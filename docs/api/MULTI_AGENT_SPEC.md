@@ -16,7 +16,7 @@
 | **3** | SHIPPED | Agent event queue | Новое |
 | **4** | SHIPPED | Scoped queries для всех routes | Новое |
 | **5** | SHIPPED | Event queue расширение (triggers, cleanup) | Новое |
-| **6** | TODO | Python Agent SDK | Новое |
+| **6** | SHIPPED | Python Agent SDK | Новое |
 | **7** | SHIPPED | Bot ↔ Agent conflict resolution | Анализ onWorkerBotMessage.ts |
 | **8** | SHIPPED | Новые бизнес-эндпоинты (/my-balance, overtime, etc.) | `FINANCE_PAYROLL_IMPROVEMENTS.md` |
 | **9** | SHIPPED | OpenAPI / Swagger авто-документация | `TODO_FUTURE_IMPROVEMENTS.md` §21 |

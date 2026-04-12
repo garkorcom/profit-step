@@ -575,6 +575,7 @@ export { closePayrollPeriod } from './callable/payroll/closePayrollPeriod';
 export { lockPayrollPeriod } from './callable/payroll/lockPayrollPeriod';
 export { generateDailyPayroll } from './scheduled/generateDailyPayroll';
 export { reconcileBalances } from './scheduled/reconcileBalances';
+export { cleanupAgentEvents } from './scheduled/cleanupAgentEvents';
 export { onWorkSessionCreate } from './triggers/workSessions/onWorkSessionCreate';
 export { onWorkSessionUpdate } from './triggers/workSessions/onWorkSessionUpdate';
 

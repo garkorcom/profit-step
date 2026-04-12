@@ -14,6 +14,7 @@ import {
   ListEstimatesQuerySchema,
   UpdateEstimateSchema,
 } from '../schemas';
+import { requireScope } from '../agentMiddleware';
 
 const router = Router();
 
@@ -24,7 +25,7 @@ const router = Router();
 
 // ─── POST /api/estimates ────────────────────────────────────────────
 
-router.post('/api/estimates', async (req, res, next) => {
+router.post('/api/estimates', requireScope('estimates:write', 'admin'), async (req, res, next) => {
   try {
     const data = CreateEstimateSchema.parse(req.body);
     logger.info('📐 estimates:create', { clientId: data.clientId, address: data.address, itemCount: data.items.length, key: data.idempotencyKey });
@@ -130,7 +131,7 @@ router.post('/api/estimates', async (req, res, next) => {
 
 // ─── GET /api/estimates/list ────────────────────────────────────────
 
-router.get('/api/estimates/list', async (req, res, next) => {
+router.get('/api/estimates/list', requireScope('estimates:read', 'admin'), async (req, res, next) => {
   try {
     const params = ListEstimatesQuerySchema.parse(req.query);
     let clientId = params.clientId;
@@ -203,7 +204,7 @@ router.get('/api/estimates/list', async (req, res, next) => {
 
 // ─── PATCH /api/estimates/:id ───────────────────────────────────────
 
-router.patch('/api/estimates/:id', async (req, res, next) => {
+router.patch('/api/estimates/:id', requireScope('estimates:write', 'admin'), async (req, res, next) => {
   try {
     const estimateId = req.params.id;
     const data = UpdateEstimateSchema.parse(req.body);
@@ -262,7 +263,7 @@ router.patch('/api/estimates/:id', async (req, res, next) => {
 
 // ─── POST /api/estimates/:id/convert-to-tasks ──────────────────────
 
-router.post('/api/estimates/:id/convert-to-tasks', async (req, res, next) => {
+router.post('/api/estimates/:id/convert-to-tasks', requireScope('estimates:write', 'admin'), async (req, res, next) => {
   try {
     const estimateId = req.params.id;
     const agentUserId = req.agentUserId;

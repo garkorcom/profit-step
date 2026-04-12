@@ -41,6 +41,7 @@ import {
   CreateNormSchema,
   WriteOffByNormSchema,
 } from '../schemas';
+import { requireScope } from '../agentMiddleware';
 
 const router = Router();
 
@@ -50,7 +51,7 @@ const router = Router();
 
 // ─── POST /api/inventory/warehouses ────────────────────────────────
 
-router.post('/api/inventory/warehouses', async (req, res, next) => {
+router.post('/api/inventory/warehouses', requireScope('inventory:write', 'admin'), async (req, res, next) => {
   try {
     const data = CreateWarehouseSchema.parse(req.body);
     logger.info('🏭 warehouse:create', { name: data.name, type: data.type });
@@ -118,7 +119,7 @@ router.post('/api/inventory/warehouses', async (req, res, next) => {
 
 // ─── GET /api/inventory/warehouses ─────────────────────────────────
 
-router.get('/api/inventory/warehouses', async (req, res, next) => {
+router.get('/api/inventory/warehouses', requireScope('inventory:read', 'admin'), async (req, res, next) => {
   try {
     const { clientId, projectId, type, includeArchived } = req.query;
     const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
@@ -170,7 +171,7 @@ router.get('/api/inventory/warehouses', async (req, res, next) => {
 
 // ─── GET /api/inventory/warehouses/:id ─────────────────────────────
 
-router.get('/api/inventory/warehouses/:id', async (req, res, next) => {
+router.get('/api/inventory/warehouses/:id', requireScope('inventory:read', 'admin'), async (req, res, next) => {
   try {
     const warehouseId = req.params.id;
     const { includeArchived } = req.query;
@@ -235,7 +236,7 @@ router.get('/api/inventory/warehouses/:id', async (req, res, next) => {
 
 // ─── PATCH /api/inventory/warehouses/:id ───────────────────────────
 
-router.patch('/api/inventory/warehouses/:id', async (req, res, next) => {
+router.patch('/api/inventory/warehouses/:id', requireScope('inventory:write', 'admin'), async (req, res, next) => {
   try {
     const data = UpdateWarehouseSchema.parse(req.body);
     const warehouseId = req.params.id;
@@ -298,7 +299,7 @@ router.patch('/api/inventory/warehouses/:id', async (req, res, next) => {
 
 // ─── DELETE /api/inventory/warehouses/:id ──────────────────────────
 
-router.delete('/api/inventory/warehouses/:id', async (req, res, next) => {
+router.delete('/api/inventory/warehouses/:id', requireScope('inventory:write', 'admin'), async (req, res, next) => {
   try {
     const warehouseId = req.params.id;
     const force = req.query.force === 'true';
@@ -361,7 +362,7 @@ router.delete('/api/inventory/warehouses/:id', async (req, res, next) => {
 
 // ─── POST /api/inventory/items ─────────────────────────────────────
 
-router.post('/api/inventory/items', async (req, res, next) => {
+router.post('/api/inventory/items', requireScope('inventory:write', 'admin'), async (req, res, next) => {
   try {
     const data = CreateInventoryItemSchema.parse(req.body);
     logger.info('📦 item:create', { name: data.name, warehouseId: data.warehouseId, quantity: data.quantity });
@@ -428,7 +429,7 @@ router.post('/api/inventory/items', async (req, res, next) => {
 
 // ─── GET /api/inventory/items ──────────────────────────────────────
 
-router.get('/api/inventory/items', async (req, res, next) => {
+router.get('/api/inventory/items', requireScope('inventory:read', 'admin'), async (req, res, next) => {
   try {
     const params = ListInventoryItemsQuerySchema.parse(req.query);
     logger.info('📦 item:list', { warehouseId: params.warehouseId, category: params.category, limit: params.limit });
@@ -471,7 +472,7 @@ router.get('/api/inventory/items', async (req, res, next) => {
 
 // ─── PATCH /api/inventory/items/:id ────────────────────────────────
 
-router.patch('/api/inventory/items/:id', async (req, res, next) => {
+router.patch('/api/inventory/items/:id', requireScope('inventory:write', 'admin'), async (req, res, next) => {
   try {
     const itemId = req.params.id;
     const data = UpdateInventoryItemSchema.parse(req.body);
@@ -530,7 +531,7 @@ router.patch('/api/inventory/items/:id', async (req, res, next) => {
 
 // ─── DELETE /api/inventory/items/:id ───────────────────────────────
 
-router.delete('/api/inventory/items/:id', async (req, res, next) => {
+router.delete('/api/inventory/items/:id', requireScope('inventory:write', 'admin'), async (req, res, next) => {
   try {
     const itemId = req.params.id;
     logger.info('📦 item:delete', { itemId });
@@ -569,7 +570,7 @@ router.delete('/api/inventory/items/:id', async (req, res, next) => {
 
 // ─── POST /api/inventory/transactions ──────────────────────────────
 
-router.post('/api/inventory/transactions', async (req, res, next) => {
+router.post('/api/inventory/transactions', requireScope('inventory:write', 'admin'), async (req, res, next) => {
   try {
     const data = CreateInventoryTransactionSchema.parse(req.body);
     logger.info('📦 tx:create', { itemId: data.itemId, type: data.type, quantity: data.quantity });
@@ -714,7 +715,7 @@ router.post('/api/inventory/transactions', async (req, res, next) => {
 
 // ─── POST /api/inventory/transactions/task — bulk task materials ───
 
-router.post('/api/inventory/transactions/task', async (req, res, next) => {
+router.post('/api/inventory/transactions/task', requireScope('inventory:write', 'admin'), async (req, res, next) => {
   try {
     const { taskId, warehouseId, items } = req.body as {
       taskId: string;
@@ -818,7 +819,7 @@ router.post('/api/inventory/transactions/task', async (req, res, next) => {
 
 // ─── GET /api/inventory/transactions ───────────────────────────────
 
-router.get('/api/inventory/transactions', async (req, res, next) => {
+router.get('/api/inventory/transactions', requireScope('inventory:read', 'admin'), async (req, res, next) => {
   try {
     const params = ListInventoryTransactionsQuerySchema.parse(req.query);
     logger.info('📦 tx:list', { warehouseId: params.warehouseId, itemId: params.itemId, limit: params.limit });
@@ -868,7 +869,7 @@ router.get('/api/inventory/transactions', async (req, res, next) => {
 
 // ─── POST /api/inventory/norms ────────────────────────────────────
 
-router.post('/api/inventory/norms', async (req, res, next) => {
+router.post('/api/inventory/norms', requireScope('inventory:write', 'admin'), async (req, res, next) => {
   try {
     const data = CreateNormSchema.parse(req.body);
     logger.info('📋 norm:create', { id: data.id, name: data.name });
@@ -909,7 +910,7 @@ router.post('/api/inventory/norms', async (req, res, next) => {
 
 // ─── GET /api/inventory/norms ─────────────────────────────────────
 
-router.get('/api/inventory/norms', async (req, res, next) => {
+router.get('/api/inventory/norms', requireScope('inventory:read', 'admin'), async (req, res, next) => {
   try {
     logger.info('📋 norm:list');
     const snap = await db.collection('inventory_norms').get();
@@ -927,7 +928,7 @@ router.get('/api/inventory/norms', async (req, res, next) => {
 
 // ─── GET /api/inventory/norms/:id ─────────────────────────────────
 
-router.get('/api/inventory/norms/:id', async (req, res, next) => {
+router.get('/api/inventory/norms/:id', requireScope('inventory:read', 'admin'), async (req, res, next) => {
   try {
     const normId = req.params.id;
     logger.info('📋 norm:details', { normId });
@@ -952,7 +953,7 @@ router.get('/api/inventory/norms/:id', async (req, res, next) => {
 
 // ─── POST /api/inventory/write-off-by-norm ────────────────────────
 
-router.post('/api/inventory/write-off-by-norm', async (req, res, next) => {
+router.post('/api/inventory/write-off-by-norm', requireScope('inventory:write', 'admin'), async (req, res, next) => {
   try {
     const data = WriteOffByNormSchema.parse(req.body);
     logger.info('📋 norm:write-off', { normId: data.normId, taskId: data.taskId, quantity: data.quantity });

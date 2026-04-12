@@ -20,7 +20,7 @@ import {
   clientRoutes, dashboardRoutes, dashboardClientRoutes, taskRoutes, costRoutes,
   timeTrackingRoutes, financeRoutes, userRoutes,
   estimateRoutes, projectRoutes, siteRoutes, erpRoutes, inventoryRoutes,
-  sharingRoutes, agentTokenRoutes, eventRoutes,
+  sharingRoutes, agentTokenRoutes, eventRoutes, payrollRoutes,
 } from './routes';
 import docsRoutes from './routes/docs';
 import portalRoutes from './routes/portal';
@@ -63,7 +63,7 @@ app.use(rateLimitMiddleware);
 // ─── Register Domain Routes ────────────────────────────────────────
 
 const routes = [
-  agentTokenRoutes, eventRoutes,  // token management + event queue (first — admin routes)
+  agentTokenRoutes, eventRoutes, payrollRoutes,  // token management + event queue + payroll (first)
   clientRoutes, dashboardRoutes, dashboardClientRoutes, taskRoutes, costRoutes,
   timeTrackingRoutes, financeRoutes, userRoutes,
   estimateRoutes, projectRoutes, siteRoutes, erpRoutes, inventoryRoutes,

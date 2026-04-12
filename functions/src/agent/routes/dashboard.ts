@@ -4,13 +4,13 @@
 import { Router } from 'express';
 
 import { db, Timestamp, logger, getCachedClients } from '../routeContext';
-
+import { requireScope } from '../agentMiddleware';
 
 const router = Router();
 
 // ─── GET /api/dashboard ────────────────────────────────────────────
 
-router.get('/api/dashboard', async (req, res, next) => {
+router.get('/api/dashboard', requireScope('dashboard:read', 'admin'), async (req, res, next) => {
   try {
     logger.info('📊 dashboard:fetch');
 

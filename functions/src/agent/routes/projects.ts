@@ -18,12 +18,13 @@ import {
   BlueprintSplitSchema,
   CreateBlackboardSchema,
 } from '../schemas';
+import { requireScope } from '../agentMiddleware';
 
 const router = Router();
 
 // ─── POST /api/projects ─────────────────────────────────────────────
 
-router.post('/api/projects', async (req, res, next) => {
+router.post('/api/projects', requireScope('projects:write', 'admin'), async (req, res, next) => {
   try {
     const data = CreateProjectSchema.parse(req.body);
     logger.info('🏗️ projects:create', { clientId: data.clientId, address: data.address, name: data.name });
@@ -97,7 +98,7 @@ router.post('/api/projects', async (req, res, next) => {
 
 // ─── GET /api/projects/list ─────────────────────────────────────────
 
-router.get('/api/projects/list', async (req, res, next) => {
+router.get('/api/projects/list', requireScope('projects:read', 'admin'), async (req, res, next) => {
   try {
     const params = ListProjectsQuerySchema.parse(req.query);
     let clientId = params.clientId;
@@ -159,7 +160,7 @@ router.get('/api/projects/list', async (req, res, next) => {
 
 // ─── GET /api/projects/:id/dashboard ───────────────────────────────
 
-router.get('/api/projects/:id/dashboard', async (req, res, next) => {
+router.get('/api/projects/:id/dashboard', requireScope('projects:read', 'admin'), async (req, res, next) => {
   try {
     const projectId = req.params.id;
     logger.info('📊 projects:dashboard', { projectId });
@@ -274,7 +275,7 @@ const ALLOWED_EXTENSIONS = new Set([
   '.xlsx', '.xls', '.docx', '.doc', '.csv', '.txt', '.json', '.zip',
 ]);
 
-router.post('/api/projects/:id/files', async (req, res, next) => {
+router.post('/api/projects/:id/files', requireScope('projects:write', 'admin'), async (req, res, next) => {
   try {
     const projectId = req.params.id;
     const data = UploadFileSchema.parse(req.body);
@@ -386,7 +387,7 @@ router.post('/api/projects/:id/files', async (req, res, next) => {
 
 // ─── GET /api/projects/:id/files ───────────────────────────────────
 
-router.get('/api/projects/:id/files', async (req, res, next) => {
+router.get('/api/projects/:id/files', requireScope('projects:read', 'admin'), async (req, res, next) => {
   try {
     const projectId = req.params.id;
     logger.info('📁 files:list', { projectId });
@@ -436,7 +437,7 @@ router.get('/api/projects/:id/files', async (req, res, next) => {
 // BLUEPRINT SPLIT — Estimator V3 Phase 2
 // ═══════════════════════════════════════════════════════════════════
 
-router.post('/api/blueprint/split', async (req, res, next) => {
+router.post('/api/blueprint/split', requireScope('projects:write', 'admin'), async (req, res, next) => {
   try {
     const data = BlueprintSplitSchema.parse(req.body);
     logger.info('📄 blueprint:split', { projectId: data.projectId, fileId: data.fileId });
@@ -574,7 +575,7 @@ router.post('/api/blueprint/split', async (req, res, next) => {
 // BLACKBOARD — Estimator V3 Phase 3
 // ═══════════════════════════════════════════════════════════════════
 
-router.post('/api/blackboard', async (req, res, next) => {
+router.post('/api/blackboard', requireScope('estimates:write', 'admin'), async (req, res, next) => {
   try {
     const data = CreateBlackboardSchema.parse(req.body);
     logger.info('📋 blackboard:create', { projectId: data.projectId, version: data.version });
@@ -645,7 +646,7 @@ router.post('/api/blackboard', async (req, res, next) => {
   }
 });
 
-router.get('/api/blackboard/:projectId', async (req, res, next) => {
+router.get('/api/blackboard/:projectId', requireScope('estimates:read', 'admin'), async (req, res, next) => {
   try {
     const projectId = req.params.projectId;
     const version = req.query.version ? Number(req.query.version) : undefined;

@@ -129,13 +129,21 @@ router.get('/api/costs/list', requireScope('costs:read', 'admin'), async (req, r
 
     let q: admin.firestore.Query = db.collection('costs');
 
+    // Scoped query: worker sees only their own costs
+    const isAdmin = (req.agentScopes || []).includes('admin');
+    const role = req.agentRole || 'user';
+    const isManagerOrAbove = ['superadmin', 'company_admin', 'admin', 'manager'].includes(role);
+    if (!isAdmin && !isManagerOrAbove) {
+      q = q.where('createdBy', '==', req.agentUserId);
+    }
+
     if (clientId) {
       q = q.where('clientId', '==', clientId);
     }
 
     // Category filter: comma-separated
     if (params.category) {
-      const categories = params.category.split(',').map((c) => c.trim()).filter(Boolean);
+      const categories = params.category.split(',').map((c: string) => c.trim()).filter(Boolean);
       if (categories.length === 1) {
         q = q.where('category', '==', categories[0]);
       } else if (categories.length > 1 && categories.length <= 10) {

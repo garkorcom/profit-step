@@ -5,12 +5,13 @@ import { Router } from 'express';
 import { db, FieldValue, logger, logAgentActivity, getCachedClients, Fuse } from '../routeContext';
 import { logAudit, AuditHelpers, extractAuditContext } from '../utils/auditLogger';
 import { CreateClientSchema, UpdateClientSchema } from '../schemas';
+import { requireScope } from '../agentMiddleware';
 
 const router = Router();
 
 // ─── POST /api/clients ──────────────────────────────────────────────
 
-router.post('/api/clients', async (req, res, next) => {
+router.post('/api/clients', requireScope('clients:write', 'admin'), async (req, res, next) => {
   try {
     const data = CreateClientSchema.parse(req.body);
     logger.info('👤 clients:create', { name: data.name, type: data.type });
@@ -77,7 +78,7 @@ router.post('/api/clients', async (req, res, next) => {
 
 // ─── PATCH /api/clients/:id ─────────────────────────────────────────
 
-router.patch('/api/clients/:id', async (req, res, next) => {
+router.patch('/api/clients/:id', requireScope('clients:write', 'admin'), async (req, res, next) => {
   try {
     const clientId = req.params.id;
     const data = UpdateClientSchema.parse(req.body);
@@ -142,7 +143,7 @@ router.patch('/api/clients/:id', async (req, res, next) => {
 
 // ─── GET /api/clients/list ───────────────────────────────────────────
 
-router.get('/api/clients/list', async (req, res, next) => {
+router.get('/api/clients/list', requireScope('clients:read', 'admin'), async (req, res, next) => {
   try {
     const limitParam = Math.min(parseInt(req.query.limit as string) || 50, 200);
     const status = req.query.status as string;
@@ -173,7 +174,7 @@ router.get('/api/clients/list', async (req, res, next) => {
 
 // ─── GET /api/clients/search ────────────────────────────────────────
 
-router.get('/api/clients/search', async (req, res, next) => {
+router.get('/api/clients/search', requireScope('clients:read', 'admin'), async (req, res, next) => {
   try {
     const query = req.query.q as string;
     if (!query || query.length < 2) {
@@ -200,7 +201,7 @@ router.get('/api/clients/search', async (req, res, next) => {
 
 // ─── GET /api/clients/:id ──────────────────────────────────────────
 
-router.get('/api/clients/:id', async (req, res, next) => {
+router.get('/api/clients/:id', requireScope('clients:read', 'admin'), async (req, res, next) => {
   try {
     const clientId = req.params.id;
     logger.info('👤 clients:profile', { clientId });

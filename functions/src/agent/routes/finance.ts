@@ -10,12 +10,13 @@ import {
   FinanceApproveSchema,
   FinanceUndoSchema,
 } from '../schemas';
+import { requireScope } from '../agentMiddleware';
 
 const router = Router();
 
 // ─── GET /api/projects/status ───────────────────────────────────────
 
-router.get('/api/projects/status', async (req, res, next) => {
+router.get('/api/projects/status', requireScope('projects:read', 'dashboard:read', 'admin'), async (req, res, next) => {
   try {
     const q = ProjectStatusQuery.parse(req.query);
     let clientId = q.clientId;
@@ -83,7 +84,7 @@ router.get('/api/projects/status', async (req, res, next) => {
 
 // ─── GET /api/finance/context ───────────────────────────────────────
 
-router.get('/api/finance/context', async (req, res, next) => {
+router.get('/api/finance/context', requireScope('admin'), async (req, res, next) => {
   try {
     logger.info('🏦 finance:context');
     // Active projects (using projects collection, mapped to clientId)
@@ -108,7 +109,7 @@ router.get('/api/finance/context', async (req, res, next) => {
 
 // ─── POST /api/finance/transactions/batch ───────────────────────────
 
-router.post('/api/finance/transactions/batch', async (req, res, next) => {
+router.post('/api/finance/transactions/batch', requireScope('admin'), async (req, res, next) => {
   try {
     const data = FinanceBatchSchema.parse(req.body);
     logger.info(`🏦 finance:batch. Count: ${data.transactions.length}`);
@@ -154,7 +155,7 @@ router.post('/api/finance/transactions/batch', async (req, res, next) => {
 
 // ─── POST /api/finance/transactions/approve ─────────────────────────
 
-router.post('/api/finance/transactions/approve', async (req, res, next) => {
+router.post('/api/finance/transactions/approve', requireScope('admin'), async (req, res, next) => {
   try {
     const data = FinanceApproveSchema.parse(req.body);
     logger.info(`🏦 finance:approve. Count: ${data.transactions.length}`);
@@ -232,7 +233,7 @@ router.post('/api/finance/transactions/approve', async (req, res, next) => {
 
 // ─── POST /api/finance/transactions/undo ─────────────────────────
 
-router.post('/api/finance/transactions/undo', async (req, res, next) => {
+router.post('/api/finance/transactions/undo', requireScope('admin'), async (req, res, next) => {
   try {
     const data = FinanceUndoSchema.parse(req.body);
     logger.info(`🏦 finance:undo. Count: ${data.transactionIds.length}`);

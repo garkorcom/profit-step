@@ -15,6 +15,8 @@ import { sendMessage, getActiveSession, getActiveSessionStrict, sendMainMenu, fi
 import { resolveHourlyRate } from './rateUtils';
 import { verifyEmployeeFace } from '../../services/faceVerificationService';
 import { generateConversationalReply } from '../../services/telegramAIAssistant';
+import { findActiveSessionsInTx, closeSessionInTx } from '../../services/TimeTrackingService';
+import { publishSessionEvent } from '../../agent/utils/eventPublisher';
 
 // Initialize in the file if not already initialized
 if (admin.apps.length === 0) {
@@ -987,28 +989,19 @@ async function handleServiceSelection(chatId: number, userId: number, clientId: 
 }
 
 async function initWorkSession(chatId: number, userId: number, clientId: string, serviceName?: string) {
-    // 1. Check if already active
-    const activeSession = await getActiveSession(userId);
-    let autoSwitchMsg = '';
+    // Phase 7: Resolve identity — prefer Firebase UID over telegramId
+    const { hourlyRate, platformUser, platformUserId, companyId, employeeName } = await resolveHourlyRate(userId);
+    const firebaseUid = platformUserId || String(userId);
 
-    if (activeSession) {
-        // AUTO-SWITCH: Finish the active session automatically
-        autoSwitchMsg = await autoFinishActiveSession(activeSession, chatId, userId);
-    }
-
-    // 2. Get Client Name
+    // Get Client Name
     const clientDoc = await db.collection('clients').doc(clientId).get();
     let clientName = clientDoc.exists ? clientDoc.data()?.name : 'Unknown Client';
-
     if (serviceName) {
         clientName = `${clientName} - ${serviceName}`;
     }
 
-    // 3. Identity Sync & Rate Resolution
-    const { hourlyRate, platformUser, platformUserId, companyId, employeeName } = await resolveHourlyRate(userId);
-
+    // Sync local employee record
     if (platformUser) {
-        // Sync local employee record to match platform name
         await db.collection('employees').doc(String(userId)).set({
             name: employeeName,
             telegramId: userId,
@@ -1016,38 +1009,97 @@ async function initWorkSession(chatId: number, userId: number, clientId: string,
         }, { merge: true });
     }
 
-    // 4. Create Session (Pending Location)
-    const sessionRef = await db.collection('work_sessions').add({
-        employeeId: userId,
-        employeeName: employeeName,
-        platformUserId: platformUserId, // Link to platform user
-        companyId: companyId,           // Link to company
-        clientId: clientId,
-        clientName: clientName,
-        startTime: admin.firestore.FieldValue.serverTimestamp(),
-        status: 'active',
-        service: serviceName || null, // Create field if exists
-        awaitingLocation: true,
-        awaitingChecklist: false,
-        checklistStep: 0,
-        checklistAnswers: {},
-        awaitingStartPhoto: false,
-        hourlyRate: hourlyRate, // Snapshot rate
-        // Phase 5: Task linking (optional, for future "Start from Task")
-        taskId: null,
-        taskTitle: null
+    // Phase 7: Build all known IDs for cross-platform active session check
+    const allEmployeeIds: (string | number)[] = [firebaseUid];
+    if (firebaseUid !== String(userId)) {
+        allEmployeeIds.push(userId);          // numeric telegramId
+        allEmployeeIds.push(String(userId));  // string variant
+    }
+
+    // Phase 7: Atomic transaction — check active + close + create
+    // Prevents race condition between bot and Agent API creating simultaneous sessions
+    const txResult = await db.runTransaction(async (tx) => {
+        // ═══ PHASE 1: ALL READS (Firestore requirement) ═══
+        const userRef = db.collection('users').doc(firebaseUid);
+        await tx.get(userRef);
+
+        // Cross-platform scan: find ANY active sessions for ALL employee IDs
+        const activeSessions = await findActiveSessionsInTx(tx, allEmployeeIds);
+
+        // ═══ PHASE 2: ALL WRITES ═══
+        const endTime = admin.firestore.Timestamp.now();
+
+        // Close any active sessions (auto-switch) atomically
+        let closed: { clientName: string; minutes: number; earnings: number } | null = null;
+        for (const activeDoc of activeSessions) {
+            const result = closeSessionInTx(tx, activeDoc, endTime);
+            if (result && !closed) {
+                closed = {
+                    clientName: activeDoc.data()!.clientName || 'Unknown',
+                    minutes: result.durationMinutes,
+                    earnings: result.earnings,
+                };
+            }
+        }
+
+        // Create new session with Firebase UID as employeeId
+        const newRef = db.collection('work_sessions').doc();
+        tx.set(newRef, {
+            employeeId: firebaseUid,             // Phase 7: Firebase UID, not numeric telegramId
+            telegramId: userId,                   // Keep for backward compat
+            employeeName: employeeName,
+            platformUserId: platformUserId,
+            companyId: companyId,
+            clientId: clientId,
+            clientName: clientName,
+            startTime: admin.firestore.Timestamp.now(),
+            status: 'active',
+            service: serviceName || null,
+            awaitingLocation: true,
+            awaitingChecklist: false,
+            checklistStep: 0,
+            checklistAnswers: {},
+            awaitingStartPhoto: false,
+            hourlyRate: hourlyRate,
+            taskId: null,
+            taskTitle: null,
+            source: 'bot',                        // Phase 7: track origin
+        });
+
+        // Set activeSessionId pointer on user doc
+        tx.set(userRef, {
+            activeSessionId: newRef.id,
+            activeSessionUpdatedAt: admin.firestore.Timestamp.now(),
+        }, { merge: true });
+
+        return { sessionRef: newRef, closedSession: closed };
     });
+
+    const sessionRef = txResult.sessionRef;
+    const closedSession = txResult.closedSession;
 
     await logBotAction(userId, userId, 'session_created', { sessionId: sessionRef.id, clientId, clientName });
     logger.info(`[${employeeName}] ▶️ Work Started — ${clientName}`);
+
+    // Phase 7: Publish event for agent consumption
+    publishSessionEvent('started', sessionRef.id, `${employeeName} started work at ${clientName}`, {
+        clientId, clientName, employeeName, source: 'bot',
+    }, firebaseUid);
+
+    // Auto-switch notification (after transaction)
+    let autoSwitchMsg = '';
+    if (closedSession) {
+        const mins = closedSession.minutes;
+        autoSwitchMsg = `⚠️ Previous session closed (${closedSession.clientName}).\n⏱ ${Math.floor(mins / 60)}h ${mins % 60}m  |  💵 Earned: $${closedSession.earnings}\n\n`;
+        await sendAdminNotification(`👤 *${employeeName}:*\n🔄 *Auto-Switch*\n📍 Closed: ${closedSession.clientName}\n⏱ ${Math.floor(mins / 60)}h ${mins % 60}m\n💵 Earned: $${closedSession.earnings}`);
+    }
 
     // ─── hourlyRate = 0 warning ───
     if (!hourlyRate) {
         await sendMessage(chatId, '⚠️ Внимание! Ваша почасовая ставка не установлена ($0/ч). Пожалуйста, свяжитесь с руководителем для уточнения.');
     }
 
-    // ZERO-BLOCK: Immediately send the main menu keyboard (Break / Finish Work) 
-    // so the user is never blocked, even while waiting for location.
+    // ZERO-BLOCK: Immediately send the main menu keyboard
     await sendMainMenu(chatId, userId);
 
     await sendMessage(chatId, `${autoSwitchMsg}📍 Client selected: *${clientName}*\n\nPlease share your **Live Location** or current **Location** to verify attendance.\n(Click the 📎 attachment icon -> Location)`,
@@ -1317,13 +1369,16 @@ async function handleLocationConfirmStart(chatId: number, userId: number) {
         skipChecklist = !recentSnap.empty;
     } catch (_) { /* ignore */ }
 
-    await db.collection('work_sessions').add({
-        employeeId: userId,
+    const firebaseUid = platformUserId || String(userId);
+    const displayClientName = serviceName ? `${clientName} - ${serviceName}` : clientName;
+    const sessionRef = await db.collection('work_sessions').add({
+        employeeId: firebaseUid,              // Phase 7: Firebase UID
+        telegramId: userId,                    // backward compat
         employeeName: employeeName,
         platformUserId: platformUserId,
         companyId: companyId,
         clientId: clientId,
-        clientName: serviceName ? `${clientName} - ${serviceName}` : clientName,
+        clientName: displayClientName,
         startTime: admin.firestore.FieldValue.serverTimestamp(),
         status: 'active',
         service: serviceName || null,
@@ -1335,11 +1390,20 @@ async function handleLocationConfirmStart(chatId: number, userId: number) {
         checklistAnswers: skipChecklist ? Object.fromEntries(CHECKLIST_QUESTIONS.map(q => [q.key, true])) : {},
         // Case 5: Don't block on photo — timer starts immediately
         awaitingStartPhoto: false,
-        awaitingDeferredPhoto: true, // Photo requested but non-blocking
+        awaitingDeferredPhoto: true,
         hourlyRate: hourlyRate,
         taskId: null,
-        taskTitle: null
+        taskTitle: null,
+        source: 'bot',
     });
+    // Phase 7: set pointer + publish event (fire-and-forget)
+    db.collection('users').doc(firebaseUid).set({
+        activeSessionId: sessionRef.id,
+        activeSessionUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true }).catch(() => {});
+    publishSessionEvent('started', sessionRef.id, `${employeeName} started work at ${displayClientName}`, {
+        clientId, clientName: displayClientName, source: 'bot',
+    }, firebaseUid);
 
     await pendingStartRef.delete();
 
@@ -1503,8 +1567,10 @@ async function handleLocationNewClient(chatId: number, userId: number, clientId:
 
     const { hourlyRate, platformUserId, companyId, employeeName } = await resolveHourlyRate(userId);
 
-    await db.collection('work_sessions').add({
-        employeeId: userId,
+    const firebaseUid = platformUserId || String(userId);
+    const sessionRef = await db.collection('work_sessions').add({
+        employeeId: firebaseUid,              // Phase 7: Firebase UID
+        telegramId: userId,                    // backward compat
         employeeName: employeeName,
         platformUserId: platformUserId,
         companyId: companyId,
@@ -1520,8 +1586,17 @@ async function handleLocationNewClient(chatId: number, userId: number, clientId:
         awaitingStartPhoto: false,
         hourlyRate: hourlyRate,
         taskId: null,
-        taskTitle: null
+        taskTitle: null,
+        source: 'bot',
     });
+    // Phase 7: set pointer + publish event
+    db.collection('users').doc(firebaseUid).set({
+        activeSessionId: sessionRef.id,
+        activeSessionUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true }).catch(() => {});
+    publishSessionEvent('started', sessionRef.id, `${employeeName} started work at ${clientName}`, {
+        clientId, clientName, source: 'bot',
+    }, firebaseUid);
 
     await pendingStartRef.delete();
 
@@ -1997,8 +2072,10 @@ async function handleText(chatId: number, userId: number, text: string) {
         const location = pendingData.location;
         const { hourlyRate, platformUserId, companyId, employeeName } = await resolveHourlyRate(userId);
 
-        await db.collection('work_sessions').add({
-            employeeId: userId,
+        const firebaseUid = platformUserId || String(userId);
+        const sessionRef = await db.collection('work_sessions').add({
+            employeeId: firebaseUid,              // Phase 7: Firebase UID
+            telegramId: userId,                    // backward compat
             employeeName: employeeName,
             platformUserId: platformUserId,
             companyId: companyId,
@@ -2014,8 +2091,17 @@ async function handleText(chatId: number, userId: number, text: string) {
             awaitingStartPhoto: false,
             hourlyRate: hourlyRate,
             taskId: null,
-            taskTitle: null
+            taskTitle: null,
+            source: 'bot',
         });
+        // Phase 7: set pointer + publish event
+        db.collection('users').doc(firebaseUid).set({
+            activeSessionId: sessionRef.id,
+            activeSessionUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        }, { merge: true }).catch(() => {});
+        publishSessionEvent('started', sessionRef.id, `${employeeName} started work at ${text}`, {
+            clientId: 'custom', clientName: text, source: 'bot',
+        }, firebaseUid);
 
         await pendingStartRef.delete();
         await sendMessage(chatId,
@@ -2973,6 +3059,7 @@ async function calculateDailyStats(userId: number, currentSessionMinutes = 0, cu
     return { minutes: dailyMinutes, earnings: dailyEarnings };
 }
 
+// @ts-ignore TS6133 — kept as legacy fallback; initWorkSession now uses closeSessionInTx
 async function autoFinishActiveSession(activeSession: FirebaseFirestore.QueryDocumentSnapshot, chatId: number, userId: number): Promise<string> {
     const sessionData = activeSession.data();
     const endTime = admin.firestore.Timestamp.now();

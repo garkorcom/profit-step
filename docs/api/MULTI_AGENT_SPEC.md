@@ -1,6 +1,6 @@
 # ТЗ: Мульти-агентная инфраструктура CRM Profit Step
 
-> Статус: Phase 1-3 SHIPPED (2026-04-11), Phase 4-7 TODO
+> Статус: Phase 1-5, 7-9 SHIPPED (2026-04-11), Phase 6, 10 TODO
 > Автор: Денис + Claude Code
 > Задача: каждый сотрудник имеет персонального AI-агента на своём компьютере
 > Версия: 3.0 (2026-04-11) — добавлены: детальные планы Phase 4-10, API контракты, Zod schemas, sequence diagrams, тест-план, timeline, SDK architecture, payroll endpoints
@@ -14,12 +14,12 @@
 | **1** | SHIPPED | Per-employee API tokens | Новое |
 | **2** | SHIPPED | RBAC scope enforcement | Новое |
 | **3** | SHIPPED | Agent event queue | Новое |
-| **4** | TODO | Scoped queries для всех routes | Новое |
-| **5** | TODO | Event queue расширение (triggers, cleanup) | Новое |
+| **4** | SHIPPED | Scoped queries для всех routes | Новое |
+| **5** | SHIPPED | Event queue расширение (triggers, cleanup) | Новое |
 | **6** | TODO | Python Agent SDK | Новое |
-| **7** | TODO | Bot ↔ Agent conflict resolution | Анализ onWorkerBotMessage.ts |
-| **8** | TODO | Новые бизнес-эндпоинты (/my-balance, overtime, etc.) | `FINANCE_PAYROLL_IMPROVEMENTS.md` |
-| **9** | TODO | OpenAPI / Swagger авто-документация | `TODO_FUTURE_IMPROVEMENTS.md` §21 |
+| **7** | SHIPPED | Bot ↔ Agent conflict resolution | Анализ onWorkerBotMessage.ts |
+| **8** | SHIPPED | Новые бизнес-эндпоинты (/my-balance, overtime, etc.) | `FINANCE_PAYROLL_IMPROVEMENTS.md` |
+| **9** | SHIPPED | OpenAPI / Swagger авто-документация | `TODO_FUTURE_IMPROVEMENTS.md` §21 |
 | **10** | TODO | Push-уведомления (webhooks, Telegram bridge, FCM) | `TODO_FUTURE_IMPROVEMENTS.md` §10 |
 
 ### Связанные документы

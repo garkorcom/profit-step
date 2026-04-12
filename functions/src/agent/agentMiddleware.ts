@@ -262,7 +262,7 @@ export const errorHandler = (err: any, req: Request, res: Response, _next: NextF
     const logPayload: Record<string, any> = {
       requestId,
       path: req.path,
-      errors: err.errors.map((e) => ({ path: e.path, message: e.message })),
+      errors: err.errors.map((e: any) => ({ path: e.path, message: e.message })),
     };
     if (process.env.NODE_ENV !== 'production') {
       logPayload.body = req.body;
@@ -272,7 +272,7 @@ export const errorHandler = (err: any, req: Request, res: Response, _next: NextF
       error: 'Validation failed',
       code: 'VALIDATION_ERROR',
       requestId,
-      details: err.errors.map((e) => ({
+      details: err.errors.map((e: any) => ({
         field: e.path.join('.'),
         message: e.message,
       })),

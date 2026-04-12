@@ -193,7 +193,7 @@ router.get('/api/gtd-tasks/list', requireScope('tasks:read', 'admin'), async (re
 
     // Status filter: comma-separated → 'in' query
     if (params.status) {
-      const statuses = params.status.split(',').map((s) => s.trim()).filter(Boolean);
+      const statuses = params.status.split(',').map((s: string) => s.trim()).filter(Boolean);
       if (statuses.length === 1) {
         q = q.where('status', '==', statuses[0]);
       } else if (statuses.length > 1 && statuses.length <= 10) {

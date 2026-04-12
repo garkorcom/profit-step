@@ -3,7 +3,7 @@ import { z } from 'zod';
 export const ProjectStatusQuery = z.object({
   clientId: z.string().optional(),
   clientName: z.string().min(2).optional(),
-}).refine((d) => d.clientId || d.clientName, {
+}).refine((d: any) => d.clientId || d.clientName, {
   message: 'Требуется clientId или clientName',
 });
 

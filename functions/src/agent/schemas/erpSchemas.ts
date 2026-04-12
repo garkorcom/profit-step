@@ -34,7 +34,7 @@ export const UpdateChangeOrderSchema = z.object({
   items: z.array(ChangeOrderItemSchema).optional(),
   rejectionReason: z.string().optional(),
   approvedBy: z.string().optional(),
-}).refine(data => Object.keys(data).length > 0, {
+}).refine((data: any) => Object.keys(data).length > 0, {
   message: 'At least one field must be provided',
 });
 
@@ -93,6 +93,6 @@ export const PlanVsFactQuerySchema = z.object({
   clientId: z.string().optional(),
   clientName: z.string().min(2).optional(),
   projectId: z.string().optional(),
-}).refine(d => d.clientId || d.clientName || d.projectId, {
+}).refine((d: any) => d.clientId || d.clientName || d.projectId, {
   message: 'Requires clientId, clientName, or projectId',
 });

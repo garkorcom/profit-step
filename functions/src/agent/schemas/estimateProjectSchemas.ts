@@ -44,7 +44,7 @@ export const UpdateEstimateSchema = z.object({
   terms: z.string().optional(),
   validUntil: z.string().nullable().optional(),
   taxRate: z.number().min(0).max(100).optional(),
-}).refine(data => Object.keys(data).length > 0, {
+}).refine((data: any) => Object.keys(data).length > 0, {
   message: 'At least one field must be provided',
 });
 
@@ -121,6 +121,6 @@ export const UpdateSiteSchema = z.object({
   type: z.enum(['residential', 'commercial', 'industrial']).optional(),
   permitNumber: z.string().optional(),
   status: z.enum(['active', 'completed', 'on_hold']).optional(),
-}).refine(data => Object.keys(data).length > 0, {
+}).refine((data: any) => Object.keys(data).length > 0, {
   message: 'At least one field must be provided',
 });

@@ -78,7 +78,7 @@ router.post('/api/estimates', requireScope('estimates:write', 'admin'), async (r
     // Generate estimate number
     const number = `EST-${Date.now().toString().slice(-6)}`;
 
-    const subtotal = data.items.reduce((sum, item) => sum + item.total, 0);
+    const subtotal = data.items.reduce((sum: number, item: any) => sum + item.total, 0);
     const taxRate = data.taxRate || 0;
     const taxAmount = +(subtotal * (taxRate / 100)).toFixed(2);
     const total = +(subtotal + taxAmount).toFixed(2);
@@ -156,7 +156,7 @@ router.get('/api/estimates/list', requireScope('estimates:read', 'admin'), async
     }
 
     if (params.status) {
-      const statuses = params.status.split(',').map(s => s.trim()).filter(Boolean);
+      const statuses = params.status.split(',').map((s: string) => s.trim()).filter(Boolean);
       if (statuses.length === 1) {
         q = q.where('status', '==', statuses[0]);
       } else if (statuses.length > 1 && statuses.length <= 10) {
@@ -237,7 +237,7 @@ router.patch('/api/estimates/:id', requireScope('estimates:write', 'admin'), asy
 
     if (data.items !== undefined) {
       updatePayload.items = data.items;
-      const subtotal = data.items.reduce((sum, item) => sum + item.total, 0);
+      const subtotal = data.items.reduce((sum: number, item: any) => sum + item.total, 0);
       const taxRate = data.taxRate ?? estimateDoc.data()!.taxRate ?? 0;
       const taxAmount = +(subtotal * (taxRate / 100)).toFixed(2);
       updatePayload.subtotal = +subtotal.toFixed(2);

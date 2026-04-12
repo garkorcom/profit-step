@@ -42,8 +42,8 @@ router.post('/api/change-orders', requireScope('erp:write', 'admin'), async (req
     const companyId = await resolveOwnerCompanyId();
 
     // Compute totals from items
-    const internalTotal = data.items.reduce((s, i) => s + i.totalCost, 0);
-    const clientTotal = data.items.reduce((s, i) => s + i.totalClientPrice, 0);
+    const internalTotal = data.items.reduce((s: number, i: any) => s + i.totalCost, 0);
+    const clientTotal = data.items.reduce((s: number, i: any) => s + i.totalClientPrice, 0);
     const markupTotal = clientTotal - internalTotal;
 
     // Auto-generate CO number
@@ -122,7 +122,7 @@ router.get('/api/change-orders', requireScope('erp:read', 'admin'), async (req, 
     }
 
     if (params.status) {
-      const statuses = params.status.split(',').map(s => s.trim()).filter(Boolean);
+      const statuses = params.status.split(',').map((s: string) => s.trim()).filter(Boolean);
       if (statuses.length === 1) {
         q = q.where('status', '==', statuses[0]);
       } else if (statuses.length > 1 && statuses.length <= 10) {
@@ -193,8 +193,8 @@ router.patch('/api/change-orders/:id', requireScope('erp:write', 'admin'), async
 
     if (data.items) {
       updatePayload.items = data.items;
-      const internalTotal = data.items.reduce((s, i) => s + i.totalCost, 0);
-      const clientTotal = data.items.reduce((s, i) => s + i.totalClientPrice, 0);
+      const internalTotal = data.items.reduce((s: number, i: any) => s + i.totalCost, 0);
+      const clientTotal = data.items.reduce((s: number, i: any) => s + i.totalClientPrice, 0);
       updatePayload.internalTotal = +internalTotal.toFixed(2);
       updatePayload.clientTotal = +clientTotal.toFixed(2);
       updatePayload.markupTotal = +(clientTotal - internalTotal).toFixed(2);
@@ -247,7 +247,7 @@ router.post('/api/purchase-orders', requireScope('erp:write', 'admin'), async (r
 
     const companyId = await resolveOwnerCompanyId();
 
-    const subtotal = data.items.reduce((s, i) => s + i.total, 0);
+    const subtotal = data.items.reduce((s: number, i: any) => s + i.total, 0);
     const total = subtotal + (data.taxAmount || 0);
     const varianceAmount = data.plannedTotal != null ? +(total - data.plannedTotal).toFixed(2) : null;
     const variancePercent = data.plannedTotal && data.plannedTotal > 0
@@ -258,7 +258,7 @@ router.post('/api/purchase-orders', requireScope('erp:write', 'admin'), async (r
       : FieldValue.serverTimestamp();
 
     // Compute item-level variance
-    const itemsWithVariance = data.items.map(item => ({
+    const itemsWithVariance = data.items.map((item: any) => ({
       ...item,
       variancePercent: item.plannedUnitPrice && item.plannedUnitPrice > 0
         ? +(((item.unitPrice - item.plannedUnitPrice) / item.plannedUnitPrice) * 100).toFixed(1)
@@ -343,7 +343,7 @@ router.get('/api/purchase-orders', requireScope('erp:read', 'admin'), async (req
     }
 
     if (params.status) {
-      const statuses = params.status.split(',').map(s => s.trim()).filter(Boolean);
+      const statuses = params.status.split(',').map((s: string) => s.trim()).filter(Boolean);
       if (statuses.length === 1) {
         q = q.where('status', '==', statuses[0]);
       } else if (statuses.length > 1 && statuses.length <= 10) {

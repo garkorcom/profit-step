@@ -1,8 +1,9 @@
 # ТЗ: Мульти-агентная инфраструктура CRM Profit Step
 
-> Статус: Phase 1-3 SHIPPED (2026-04-11), Phase 4-6 TODO
+> Статус: Phase 1-3 SHIPPED (2026-04-11), Phase 4-7 TODO
 > Автор: Денис + Claude Code
 > Задача: каждый сотрудник имеет персонального AI-агента на своём компьютере
+> Версия: 2.0 (2026-04-11) — добавлены: indexes, error catalog, bot conflicts, billing, migration, monitoring, edge cases
 
 ---
 
@@ -287,6 +288,38 @@ async for event in agent.events.stream(types=["task", "session"]):
 
 ---
 
+## Phase 7: Bot ↔ Agent Conflict Resolution — TODO
+
+**Задача:** Устранить race conditions между Telegram ботом и Agent API.
+
+### 7a: Единый формат employeeId
+- Все `work_sessions` пишут `employeeId` как Firebase UID (строка)
+- `telegramId` сохраняется в отдельном поле `telegramId` (для обратной совместимости)
+- Bot при создании сессии: resolve telegramId → Firebase UID → write UID
+- Миграция: batch update existing sessions с числовым employeeId → resolve → UID
+
+### 7b: Bot → транзакции
+- Переписать `initWorkSession()` в `onWorkerBotMessage.ts` на `runTransaction()`
+- Внутри транзакции: check active → close if exists → create new
+- Убрать TOCTOU race window в double-click guard
+
+### 7c: Cross-notification
+- При закрытии bot-сессии через API → отправить Telegram сообщение:
+  `"⚠️ Ваша сессия была закрыта через API. Текущий статус: ..."`
+- При закрытии API-сессии через бота → publish event `session.stopped` с source='bot'
+
+### 7d: Optimistic locking
+- Добавить `users/{uid}.activeSessionLock = { sessionId, source, timestamp }`
+- При старте: check lock → if lock exists and fresh (<1 min) → reject
+- Bot и API оба проверяют lock → предотвращает одновременный старт
+
+### 7e: Event publish из бота
+- Bot при старте/стопе/паузе → `publishSessionEvent()` с source='bot'
+- Агенты получают уведомления о bot-сессиях через `/api/events`
+- Полная картина: кто когда начал/закончил, из какого источника
+
+---
+
 ## Безопасность
 
 ### Token Security
@@ -363,6 +396,334 @@ API_BASE = "https://profit-step.web.app/api"
 | **Accountant** | costs:read, time:read, dashboard:read, events:read |
 | **Project Manager** | tasks:read, tasks:write, time:read, costs:read, clients:read, projects:read, dashboard:read, events:read |
 | **Admin** | admin |
+
+---
+
+---
+
+## Firestore Indexes
+
+### Обязательные (добавить в `firestore.indexes.json`)
+
+```json
+{
+  "collectionGroup": "agent_tokens",
+  "queryScope": "COLLECTION",
+  "fields": [
+    { "fieldPath": "token", "order": "ASCENDING" },
+    { "fieldPath": "revokedAt", "order": "ASCENDING" }
+  ]
+},
+{
+  "collectionGroup": "agent_tokens",
+  "queryScope": "COLLECTION",
+  "fields": [
+    { "fieldPath": "employeeId", "order": "ASCENDING" },
+    { "fieldPath": "revokedAt", "order": "ASCENDING" },
+    { "fieldPath": "createdAt", "order": "DESCENDING" }
+  ]
+},
+{
+  "collectionGroup": "agent_events",
+  "queryScope": "COLLECTION",
+  "fields": [
+    { "fieldPath": "employeeId", "order": "ASCENDING" },
+    { "fieldPath": "createdAt", "order": "ASCENDING" }
+  ]
+},
+{
+  "collectionGroup": "agent_events",
+  "queryScope": "COLLECTION",
+  "fields": [
+    { "fieldPath": "createdAt", "order": "ASCENDING" }
+  ]
+}
+```
+
+**Без этих индексов** запросы `GET /api/agent-tokens` и `GET /api/events` будут падать с ошибкой `FAILED_PRECONDITION` в Firestore.
+
+Деплой: `firebase deploy --only firestore:indexes`
+
+---
+
+## Каталог ошибок API
+
+Агент **обязан** обрабатывать все эти ответы и передавать LLM для самокоррекции.
+
+### Стандартные HTTP коды
+
+| Код | Когда | Формат ответа | Действие агента |
+|-----|-------|--------------|-----------------|
+| **200** | Success (GET, PATCH, DELETE) | `{ ...data }` | Обработать результат |
+| **201** | Created (POST) | `{ entityId: "..." }` | Сохранить ID |
+| **400** | Zod validation failed | `{ error, code: "VALIDATION_ERROR", details: [{field, message}] }` | Передать details LLM → исправить параметры → retry |
+| **401** | Token missing / expired / invalid | `{ error: "Missing authorization token" \| "Agent token expired" \| "Invalid authorization token" }` | Если expired — запросить новый token у admin |
+| **403** | Scope insufficient / not admin | `{ error: "Insufficient permissions", required: [...], hint: "..." }` | Показать required scopes → запросить расширение у admin |
+| **404** | Entity not found | `{ error: "Задача не найдена" }` | Передать LLM → уточнить у пользователя |
+| **409** | Conflict (duplicate, state violation) | `{ error: "...", entityId: "..." }` | Часто идемпотентность — вернуть existing entity |
+| **429** | Rate limit | `{ error: "Rate limit exceeded", retryAfterMs: 5000 }` | `sleep(retryAfterMs)` → retry |
+| **500** | Internal error | `{ error: "Internal server error", code: "INTERNAL_ERROR", requestId }` | Log requestId → retry 1 раз → если повторяется, показать пользователю |
+| **503** | Firestore unavailable | `{ error: "Database temporarily unavailable", requestId }` | Exponential backoff: 1s → 2s → 4s → fail |
+
+### Zod Validation Error (подробный формат)
+
+```json
+{
+  "error": "Validation failed",
+  "code": "VALIDATION_ERROR",
+  "requestId": "req_m4abc_x7f2",
+  "details": [
+    { "field": "amount", "message": "Expected number, received string" },
+    { "field": "clientId", "message": "Required" },
+    { "field": "status", "message": "Invalid enum value. Expected 'inbox' | 'next_action' | ..., received 'in_progress'" }
+  ]
+}
+```
+
+**Агент парсит `details` → формирует строку → передаёт LLM:**
+```
+"Validation error: amount — Expected number, received string; clientId — Required"
+```
+
+LLM исправляет параметры и вызывает tool повторно.
+
+---
+
+## Конфликты: Telegram Bot vs Agent API
+
+### Проблема
+
+Bot и Agent API пишут в одну коллекцию `work_sessions`. При одновременной работе возможны конфликты.
+
+### Как работает каждый
+
+| Аспект | Telegram Bot | Agent API |
+|--------|-------------|-----------|
+| **employeeId** | Telegram ID (число: `123456789`) | Firebase UID (строка: `"abc123def"`) |
+| **Транзакции** | НЕТ (`.add()` без transaction) | ДА (Firestore transaction) |
+| **Проверка дублей** | `getActiveSession(telegramId)` — один запрос | `resolveEmployeeIds()` → 3 варианта ID → scan в transaction |
+| **Закрытие старых** | Нет автозакрытия | Авто-закрывает все активные перед стартом |
+| **Pointer** | Не обновляет `users.activeSessionId` | Обновляет внутри transaction |
+
+### Сценарии конфликтов
+
+**Сценарий A: Bot → API (API побеждает)**
+1. Бот создаёт сессию `{employeeId: 123456789, status: 'active'}`
+2. API вызывает `resolveEmployeeIds(firebaseUid)` → `[firebaseUid, 123456789, "123456789"]`
+3. API находит сессию бота → **автозакрывает** → создаёт свою
+4. Бот не знает что его сессия закрыта — пользователь не уведомлён
+
+**Сценарий B: API → Bot (дубликат)**
+1. API создаёт сессию `{employeeId: firebaseUid, status: 'active'}`
+2. Бот ищет `WHERE employeeId == telegramId` → **не находит** (разные ID!)
+3. Бот создаёт вторую сессию → **2 активных сессии одновременно**
+4. Cron `finalizeExpiredSessions` (1 AM) закроет старую через 2 дня
+
+**Сценарий C: Одновременный старт (worst case)**
+1. Оба проверяют — ничего нет
+2. Оба создают → **2 сессии**
+3. Нет автоматической очистки до cron-а
+
+### Защиты (уже есть)
+
+- API: транзакции + cross-platform ID resolution + auto-close
+- Bot: double-click guard (проверка после intent)
+- Cron: `finalizeExpiredSessions` (daily 1 AM) — закрывает сессии >2 дней
+- Cron: `autoCloseStaleSessions` (каждые 30 мин) — закрывает >12 часов
+
+### Что нужно доделать (Phase 7)
+
+1. **Единый формат employeeId** — всегда Firebase UID, telegramId только для lookup
+2. **Bot → транзакции** — переписать `.add()` на `runTransaction()` с проверкой
+3. **Cross-notification** — при закрытии API-сессии → уведомить бота через Telegram
+4. **Lock-документ** — `users/{uid}.activeSessionLock` с timestamp → optimistic concurrency
+5. **Event publish из бота** — бот тоже пишет в `agent_events` при старте/стопе
+
+---
+
+## Firebase Billing: прогноз расходов
+
+### На одного агента (worker, active workday)
+
+| Операция | Reads/day | Writes/day | Формула |
+|----------|-----------|------------|---------|
+| Auth (token lookup) | ~100 | 100 (lastUsedAt) | 1 read + 1 write per request |
+| User profile lookup | ~100 | 0 | Кешируется в middleware |
+| Task list | ~50 | 0 | 50 запросов × 1 read |
+| Task create/update | ~10 | 20 | 2 writes per task (create + idempotency) |
+| Time start/stop | ~4 | 12 | 3 writes per action (session + user + audit) |
+| Cost create | ~5 | 10 | 2 writes per cost |
+| Event poll | ~50 | 0 | Polling каждые 30 сек = 2880, но кешируем |
+| Event publish | 0 | ~20 | Fire-and-forget |
+| Rate limit | ~100 | 100 | 1 per request |
+| **ИТОГО** | **~420** | **~262** | |
+
+### На 20 агентов (команда)
+
+| Метрика | В день | В месяц | Стоимость |
+|---------|--------|---------|-----------|
+| Reads | 8,400 | 252,000 | Free tier (50K/day) |
+| Writes | 5,240 | 157,200 | Free tier (20K/day) если <20K/day |
+| Deletes | ~100 | 3,000 | Negligible |
+| **Estimated cost** | | | **$0–5/month** при умеренном использовании |
+
+### Danger Zone
+
+| Риск | Условие | Стоимость |
+|------|---------|-----------|
+| Event polling слишком частый | 20 агентов × каждые 5 сек = 345,600 reads/day | ~$10/month |
+| Infinite loop trigger | `onTaskCreate` → publishEvent → creates doc → trigger fires | $10,000+/day |
+| Rate limit DB writes | 20 agents × 60 req/min × 2 writes = 2,400 writes/min | $50/month |
+
+**Mitigation:**
+- Event polling: minimum 30 сек интервал (рекомендация в SDK)
+- Triggers: idempotency guard через `processedEvents` collection
+- Rate limit: transaction-based, не каждый request пишет
+
+---
+
+## Plan миграции: Single-Key → Multi-Token
+
+### Step 1: Deploy (без breaking changes)
+```bash
+# Build + deploy functions
+npm --prefix functions run build
+firebase deploy --only functions:agentApi
+
+# Deploy indexes
+firebase deploy --only firestore:indexes
+```
+
+Всё backward-compatible: `AGENT_API_KEY` (Mode 1) работает как раньше.
+
+### Step 2: Создать токены для сотрудников
+```bash
+# Для каждого сотрудника:
+curl -X POST -H "Authorization: Bearer $ADMIN_KEY" \
+  -d '{"employeeId":"<uid>", "label":"<name> <device>", "scopes":[...]}' \
+  https://profit-step.web.app/api/agent-tokens
+```
+
+### Step 3: Раздать токены
+- Каждому сотруднику — его token + config.py
+- Документация по установке агента на машину
+- Smoke test: `curl -H "Authorization: Bearer <token>" .../api/health`
+
+### Step 4: Мониторинг (первые 48 часов)
+```bash
+# Проверить что токены используются
+firebase functions:log --only agentApi | grep "Agent token"
+
+# Проверить rate limits
+firebase functions:log --only agentApi | grep "Rate limit"
+
+# Проверить scope denials
+firebase functions:log --only agentApi | grep "Scope denied"
+```
+
+### Step 5: Отключение общего ключа (опционально)
+Когда все на персональных токенах:
+1. Сменить `AGENT_API_KEY` на новый (для admin-only use)
+2. Убрать старый ключ из агентских конфигов
+3. Мониторить 401 ошибки — кто ещё использует старый
+
+---
+
+## Deployment Checklist
+
+### Pre-deploy
+- [ ] `npm --prefix functions run build` — без новых ошибок
+- [ ] Проверить что `firestore.indexes.json` содержит индексы для `agent_tokens` и `agent_events`
+- [ ] Проверить `.env` / Secret Manager: `AGENT_API_KEY`, `OWNER_UID` не изменились
+- [ ] Backup текущих functions: `firebase functions:list`
+
+### Deploy
+- [ ] `firebase deploy --only firestore:indexes` (сначала индексы — нужно время на build)
+- [ ] Подождать ~5 мин пока индексы создадутся (проверить в Console)
+- [ ] `firebase deploy --only functions:agentApi` (одна функция)
+- [ ] `curl https://profit-step.web.app/api/health` — проверить версию
+
+### Post-deploy
+- [ ] `firebase functions:log --only agentApi` — первые 10 минут без ошибок
+- [ ] Тест Mode 1: `curl -H "Authorization: Bearer $OLD_KEY" .../api/gtd-tasks/list` → 200
+- [ ] Тест Mode 3: создать token → `curl -H "Authorization: Bearer <token>" .../api/gtd-tasks/list` → 200
+- [ ] Тест scope deny: создать token с `["tasks:read"]` → POST task → 403
+- [ ] Тест events: `curl .../api/events?since=2026-01-01T00:00:00Z` → 200
+
+### Rollback plan
+```bash
+# Откатить только agentApi на предыдущую версию:
+# 1. Найти предыдущий коммит
+git log --oneline -5 -- functions/src/agent/
+# 2. Checkout файлы
+git checkout <prev-commit> -- functions/src/agent/
+# 3. Build + deploy
+npm --prefix functions run build
+firebase deploy --only functions:agentApi
+```
+
+---
+
+## Мониторинг production
+
+### Ключевые метрики (первые 48 часов)
+
+| Метрика | Где смотреть | Алерт-порог |
+|---------|-------------|-------------|
+| Auth failures (401) | `functions:log \| grep "Auth failed"` | >10/hour |
+| Scope denials (403) | `functions:log \| grep "Scope denied"` | >20/hour (конфиг scopes) |
+| Rate limits (429) | `functions:log \| grep "Rate limit"` | >5/min (один user) |
+| Token lookups | `functions:log \| grep "Agent token"` | Должны быть |
+| Event queue size | Firestore Console → agent_events count | >10,000 (cleanup не работает) |
+| Function errors | Firebase Console → Functions → Error rate | >1% |
+| Billing | Firebase Console → Usage & Billing | >$5/day unexpected |
+
+### Команды мониторинга
+
+```bash
+# Live tail логов agentApi
+firebase functions:log --only agentApi --follow
+
+# Подсчёт ошибок за последний час
+firebase functions:log --only agentApi | grep -c "error"
+
+# Кто использует токены
+firebase functions:log --only agentApi | grep "token" | grep -oP 'employeeId=\K[^,]+' | sort | uniq -c
+
+# Сколько events накопилось
+firebase firestore:indexes  # check agent_events collection size in Console
+```
+
+---
+
+## Edge Cases
+
+### Token украден
+1. Admin немедленно: `DELETE /api/agent-tokens/:id` (revoke)
+2. Revocation мгновенная — следующий запрос получит 401
+3. Создать новый токен для сотрудника
+4. Проверить `activityLog` за период — что было сделано под украденным токеном
+
+### Сотрудник уволен
+1. `DELETE /api/agent-tokens/:id` для всех его токенов
+2. Обновить `users/{uid}.status = 'inactive'`
+3. Даже если token не revoked — middleware проверяет `users` profile (inactive = reject в будущей фазе)
+
+### Token expired mid-session
+- Текущее поведение: следующий запрос → 401 `"Agent token expired"`
+- Агент должен: показать сообщение → попросить admin rotate/recreate
+- Работа не теряется — данные уже в Firestore
+
+### Сеть пропала (offline agent)
+- Агент должен: queue requests локально → retry при reconnect
+- Events: polling с `since` параметром → пропущенные события получит при reconnect (TTL 7 дней)
+- Time tracking: если stop не дошёл → cron `autoCloseStaleSessions` (12h) закроет
+
+### 20 агентов стартуют одновременно (cold start)
+- Каждый делает: auth → rate limit → request = 3 Firestore ops
+- 20 × 3 = 60 concurrent Firestore ops → в пределах нормы
+- Rate limit: individual buckets → без коллизий
+- Cloud Function: `minInstances: 1` → first request may be slow (~3s), rest fast
 
 ---
 

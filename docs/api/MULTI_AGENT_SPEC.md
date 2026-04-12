@@ -7,6 +7,33 @@
 
 ---
 
+## Оглавление фаз
+
+| Phase | Статус | Описание | Источник |
+|-------|--------|----------|----------|
+| **1** | SHIPPED | Per-employee API tokens | Новое |
+| **2** | SHIPPED | RBAC scope enforcement | Новое |
+| **3** | SHIPPED | Agent event queue | Новое |
+| **4** | TODO | Scoped queries для всех routes | Новое |
+| **5** | TODO | Event queue расширение (triggers, cleanup) | Новое |
+| **6** | TODO | Python Agent SDK | Новое |
+| **7** | TODO | Bot ↔ Agent conflict resolution | Анализ onWorkerBotMessage.ts |
+| **8** | TODO | Новые бизнес-эндпоинты (/my-balance, overtime, etc.) | `FINANCE_PAYROLL_IMPROVEMENTS.md` |
+| **9** | TODO | OpenAPI / Swagger авто-документация | `TODO_FUTURE_IMPROVEMENTS.md` §21 |
+| **10** | TODO | Push-уведомления (webhooks, Telegram bridge, FCM) | `TODO_FUTURE_IMPROVEMENTS.md` §10 |
+
+### Связанные документы
+
+| Документ | Что взято |
+|----------|----------|
+| `docs/tasks/FINANCE_PAYROLL_IMPROVEMENTS.md` | Phase 8: payroll self-service, overtime, anomaly detection, export |
+| `docs/legacy-nov2025/TODO_FUTURE_IMPROVEMENTS.md` | Phase 9 (OpenAPI), Phase 10 (notifications), advanced permissions |
+| `OPENCLAW_AGENT_GUIDE.md` | API reference, Pydantic models, business flows |
+| `BOT_AND_API_REFERENCE.md` | Phase 7: bot architecture, conflict analysis |
+| `OPENCLAW_AGENT_INTEGRATION_GUIDE.md` | Original mirror-typing architecture |
+
+---
+
 ## Проблема
 
 Текущий Agent API рассчитан на **одного** пользователя (владелец). Один `AGENT_API_KEY` → все агенты выглядят как один user → нет разграничения прав, rate limit общий, audit trail бесполезен.
@@ -398,6 +425,109 @@ API_BASE = "https://profit-step.web.app/api"
 | **Admin** | admin |
 
 ---
+
+---
+
+## Phase 8: Новые API endpoints для агентов — TODO
+
+> Источник: `docs/tasks/FINANCE_PAYROLL_IMPROVEMENTS.md`, `docs/legacy-nov2025/TODO_FUTURE_IMPROVEMENTS.md`
+
+Текущие 62 эндпоинта покрывают CRUD. Но агентам нужны **бизнес-операции** и **аналитика**.
+
+### 8a: Payroll & Finance endpoints
+
+| Endpoint | Method | Назначение | Scopes | Приоритет |
+|----------|--------|-----------|--------|-----------|
+| `/api/payroll/my-balance` | GET | Баланс текущего сотрудника (earned, paid, outstanding PO) | `time:read` | P1 — workers спрашивают каждый день |
+| `/api/payroll/my-hours` | GET | Часы за текущую неделю по дням и проектам, overtime warning | `time:read` | P1 |
+| `/api/payroll/my-pay` | GET | Последний период: gross, deductions, net (текстовый pay stub) | `time:read` | P1 |
+| `/api/payroll/period/:id/validate` | POST | Pre-disbursement anomaly detection (hours >60, rate changes, duplicates) | `admin` | P2 |
+| `/api/payroll/period/:id/export` | GET | CSV/PDF экспорт периода для бухгалтера | `admin` | P2 |
+| `/api/payroll/overtime-check` | GET | Текущая неделя: кто на пороге overtime (>35h) | `admin` | P1 — legal compliance |
+| `/api/finance/burdened-cost` | GET | Burdened labor cost по проекту (rate × burden multiplier) | `dashboard:read` | P3 |
+
+**Важно:** `/api/payroll/my-*` — scoped endpoints. Worker видит **только свои** данные. Это self-service через агента вместо спрашивания admin'а.
+
+### 8b: Расширение существующих endpoints
+
+| Существующий | Что добавить | Зачем |
+|-------------|-------------|-------|
+| `POST /api/time-tracking (start)` | `projectRate` override | Per-project hourly rates (§3.2 Payroll spec) |
+| `GET /api/time-tracking/summary` | `overtimeHours`, `overtimePremium` | FLSA compliance |
+| `GET /api/dashboard/client/:id/summary` | `burdenedLaborCost` | True job cost для менеджеров |
+| `POST /api/costs` | `approvalRequired: bool` в response | Расходы >$500 требуют подтверждения |
+
+### 8c: Agent-initiated workflows (callable)
+
+| Workflow | Trigger | Что делает |
+|----------|---------|-----------|
+| `calculateOvertime` | Agent POST `/api/payroll/calculate-overtime` | Weekly: sum hours → create OT adjustment entries |
+| `reconcileBalances` | Agent POST `/api/payroll/reconcile` | Compare cached runningBalance vs actual → flag drifts |
+| `weeklyReport` | Agent GET `/api/reports/weekly-summary` | Per-employee hours, earnings, OT, unsigned sessions |
+| `anomalyCheck` | Agent POST `/api/payroll/period/:id/validate` | Flags: >60h, >12h session, rate changes, zero hours |
+
+Эти workflows агент может вызывать **по расписанию** (Monday 8 AM — overtime check, Friday 5 PM — weekly summary) или **по запросу** admin'а.
+
+---
+
+## Phase 9: OpenAPI / Swagger документация — TODO
+
+> Источник: `docs/legacy-nov2025/TODO_FUTURE_IMPROVEMENTS.md` §21
+
+**Проблема:** Нет машиночитаемой спецификации API. Каждый агент парсит OPENCLAW_AGENT_GUIDE.md вручную.
+
+**Решение:**
+1. Автогенерация OpenAPI 3.0 spec из Zod schemas (библиотека `zod-to-openapi`)
+2. Endpoint `GET /api/docs/openapi.json` — машиночитаемая спецификация
+3. Swagger UI на `GET /api/docs` — человекочитаемая
+4. Agent при первом подключении делает `GET /api/docs/openapi.json` → получает все endpoints + schemas → авто-генерирует Pydantic models
+
+**Файлы:**
+- `functions/src/agent/routes/docs.ts` — уже существует (заглушка)
+- `zod-to-openapi` → npm install → конвертация schemas
+
+### Пример авто-сгенерированного Pydantic
+
+```python
+# Auto-generated from GET /api/docs/openapi.json
+class CreateTask(BaseModel):
+    title: str
+    clientId: Optional[str] = None
+    priority: Literal["high", "medium", "low", "none"] = "medium"
+    status: Literal["inbox", "next_action", "waiting", ...] = "next_action"
+    dueDate: Optional[str] = None
+    # ... все поля из Zod schema
+```
+
+Это eliminates рассинхрон между Pydantic моделями агента и Zod схемами бэкенда.
+
+---
+
+## Phase 10: Agent Notifications → Telegram/Email — TODO
+
+> Источник: `docs/legacy-nov2025/TODO_FUTURE_IMPROVEMENTS.md` §10
+
+**Проблема:** Сейчас event queue — polling only. Агент узнаёт о событиях с задержкой.
+
+**Решение (staged):**
+
+### 10a: Webhook callbacks (phase 1 — простое)
+- Admin регистрирует webhook URL для агента при создании token:
+  ```json
+  { "webhookUrl": "https://vasya-pc.local:8080/webhook" }
+  ```
+- При publish event → HTTP POST на webhookUrl (fire-and-forget, 3 retries)
+- Агент получает push-уведомление мгновенно
+
+### 10b: Telegram bridge (phase 2)
+- Agent events → Telegram сообщение сотруднику (если `telegramId` есть)
+- Формат: `"🔔 Task assigned: Отправить счёт Джиму — priority: high"`
+- Сотрудник видит в Telegram → агент на компе тоже получает через polling
+
+### 10c: Firebase Cloud Messaging (phase 3 — PWA)
+- Web push notification через FCM
+- Агент (если запущен как PWA) получает native push
+- Самый надёжный канал для desktop-агентов
 
 ---
 

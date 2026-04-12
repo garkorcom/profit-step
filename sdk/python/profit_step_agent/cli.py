@@ -259,5 +259,36 @@ def events_watch(event_type: str | None, interval: float) -> None:
         click.echo(f"  [{ts}] {event.type}/{event.action}: {event.summary}")
 
 
+# ─── Webhooks ─────────────────────────────────────────────────
+
+@main.group()
+def webhooks() -> None:
+    """Webhook management (admin)."""
+    pass
+
+
+@webhooks.command("set")
+@click.argument("token_id")
+@click.option("--url", required=True, help="HTTPS webhook URL")
+@click.option("--events", "event_patterns", multiple=True, help="Event filter patterns (e.g. task.*, alert.*)")
+def webhooks_set(token_id: str, url: str, event_patterns: tuple[str, ...]) -> None:
+    """Configure webhook on a token."""
+    agent = _agent()
+    events_list = list(event_patterns) if event_patterns else None
+    result = agent.webhooks.update(token_id, webhook_url=url, webhook_events=events_list)
+    _json(result)
+    if result.webhook_secret:
+        click.echo(f"\n⚠️  Save this secret — it won't be shown again: {result.webhook_secret}")
+
+
+@webhooks.command("disable")
+@click.argument("token_id")
+def webhooks_disable(token_id: str) -> None:
+    """Disable webhook on a token."""
+    agent = _agent()
+    result = agent.webhooks.disable(token_id)
+    click.echo(f"Webhook disabled for token {token_id}")
+
+
 if __name__ == "__main__":
     main()

@@ -18,8 +18,10 @@ from profit_step_agent.exceptions import (
     RateLimitError,
     NotFoundError,
 )
+from profit_step_agent.models.webhooks import WebhookEvent
+from profit_step_agent.domains.webhooks import WebhooksDomain
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 __all__ = [
     "CRMAgent",
     "CRMClient",
@@ -28,4 +30,6 @@ __all__ = [
     "ScopeError",
     "RateLimitError",
     "NotFoundError",
+    "WebhookEvent",
+    "WebhooksDomain",
 ]

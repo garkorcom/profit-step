@@ -36,6 +36,7 @@ from profit_step_agent.domains.events import EventsDomain
 from profit_step_agent.domains.clients import ClientsDomain
 from profit_step_agent.domains.projects import ProjectsDomain
 from profit_step_agent.domains.payroll import PayrollDomain
+from profit_step_agent.domains.webhooks import WebhooksDomain
 
 
 class CRMAgent:
@@ -50,6 +51,7 @@ class CRMAgent:
     - agent.clients → ClientsDomain
     - agent.projects → ProjectsDomain
     - agent.payroll → PayrollDomain
+    - agent.webhooks → WebhooksDomain
 
     Args:
         token: API token (admin key or per-employee 40-hex token).
@@ -80,6 +82,7 @@ class CRMAgent:
         self.clients = ClientsDomain(self._client)
         self.projects = ProjectsDomain(self._client)
         self.payroll = PayrollDomain(self._client)
+        self.webhooks = WebhooksDomain(self._client)
 
     @property
     def client(self) -> CRMClient:

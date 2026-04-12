@@ -17,6 +17,24 @@ export const CreateAgentTokenSchema = z.object({
     'dashboard:read',
     'admin',
   ])).min(1).describe('Permission scopes for this token'),
+  // Optional webhook config — can also be set/updated via PATCH
+  webhookUrl: z.string().url().max(500).optional()
+    .describe('HTTPS URL to receive event push notifications'),
+  webhookEvents: z.array(z.string().regex(/^[\w]+\.[\w*]+$/))
+    .max(50).optional()
+    .describe('Event patterns to subscribe to, e.g. ["task.assigned", "alert.*"]'),
+});
+
+/**
+ * Schema for updating webhook settings on an existing token.
+ * All fields nullable — pass null to clear.
+ */
+export const UpdateWebhookSchema = z.object({
+  webhookUrl: z.string().url().max(500).nullable()
+    .describe('Webhook URL or null to disable'),
+  webhookEvents: z.array(z.string().regex(/^[\w]+\.[\w*]+$/))
+    .max(50).nullable().optional()
+    .describe('Event filter patterns or null for all events'),
 });
 
 export const ListAgentTokensSchema = z.object({

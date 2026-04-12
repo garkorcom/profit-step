@@ -8,6 +8,7 @@ from profit_step_agent.models.events import Event, EventQuery
 from profit_step_agent.models.clients import Client, CreateClient, SearchClientsParams
 from profit_step_agent.models.projects import Project, CreateProject
 from profit_step_agent.models.payroll import MyBalance, MyHours, MyPay, OvertimeCheck
+from profit_step_agent.models.webhooks import WebhookConfig, WebhookUpdateResult, WebhookEvent
 
 __all__ = [
     "Pagination", "SortDir",
@@ -18,4 +19,5 @@ __all__ = [
     "Client", "CreateClient", "SearchClientsParams",
     "Project", "CreateProject",
     "MyBalance", "MyHours", "MyPay", "OvertimeCheck",
+    "WebhookConfig", "WebhookUpdateResult", "WebhookEvent",
 ]

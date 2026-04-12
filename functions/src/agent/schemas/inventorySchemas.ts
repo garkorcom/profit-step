@@ -31,7 +31,7 @@ export const CreateWarehouseSchema = z.object({
   location: z.string().optional(),
   licensePlate: z.string().optional(),
 }).refine(
-  data => data.type !== 'vehicle' || (data.licensePlate != null && data.licensePlate.length > 0),
+  (data: any) => data.type !== 'vehicle' || (data.licensePlate != null && data.licensePlate.length > 0),
   { message: 'licensePlate is required when type is "vehicle"', path: ['licensePlate'] },
 );
 
@@ -54,7 +54,7 @@ export const UpdateWarehouseSchema = z.object({
   location: z.string().optional(),
   licensePlate: z.string().optional(),
 }).refine(
-  data => Object.keys(data).length > 0,
+  (data: any) => Object.keys(data).length > 0,
   { message: 'At least one field required' },
 );
 
@@ -90,7 +90,7 @@ export const UpdateInventoryItemSchema = z.object({
   barcode: z.string().optional(),
   photoUrl: z.string().optional(),
   notes: z.string().optional(),
-}).refine(data => Object.keys(data).length > 0, { message: 'At least one field required' });
+}).refine((data: any) => Object.keys(data).length > 0, { message: 'At least one field required' });
 
 export const ListInventoryItemsQuerySchema = z.object({
   warehouseId: z.string().optional(),

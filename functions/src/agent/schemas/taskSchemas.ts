@@ -58,7 +58,7 @@ export const UpdateTaskSchema = z.object({
     createdBy: z.string(),
     createdAt: z.any(),
   })).optional(),
-}).refine(data => Object.keys(data).length > 0, {
+}).refine((data: any) => Object.keys(data).length > 0, {
   message: 'At least one field must be provided',
 });
 
@@ -69,7 +69,7 @@ export const BatchUpdateTasksSchema = z.object({
     priority: z.enum(['high', 'medium', 'low', 'none']).optional(),
     assigneeId: z.string().optional(),
     assigneeName: z.string().optional(),
-  }).refine(data => Object.keys(data).length > 0, {
+  }).refine((data: any) => Object.keys(data).length > 0, {
     message: 'At least one update field required',
   }),
 });

@@ -120,7 +120,7 @@ router.post('/api/finance/transactions/batch', requireScope('admin'), async (req
     for (let i = 0; i < data.transactions.length; i += CHUNK_SIZE) {
       const chunk = data.transactions.slice(i, i + CHUNK_SIZE);
       
-      const refs = chunk.map(t => db.collection('bank_transactions').doc(t.id));
+      const refs = chunk.map((t: any) => db.collection('bank_transactions').doc(t.id));
       const snaps = await db.getAll(...refs);
       
       const approvedIds = new Set<string>();
@@ -239,7 +239,7 @@ router.post('/api/finance/transactions/undo', requireScope('admin'), async (req,
     logger.info(`🏦 finance:undo. Count: ${data.transactionIds.length}`);
 
     const batch = db.batch();
-    const refs = data.transactionIds.map(id => db.collection('bank_transactions').doc(id));
+    const refs = data.transactionIds.map((id: string) => db.collection('bank_transactions').doc(id));
     const snaps = await db.getAll(...refs);
 
     for (const snap of snaps) {

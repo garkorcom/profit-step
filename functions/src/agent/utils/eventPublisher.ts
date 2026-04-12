@@ -13,6 +13,7 @@ import * as functions from 'firebase-functions';
 
 import { dispatchWebhooks } from './webhookDelivery';
 import { notifyViaTelegram } from './telegramBridge';
+import { notifyViaFCM } from './fcmBridge';
 
 const db = admin.firestore();
 const FieldValue = admin.firestore.FieldValue;
@@ -46,9 +47,10 @@ export function publishEvent(event: AgentEvent): void {
 
   db.collection('agent_events').add(doc)
     .then((ref) => {
-      // Phase 10: dispatch webhook + Telegram notifications after event is persisted
+      // Phase 10: dispatch webhook + Telegram + FCM notifications after event is persisted
       dispatchWebhooks({ ...event, id: ref.id });
       notifyViaTelegram(event);
+      notifyViaFCM(event);
     })
     .catch((e: any) => {
       logger.error('⚠️ Failed to publish agent event', {

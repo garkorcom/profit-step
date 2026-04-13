@@ -171,7 +171,9 @@ export function useClientDashboard(companyId: string | undefined) {
             result = result.filter(c =>
                 c.name.toLowerCase().includes(q) ||
                 c.industry?.toLowerCase().includes(q) ||
-                c.email?.toLowerCase().includes(q)
+                c.email?.toLowerCase().includes(q) ||
+                c.phone?.toLowerCase().includes(q) ||
+                c.contacts?.some(ct => ct.phone?.toLowerCase().includes(q) || ct.email?.toLowerCase().includes(q))
             );
         }
 

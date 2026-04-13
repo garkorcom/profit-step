@@ -30,6 +30,10 @@
     ],
     "rewrites": [
       {
+        "source": "/api/**",
+        "function": "agentApi"
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }

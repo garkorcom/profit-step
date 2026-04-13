@@ -61,6 +61,7 @@ import {
 } from '../../hooks/useClientDashboard';
 import { ClientStatus } from '../../types/crm.types';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
+import { formatPhoneDisplay } from '../../utils/phone';
 
 const formatSmartDate = (timestampSecs?: number) => {
     if (!timestampSecs) return '';
@@ -169,6 +170,11 @@ const ClientsPage: React.FC = () => {
     const getFirstContact = (client: ClientRow) => {
         if (client.contacts?.length > 0) return client.contacts[0];
         return { phone: client.phone || '', email: client.email || '', name: '' };
+    };
+
+    const hasContactInfo = (client: ClientRow): boolean => {
+        if (client.phone || client.email) return true;
+        return client.contacts?.some(c => c.phone || c.email) || false;
     };
 
     // Count health stats for KPI cards
@@ -878,6 +884,13 @@ const ClientsPage: React.FC = () => {
                                     </Box>
                                 </Tooltip>
 
+                                {/* Data Quality Warning */}
+                                {!hasContactInfo(client) && (
+                                    <Tooltip title="No phone or email — client unreachable">
+                                        <WarningIcon sx={{ fontSize: 16, color: '#f59e0b', opacity: 0.8 }} />
+                                    </Tooltip>
+                                )}
+
                                 {/* Tasks — Pill badges */}
                                 <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center' }}>
                                     {client.taskStats.overdueCount > 0 && (
@@ -938,7 +951,7 @@ const ClientsPage: React.FC = () => {
                                 {/* Actions — Ghost buttons */}
                                 <Box sx={{ display: 'flex', gap: 0.3 }} onClick={e => e.stopPropagation()}>
                                     {contact.phone && (
-                                        <Tooltip title={`Позвонить: ${contact.phone}`}>
+                                        <Tooltip title={`Позвонить: ${formatPhoneDisplay(contact.phone)}`}>
                                             <IconButton
                                                 size="small"
                                                 component="a"

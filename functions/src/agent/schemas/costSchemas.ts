@@ -13,7 +13,7 @@ export const CreateCostSchema = z.object({
 });
 
 export const ListCostsQuerySchema = z.object({
-  clientId: z.string().optional(),
+  clientId: z.string().min(1).optional(),
   clientName: z.string().min(2).optional(),
   category: z.string().optional(),
   from: z.string().optional(),

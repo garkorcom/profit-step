@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 export const ProjectStatusQuery = z.object({
-  clientId: z.string().optional(),
+  clientId: z.string().min(1).optional(),
   clientName: z.string().min(2).optional(),
 }).refine((d) => d.clientId || d.clientName, {
   message: 'Требуется clientId или clientName',

@@ -20,7 +20,7 @@ import {
   clientRoutes, dashboardRoutes, taskRoutes, costRoutes,
   timeTrackingRoutes, financeRoutes, userRoutes,
   estimateRoutes, projectRoutes, siteRoutes, erpRoutes, inventoryRoutes,
-  sharingRoutes,
+  sharingRoutes, activityRoutes, fileRoutes,
 } from './routes';
 import docsRoutes from './routes/docs';
 import portalRoutes from './routes/portal';
@@ -34,7 +34,7 @@ app.use(requestLogger);
 
 // ─── Health Check (before auth — public endpoint) ───────────────────
 
-const API_VERSION = '4.2.0';
+const API_VERSION = '4.4.0';
 const startedAt = Date.now();
 
 app.get('/api/health', (_req, res) => {
@@ -66,7 +66,7 @@ const routes = [
   clientRoutes, dashboardRoutes, taskRoutes, costRoutes,
   timeTrackingRoutes, financeRoutes, userRoutes,
   estimateRoutes, projectRoutes, siteRoutes, erpRoutes, inventoryRoutes,
-  sharingRoutes,
+  sharingRoutes, activityRoutes, fileRoutes,
 ];
 routes.forEach(r => app.use(r));
 

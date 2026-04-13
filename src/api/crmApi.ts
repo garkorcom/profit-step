@@ -12,6 +12,22 @@ import {
 import { db, functions } from '../firebase/firebase';
 import { httpsCallable } from 'firebase/functions';
 import { Client } from '../types/crm.types';
+import { normalizePhone } from '../utils/phone';
+
+// Normalize phone fields in client data before writing to Firestore
+function normalizeClientPhones<T extends Record<string, unknown>>(data: T): T {
+    const result = { ...data };
+    if ('phone' in result && typeof result.phone === 'string') {
+        (result as Record<string, unknown>).phone = normalizePhone(result.phone as string);
+    }
+    if ('contacts' in result && Array.isArray(result.contacts)) {
+        (result as Record<string, unknown>).contacts = (result.contacts as Array<Record<string, unknown>>).map(c => ({
+            ...c,
+            phone: typeof c.phone === 'string' ? normalizePhone(c.phone) : c.phone,
+        }));
+    }
+    return result;
+}
 
 export interface ParseClientWebsiteRequest {
     url: string;
@@ -72,8 +88,9 @@ export const crmApi = {
 
     async createClient(clientData: Omit<Client, 'id' | 'createdAt' | 'updatedAt'>): Promise<string> {
         try {
+            const normalized = normalizeClientPhones(clientData);
             const docRef = await addDoc(collection(db, CLIENTS_COLLECTION), {
-                ...clientData,
+                ...normalized,
                 createdAt: serverTimestamp(),
                 updatedAt: serverTimestamp()
             });
@@ -86,9 +103,10 @@ export const crmApi = {
 
     async updateClient(clientId: string, data: Partial<Client>): Promise<void> {
         try {
+            const normalized = normalizeClientPhones(data);
             const docRef = doc(db, CLIENTS_COLLECTION, clientId);
             await updateDoc(docRef, {
-                ...data,
+                ...normalized,
                 updatedAt: serverTimestamp()
             });
         } catch (error) {

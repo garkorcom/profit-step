@@ -27,6 +27,7 @@ import { crmApi } from '../../api/crmApi';
 import { Client, ClientType, ClientStatus, ClientContact } from '../../types/crm.types';
 import LocationPicker from '../../components/common/LocationPicker';
 import { geocodeAddress } from '../../services/geocodingService';
+import toast from 'react-hot-toast';
 
 const MAX_CONTACTS = 5;
 
@@ -50,6 +51,7 @@ const ClientBuilderPage: React.FC = () => {
     const [loading, setLoading] = useState(false);
     const [geocoding, setGeocoding] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [skipDupCheck, setSkipDupCheck] = useState(false);
 
     const [formData, setFormData] = useState<Partial<Client>>({
         name: '',
@@ -60,6 +62,14 @@ const ClientBuilderPage: React.FC = () => {
         address: '',
         contacts: []
     });
+
+    // Auto-resubmit when user clicks "Create anyway" in duplicate toast
+    useEffect(() => {
+        if (skipDupCheck && formData.name) {
+            const form = document.querySelector('form');
+            if (form) form.requestSubmit();
+        }
+    }, [skipDupCheck]); // eslint-disable-line react-hooks/exhaustive-deps
 
     useEffect(() => {
         const fetchClient = async () => {
@@ -171,6 +181,34 @@ const ClientBuilderPage: React.FC = () => {
                 await crmApi.updateClient(id, formData);
                 navigate(`/crm/clients/${id}`);
             } else {
+                // Duplicate check before create (skip if user already confirmed)
+                if (!skipDupCheck) {
+                    try {
+                        const allClients = await crmApi.getClients(userProfile.companyId);
+                        const nameLower = formData.name!.toLowerCase();
+                        const matches = allClients.filter(c =>
+                            c.name.toLowerCase().includes(nameLower) || nameLower.includes(c.name.toLowerCase())
+                        ).slice(0, 3);
+                        if (matches.length > 0) {
+                            const names = matches.map(m => m.name).join(', ');
+                            setLoading(false);
+                            toast((t) => (
+                                <span>
+                                    <b>Possible duplicate:</b> {names}
+                                    <br />
+                                    <button
+                                        onClick={() => { toast.dismiss(t.id); setSkipDupCheck(true); }}
+                                        style={{ marginTop: 6, padding: '4px 12px', cursor: 'pointer', border: '1px solid #ccc', borderRadius: 4, background: '#fff' }}
+                                    >
+                                        Create anyway
+                                    </button>
+                                </span>
+                            ), { duration: 10000, icon: '\u26a0\ufe0f' });
+                            return;
+                        }
+                    } catch { /* non-blocking: proceed if check fails */ }
+                }
+
                 const newClientId = await crmApi.createClient({
                     ...formData,
                     companyId: userProfile.companyId,
@@ -178,6 +216,7 @@ const ClientBuilderPage: React.FC = () => {
                     type: formData.type as ClientType || 'person',
                     status: formData.status as ClientStatus || 'new',
                 } as Omit<Client, 'id' | 'createdAt' | 'updatedAt'>);
+                setSkipDupCheck(false);
                 navigate(`/crm/clients/${newClientId}`);
             }
         } catch (err) {

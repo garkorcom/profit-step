@@ -14,7 +14,7 @@ const spec = {
   openapi: '3.0.3',
   info: {
     title: 'Profit Step Agent API',
-    version: '4.2.0',
+    version: '4.4.0',
     description: 'CRM Agent API for OpenClaw integration — tasks, clients, costs, time tracking, finance, projects, and more.',
     contact: { name: 'GARKOR Corp', url: 'https://profit-step.web.app' },
   },
@@ -215,6 +215,102 @@ const spec = {
     },
     '/api/erp/work-acts': {
       get: { tags: ['ERP'], summary: 'List work acts', responses: { 200: { description: 'Work acts' } } },
+    },
+
+    // ─── Files ──────────────────────────────
+    '/api/files/upload': {
+      post: {
+        tags: ['Files'],
+        summary: 'Upload file (base64)',
+        requestBody: {
+          content: { 'application/json': { schema: { type: 'object', properties: {
+            fileName: { type: 'string' }, contentType: { type: 'string' }, base64Data: { type: 'string' },
+            category: { type: 'string', enum: ['photo', 'document', 'receipt', 'blueprint', 'signature', 'estimate', 'invoice', 'permit', 'other'] },
+            description: { type: 'string' }, tags: { type: 'array', items: { type: 'string' } },
+            clientId: { type: 'string' }, projectId: { type: 'string' }, taskId: { type: 'string' }, costId: { type: 'string' },
+          }, required: ['fileName', 'base64Data'] } } },
+        },
+        responses: { 201: { description: 'File uploaded' }, 400: { description: 'Validation error' } },
+      },
+    },
+    '/api/files/upload-from-url': {
+      post: {
+        tags: ['Files'],
+        summary: 'Upload file from URL',
+        requestBody: {
+          content: { 'application/json': { schema: { type: 'object', properties: {
+            sourceUrl: { type: 'string', format: 'uri' }, fileName: { type: 'string' },
+            category: { type: 'string' }, clientId: { type: 'string' }, description: { type: 'string' },
+          }, required: ['sourceUrl'] } } },
+        },
+        responses: { 201: { description: 'File downloaded and stored' } },
+      },
+    },
+    '/api/files/search': {
+      get: {
+        tags: ['Files'],
+        summary: 'Search/list files',
+        parameters: [
+          { name: 'clientId', in: 'query', schema: { type: 'string' } },
+          { name: 'projectId', in: 'query', schema: { type: 'string' } },
+          { name: 'taskId', in: 'query', schema: { type: 'string' } },
+          { name: 'category', in: 'query', schema: { type: 'string' } },
+          { name: 'tag', in: 'query', schema: { type: 'string' } },
+          { name: 'dateFrom', in: 'query', schema: { type: 'string', format: 'date' } },
+          { name: 'dateTo', in: 'query', schema: { type: 'string', format: 'date' } },
+          { name: 'limit', in: 'query', schema: { type: 'integer', default: 50 } },
+        ],
+        responses: { 200: { description: 'File list' } },
+      },
+    },
+    '/api/files/stats': {
+      get: {
+        tags: ['Files'],
+        summary: 'File statistics',
+        parameters: [
+          { name: 'clientId', in: 'query', schema: { type: 'string' } },
+          { name: 'projectId', in: 'query', schema: { type: 'string' } },
+        ],
+        responses: { 200: { description: 'Stats by category, size, counts' } },
+      },
+    },
+    '/api/files/{fileId}': {
+      patch: {
+        tags: ['Files'],
+        summary: 'Update file metadata/tags',
+        parameters: [{ name: 'fileId', in: 'path', required: true, schema: { type: 'string' } }],
+        responses: { 200: { description: 'File updated' }, 404: { description: 'Not found' } },
+      },
+      delete: {
+        tags: ['Files'],
+        summary: 'Delete file (storage + metadata)',
+        parameters: [{ name: 'fileId', in: 'path', required: true, schema: { type: 'string' } }],
+        responses: { 200: { description: 'File deleted' }, 404: { description: 'Not found' } },
+      },
+    },
+    '/api/clients/{clientId}/files': {
+      get: {
+        tags: ['Files', 'Clients'],
+        summary: 'All files linked to a client',
+        parameters: [{ name: 'clientId', in: 'path', required: true, schema: { type: 'string' } }],
+        responses: { 200: { description: 'Client files with category breakdown' } },
+      },
+    },
+    '/api/gtd-tasks/{taskId}/files': {
+      get: {
+        tags: ['Files', 'Tasks'],
+        summary: 'Files linked to a task',
+        parameters: [{ name: 'taskId', in: 'path', required: true, schema: { type: 'string' } }],
+        responses: { 200: { description: 'Task files' } },
+      },
+    },
+    '/api/costs/{costId}/receipt': {
+      get: {
+        tags: ['Files', 'Costs'],
+        summary: 'Receipt file + OCR data for a cost',
+        parameters: [{ name: 'costId', in: 'path', required: true, schema: { type: 'string' } }],
+        responses: { 200: { description: 'Receipt with OCR data' }, 404: { description: 'Cost not found' } },
+      },
     },
   },
 };

@@ -15,6 +15,7 @@ export { default as erpRoutes } from './erp';
 export { default as inventoryRoutes } from './inventory';
 export { default as sharingRoutes } from './sharing';
 export { default as activityRoutes } from './activity';
+export { default as fileRoutes } from './files';
 // portalRoutes is mounted BEFORE authMiddleware in agentApi.ts — it's
 // imported directly there, not via this barrel, to keep the "public
 // vs authenticated" distinction visible at the mount site.

@@ -4,6 +4,7 @@
 import { Router } from 'express';
 import { db, FieldValue, logger, logAgentActivity, getCachedClients, Fuse } from '../routeContext';
 import { logAudit, AuditHelpers, extractAuditContext } from '../utils/auditLogger';
+import { normalizePhone, looksLikePhone } from '../utils/phone';
 import { CreateClientSchema, UpdateClientSchema } from '../schemas';
 
 const router = Router();
@@ -49,13 +50,16 @@ router.post('/api/clients', async (req, res, next) => {
       }
     }
 
+    // Normalize phone before storage
+    const normalizedPhone = normalizePhone(data.phone);
+
     const clientAuditCtx = extractAuditContext(req);
     const docRef = db.collection('clients').doc();
     await docRef.set({
       name: data.name,
       address: data.address || '',
       contactPerson: data.contactPerson || '',
-      phone: data.phone || '',
+      phone: normalizedPhone,
       email: data.email || '',
       notes: data.notes || '',
       type: data.type || null,
@@ -92,7 +96,12 @@ router.post('/api/clients', async (req, res, next) => {
 
     await logAudit(AuditHelpers.create('client', docRef.id, { name: data.name, type: data.type }, clientAuditCtx.performedBy, clientAuditCtx.source as any));
 
-    res.status(201).json({ clientId: docRef.id, name: data.name });
+    // Data quality warnings (non-blocking)
+    const warnings: string[] = [];
+    if (!data.phone && !data.email) warnings.push('No phone or email provided — client may be unreachable');
+    if (!data.address) warnings.push('No address provided');
+
+    res.status(201).json({ clientId: docRef.id, name: data.name, warnings: warnings.length ? warnings : undefined });
   } catch (e) {
     next(e);
   }
@@ -125,7 +134,7 @@ router.patch('/api/clients/:id', async (req, res, next) => {
     if (data.name !== undefined) updatePayload.name = data.name;
     if (data.address !== undefined) updatePayload.address = data.address;
     if (data.contactPerson !== undefined) updatePayload.contactPerson = data.contactPerson;
-    if (data.phone !== undefined) updatePayload.phone = data.phone;
+    if (data.phone !== undefined) updatePayload.phone = normalizePhone(data.phone);
     if (data.email !== undefined) updatePayload.email = data.email;
     if (data.notes !== undefined) updatePayload.notes = data.notes;
     if (data.type !== undefined) updatePayload.type = data.type;
@@ -204,10 +213,12 @@ router.get('/api/clients/search', async (req, res, next) => {
       return;
     }
 
-    logger.info('🔍 clients:search', { query });
+    // Normalize phone queries for better matching
+    const searchQuery = looksLikePhone(query) ? normalizePhone(query) : query;
+    logger.info('🔍 clients:search', { query, searchQuery });
     const clients = await getCachedClients();
     const fuse = new Fuse(clients, { keys: ['name', 'address', 'phone', 'email'], threshold: 0.4 });
-    const results = fuse.search(query, { limit: 5 }).map((r: any) => ({
+    const results = fuse.search(searchQuery, { limit: 5 }).map((r: any) => ({
       clientId: r.item.id,
       clientName: r.item.name,
       address: r.item.address,
@@ -218,6 +229,60 @@ router.get('/api/clients/search', async (req, res, next) => {
 
     logger.info('🔍 clients:search results', { query, count: results.length });
     res.json({ results, count: results.length });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// ─── GET /api/clients/check-duplicates ─────────────────────────────
+
+router.get('/api/clients/check-duplicates', async (req, res, next) => {
+  try {
+    const name = req.query.name as string;
+    const phone = req.query.phone as string;
+    const address = req.query.address as string;
+
+    if (!name && !phone && !address) {
+      res.status(400).json({ error: 'At least one of: name, phone, address is required' });
+      return;
+    }
+
+    logger.info('🔍 clients:check-duplicates', { name, phone, address });
+    const clients = await getCachedClients();
+    const duplicates: Array<{ clientId: string; name: string; address: string | null; phone: string | null; matchField: string; score: number }> = [];
+
+    // Exact phone match (highest priority)
+    if (phone) {
+      const normalized = normalizePhone(phone);
+      clients.forEach((c: any) => {
+        if (c.phone && normalizePhone(c.phone) === normalized) {
+          duplicates.push({ clientId: c.id, name: c.name, address: c.address || null, phone: c.phone || null, matchField: 'phone', score: 1.0 });
+        }
+      });
+    }
+
+    // Fuzzy name match
+    if (name) {
+      const nameFuse = new Fuse(clients, { keys: ['name'], threshold: 0.3 });
+      nameFuse.search(name, { limit: 5 }).forEach((r: any) => {
+        // Avoid duplicate entries if same client matched by phone
+        if (!duplicates.some(d => d.clientId === r.item.id)) {
+          duplicates.push({ clientId: r.item.id, name: r.item.name, address: r.item.address || null, phone: r.item.phone || null, matchField: 'name', score: r.score });
+        }
+      });
+    }
+
+    // Fuzzy address match
+    if (address) {
+      const addrFuse = new Fuse(clients, { keys: ['address'], threshold: 0.4 });
+      addrFuse.search(address, { limit: 5 }).forEach((r: any) => {
+        if (!duplicates.some(d => d.clientId === r.item.id)) {
+          duplicates.push({ clientId: r.item.id, name: r.item.name, address: r.item.address || null, phone: r.item.phone || null, matchField: 'address', score: r.score });
+        }
+      });
+    }
+
+    res.json({ duplicates, count: duplicates.length });
   } catch (e) {
     next(e);
   }

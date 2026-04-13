@@ -157,12 +157,23 @@ router.get('/api/gtd-tasks/list', async (req, res, next) => {
       clientId = match.id;
     }
 
-    logger.info('📋 tasks:list', { clientId, status: params.status, limit: params.limit });
+    // Parse comma-separated clientIds for multi-client filter
+    const clientIdsList = params.clientIds
+      ? params.clientIds.split(',').map((s) => s.trim()).filter(Boolean)
+      : [];
+    if (clientIdsList.length > 10) {
+      res.status(400).json({ error: 'clientIds supports max 10 values (Firestore limit)' });
+      return;
+    }
+
+    logger.info('📋 tasks:list', { clientId, clientIds: clientIdsList.length || undefined, status: params.status, limit: params.limit });
 
     let q: admin.firestore.Query = db.collection('gtd_tasks');
 
     if (clientId) {
       q = q.where('clientId', '==', clientId);
+    } else if (clientIdsList.length > 0) {
+      q = q.where('clientId', 'in', clientIdsList);
     }
     if (req.query.projectId) {
       q = q.where('projectId', '==', req.query.projectId);

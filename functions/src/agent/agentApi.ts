@@ -20,7 +20,7 @@ import {
   clientRoutes, dashboardRoutes, taskRoutes, costRoutes,
   timeTrackingRoutes, financeRoutes, userRoutes,
   estimateRoutes, projectRoutes, siteRoutes, erpRoutes, inventoryRoutes,
-  sharingRoutes,
+  sharingRoutes, activityRoutes,
 } from './routes';
 import docsRoutes from './routes/docs';
 import portalRoutes from './routes/portal';
@@ -66,7 +66,7 @@ const routes = [
   clientRoutes, dashboardRoutes, taskRoutes, costRoutes,
   timeTrackingRoutes, financeRoutes, userRoutes,
   estimateRoutes, projectRoutes, siteRoutes, erpRoutes, inventoryRoutes,
-  sharingRoutes,
+  sharingRoutes, activityRoutes,
 ];
 routes.forEach(r => app.use(r));
 

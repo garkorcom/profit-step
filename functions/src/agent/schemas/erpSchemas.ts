@@ -40,7 +40,7 @@ export const UpdateChangeOrderSchema = z.object({
 
 export const ListChangeOrdersQuerySchema = z.object({
   projectId: z.string().optional(),
-  clientId: z.string().optional(),
+  clientId: z.string().min(1).optional(),
   clientName: z.string().min(2).optional(),
   status: z.string().optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
@@ -82,7 +82,7 @@ export const CreatePurchaseOrderSchema = z.object({
 
 export const ListPurchaseOrdersQuerySchema = z.object({
   projectId: z.string().optional(),
-  clientId: z.string().optional(),
+  clientId: z.string().min(1).optional(),
   clientName: z.string().min(2).optional(),
   status: z.string().optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
@@ -90,7 +90,7 @@ export const ListPurchaseOrdersQuerySchema = z.object({
 });
 
 export const PlanVsFactQuerySchema = z.object({
-  clientId: z.string().optional(),
+  clientId: z.string().min(1).optional(),
   clientName: z.string().min(2).optional(),
   projectId: z.string().optional(),
 }).refine(d => d.clientId || d.clientName || d.projectId, {

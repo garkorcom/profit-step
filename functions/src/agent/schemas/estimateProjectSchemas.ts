@@ -22,7 +22,7 @@ export const CreateEstimateSchema = z.object({
 });
 
 export const ListEstimatesQuerySchema = z.object({
-  clientId: z.string().optional(),
+  clientId: z.string().min(1).optional(),
   clientName: z.string().min(2).optional(),
   status: z.string().optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
@@ -61,7 +61,7 @@ export const CreateProjectSchema = z.object({
 });
 
 export const ListProjectsQuerySchema = z.object({
-  clientId: z.string().optional(),
+  clientId: z.string().min(1).optional(),
   clientName: z.string().min(2).optional(),
   status: z.string().optional(),
   type: z.string().optional(),

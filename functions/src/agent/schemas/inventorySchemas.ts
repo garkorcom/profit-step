@@ -21,7 +21,7 @@ export type WarehouseType = (typeof WAREHOUSE_TYPES)[number];
 export const CreateWarehouseSchema = z.object({
   // Existing fields (unchanged behavior)
   name: z.string().min(1),
-  clientId: z.string().optional(),
+  clientId: z.string().min(1).optional(),
   projectId: z.string().optional(),
   address: z.string().optional(),
   description: z.string().optional(),

@@ -5,7 +5,7 @@ export const TimeTrackingSchema = z.discriminatedUnion('action', [
     action: z.literal('start'),
     taskId: z.string().optional(),
     taskTitle: z.string().min(1),
-    clientId: z.string().optional(),
+    clientId: z.string().min(1).optional(),
     clientName: z.string().optional(),
     projectId: z.string().optional(),
     startTime: z.string().optional(),
@@ -20,7 +20,7 @@ export const TimeTrackingSchema = z.discriminatedUnion('action', [
     action: z.literal('restart'),
     taskId: z.string().optional(),
     taskTitle: z.string().min(1),
-    clientId: z.string().optional(),
+    clientId: z.string().min(1).optional(),
     clientName: z.string().optional(),
     projectId: z.string().optional(),
     siteId: z.string().optional(),
@@ -28,7 +28,7 @@ export const TimeTrackingSchema = z.discriminatedUnion('action', [
 ]);
 
 export const ActiveSessionsQuerySchema = z.object({
-  clientId: z.string().optional(),
+  clientId: z.string().min(1).optional(),
 });
 
 export const TimeSummaryQuerySchema = z.object({
@@ -45,7 +45,7 @@ export const AdminStopSchema = z.object({
 export const AdminStartSchema = z.object({
   employeeId: z.string().min(1),
   taskTitle: z.string().min(1),
-  clientId: z.string().optional(),
+  clientId: z.string().min(1).optional(),
   clientName: z.string().optional(),
   projectId: z.string().optional(),
   taskId: z.string().optional(),

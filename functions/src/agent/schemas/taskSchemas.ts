@@ -3,7 +3,7 @@ import { z } from 'zod';
 export const CreateGTDTaskSchema = z.object({
   title: z.string().min(1),
   idempotencyKey: z.string().min(1).optional(),
-  clientId: z.string().optional(),
+  clientId: z.string().min(1).optional(),
   clientName: z.string().optional(),
   assigneeId: z.string().optional(),
   assigneeName: z.string().optional(),
@@ -18,7 +18,8 @@ export const CreateGTDTaskSchema = z.object({
 });
 
 export const ListTasksQuerySchema = z.object({
-  clientId: z.string().optional(),
+  clientId: z.string().min(1).optional(),
+  clientIds: z.string().min(1).optional(), // comma-separated, max 10 (Firestore 'in' limit)
   clientName: z.string().min(2).optional(),
   status: z.string().optional(),
   assigneeId: z.string().optional(),

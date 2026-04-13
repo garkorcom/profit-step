@@ -26,6 +26,29 @@ router.post('/api/clients', async (req, res, next) => {
       }
     }
 
+    // Duplicate detection — fuzzy match by name (skip if force=true)
+    if (!req.body.force) {
+      const existingClients = await getCachedClients();
+      const dupFuse = new Fuse(existingClients, { keys: ['name'], threshold: 0.3 });
+      const dupMatches = dupFuse.search(data.name, { limit: 3 });
+      if (dupMatches.length > 0) {
+        const candidates = dupMatches.map((r: any) => ({
+          clientId: r.item.id,
+          name: r.item.name,
+          address: r.item.address || null,
+          phone: r.item.phone || null,
+          score: r.score,
+        }));
+        logger.info('👤 clients:duplicate_warning', { name: data.name, candidates: candidates.length });
+        res.status(200).json({
+          warning: 'possible_duplicate',
+          message: `Found ${candidates.length} similar client(s). Pass "force": true to create anyway.`,
+          candidates,
+        });
+        return;
+      }
+    }
+
     const clientAuditCtx = extractAuditContext(req);
     const docRef = db.collection('clients').doc();
     await docRef.set({
@@ -183,11 +206,13 @@ router.get('/api/clients/search', async (req, res, next) => {
 
     logger.info('🔍 clients:search', { query });
     const clients = await getCachedClients();
-    const fuse = new Fuse(clients, { keys: ['name', 'address'], threshold: 0.4 });
+    const fuse = new Fuse(clients, { keys: ['name', 'address', 'phone', 'email'], threshold: 0.4 });
     const results = fuse.search(query, { limit: 5 }).map((r: any) => ({
       clientId: r.item.id,
       clientName: r.item.name,
       address: r.item.address,
+      phone: r.item.phone || null,
+      email: r.item.email || null,
       score: r.score,
     }));
 

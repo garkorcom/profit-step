@@ -6,12 +6,44 @@ import { Router } from 'express';
 import { db, FieldValue, logger, logAgentActivity, Fuse } from '../routeContext';
 import {
   UserSearchQuerySchema,
+  ListUsersQuerySchema,
   CreateUserFromBotSchema,
   CreateContactSchema,
   SearchContactsQuerySchema,
 } from '../schemas';
 
 const router = Router();
+
+// ─── GET /api/users/list ───────────────────────────────────────────
+
+router.get('/api/users/list', async (req, res, next) => {
+  try {
+    const params = ListUsersQuerySchema.parse(req.query);
+    logger.info('👤 users:list', { role: params.role, limit: params.limit });
+
+    const snap = await db.collection('users').get();
+    let users = snap.docs.map((d) => ({
+      userId: d.id,
+      displayName: d.data().displayName || '',
+      email: d.data().email || '',
+      role: d.data().role || 'employee',
+      hourlyRate: d.data().hourlyRate || 0,
+    }));
+
+    // Filter by role if specified
+    if (params.role) {
+      const roleLower = params.role.toLowerCase();
+      users = users.filter((u) => u.role.toLowerCase() === roleLower);
+    }
+
+    const total = users.length;
+    const result = users.slice(params.offset, params.offset + params.limit);
+
+    res.json({ users: result, count: result.length, total });
+  } catch (e) {
+    next(e);
+  }
+});
 
 // ─── GET /api/users/search (Phase 2) ───────────────────────────────
 

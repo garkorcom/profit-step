@@ -5,6 +5,12 @@ export const UserSearchQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(20).default(5),
 });
 
+export const ListUsersQuerySchema = z.object({
+  role: z.string().optional(),
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+  offset: z.coerce.number().int().min(0).default(0),
+});
+
 export const CreateUserFromBotSchema = z.object({
   telegramId: z.number().int().positive(),
   displayName: z.string().min(1),

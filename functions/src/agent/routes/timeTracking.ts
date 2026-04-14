@@ -3,6 +3,7 @@
  */
 import { Router } from 'express';
 import * as admin from 'firebase-admin';
+import { fromZonedTime } from 'date-fns-tz';
 import { db, Timestamp, logger, logAgentActivity } from '../routeContext';
 import { logAudit, AuditHelpers, extractAuditContext } from '../utils/auditLogger';
 import {
@@ -587,19 +588,25 @@ router.get('/api/time-tracking/summary', async (req, res, next) => {
     const params = TimeSummaryQuerySchema.parse(req.query);
     logger.info('⏱️ timer:summary', { from: params.from, to: params.to, employeeId: params.employeeId });
 
-    const fromDate = new Date(params.from);
-    const toDate = new Date(params.to);
-    if (isNaN(fromDate.getTime()) || isNaN(toDate.getTime())) {
-      res.status(400).json({ error: 'Invalid date format (ISO string expected)' });
+    // Parse date parts explicitly to avoid timezone-dependent Date parsing
+    // (new Date('2026-04-12') parses as UTC midnight — wall-clock values differ by server TZ)
+    const fromParts = params.from.split('-').map(Number);
+    const toParts = params.to.split('-').map(Number);
+    if (fromParts.length < 3 || toParts.length < 3 || fromParts.some(isNaN) || toParts.some(isNaN)) {
+      res.status(400).json({ error: 'Invalid date format (YYYY-MM-DD expected)' });
       return;
     }
-    // Extend 'to' to end of day
-    toDate.setDate(toDate.getDate() + 1);
+
+    // Treat from/to as Florida dates, convert to UTC for Firestore query
+    // new Date(y, m, d) creates consistent wall-clock values on any server
+    const TZ = 'America/New_York';
+    const fromUtc = fromZonedTime(new Date(fromParts[0], fromParts[1] - 1, fromParts[2], 0, 0, 0, 0), TZ);
+    const toUtc = fromZonedTime(new Date(toParts[0], toParts[1] - 1, toParts[2], 23, 59, 59, 999), TZ);
 
     let q: admin.firestore.Query = db.collection('work_sessions')
       .where('status', '==', 'completed')
-      .where('startTime', '>=', Timestamp.fromDate(fromDate))
-      .where('startTime', '<', Timestamp.fromDate(toDate));
+      .where('startTime', '>=', Timestamp.fromDate(fromUtc))
+      .where('startTime', '<=', Timestamp.fromDate(toUtc));
 
     if (params.employeeId) {
       q = q.where('employeeId', '==', params.employeeId);

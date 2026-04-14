@@ -1,28 +1,42 @@
 import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
+import { toZonedTime, fromZonedTime } from 'date-fns-tz';
+import { subDays, startOfDay, endOfDay } from 'date-fns';
 
 const db = admin.firestore();
 
-export const generateDailyPayroll = functions.pubsub.schedule('0 4 * * *') // Every day at 4:00 AM
-    .timeZone('UTC') // UTC time (adjust to local if needed, e.g. Europe/Kiev)
+// Florida timezone — all workers are in Florida
+const TIME_ZONE = 'America/New_York';
+
+export const generateDailyPayroll = functions.pubsub.schedule('0 4 * * *') // Every day at 4:00 AM Florida time
+    .timeZone(TIME_ZONE)
     .onRun(async (context) => {
         console.log('💰 Running generateDailyPayroll...');
 
-        // 1. Determine "Yesterday" range
         const now = admin.firestore.Timestamp.now();
-        const yesterday = new Date(now.toMillis());
-        yesterday.setDate(yesterday.getDate() - 1);
-        yesterday.setHours(0, 0, 0, 0); // Start of yesterday
 
-        const endOfYesterday = new Date(yesterday);
-        endOfYesterday.setHours(23, 59, 59, 999); // End of yesterday
+        // 1. Determine "Yesterday" range in Florida time
+        const nowUtc = new Date();
+        const nowInFlorida = toZonedTime(nowUtc, TIME_ZONE);
+        const yesterdayFlorida = subDays(nowInFlorida, 1);
 
-        // 2. Fetch Completed/Auto-Closed Sessions for Yesterday
+        // Start and end of yesterday in Florida time
+        const startOfYesterdayFlorida = startOfDay(yesterdayFlorida);
+        const endOfYesterdayFlorida = endOfDay(yesterdayFlorida);
+
+        // Convert back to UTC for Firestore query
+        const yesterday = fromZonedTime(startOfYesterdayFlorida, TIME_ZONE);
+        const endOfYesterday = fromZonedTime(endOfYesterdayFlorida, TIME_ZONE);
+
+        // 2. Fetch Completed/Auto-Closed Sessions for Yesterday (Florida time)
         // We use 'endTime' to determine which day the money belongs to
         const startTimestamp = admin.firestore.Timestamp.fromDate(yesterday);
         const endTimestamp = admin.firestore.Timestamp.fromDate(endOfYesterday);
 
-        console.log(`Querying sessions between ${yesterday.toISOString()} and ${endOfYesterday.toISOString()}`);
+        console.log(`📅 Server Now (UTC): ${nowUtc.toISOString()}`);
+        console.log(`📅 Florida Now: ${nowInFlorida.toString()}`);
+        console.log(`📅 Yesterday Florida: ${startOfYesterdayFlorida.toString()} — ${endOfYesterdayFlorida.toString()}`);
+        console.log(`📅 Query Range (UTC): ${yesterday.toISOString()} — ${endOfYesterday.toISOString()}`);
 
         try {
             const sessionsSnapshot = await db.collection('work_sessions')

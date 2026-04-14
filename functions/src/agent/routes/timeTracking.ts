@@ -614,17 +614,25 @@ router.get('/api/time-tracking/summary', async (req, res, next) => {
 
     const snap = await q.get();
 
-    // Aggregate per employee
+    // Aggregate per employee with separate buckets:
+    // earned = regular + correction sessions (net work earnings)
+    // paid = payment records (absolute value)
+    // adjustments = manual_adjustment records
+    // balance = earned - paid + adjustments
     const byEmployee: Record<string, {
       employeeId: string;
       employeeName: string;
       totalMinutes: number;
-      totalEarnings: number;
+      earned: number;
+      paid: number;
+      adjustments: number;
       sessionCount: number;
     }> = {};
 
     let grandTotalMinutes = 0;
-    let grandTotalEarnings = 0;
+    let grandEarned = 0;
+    let grandPaid = 0;
+    let grandAdj = 0;
 
     snap.docs.forEach((d) => {
       const s = d.data();
@@ -634,23 +642,45 @@ router.get('/api/time-tracking/summary', async (req, res, next) => {
           employeeId: eid,
           employeeName: s.employeeName || 'Unknown',
           totalMinutes: 0,
-          totalEarnings: 0,
+          earned: 0,
+          paid: 0,
+          adjustments: 0,
           sessionCount: 0,
         };
       }
-      const mins = s.durationMinutes || 0;
+
       const earn = s.sessionEarnings || 0;
-      byEmployee[eid].totalMinutes += mins;
-      byEmployee[eid].totalEarnings += earn;
+      const type = s.type || 'regular';
+
+      if (type === 'payment') {
+        byEmployee[eid].paid += Math.abs(earn);
+        grandPaid += Math.abs(earn);
+      } else if (type === 'manual_adjustment') {
+        byEmployee[eid].adjustments += earn;
+        grandAdj += earn;
+      } else {
+        // regular + correction (corrections have negative earnings)
+        byEmployee[eid].earned += earn;
+        grandEarned += earn;
+        byEmployee[eid].totalMinutes += (s.durationMinutes || 0);
+        grandTotalMinutes += (s.durationMinutes || 0);
+      }
+
       byEmployee[eid].sessionCount += 1;
-      grandTotalMinutes += mins;
-      grandTotalEarnings += earn;
     });
 
     const employees = Object.values(byEmployee).map((e) => ({
-      ...e,
+      employeeId: e.employeeId,
+      employeeName: e.employeeName,
+      totalMinutes: e.totalMinutes,
       totalHours: +(e.totalMinutes / 60).toFixed(1),
-      totalEarnings: +e.totalEarnings.toFixed(2),
+      earned: +e.earned.toFixed(2),
+      paid: +e.paid.toFixed(2),
+      adjustments: +e.adjustments.toFixed(2),
+      balance: +(e.earned - e.paid + e.adjustments).toFixed(2),
+      // backward compat: totalEarnings = earned (net work, without payments)
+      totalEarnings: +e.earned.toFixed(2),
+      sessionCount: e.sessionCount,
     }));
 
     // Sort by totalMinutes desc
@@ -660,7 +690,12 @@ router.get('/api/time-tracking/summary', async (req, res, next) => {
       from: params.from,
       to: params.to,
       totalHours: +(grandTotalMinutes / 60).toFixed(1),
-      totalEarnings: +grandTotalEarnings.toFixed(2),
+      earned: +grandEarned.toFixed(2),
+      paid: +grandPaid.toFixed(2),
+      adjustments: +grandAdj.toFixed(2),
+      balance: +(grandEarned - grandPaid + grandAdj).toFixed(2),
+      // backward compat
+      totalEarnings: +grandEarned.toFixed(2),
       totalSessions: snap.size,
       employees,
     });

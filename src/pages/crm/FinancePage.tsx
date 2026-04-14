@@ -20,6 +20,7 @@ import { PayrollReport } from './PayrollReport';
 // ... (existing code)
 
 import { WorkSession } from '../../types/timeTracking.types';
+import { calculatePayrollBuckets } from '../../utils/payroll';
 
 const PnLView = React.lazy(() => import('../../components/finance/PnLView'));
 
@@ -494,19 +495,6 @@ const FinancePage: React.FC = () => {
     useEffect(() => { setPage(0); }, [filterEmployee, filterClient, hideVoided]);
 
     const stats = useMemo(() => {
-        let salary = 0;
-        let payments = 0;
-        let totalMinutes = 0;
-
-        filteredEntries.forEach(e => {
-            if (e.type === 'payment') {
-                payments += Math.abs(e.sessionEarnings || 0);
-            } else {
-                salary += (e.sessionEarnings || 0);
-            }
-            totalMinutes += (e.durationMinutes || 0);
-        });
-
         // Filter costs by employee if specific employee is selected
         const filteredCosts = filterEmployee === 'all'
             ? costs
@@ -514,12 +502,20 @@ const FinancePage: React.FC = () => {
                 const groupIds = employeeIdGroups.get(filterEmployee);
                 return groupIds?.has(c.userId) ?? c.userId === filterEmployee;
             });
-        const expenses = filteredCosts.reduce((sum, c) => sum + Math.abs(c.amount), 0);
+        const expensesTotal = filteredCosts.reduce((sum, c) => sum + Math.abs(c.amount), 0);
 
-        const balance = salary - payments - expenses;
-        const hours = totalMinutes / 60;
+        // Unified payroll calculation (single source of truth)
+        const buckets = calculatePayrollBuckets(filteredEntries, expensesTotal);
 
-        return { salary, payments, expenses, balance, hours, costsCount: filteredCosts.length };
+        return {
+            salary: buckets.salary,
+            payments: buckets.payments,
+            adjustments: buckets.adjustments,
+            expenses: buckets.expenses,
+            balance: buckets.balance,
+            hours: buckets.totalHours,
+            costsCount: filteredCosts.length
+        };
     }, [filteredEntries, costs, filterEmployee, employeeIdGroups]);
 
     const breakdowns = useMemo(() => {
@@ -529,23 +525,30 @@ const FinancePage: React.FC = () => {
             allIds.forEach(rawId => rawToCanonical.set(rawId, canonicalId));
         });
 
-        const byEmployee: Record<string, { hours: number, money: number, name: string }> = {};
+        const byEmployee: Record<string, { hours: number, money: number, rate: number, name: string }> = {};
         const byClient: Record<string, { hours: number, money: number }> = {};
 
         filteredEntries.forEach(e => {
+            const type = e.type || 'regular';
+            // Skip payments and corrections for breakdown salary columns
+            const isWorkSession = (type === 'regular' || !e.type) && !e.isVoided;
+
             // Employee Breakdown — use canonical ID
             const rawId = String(e.employeeId);
             const canonicalId = rawToCanonical.get(rawId) || rawId;
             const canonicalName = uniqueEmployees.find(u => u.id === canonicalId)?.name || e.employeeName;
             if (!byEmployee[canonicalId]) {
-                byEmployee[canonicalId] = { hours: 0, money: 0, name: canonicalName };
+                byEmployee[canonicalId] = { hours: 0, money: 0, rate: 0, name: canonicalName };
             }
-            byEmployee[canonicalId].hours += (e.durationMinutes || 0) / 60;
-            byEmployee[canonicalId].money += (e.sessionEarnings || 0);
+            if (isWorkSession) {
+                byEmployee[canonicalId].hours += (e.durationMinutes || 0) / 60;
+                byEmployee[canonicalId].money += (e.sessionEarnings || 0);
+                if (e.hourlyRate) byEmployee[canonicalId].rate = e.hourlyRate;
+            }
 
-            // Client Breakdown — exclude synthetic
+            // Client Breakdown — only work sessions, exclude synthetic
             const client = e.clientName || 'Unknown';
-            if (!SYNTHETIC_CLIENTS.has(client)) {
+            if (isWorkSession && !SYNTHETIC_CLIENTS.has(client)) {
                 if (!byClient[client]) byClient[client] = { hours: 0, money: 0 };
                 byClient[client].hours += (e.durationMinutes || 0) / 60;
                 byClient[client].money += (e.sessionEarnings || 0);
@@ -615,27 +618,29 @@ const FinancePage: React.FC = () => {
 
             {tabIndex === 0 && (
                 <Box>
-                    {/* Stats */}
+                    {/* Stats — all cards use the same filtered period */}
                     <Box sx={{ display: 'flex', gap: 3, mb: 4, flexWrap: 'wrap' }}>
-                        <Box sx={{ flex: 1, minWidth: 200 }}>
+                        <Box sx={{ flex: 1, minWidth: 160 }}>
                             <Card sx={{ bgcolor: '#2196f3', color: 'white', height: '100%' }}>
                                 <CardContent>
-                                    <Tooltip title="Начисления за период (с учётом коррекций)" arrow>
-                                        <Typography variant="body2" sx={{ opacity: 0.8 }}>Salary (Period)</Typography>
+                                    <Tooltip title="Начислено за период (только рабочие сессии, без voided)" arrow>
+                                        <Typography variant="body2" sx={{ opacity: 0.8 }}>Salary</Typography>
                                     </Tooltip>
                                     <Typography variant="h4" fontWeight="bold">${stats.salary.toFixed(2)}</Typography>
                                 </CardContent>
                             </Card>
                         </Box>
-                        <Box sx={{ flex: 1, minWidth: 200 }}>
+                        <Box sx={{ flex: 1, minWidth: 160 }}>
                             <Card sx={{ bgcolor: '#9e9e9e', color: 'white', height: '100%' }}>
                                 <CardContent>
-                                    <Typography variant="body2" sx={{ opacity: 0.8 }}>Payments</Typography>
+                                    <Tooltip title="Выплаты за период" arrow>
+                                        <Typography variant="body2" sx={{ opacity: 0.8 }}>Payments</Typography>
+                                    </Tooltip>
                                     <Typography variant="h4" fontWeight="bold">${stats.payments.toFixed(2)}</Typography>
                                 </CardContent>
                             </Card>
                         </Box>
-                        <Box sx={{ flex: 1, minWidth: 200 }}>
+                        <Box sx={{ flex: 1, minWidth: 160 }}>
                             <Card sx={{ bgcolor: '#ff9800', color: 'white', height: '100%' }}>
                                 <CardContent>
                                     <Typography variant="body2" sx={{ opacity: 0.8 }}>Expenses ({stats.costsCount})</Typography>
@@ -643,17 +648,17 @@ const FinancePage: React.FC = () => {
                                 </CardContent>
                             </Card>
                         </Box>
-                        <Box sx={{ flex: 1, minWidth: 200 }}>
+                        <Box sx={{ flex: 1, minWidth: 160 }}>
                             <Card sx={{ bgcolor: stats.balance >= 0 ? '#4caf50' : '#f44336', color: 'white', height: '100%' }}>
                                 <CardContent>
-                                    <Tooltip title="Salary − Payments − Expenses" arrow>
+                                    <Tooltip title={`Salary ($${stats.salary.toFixed(0)}) ${stats.adjustments !== 0 ? `+ Adj ($${stats.adjustments.toFixed(0)}) ` : ''}- Payments ($${stats.payments.toFixed(0)}) - Expenses ($${stats.expenses.toFixed(0)})`} arrow>
                                         <Typography variant="body2" sx={{ opacity: 0.8 }}>Balance</Typography>
                                     </Tooltip>
                                     <Typography variant="h4" fontWeight="bold">${stats.balance.toFixed(2)}</Typography>
                                 </CardContent>
                             </Card>
                         </Box>
-                        <Box sx={{ flex: 1, minWidth: 200 }}>
+                        <Box sx={{ flex: 1, minWidth: 160 }}>
                             <Card sx={{ height: '100%' }}>
                                 <CardContent>
                                     <Typography color="textSecondary" variant="body2">Total Hours</Typography>
@@ -716,14 +721,15 @@ const FinancePage: React.FC = () => {
                                 <Typography variant="subtitle2" gutterBottom fontWeight="bold">Breakdown (Filtered)</Typography>
                                 <Box display="flex" gap={3} sx={{ overflowX: 'auto' }}>
                                     {/* Employee Breakdown */}
-                                    <Box flex={1} minWidth={200}>
+                                    <Box flex={1} minWidth={250}>
                                         <Table size="small">
-                                            <TableHead><TableRow><TableCell>Employee</TableCell><TableCell align="right">Hours</TableCell><TableCell align="right">Salary</TableCell></TableRow></TableHead>
+                                            <TableHead><TableRow><TableCell>Employee</TableCell><TableCell align="right">Hours</TableCell><TableCell align="right">$/h</TableCell><TableCell align="right">Salary</TableCell></TableRow></TableHead>
                                             <TableBody>
                                                 {breakdowns.employee.slice(0, 5).map(b => (
                                                     <TableRow key={b.name}>
                                                         <TableCell variant="head" sx={{ py: 0.5 }}>{b.name}</TableCell>
                                                         <TableCell align="right" sx={{ py: 0.5 }}>{b.hours.toFixed(1)}</TableCell>
+                                                        <TableCell align="right" sx={{ py: 0.5 }}>${b.rate}</TableCell>
                                                         <TableCell align="right" sx={{ py: 0.5 }}>${b.money.toFixed(0)}</TableCell>
                                                     </TableRow>
                                                 ))}
@@ -1147,19 +1153,19 @@ const FinancePage: React.FC = () => {
                 <DialogContent>
                     {historyEmployee && (() => {
                         const groupIds = employeeIdGroups.get(historyEmployee.id);
-                        const employeeEntries = entries.filter(e =>
+                        // Use filteredEntries (respects date range filters) instead of entries (all-time)
+                        const employeeEntries = filteredEntries.filter(e =>
                             groupIds?.has(String(e.employeeId)) ?? String(e.employeeId) === historyEmployee.id
                         );
                         const payments = employeeEntries.filter(e => e.type === 'payment');
                         const adjustments = employeeEntries.filter(e => e.type === 'manual_adjustment');
-                        // Include corrections (voided sessions) — they have negative sessionEarnings
-                        // that reduce the earned total. Without this, Earned shows gross before voids.
-                        const sessions = employeeEntries.filter(e => !e.type || e.type === 'regular' || e.type === 'correction');
 
-                        const totalEarned = sessions.reduce((sum, e) => sum + (e.sessionEarnings || 0), 0);
-                        const totalPaid = payments.reduce((sum, e) => sum + Math.abs(e.sessionEarnings || 0), 0);
-                        const totalAdj = adjustments.reduce((sum, e) => sum + (e.sessionEarnings || 0), 0);
-                        const balance = totalEarned + totalAdj - totalPaid;
+                        // Use unified payroll calculation
+                        const buckets = calculatePayrollBuckets(employeeEntries);
+                        const totalEarned = buckets.salary;
+                        const totalPaid = buckets.payments;
+                        const totalAdj = buckets.adjustments;
+                        const balance = buckets.balance;
 
                         return (
                             <Box>

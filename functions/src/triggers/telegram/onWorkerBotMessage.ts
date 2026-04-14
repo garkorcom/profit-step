@@ -257,8 +257,17 @@ async function handleMessage(message: any) {
             await sendMessage(chatId, `⚠️ Ты уже на смене!\n\n🏢 Объект: *${sd.clientName}*\nВремя: ${h}ч ${m}мин.`);
             await sendMainMenu(chatId, userId);
         } else {
-            await sendMessage(chatId, `📸 *Для начала смены:*\n\n1️⃣ Нажми 📎 (скрепку) внизу\n2️⃣ Выбери 📷 *Камера*\n3️⃣ Сделай селфи на объекте\n4️⃣ Отправь фото\n\nЗатем отправь 📍 *геолокацию* (📎 → Геопозиция).`);
-            await sendMainMenu(chatId, userId);
+            // Show start instructions with location button — don't repeat main menu
+            await sendMessage(chatId,
+                `📍 *Для начала смены:*\n\nОтправь свою *геолокацию* — бот определит объект автоматически.\n\n_(Нажми 📎 скрепку → Геопозиция)_`,
+                {
+                    keyboard: [
+                        [{ text: '📍 Отправить Локацию', request_location: true }],
+                        [{ text: '❌ Отмена' }]
+                    ],
+                    resize_keyboard: true
+                }
+            );
         }
     } else if (text === '⏹ Завершить смену' || text === '⏹️ Finish Work') {
         await handleFinishWorkRequest(chatId, userId);

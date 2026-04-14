@@ -188,13 +188,14 @@ async function handleMessage(message: any) {
         if (activeSession) {
             const data = activeSession.data();
             if (data.awaitingLocation || data.awaitingChecklist || data.awaitingStartPhoto || data.awaitingStartVoice
-                || data.awaitingEndPhoto || data.awaitingEndVoice || data.awaitingDescription) {
+                || data.awaitingEndLocation || data.awaitingEndPhoto || data.awaitingEndVoice || data.awaitingDescription) {
                 // User called menu while stuck. Unblock them from any state.
                 await activeSession.ref.update({
                     awaitingLocation: false,
                     awaitingChecklist: false,
                     awaitingStartPhoto: false,
                     awaitingStartVoice: false,
+                    awaitingEndLocation: false,
                     awaitingEndPhoto: false,
                     awaitingEndVoice: false,
                     awaitingDescription: false,
@@ -1478,7 +1479,7 @@ async function handleSkipMedia(chatId: number, userId: number) {
     const activeSession = await getActiveSession(userId);
 
     if (!activeSession) {
-        await sendMessage(chatId, "⚠️ No active session.", { remove_keyboard: true });
+        // BUG-3 fix: Session already finalized (double-tap) — silently ignore
         return;
     }
 
@@ -1511,12 +1512,11 @@ async function handleSkipMedia(chatId: number, userId: number) {
         );
     } else if (sessionData.awaitingEndVoice) {
         // Skip End Voice → IMMEDIATE FINALIZE
-        // Fix: Record "SKIP" in database instead of generic text
-        await finalizeSession(chatId, userId, activeSession, "SKIP");
+        await finalizeSession(chatId, userId, activeSession, "Описание не указано");
 
     } else if (sessionData.awaitingDescription) {
-        // Skip Description → Finalize with SKIP marker
-        await finalizeSession(chatId, userId, activeSession, "SKIP");
+        // Skip Description → Finalize
+        await finalizeSession(chatId, userId, activeSession, "Описание не указано");
 
     } else if (sessionData.awaitingStartPhoto) {
         // Skip Start Photo → go to voice
@@ -1935,6 +1935,7 @@ async function finalizeSession(chatId: number, userId: number, activeSession: an
         durationMinutes: totalMinutes,
         sessionEarnings: 0, // calc below
         status: 'completed',
+        updatedBySource: 'telegram_bot', // Prevents duplicate notification from onWorkSessionUpdate trigger
         awaitingDescription: false,
         totalBreakMinutes: totalDeductibleBreak // Update this to reflect the final break
     };
@@ -2013,7 +2014,7 @@ async function finalizeSession(chatId: number, userId: number, activeSession: an
         throw txError; // Re-throw unexpected errors
     }
 
-    // Fix #2: Calculate salary balance (inline)
+    // BUG-6 fix: Calculate salary balance from work_sessions (3 buckets: earned/paid/adjustments)
     let balanceInfo = '';
     try {
         const yearStart = new Date(new Date().getFullYear(), 0, 1);
@@ -2022,23 +2023,51 @@ async function finalizeSession(chatId: number, userId: number, activeSession: an
             .where('status', '==', 'completed')
             .where('startTime', '>=', admin.firestore.Timestamp.fromDate(yearStart))
             .get();
-        const totalEarned = sessionsSnap.docs.reduce((sum: number, d: any) => sum + (d.data().sessionEarnings || 0), 0);
-        
-        const paymentsSnap = await admin.firestore().collection('payments')
-            .where('employeeId', '==', String(userId))
-            .get();
-        const totalPayments = paymentsSnap.docs.reduce((sum: number, d: any) => sum + Math.abs(d.data().amount || 0), 0);
-        
-        const balance = totalEarned - totalPayments;
-        balanceInfo = `\n💳 Баланс: $${balance.toFixed(2)} (начислено $${totalEarned.toFixed(2)} - выплачено $${totalPayments.toFixed(2)})`;
+
+        // Split into 3 buckets (same formula as API summary & FinancePage)
+        let earned = 0;   // regular + correction
+        let paid = 0;     // payment records
+        let adjustments = 0; // manual_adjustment
+
+        sessionsSnap.docs.forEach((d: any) => {
+            const data = d.data();
+            const amount = data.sessionEarnings || 0;
+            const type = data.type || 'regular';
+            if (type === 'payment') {
+                paid += Math.abs(amount);
+            } else if (type === 'manual_adjustment') {
+                adjustments += amount;
+            } else {
+                // regular + correction
+                earned += amount;
+            }
+        });
+
+        // Also check legacy payments collection (backward compat)
+        try {
+            const legacySnap = await admin.firestore().collection('payments')
+                .where('employeeId', '==', String(userId))
+                .get();
+            legacySnap.docs.forEach((d: any) => {
+                paid += Math.abs(d.data().amount || 0);
+            });
+        } catch (_) { /* legacy collection may not exist */ }
+
+        const balance = earned - paid + adjustments;
+        balanceInfo = `\n💳 Баланс: $${balance.toFixed(2)} (начислено $${earned.toFixed(2)} - выплачено $${paid.toFixed(2)})`;
     } catch (e) {
         console.error('Balance calc error:', e);
     }
 
-    // V2: Time-of-day flavor + Russian
-    const finishHour = new Date().getHours();
+    // V2: Time-of-day flavor + Russian (BUG-7 fix: use ET timezone)
+    const { toZonedTime } = require('date-fns-tz');
+    const localNow = toZonedTime(new Date(), 'America/New_York');
+    const finishHour = localNow.getHours();
     const finishGreeting = finishHour >= 17 ? '🌙 Отличная работа!' : '🏁 Смена завершена!';
-    await sendMessage(chatId, `${finishGreeting}\n\n⏱ Сессия: ${Math.floor(totalMinutes / 60)}ч ${totalMinutes % 60}мин\n💰 Заработано: $${sessionEarnings}\n💵 Ставка: $${hourlyRate}/ч\n📅 *За сегодня: ${dailyHours}ч ${dailyMins}мин ($${dailyStats.earnings.toFixed(2)})*\n📍 Объект: ${sessionData.clientName}\n📝 ${description}${extraMessage}\n\n${balanceInfo}`);
+
+    // BUG-1 fix: Don't show "Описание не указано" in summary
+    const descDisplay = safeDescription === 'Описание не указано' ? '' : `\n📝 ${safeDescription}`;
+    await sendMessage(chatId, `${finishGreeting}\n\n⏱ Сессия: ${Math.floor(totalMinutes / 60)}ч ${totalMinutes % 60}мин\n💰 Заработано: $${sessionEarnings}\n💵 Ставка: $${hourlyRate}/ч\n📅 *За сегодня: ${dailyHours}ч ${dailyMins}мин ($${dailyStats.earnings.toFixed(2)})*\n📍 Объект: ${sessionData.clientName}${descDisplay}${extraMessage}\n\n${balanceInfo}`);
 
     logger.info(`[${sessionData.employeeName}] 🏁 Work Finished — ${sessionData.clientName} (${Math.floor(totalMinutes / 60)}h ${totalMinutes % 60}m, $${sessionEarnings})`);
 
@@ -2046,8 +2075,17 @@ async function finalizeSession(chatId: number, userId: number, activeSession: an
     const sanitizedDesc = safeDescription.replace(/[*_`\[\]()~>#+\-=|{}.!]/g, '').substring(0, 500);
     await sendAdminNotification(`👤 *${sessionData.employeeName}:*\n🏁 *Work Finished*\n📍 ${sessionData.clientName}\n⏱ ${Math.floor(totalMinutes / 60)}h ${totalMinutes % 60}m\n💵 Earned: $${sessionEarnings}\n📝 ${sanitizedDesc}`);
 
-    // Return to main menu after finishing
-    await sendMainMenu(chatId, userId);
+    // BUG-2 fix: Send keyboard without "ты не на смене" ghost message
+    await sendMessage(chatId, "👇 Главное меню:", {
+        keyboard: [
+            [{ text: '▶️ Начать смену' }],
+            [{ text: '📊 Мой статус' }, { text: '❓ Помощь' }],
+            [{ text: '🛒 Shopping' }, { text: '📥 Inbox' }],
+            [{ text: '📋 Tasks' }]
+        ],
+        resize_keyboard: true,
+        one_time_keyboard: false
+    });
 }
 
 /**

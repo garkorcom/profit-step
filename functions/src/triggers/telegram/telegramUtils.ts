@@ -218,7 +218,14 @@ export function buildStatusAndKeyboard(
 ): { message: string; keyboard: any[][] } {
     if (!activeSession) {
         // --- NOT WORKING ---
-        const hour = new Date().getHours();
+        // BUG-7 fix: Use ET timezone for greeting (Cloud Functions run in UTC)
+        let hour: number;
+        try {
+            const { toZonedTime } = require('date-fns-tz');
+            hour = toZonedTime(new Date(), 'America/New_York').getHours();
+        } catch (_) {
+            hour = new Date().getHours(); // fallback to UTC if date-fns-tz unavailable
+        }
         let greeting = '👋';
         if (hour >= 5 && hour < 12) greeting = '🌅 Доброе утро';
         else if (hour >= 12 && hour < 18) greeting = '👋 Привет';

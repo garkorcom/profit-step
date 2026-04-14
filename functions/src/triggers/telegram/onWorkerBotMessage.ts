@@ -1126,6 +1126,11 @@ async function handleLocationConfirmStart(chatId: number, userId: number) {
 
     const { hourlyRate, platformUserId, companyId, employeeName } = await resolveHourlyRate(userId);
 
+    // Use Timestamp.now() instead of serverTimestamp() to avoid race condition:
+    // getActiveSession() queries with orderBy('startTime') — serverTimestamp sentinel
+    // value may not be resolved yet, causing "Ты не на смене" ghost message.
+    const sessionStartTime = admin.firestore.Timestamp.now();
+
     await db.collection('work_sessions').add({
         employeeId: userId,
         employeeName: employeeName,
@@ -1133,7 +1138,7 @@ async function handleLocationConfirmStart(chatId: number, userId: number) {
         companyId: companyId,
         clientId: clientId,
         clientName: serviceName ? `${clientName} - ${serviceName}` : clientName,
-        startTime: admin.firestore.FieldValue.serverTimestamp(),
+        startTime: sessionStartTime,
         status: 'active',
         service: serviceName || null,
         startLocation: location,
@@ -1296,6 +1301,9 @@ async function handleLocationNewClient(chatId: number, userId: number, clientId:
 
     const { hourlyRate, platformUserId, companyId, employeeName } = await resolveHourlyRate(userId);
 
+    // Use Timestamp.now() instead of serverTimestamp() — see comment in handleLocationConfirmStart
+    const sessionStartTime = admin.firestore.Timestamp.now();
+
     await db.collection('work_sessions').add({
         employeeId: userId,
         employeeName: employeeName,
@@ -1303,7 +1311,7 @@ async function handleLocationNewClient(chatId: number, userId: number, clientId:
         companyId: companyId,
         clientId: clientId,
         clientName: clientName,
-        startTime: admin.firestore.FieldValue.serverTimestamp(),
+        startTime: sessionStartTime,
         status: 'active',
         startLocation: location,
         awaitingLocation: false,
@@ -1354,19 +1362,16 @@ async function pauseWorkSession(chatId: number, userId: number) {
 }
 
 async function resumeWorkSession(chatId: number, userId: number) {
-    const sessionSnapshot = await db.collection('work_sessions')
-        .where('employeeId', '==', userId)
-        .where('status', '==', 'paused') // Look for paused
-        .limit(1)
-        .get();
+    // Use getActiveSession with cross-lookup (checks both telegramId and Firebase UID)
+    // This matches pauseWorkSession which also uses getActiveSession
+    const session = await getActiveSession(userId);
 
-    if (sessionSnapshot.empty) {
+    if (!session || session.data()?.status !== 'paused') {
         await sendMessage(chatId, "⚠️ Нет смены на паузе.");
         await sendMainMenu(chatId, userId);
         return;
     }
 
-    const session = sessionSnapshot.docs[0];
     const data = session.data();
     const now = admin.firestore.Timestamp.now();
 

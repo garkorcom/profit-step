@@ -1152,7 +1152,9 @@ const FinancePage: React.FC = () => {
                         );
                         const payments = employeeEntries.filter(e => e.type === 'payment');
                         const adjustments = employeeEntries.filter(e => e.type === 'manual_adjustment');
-                        const sessions = employeeEntries.filter(e => !e.type || e.type === 'regular');
+                        // Include corrections (voided sessions) — they have negative sessionEarnings
+                        // that reduce the earned total. Without this, Earned shows gross before voids.
+                        const sessions = employeeEntries.filter(e => !e.type || e.type === 'regular' || e.type === 'correction');
 
                         const totalEarned = sessions.reduce((sum, e) => sum + (e.sessionEarnings || 0), 0);
                         const totalPaid = payments.reduce((sum, e) => sum + Math.abs(e.sessionEarnings || 0), 0);

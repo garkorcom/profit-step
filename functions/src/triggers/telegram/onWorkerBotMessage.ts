@@ -297,13 +297,10 @@ async function handleMessage(message: any) {
         if (activeSession && activeSession.data().awaitingLocation) {
             await activeSession.ref.update({
                 awaitingLocation: false,
-                awaitingChecklist: true,
-                checklistStep: 0,
-                checklistAnswers: {},
                 startLocation: null
             });
-            await sendMessage(chatId, "⏩ Локация пропущена.\n\n📋 Пройди чеклист перед началом работы:");
-            await sendChecklistQuestion(chatId, 0);
+            await sendMessage(chatId, "⏩ Локация пропущена. Смена активна!");
+            await sendMainMenu(chatId, userId);
         } else {
             // Normal media skip flow
             await handleSkipMedia(chatId, userId);
@@ -854,6 +851,9 @@ async function initWorkSession(chatId: number, userId: number, clientId: string,
     }
 
     // 4. Create Session (Pending Location)
+    // Use Timestamp.now() instead of serverTimestamp() to avoid race condition:
+    // getActiveSession() queries with orderBy('startTime') — serverTimestamp sentinel
+    // value may not be resolved yet, causing "Ты не на смене" ghost message.
     const sessionRef = await db.collection('work_sessions').add({
         employeeId: userId,
         employeeName: employeeName,
@@ -861,16 +861,11 @@ async function initWorkSession(chatId: number, userId: number, clientId: string,
         companyId: companyId,           // Link to company
         clientId: clientId,
         clientName: clientName,
-        startTime: admin.firestore.FieldValue.serverTimestamp(),
+        startTime: admin.firestore.Timestamp.now(),
         status: 'active',
-        service: serviceName || null, // Create field if exists
+        service: serviceName || null,
         awaitingLocation: true,
-        awaitingChecklist: false,
-        checklistStep: 0,
-        checklistAnswers: {},
-        awaitingStartPhoto: false,
         hourlyRate: hourlyRate, // Snapshot rate
-        // Phase 5: Task linking (optional, for future "Start from Task")
         taskId: null,
         taskTitle: null
     });
@@ -1141,22 +1136,20 @@ async function handleLocationConfirmStart(chatId: number, userId: number) {
     // value may not be resolved yet, causing "Ты не на смене" ghost message.
     const sessionStartTime = admin.firestore.Timestamp.now();
 
+    const fullClientName = serviceName ? `${clientName} - ${serviceName}` : clientName;
+
     await db.collection('work_sessions').add({
         employeeId: userId,
         employeeName: employeeName,
         platformUserId: platformUserId,
         companyId: companyId,
         clientId: clientId,
-        clientName: serviceName ? `${clientName} - ${serviceName}` : clientName,
+        clientName: fullClientName,
         startTime: sessionStartTime,
         status: 'active',
         service: serviceName || null,
         startLocation: location,
         awaitingLocation: false,
-        awaitingChecklist: true,
-        checklistStep: 0,
-        checklistAnswers: {},
-        awaitingStartPhoto: false,
         hourlyRate: hourlyRate,
         taskId: null,
         taskTitle: null
@@ -1171,12 +1164,12 @@ async function handleLocationConfirmStart(chatId: number, userId: number) {
 
     await sendMessage(chatId,
         `✅ *Смена начата!*\n\n` +
-        `🏢 Объект: *${clientName}${serviceName ? ' - ' + serviceName : ''}*\n\n` +
-        `📋 Пройди чеклист перед началом работы:`
+        `🏢 Объект: *${fullClientName}*\n` +
+        `⏱ Таймер запущен. Работаем!`
     );
 
-    // Send first checklist question
-    await sendChecklistQuestion(chatId, 0);
+    // Immediately show work menu — worker can start right away
+    await sendMainMenu(chatId, userId);
 
     await sendAdminNotification(`👤 *${employeeName}:*\n▶️ *Work Started (Location)*\n📍 ${clientName}`);
 }
@@ -1325,10 +1318,6 @@ async function handleLocationNewClient(chatId: number, userId: number, clientId:
         status: 'active',
         startLocation: location,
         awaitingLocation: false,
-        awaitingChecklist: true,
-        checklistStep: 0,
-        checklistAnswers: {},
-        awaitingStartPhoto: false,
         hourlyRate: hourlyRate,
         taskId: null,
         taskTitle: null
@@ -1344,10 +1333,12 @@ async function handleLocationNewClient(chatId: number, userId: number, clientId:
     await sendMessage(chatId,
         `✅ *Смена начата!*\n\n` +
         `🏢 Объект: *${clientName}*\n` +
-        `📍 Координаты объекта сохранены в базу.\n\n` +
-        `📋 Пройди чеклист перед началом работы:`
+        `📍 Координаты объекта сохранены в базу.\n` +
+        `⏱ Таймер запущен. Работаем!`
     );
-    await sendChecklistQuestion(chatId, 0);
+
+    // Immediately show work menu — worker can start right away
+    await sendMainMenu(chatId, userId);
 
     await sendAdminNotification(`👤 *${employeeName}:*\n▶️ *Work Started (New DB Location)*\n📍 ${clientName}`);
 }
@@ -1771,14 +1762,10 @@ async function handleText(chatId: number, userId: number, text: string) {
             companyId: companyId,
             clientId: 'custom',
             clientName: text,
-            startTime: admin.firestore.FieldValue.serverTimestamp(),
+            startTime: admin.firestore.Timestamp.now(),
             status: 'active',
             startLocation: location,
             awaitingLocation: false,
-            awaitingChecklist: true,
-            checklistStep: 0,
-            checklistAnswers: {},
-            awaitingStartPhoto: false,
             hourlyRate: hourlyRate,
             taskId: null,
             taskTitle: null
@@ -1786,9 +1773,9 @@ async function handleText(chatId: number, userId: number, text: string) {
 
         await pendingStartRef.delete();
         await sendMessage(chatId,
-            `✅ *Смена начата!*\n\n🏢 Объект: *${text}* (ручной ввод)\n\n📋 Пройди чеклист перед началом работы:`
+            `✅ *Смена начата!*\n\n🏢 Объект: *${text}* (ручной ввод)\n⏱ Таймер запущен. Работаем!`
         );
-        await sendChecklistQuestion(chatId, 0);
+        await sendMainMenu(chatId, userId);
         await sendAdminNotification(`👤 *${employeeName}:*\n▶️ *Work Started (Manual)*\n📍 ${text}`);
         return;
     }

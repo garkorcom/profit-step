@@ -614,13 +614,62 @@ router.get('/api/time-tracking/summary', async (req, res, next) => {
 
     const snap = await q.get();
 
-    // Aggregate per employee with separate buckets:
+    // ─── Build ID merge map ───────────────────────────────────────────
+    // Sessions use either telegramId (number) or Firebase UID (string) as employeeId.
+    // We merge both into a single canonical ID per person using the users collection.
+    // Canonical = Firebase UID if available, otherwise the raw employeeId.
+    const idToCanonical: Record<string, string> = {};
+    const canonicalNames: Record<string, string> = {};
+
+    // Collect all unique employeeIds from sessions
+    const rawIds = new Set<string>();
+    snap.docs.forEach((d) => rawIds.add(String(d.data().employeeId || 'unknown')));
+
+    // Load users who have telegramId — build bidirectional map
+    const usersSnap = await db.collection('users').get();
+    for (const uDoc of usersSnap.docs) {
+      const u = uDoc.data();
+      const firebaseUid = uDoc.id;
+      const tgId = u.telegramId ? String(u.telegramId) : null;
+      const name = u.displayName || u.name || '';
+
+      // Map Firebase UID → itself
+      idToCanonical[firebaseUid] = firebaseUid;
+      if (name) canonicalNames[firebaseUid] = name;
+
+      // Map telegramId → Firebase UID
+      if (tgId) {
+        idToCanonical[tgId] = firebaseUid;
+      }
+    }
+
+    // Also check employees collection (legacy bot-only workers)
+    const empsSnap = await db.collection('employees').get();
+    for (const eDoc of empsSnap.docs) {
+      const e = eDoc.data();
+      const tgId = e.telegramId ? String(e.telegramId) : eDoc.id;
+      // Only set if not already mapped via users collection
+      if (!idToCanonical[tgId]) {
+        idToCanonical[tgId] = tgId;
+      }
+      if (e.name && !canonicalNames[idToCanonical[tgId]]) {
+        canonicalNames[idToCanonical[tgId]] = e.name;
+      }
+    }
+
+    // Fallback: any ID not in the map maps to itself
+    for (const rid of rawIds) {
+      if (!idToCanonical[rid]) idToCanonical[rid] = rid;
+    }
+
+    // ─── Aggregate per canonical employee ─────────────────────────────
     // earned = regular + correction sessions (net work earnings)
     // paid = payment records (absolute value)
     // adjustments = manual_adjustment records
     // balance = earned - paid + adjustments
     const byEmployee: Record<string, {
-      employeeId: string;
+      canonicalId: string;
+      employeeIds: Set<string>;
       employeeName: string;
       totalMinutes: number;
       earned: number;
@@ -636,11 +685,14 @@ router.get('/api/time-tracking/summary', async (req, res, next) => {
 
     snap.docs.forEach((d) => {
       const s = d.data();
-      const eid = s.employeeId || 'unknown';
-      if (!byEmployee[eid]) {
-        byEmployee[eid] = {
-          employeeId: eid,
-          employeeName: s.employeeName || 'Unknown',
+      const rawId = String(s.employeeId || 'unknown');
+      const cid = idToCanonical[rawId] || rawId;
+
+      if (!byEmployee[cid]) {
+        byEmployee[cid] = {
+          canonicalId: cid,
+          employeeIds: new Set(),
+          employeeName: canonicalNames[cid] || s.employeeName || 'Unknown',
           totalMinutes: 0,
           earned: 0,
           paid: 0,
@@ -648,29 +700,35 @@ router.get('/api/time-tracking/summary', async (req, res, next) => {
           sessionCount: 0,
         };
       }
+      byEmployee[cid].employeeIds.add(rawId);
+      // Prefer longer name (more descriptive)
+      if (s.employeeName && s.employeeName.length > byEmployee[cid].employeeName.length) {
+        byEmployee[cid].employeeName = s.employeeName;
+      }
 
       const earn = s.sessionEarnings || 0;
       const type = s.type || 'regular';
 
       if (type === 'payment') {
-        byEmployee[eid].paid += Math.abs(earn);
+        byEmployee[cid].paid += Math.abs(earn);
         grandPaid += Math.abs(earn);
       } else if (type === 'manual_adjustment') {
-        byEmployee[eid].adjustments += earn;
+        byEmployee[cid].adjustments += earn;
         grandAdj += earn;
       } else {
         // regular + correction (corrections have negative earnings)
-        byEmployee[eid].earned += earn;
+        byEmployee[cid].earned += earn;
         grandEarned += earn;
-        byEmployee[eid].totalMinutes += (s.durationMinutes || 0);
+        byEmployee[cid].totalMinutes += (s.durationMinutes || 0);
         grandTotalMinutes += (s.durationMinutes || 0);
       }
 
-      byEmployee[eid].sessionCount += 1;
+      byEmployee[cid].sessionCount += 1;
     });
 
     const employees = Object.values(byEmployee).map((e) => ({
-      employeeId: e.employeeId,
+      employeeId: e.canonicalId,
+      employeeIds: Array.from(e.employeeIds),
       employeeName: e.employeeName,
       totalMinutes: e.totalMinutes,
       totalHours: +(e.totalMinutes / 60).toFixed(1),

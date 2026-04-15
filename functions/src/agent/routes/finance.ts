@@ -17,6 +17,12 @@ const router = Router();
 
 router.get('/api/projects/status', async (req, res, next) => {
   try {
+    // ── RLS: worker/driver/supply cannot view project financial status ──
+    const rlsRole = req.effectiveRole || 'admin';
+    if (rlsRole === 'worker' || rlsRole === 'driver' || rlsRole === 'supply') {
+      res.status(403).json({ error: 'Project status requires foreman/manager/accountant/admin role' });
+      return;
+    }
     const q = ProjectStatusQuery.parse(req.query);
     let clientId = q.clientId;
 
@@ -85,6 +91,12 @@ router.get('/api/projects/status', async (req, res, next) => {
 
 router.get('/api/finance/context', async (req, res, next) => {
   try {
+    // ── RLS: finance context is admin/manager/accountant only ──
+    const rlsRole = req.effectiveRole || 'admin';
+    if (rlsRole === 'worker' || rlsRole === 'driver' || rlsRole === 'supply') {
+      res.status(403).json({ error: 'Finance context requires manager/accountant/admin role' });
+      return;
+    }
     logger.info('🏦 finance:context');
     // Active projects (using projects collection, mapped to clientId)
     const projectsSnap = await db.collection('projects').where('status', '==', 'active').get();
@@ -431,8 +443,14 @@ router.post('/api/finance/transactions/undo', async (req, res, next) => {
 
 // ─── GET /api/finance/rules ──────────────────────────────────────────
 
-router.get('/api/finance/rules', async (_req, res, next) => {
+router.get('/api/finance/rules', async (req, res, next) => {
   try {
+    // ── RLS: finance rules admin/manager/accountant only ──
+    const rlsRole = req.effectiveRole || 'admin';
+    if (rlsRole === 'worker' || rlsRole === 'driver' || rlsRole === 'supply' || rlsRole === 'foreman') {
+      res.status(403).json({ error: 'Finance rules requires manager/accountant/admin role' });
+      return;
+    }
     const snap = await db.collection('finance_rules').get();
     const rules = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     res.json({ rules });
@@ -445,6 +463,11 @@ router.get('/api/finance/rules', async (_req, res, next) => {
 
 router.put('/api/finance/rules/:id', async (req, res, next) => {
   try {
+    const rlsRole = req.effectiveRole || 'admin';
+    if (rlsRole !== 'admin' && rlsRole !== 'manager' && rlsRole !== 'accountant') {
+      res.status(403).json({ error: 'Finance rules requires manager/accountant/admin role' });
+      return;
+    }
     const { id } = req.params;
     const { autoApprove, defaultPaymentType, defaultCategoryId, defaultProjectId } = req.body;
     const update: Record<string, unknown> = { updatedAt: FieldValue.serverTimestamp() };
@@ -463,6 +486,11 @@ router.put('/api/finance/rules/:id', async (req, res, next) => {
 
 router.delete('/api/finance/rules/:id', async (req, res, next) => {
   try {
+    const rlsRole = req.effectiveRole || 'admin';
+    if (rlsRole !== 'admin' && rlsRole !== 'manager' && rlsRole !== 'accountant') {
+      res.status(403).json({ error: 'Finance rules requires manager/accountant/admin role' });
+      return;
+    }
     await db.collection('finance_rules').doc(req.params.id).delete();
     res.json({ success: true });
   } catch (e) {

@@ -69,6 +69,13 @@ router.get('/api/agent-feedback/list', async (req, res, next) => {
 
     let q: FirebaseFirestore.Query = db.collection('agent_feedbacks');
 
+    // ── RLS: restrict non-admins to own feedback ──
+    const rlsRole = req.effectiveRole || 'admin';
+    const rlsUserId = req.effectiveUserId || req.agentUserId;
+    if (rlsRole === 'worker' || rlsRole === 'driver' || rlsRole === 'foreman') {
+      q = q.where('userId', '==', rlsUserId);
+    }
+
     if (params.type) {
       q = q.where('type', '==', params.type);
     }

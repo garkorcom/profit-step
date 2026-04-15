@@ -25,11 +25,26 @@ router.get('/api/activity/list', async (req, res, next) => {
 
     let q: FirebaseFirestore.Query = db.collection('agent_activity');
 
+    // ── RLS: restrict non-admins to own activity ──
+    const rlsRole = req.effectiveRole || 'admin';
+    const rlsUserId = req.effectiveUserId || req.agentUserId;
+    if (rlsRole === 'worker' || rlsRole === 'driver') {
+      q = q.where('userId', '==', rlsUserId);
+    } else if (rlsRole === 'foreman') {
+      const teamUids = req.effectiveTeamMemberUids || [];
+      const allUids = Array.from(new Set([rlsUserId!, ...teamUids]));
+      if (allUids.length <= 30) {
+        q = q.where('userId', 'in', allUids);
+      } else {
+        q = q.where('userId', '==', rlsUserId);
+      }
+    } else if (params.userId) {
+      // admin/manager: honor optional userId filter
+      q = q.where('userId', '==', params.userId);
+    }
+
     if (params.action) {
       q = q.where('action', '==', params.action);
-    }
-    if (params.userId) {
-      q = q.where('userId', '==', params.userId);
     }
 
     // Date range filters

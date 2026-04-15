@@ -18,14 +18,35 @@ router.get('/api/dashboard', async (req, res, next) => {
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const todayEnd = new Date(todayStart.getTime() + 24 * 3600_000);
 
+    // ── RLS: scope queries based on role ──
+    const rlsRole = req.effectiveRole || 'admin';
+    const rlsUserId = req.effectiveUserId || req.agentUserId;
+    const teamUids = req.effectiveTeamMemberUids || [];
+    const allUids = Array.from(new Set([rlsUserId!, ...teamUids]));
+
+    let sessionsQ: FirebaseFirestore.Query = db.collection('work_sessions').where('status', 'in', ['active', 'paused']);
+    let tasksQ: FirebaseFirestore.Query = db.collection('gtd_tasks')
+      .where('dueDate', '>=', Timestamp.fromDate(todayStart))
+      .where('dueDate', '<=', Timestamp.fromDate(todayEnd));
+    let costsQ: FirebaseFirestore.Query = db.collection('costs').where('status', '==', 'confirmed');
+
+    if (rlsRole === 'worker' || rlsRole === 'driver') {
+      sessionsQ = sessionsQ.where('userId', '==', rlsUserId);
+      tasksQ = tasksQ.where('assigneeId', '==', rlsUserId);
+      costsQ = costsQ.where('userId', '==', rlsUserId);
+    } else if (rlsRole === 'foreman' && allUids.length <= 30) {
+      sessionsQ = sessionsQ.where('userId', 'in', allUids);
+      tasksQ = tasksQ.where('assigneeId', 'in', allUids);
+      costsQ = costsQ.where('userId', 'in', allUids);
+    }
+
     const [activeSessionsSnap, tasksDueTodaySnap, recentCostsSnap, openEstimatesSnap, clientsCache] = await Promise.all([
-      db.collection('work_sessions').where('status', 'in', ['active', 'paused']).get(),
-      db.collection('gtd_tasks')
-        .where('dueDate', '>=', Timestamp.fromDate(todayStart))
-        .where('dueDate', '<=', Timestamp.fromDate(todayEnd))
-        .limit(20).get(),
-      db.collection('costs').where('status', '==', 'confirmed').orderBy('createdAt', 'desc').limit(10).get(),
-      db.collection('estimates').where('status', 'in', ['draft', 'sent']).get(),
+      sessionsQ.get(),
+      tasksQ.limit(20).get(),
+      costsQ.orderBy('createdAt', 'desc').limit(10).get(),
+      (rlsRole === 'worker' || rlsRole === 'driver')
+        ? Promise.resolve({ size: 0, docs: [] as FirebaseFirestore.QueryDocumentSnapshot[] })
+        : db.collection('estimates').where('status', 'in', ['draft', 'sent']).get(),
       getCachedClients(),
     ]);
 

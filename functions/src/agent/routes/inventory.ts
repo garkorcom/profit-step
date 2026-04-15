@@ -126,6 +126,14 @@ router.get('/api/inventory/warehouses', async (req, res, next) => {
     logger.info('🏭 warehouse:list', { clientId, projectId, type, includeArchived, limit });
 
     let q: admin.firestore.Query = db.collection('warehouses');
+
+    // ── RLS: worker/driver can only see warehouses they created ──
+    const rlsRole = req.effectiveRole || 'admin';
+    const rlsUserId = req.effectiveUserId || req.agentUserId;
+    if (rlsRole === 'worker' || rlsRole === 'driver') {
+      q = q.where('createdBy', '==', rlsUserId);
+    }
+
     if (clientId) q = q.where('clientId', '==', clientId);
     if (projectId) q = q.where('projectId', '==', projectId);
     if (type) q = q.where('type', '==', type);
@@ -434,6 +442,14 @@ router.get('/api/inventory/items', async (req, res, next) => {
     logger.info('📦 item:list', { warehouseId: params.warehouseId, category: params.category, limit: params.limit });
 
     let q: admin.firestore.Query = db.collection('inventory_items');
+
+    // ── RLS: worker/driver restricted to items they added ──
+    const rlsRole = req.effectiveRole || 'admin';
+    const rlsUserId = req.effectiveUserId || req.agentUserId;
+    if (rlsRole === 'worker' || rlsRole === 'driver') {
+      q = q.where('createdBy', '==', rlsUserId);
+    }
+
     if (params.warehouseId) q = q.where('warehouseId', '==', params.warehouseId);
     if (params.category) q = q.where('category', '==', params.category);
 
@@ -824,6 +840,22 @@ router.get('/api/inventory/transactions', async (req, res, next) => {
     logger.info('📦 tx:list', { warehouseId: params.warehouseId, itemId: params.itemId, limit: params.limit });
 
     let q: admin.firestore.Query = db.collection('inventory_transactions');
+
+    // ── RLS: worker/driver see only own transactions ──
+    const rlsRole = req.effectiveRole || 'admin';
+    const rlsUserId = req.effectiveUserId || req.agentUserId;
+    if (rlsRole === 'worker' || rlsRole === 'driver') {
+      q = q.where('performedBy', '==', rlsUserId);
+    } else if (rlsRole === 'foreman') {
+      const teamUids = req.effectiveTeamMemberUids || [];
+      const allUids = Array.from(new Set([rlsUserId!, ...teamUids]));
+      if (allUids.length <= 30) {
+        q = q.where('performedBy', 'in', allUids);
+      } else {
+        q = q.where('performedBy', '==', rlsUserId);
+      }
+    }
+
     if (params.warehouseId) q = q.where('warehouseId', '==', params.warehouseId);
     if (params.itemId) q = q.where('itemId', '==', params.itemId);
     if (params.type) q = q.where('type', '==', params.type);

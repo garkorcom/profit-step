@@ -1,9 +1,13 @@
 /**
- * Client-facing portal page. Mounted at /portal/:slug.
+ * Client-facing portal page. Mounted at /portal/:slug?token=:t
  *
  * Thin wrapper around ClientDashboardLayout in "client" mode — builds the
- * header + sections from useClientPortal hook data, filters out internal
- * estimates, and passes everything to the layout.
+ * header + sections from useClientPortal hook data and passes everything
+ * to the layout.
+ *
+ * ⚠️  Data comes ONLY from backend GET /api/portal/:slug?token=:t — never
+ * from direct Firestore reads. The backend filters through portalFilter.ts
+ * to strip cost data, employee info, and financials. See SPEC.md §1.
  *
  * For the internal (employee) view of the same dashboard, see
  * src/pages/dashboard/client/[id].tsx (to be converted separately).
@@ -12,7 +16,7 @@
  */
 
 import React, { useMemo } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import { Box, Typography, Alert, CircularProgress } from '@mui/material';
 import {
   AttachMoney as MoneyIcon,
@@ -22,7 +26,12 @@ import {
   VerifiedUser as InspectionIcon,
 } from '@mui/icons-material';
 
-import { useClientPortal } from '../../hooks/useClientPortal';
+import {
+  useClientPortal,
+  type PortalTask,
+  type PortalLedgerEntry,
+  type PortalEstimate,
+} from '../../hooks/useClientPortal';
 import ClientDashboardLayout, {
   type DashboardSection,
   type DashboardHeader,
@@ -33,11 +42,21 @@ import GallerySection from '../../components/client-dashboard/sections/GallerySe
 import PaymentsSection, { type PaymentItem } from '../../components/client-dashboard/sections/PaymentsSection';
 import InspectionsSection, { type Inspection } from '../../components/client-dashboard/sections/InspectionsSection';
 
-// ─── helpers (derive section data from raw hook state) ────────────────
+// ─── helpers ──────────────────────────────────────────────────────────
 
-function buildStagesFromTasks(
-  tasks: ReturnType<typeof useClientPortal>['tasks']
-): ProjectStage[] {
+/**
+ * Extract epoch seconds from a Firestore Timestamp, whether it's a live
+ * Timestamp object (.seconds) or JSON-serialized (._seconds).
+ */
+function extractSeconds(val: unknown): number {
+  if (!val || typeof val !== 'object') return 0;
+  const obj = val as Record<string, unknown>;
+  if (typeof obj._seconds === 'number') return obj._seconds;
+  if (typeof obj.seconds === 'number') return obj.seconds;
+  return 0;
+}
+
+function buildStagesFromTasks(tasks: PortalTask[]): ProjectStage[] {
   if (tasks.length === 0) {
     return [
       {
@@ -67,8 +86,8 @@ function buildStagesFromTasks(
     entry.total++;
     if (t.status === 'done') entry.done++;
 
-    const created = t.createdAt?.seconds || 0;
-    const updated = t.updatedAt?.seconds || 0;
+    const created = extractSeconds(t.createdAt);
+    const updated = extractSeconds(t.updatedAt);
     if (created < entry.earliest) entry.earliest = created;
     if (updated > entry.latest) entry.latest = updated;
 
@@ -103,8 +122,8 @@ function buildStagesFromTasks(
 }
 
 function buildPaymentsFromLedger(
-  ledger: ReturnType<typeof useClientPortal>['ledger'],
-  estimates: ReturnType<typeof useClientPortal>['estimates']
+  ledger: PortalLedgerEntry[],
+  estimates: PortalEstimate[],
 ): { payments: PaymentItem[]; totalEstimate: string } {
   const totalFromEstimates = estimates.reduce((sum, e) => sum + (e.total || 0), 0);
 
@@ -113,14 +132,15 @@ function buildPaymentsFromLedger(
   // Real payments: credits from ledger
   const credits = ledger.filter(e => e.type === 'credit');
   credits.forEach(entry => {
-    const pct =
-      totalFromEstimates > 0 ? Math.round((entry.amount / totalFromEstimates) * 100) : 0;
-    const dateStr = entry.date?.seconds
-      ? new Date(entry.date.seconds * 1000).toISOString().split('T')[0]
+    const amt = entry.amount ?? 0;
+    const pct = totalFromEstimates > 0 ? Math.round((amt / totalFromEstimates) * 100) : 0;
+    const dateSec = extractSeconds(entry.date);
+    const dateStr = dateSec > 0
+      ? new Date(dateSec * 1000).toISOString().split('T')[0]
       : '';
     payments.push({
       stage: entry.description || 'Payment',
-      amount: entry.amount,
+      amount: amt,
       percentage: pct,
       status: 'paid',
       dueDate: dateStr,
@@ -167,9 +187,7 @@ function buildPaymentsFromLedger(
   };
 }
 
-function buildInspectionsFromTasks(
-  tasks: ReturnType<typeof useClientPortal>['tasks']
-): Inspection[] {
+function buildInspectionsFromTasks(tasks: PortalTask[]): Inspection[] {
   return tasks
     .filter(t => {
       const title = (t.title || '').toLowerCase();
@@ -181,13 +199,14 @@ function buildInspectionsFromTasks(
       if (t.status === 'done') status = 'passed';
       else if (t.status === 'next_action') status = 'in-progress';
 
-      const dateStr = t.createdAt?.seconds
-        ? new Date(t.createdAt.seconds * 1000).toISOString().split('T')[0]
+      const dateSec = extractSeconds(t.createdAt);
+      const dateStr = dateSec > 0
+        ? new Date(dateSec * 1000).toISOString().split('T')[0]
         : '';
 
       return {
         id: idx + 1,
-        name: t.title,
+        name: t.title || 'Inspection',
         date: dateStr,
         status,
         notes: t.description || undefined,
@@ -199,26 +218,22 @@ function buildInspectionsFromTasks(
 
 const ClientPortalPage: React.FC = () => {
   const { slug } = useParams<{ slug: string }>();
+  const [searchParams] = useSearchParams();
+  const token = searchParams.get('token') || undefined;
+
   const {
     client,
-    estimates: allEstimates,
+    estimates,
     tasks,
     ledger,
     photos,
     loading,
     notFound,
-  } = useClientPortal(slug);
+    error,
+  } = useClientPortal(slug, token);
 
-  // Filter out internal (cost-only) estimates — client sees only commercial ones
-  const estimates = useMemo(() => {
-    const internalPattern = /internal|внутренн/i;
-    return allEstimates.filter(e => {
-      if (e.estimateType === 'internal') return false;
-      if (e.notes && internalPattern.test(e.notes)) return false;
-      if (e.number && internalPattern.test(e.number)) return false;
-      return true;
-    });
-  }, [allEstimates]);
+  // No client-side filtering needed — backend portalFilter.ts already
+  // strips internal estimates, cost data, and employee info.
 
   const stages = useMemo(() => buildStagesFromTasks(tasks), [tasks]);
   const { payments, totalEstimate } = useMemo(
@@ -260,7 +275,7 @@ const ClientPortalPage: React.FC = () => {
     );
   }
 
-  // ─── Not found state ────────────────────────────────────
+  // ─── Not found / error state ─────────────────────────────
   if (notFound || !client) {
     return (
       <Box
@@ -274,11 +289,12 @@ const ClientPortalPage: React.FC = () => {
       >
         <Alert severity="error" sx={{ maxWidth: 480 }}>
           <Typography variant="h6" gutterBottom>
-            Project not found
+            {error === 'Invalid or expired link' ? 'Link expired' : 'Project not found'}
           </Typography>
           <Typography variant="body2">
-            The link you followed may be incorrect. Please contact your project manager
-            for the correct portal link.
+            {error === 'Invalid or expired link'
+              ? 'This portal link has expired or been revoked. Please contact your project manager for a new link.'
+              : 'The link you followed may be incorrect. Please contact your project manager for the correct portal link.'}
           </Typography>
         </Alert>
       </Box>
@@ -290,17 +306,22 @@ const ClientPortalPage: React.FC = () => {
 
   const header: DashboardHeader = {
     title: client.name,
-    subtitle: client.address || client.workLocation?.address || '',
+    subtitle: client.projectAddress || client.address || '',
     totalAmount: totalEstimateAmount > 0 ? `$${totalEstimateAmount.toLocaleString()}` : undefined,
     stage: currentStage,
     progress: overallProgress,
   };
 
+  // Portal estimates are a strict subset of the full Estimate type — the
+  // EstimateSection render path handles missing fields with fallback operators.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const estimatesForSection = estimates as any[];
+
   const sections: DashboardSection[] = [
     {
       label: 'Estimate',
       icon: <MoneyIcon />,
-      content: <EstimateSection estimates={estimates} />,
+      content: <EstimateSection estimates={estimatesForSection} />,
     },
     {
       label: 'Timeline',

@@ -120,6 +120,22 @@ router.get('/api/costs/list', async (req, res, next) => {
 
     let q: admin.firestore.Query = db.collection('costs');
 
+    // ── RLS: enforce user-level filtering based on role ──
+    const rlsRole = req.effectiveRole || 'admin';
+    const rlsUserId = req.effectiveUserId || req.agentUserId;
+    if (rlsRole === 'worker' || rlsRole === 'driver') {
+      q = q.where('userId', '==', rlsUserId);
+    } else if (rlsRole === 'foreman') {
+      const teamUids = req.effectiveTeamMemberUids || [];
+      const allUids = Array.from(new Set([rlsUserId!, ...teamUids]));
+      if (allUids.length <= 30) {
+        q = q.where('userId', 'in', allUids);
+      } else {
+        q = q.where('userId', '==', rlsUserId);
+      }
+    }
+    // accountant, manager, admin: no user filter
+
     if (clientId) {
       q = q.where('clientId', '==', clientId);
     }

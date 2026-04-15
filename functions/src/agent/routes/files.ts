@@ -85,7 +85,7 @@ router.post('/api/files/upload', async (req: Request, res: Response, next: NextF
       metadata: {
         contentType: data.contentType,
         metadata: {
-          uploadedBy: req.agentUserId || 'agent',
+          uploadedBy: req.effectiveUserId || req.agentUserId || 'agent',
           category: data.category,
           originalName: data.fileName,
         },
@@ -122,7 +122,7 @@ router.post('/api/files/upload', async (req: Request, res: Response, next: NextF
         costId: data.costId || null,
         estimateId: data.estimateId || null,
       },
-      uploadedBy: req.agentUserId || 'agent',
+      uploadedBy: req.effectiveUserId || req.agentUserId || 'agent',
       uploadedByName: req.agentUserName || 'Agent',
       uploadedAt: FieldValue.serverTimestamp(),
     };
@@ -201,7 +201,7 @@ router.post('/api/files/upload-from-url', async (req: Request, res: Response, ne
       metadata: {
         contentType,
         metadata: {
-          uploadedBy: req.agentUserId || 'agent',
+          uploadedBy: req.effectiveUserId || req.agentUserId || 'agent',
           category: data.category,
           originalName: fileName,
           sourceUrl: data.sourceUrl,
@@ -235,7 +235,7 @@ router.post('/api/files/upload-from-url', async (req: Request, res: Response, ne
         estimateId: null,
       },
       sourceUrl: data.sourceUrl,
-      uploadedBy: req.agentUserId || 'agent',
+      uploadedBy: req.effectiveUserId || req.agentUserId || 'agent',
       uploadedByName: req.agentUserName || 'Agent',
       uploadedAt: FieldValue.serverTimestamp(),
     };
@@ -273,6 +273,12 @@ router.get('/api/files/search', async (req: Request, res: Response, next: NextFu
     logger.info('📁 files:search', params);
 
     let q: FirebaseFirestore.Query = db.collection(FILES_COLLECTION);
+
+    // ── RLS: worker/driver see only own uploads ──
+    const rlsRole = req.effectiveRole || 'admin';
+    if (rlsRole === 'worker' || rlsRole === 'driver') {
+      q = q.where('uploadedBy', '==', req.effectiveUserId || req.agentUserId);
+    }
 
     // Apply filters via Firestore where clauses
     if (params.clientId) q = q.where('linkedTo.clientId', '==', params.clientId);

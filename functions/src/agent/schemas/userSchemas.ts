@@ -44,3 +44,19 @@ export const SearchContactsQuerySchema = z.object({
   projectId: z.string().optional(),
   limit: z.coerce.number().int().min(1).max(50).default(10),
 });
+
+// ── Multi-user bot schemas ──────────────────────────────────────────
+
+export const TelegramLinkSchema = z.object({
+  telegramId: z.number().int().positive(),
+  telegramUsername: z.string().optional(),
+});
+
+export const BotNotifySchema = z.object({
+  targetTelegramId: z.number().int().positive(),
+  message: z.string().min(1).max(4096),
+  type: z.enum(['task_assigned', 'stock_low', 'estimate_approved', 'overtime_alert', 'general']).default('general'),
+  relatedEntityId: z.string().optional(),
+  priority: z.enum(['urgent', 'normal', 'silent']).default('normal'),
+  parseMode: z.enum(['Markdown', 'HTML']).default('Markdown'),
+});

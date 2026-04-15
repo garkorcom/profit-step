@@ -170,6 +170,37 @@ router.get('/api/gtd-tasks/list', async (req, res, next) => {
 
     let q: admin.firestore.Query = db.collection('gtd_tasks');
 
+    // ── RLS: enforce user-level filtering based on role ──
+    const rlsRole = req.effectiveRole || 'admin';
+    const rlsUserId = req.effectiveUserId || req.agentUserId;
+
+    if (rlsRole === 'worker' || rlsRole === 'driver') {
+      // Worker/driver: ALWAYS own tasks only — ignore ?assigneeId param
+      q = q.where('assigneeId', '==', rlsUserId);
+    } else if (rlsRole === 'foreman') {
+      // Foreman: own + team members
+      const teamUids = req.effectiveTeamMemberUids || [];
+      const allUids = Array.from(new Set([rlsUserId!, ...teamUids]));
+      if (params.assigneeId) {
+        // Specific member requested — only allow if in team
+        if (allUids.includes(params.assigneeId)) {
+          q = q.where('assigneeId', '==', params.assigneeId);
+        } else {
+          res.json({ tasks: [], total: 0, hasMore: false });
+          return;
+        }
+      } else if (allUids.length <= 30) {
+        q = q.where('assigneeId', 'in', allUids);
+      } else {
+        q = q.where('assigneeId', '==', rlsUserId); // degrade to own
+      }
+    } else {
+      // Admin/manager: apply optional assigneeId filter as-is
+      if (params.assigneeId) {
+        q = q.where('assigneeId', '==', params.assigneeId);
+      }
+    }
+
     if (clientId) {
       q = q.where('clientId', '==', clientId);
     } else if (clientIdsList.length > 0) {
@@ -177,9 +208,6 @@ router.get('/api/gtd-tasks/list', async (req, res, next) => {
     }
     if (params.projectId) {
       q = q.where('projectId', '==', params.projectId);
-    }
-    if (params.assigneeId) {
-      q = q.where('assigneeId', '==', params.assigneeId);
     }
     if (params.priority) {
       q = q.where('priority', '==', params.priority);

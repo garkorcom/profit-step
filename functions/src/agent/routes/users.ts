@@ -1,15 +1,18 @@
 /**
- * User & Contact Routes — search, create-from-bot, contacts (4 endpoints)
+ * User & Contact Routes — search, create-from-bot, contacts, bot-directory, telegram-link, notify (8 endpoints)
  */
 import { Router } from 'express';
 
 import { db, FieldValue, logger, logAgentActivity, Fuse } from '../routeContext';
+import { scopesForRole } from '../agentMiddleware';
 import {
   UserSearchQuerySchema,
   ListUsersQuerySchema,
   CreateUserFromBotSchema,
   CreateContactSchema,
   SearchContactsQuerySchema,
+  TelegramLinkSchema,
+  BotNotifySchema,
 } from '../schemas';
 
 const router = Router();
@@ -227,6 +230,179 @@ router.get('/api/contacts/search', async (req, res, next) => {
     }));
 
     res.json({ results, count: results.length });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// ─── GET /api/users/bot-directory ──────────────────────────────────
+// Master Token only. Returns full user map for bot local cache.
+
+router.get('/api/users/bot-directory', async (req, res, next) => {
+  try {
+    if (req.agentTokenType !== 'master') {
+      res.status(403).json({ error: 'Master Token required', code: 'FORBIDDEN' });
+      return;
+    }
+
+    logger.info('👤 users:bot-directory');
+
+    const snap = await db.collection('users')
+      .where('status', 'in', ['active', 'inactive'])
+      .get();
+
+    const users = snap.docs.map(d => {
+      const data = d.data();
+      const role = data.role || 'worker';
+      return {
+        uid: d.id,
+        displayName: data.displayName || data.email || d.id,
+        telegramId: data.telegramId ? Number(data.telegramId) || null : null,
+        telegramUsername: data.telegramUsername || null,
+        role,
+        scopes: data.scopes || scopesForRole(role),
+        teamId: data.teamId || null,
+        teamLeadUid: data.teamLeadUid || null,
+        status: data.status || 'active',
+        preferredLanguage: data.preferredLanguage || 'ru',
+        hourlyRate: typeof data.hourlyRate === 'number' ? data.hourlyRate : null,
+      };
+    });
+
+    // Build teams map from users with teamId
+    const teamsMap = new Map<string, { teamId: string; leadUid: string | null; memberUids: string[] }>();
+    users.forEach(u => {
+      if (!u.teamId) return;
+      if (!teamsMap.has(u.teamId)) teamsMap.set(u.teamId, { teamId: u.teamId, leadUid: null, memberUids: [] });
+      const team = teamsMap.get(u.teamId)!;
+      team.memberUids.push(u.uid);
+      if (u.role === 'foreman') team.leadUid = u.uid;
+    });
+
+    res.json({
+      users,
+      teams: Array.from(teamsMap.values()),
+      lastUpdated: new Date().toISOString(),
+      total: users.length,
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// ─── PATCH /api/users/:uid/telegram-link ──────────────────────────
+// Admin scope. Binds Telegram ID to existing CRM user.
+
+router.patch('/api/users/:uid/telegram-link', async (req, res, next) => {
+  try {
+    const hasAdmin = req.effectiveScopes?.includes('admin') || req.effectiveScopes?.includes('users:manage');
+    if (!hasAdmin) {
+      res.status(403).json({ error: 'Requires admin or users:manage scope', code: 'FORBIDDEN' });
+      return;
+    }
+
+    const data = TelegramLinkSchema.parse(req.body);
+    const { uid } = req.params;
+    const telegramIdStr = String(data.telegramId);
+
+    // 1. Target user exists?
+    const userDoc = await db.collection('users').doc(uid).get();
+    if (!userDoc.exists) {
+      res.status(404).json({ error: `User ${uid} not found`, code: 'USER_NOT_FOUND' });
+      return;
+    }
+
+    // 2. telegramId uniqueness — not already bound to ANOTHER user
+    const conflictSnap = await db.collection('users')
+      .where('telegramId', '==', telegramIdStr)
+      .limit(1)
+      .get();
+
+    if (!conflictSnap.empty && conflictSnap.docs[0].id !== uid) {
+      const conflictData = conflictSnap.docs[0].data();
+      res.status(409).json({
+        error: `Telegram ID ${data.telegramId} уже привязан к ${conflictData.displayName || conflictSnap.docs[0].id}`,
+        code: 'TELEGRAM_ID_CONFLICT',
+        existingUid: conflictSnap.docs[0].id,
+      });
+      return;
+    }
+
+    // 3. Update
+    const updateFields: Record<string, unknown> = {
+      telegramId: telegramIdStr,
+      updatedAt: FieldValue.serverTimestamp(),
+    };
+    if (data.telegramUsername) updateFields.telegramUsername = data.telegramUsername;
+
+    await db.collection('users').doc(uid).update(updateFields);
+
+    await logAgentActivity({
+      userId: req.agentUserId!,
+      action: 'telegram_linked',
+      endpoint: `/api/users/${uid}/telegram-link`,
+      metadata: { targetUid: uid, telegramId: data.telegramId },
+    });
+
+    const userData = userDoc.data()!;
+    res.json({
+      uid,
+      displayName: userData.displayName || '',
+      telegramId: data.telegramId,
+      telegramUsername: data.telegramUsername || null,
+      message: 'Telegram ID привязан',
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// ─── POST /api/bot/notify ─────────────────────────────────────────
+// Master Token only. Sends Telegram notification to a specific user.
+
+router.post('/api/bot/notify', async (req, res, next) => {
+  try {
+    if (req.agentTokenType !== 'master') {
+      res.status(403).json({ error: 'Master Token required', code: 'FORBIDDEN' });
+      return;
+    }
+
+    const data = BotNotifySchema.parse(req.body);
+
+    const botToken = process.env.TELEGRAM_BOT_TOKEN;
+    if (!botToken) {
+      res.status(503).json({ error: 'Bot token not configured' });
+      return;
+    }
+
+    const tgResp = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: data.targetTelegramId,
+        text: data.message,
+        parse_mode: data.parseMode,
+        disable_notification: data.priority === 'silent',
+      }),
+    });
+
+    const tgResult = await tgResp.json() as { ok: boolean; result?: { message_id: number }; description?: string };
+
+    await logAgentActivity({
+      userId: req.agentUserId!,
+      action: 'bot_notify',
+      endpoint: '/api/bot/notify',
+      metadata: { targetTelegramId: data.targetTelegramId, type: data.type, delivered: tgResult.ok },
+    });
+
+    if (tgResult.ok) {
+      res.json({ delivered: true, messageId: tgResult.result?.message_id, timestamp: new Date().toISOString() });
+    } else {
+      const reason = tgResult.description?.includes('blocked') ? 'user_blocked_bot'
+        : tgResult.description?.includes('not found') ? 'chat_not_found'
+        : 'telegram_error';
+      res.json({ delivered: false, reason, details: tgResult.description, timestamp: new Date().toISOString() });
+    }
   } catch (e) {
     next(e);
   }

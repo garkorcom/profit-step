@@ -26,7 +26,7 @@ const router = Router();
 router.post('/api/time-tracking', async (req, res, next) => {
   try {
     const data = TimeTrackingSchema.parse(req.body);
-    const userId = req.agentUserId!;
+    const userId = req.effectiveUserId || req.agentUserId!;
     const userName = req.agentUserName!;
 
     switch (data.action) {
@@ -608,7 +608,22 @@ router.get('/api/time-tracking/summary', async (req, res, next) => {
       .where('startTime', '>=', Timestamp.fromDate(fromUtc))
       .where('startTime', '<=', Timestamp.fromDate(toUtc));
 
-    if (params.employeeId) {
+    // ── RLS: filter by role ──
+    const rlsRole = req.effectiveRole || 'admin';
+    const rlsUserId = req.effectiveUserId || req.agentUserId;
+    if (rlsRole === 'worker' || rlsRole === 'driver') {
+      q = q.where('employeeId', '==', rlsUserId);
+    } else if (rlsRole === 'foreman') {
+      const teamUids = req.effectiveTeamMemberUids || [];
+      const allUids = Array.from(new Set([rlsUserId!, ...teamUids]));
+      if (params.employeeId && allUids.includes(params.employeeId)) {
+        q = q.where('employeeId', '==', params.employeeId);
+      } else if (!params.employeeId && allUids.length <= 30) {
+        q = q.where('employeeId', 'in', allUids);
+      } else {
+        q = q.where('employeeId', '==', rlsUserId);
+      }
+    } else if (params.employeeId) {
       q = q.where('employeeId', '==', params.employeeId);
     }
 
@@ -767,7 +782,7 @@ router.get('/api/time-tracking/summary', async (req, res, next) => {
 router.post('/api/time-tracking/admin-stop', async (req, res, next) => {
   try {
     // Security: only OWNER can admin-stop
-    if (req.agentUserId !== process.env.OWNER_UID) {
+    if (req.effectiveRole !== 'admin' && req.agentUserId !== process.env.OWNER_UID) {
       res.status(403).json({ error: 'Только владелец может останавливать чужие сессии' });
       return;
     }
@@ -893,7 +908,7 @@ import { AdminStartSchema } from '../schemas/timeTrackingSchemas';
 
 router.post('/api/time-tracking/admin-start', async (req, res, next) => {
   try {
-    if (req.agentUserId !== process.env.OWNER_UID) {
+    if (req.effectiveRole !== 'admin' && req.agentUserId !== process.env.OWNER_UID) {
       res.status(403).json({ error: 'Только владелец может запускать чужие сессии' });
       return;
     }
@@ -1093,7 +1108,7 @@ export async function autoStopStaleTimers(): Promise<{
 router.post('/api/time-tracking/auto-stop-stale', async (req, res, next) => {
   try {
     // Security: only OWNER can trigger auto-stop
-    if (req.agentUserId !== process.env.OWNER_UID) {
+    if (req.effectiveRole !== 'admin' && req.agentUserId !== process.env.OWNER_UID) {
       res.status(403).json({ error: 'Только владелец может запускать авто-остановку сессий' });
       return;
     }

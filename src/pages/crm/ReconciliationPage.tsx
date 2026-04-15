@@ -4,7 +4,7 @@ import {
   TableCell, TableContainer, TableHead, TableRow,
   Select, MenuItem, Chip, CircularProgress, Alert,
   ToggleButton, ToggleButtonGroup, Card, CardContent,
-  Checkbox, Tooltip, FormControlLabel, Switch,
+  Checkbox, Tooltip,
   TextField, InputAdornment, TablePagination, TableSortLabel,
 } from '@mui/material';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
@@ -17,7 +17,7 @@ import FileDownloadIcon from '@mui/icons-material/FileDownload';
 import SearchIcon from '@mui/icons-material/Search';
 import VerifiedIcon from '@mui/icons-material/Verified';
 import { db } from '../../firebase/firebase';
-import { collection, query, where, getDocs, Timestamp, orderBy, limit, doc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, query, where, getDocs, Timestamp, orderBy, doc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 import { errorMessage } from '../../utils/errorMessage';
 
@@ -148,7 +148,6 @@ const ReconciliationPage: React.FC = () => {
   // Filters
   const [quickFilter, setQuickFilter] = useState<QuickFilter>('all');
   const [filterMonth, setFilterMonth] = useState<string>('all');
-  const [hideReturns, setHideReturns] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
   // Table state
@@ -157,6 +156,7 @@ const ReconciliationPage: React.FC = () => {
   const [sortField, setSortField] = useState<SortField>('date');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [approvedIds, setApprovedIds] = useState<Set<string>>(new Set()); // rows approved inline (green)
 
   // ─── Data Fetching ──────────────────────────────────────
 
@@ -171,7 +171,7 @@ const ReconciliationPage: React.FC = () => {
     try {
       const txQuery = view === 'draft'
         ? query(collection(db, 'bank_transactions'), where('status', '==', 'draft'))
-        : query(collection(db, 'bank_transactions'), where('status', '==', 'approved'), orderBy('updatedAt', 'desc'), limit(50));
+        : query(collection(db, 'bank_transactions'), where('status', '==', 'approved'), orderBy('updatedAt', 'desc'));
       const txSnap = await getDocs(txQuery);
       setTransactions(txSnap.docs.map(d => ({ id: d.id, ...d.data() } as ReconcileTx)));
 
@@ -231,6 +231,7 @@ const ReconciliationPage: React.FC = () => {
   };
 
   const handleApproveAll = async () => {
+    if (!window.confirm(`Утвердить ${filteredTransactions.length} транзакций? Это действие нельзя отменить массово.`)) return;
     setSubmitting(true);
     setErrorMsg(null);
     try {
@@ -271,8 +272,33 @@ const ReconciliationPage: React.FC = () => {
     }
   };
 
+  const handleApproveSingle = async (id: string) => {
+    const tx = enrichedTransactions.find(t => t.id === id);
+    if (!tx) return;
+    // Optimistic: mark row green immediately
+    setApprovedIds(prev => new Set(prev).add(id));
+    try {
+      const token = await getAuthToken();
+      const resp = await fetch(`${getApiUrl()}/api/finance/transactions/approve`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ transactions: prepareForApi([tx]) }),
+      });
+      if (!resp.ok) throw new Error(`API ${resp.status}: ${await resp.text()}`);
+      // Remove from local list after brief green flash
+      setTimeout(() => {
+        setTransactions(prev => prev.filter(t => t.id !== id));
+        setApprovedIds(prev => { const next = new Set(prev); next.delete(id); return next; });
+      }, 800);
+    } catch (e) {
+      // Revert on error
+      setApprovedIds(prev => { const next = new Set(prev); next.delete(id); return next; });
+      setErrorMsg("Ошибка: " + (e as Error).message);
+    }
+  };
+
   const handleApproveTampa = async () => {
-    const tampaList = enrichedTransactions.filter(t => isTampaArea(t._location) && t.status === 'draft');
+    const tampaList = filteredTransactions.filter(t => isTampaArea(t._location));
     if (tampaList.length === 0) return alert('Нет Tampa транзакций');
     if (!window.confirm(`Утвердить ${tampaList.length} Tampa транзакций?`)) return;
     setSubmitting(true);
@@ -374,25 +400,30 @@ const ReconciliationPage: React.FC = () => {
     return Array.from(months).sort().toReversed();
   }, [enrichedTransactions]);
 
+  // Month-filtered base for toggle button counts (respects month selection)
+  const monthFilteredTransactions = useMemo(() =>
+    filterMonth !== 'all'
+      ? enrichedTransactions.filter(t => getMonthKey(t.date) === filterMonth)
+      : enrichedTransactions,
+    [enrichedTransactions, filterMonth]
+  );
+
   const filterStats = useMemo(() => {
-    const calc = (list: typeof enrichedTransactions) => ({ count: list.length, sum: fmtDollar(list.reduce((s, t) => s + Math.abs(t.amount), 0)) });
+    const calc = (list: typeof monthFilteredTransactions) => ({ count: list.length, sum: fmtDollar(list.reduce((s, t) => s + Math.abs(t.amount), 0)) });
     return {
-      tampa: calc(enrichedTransactions.filter(t => isTampaArea(t._location))),
-      company: calc(enrichedTransactions.filter(t => t.paymentType === 'company')),
-      personal: calc(enrichedTransactions.filter(t => t.paymentType !== 'company')),
-      fuel: calc(enrichedTransactions.filter(t => isFuelTransaction(t))),
-      unassigned: calc(enrichedTransactions.filter(t => !t.projectId && !t.paymentType)),
+      tampa: calc(monthFilteredTransactions.filter(t => isTampaArea(t._location))),
+      company: calc(monthFilteredTransactions.filter(t => t.paymentType === 'company')),
+      personal: calc(monthFilteredTransactions.filter(t => t.paymentType !== 'company')),
+      fuel: calc(monthFilteredTransactions.filter(t => isFuelTransaction(t))),
+      unassigned: calc(monthFilteredTransactions.filter(t => t.paymentType === 'company' && !t.projectId)),
     };
-  }, [enrichedTransactions]);
+  }, [monthFilteredTransactions]);
 
   const filteredTransactions = useMemo(() => {
     let result = enrichedTransactions;
 
     // Month filter
     if (filterMonth !== 'all') result = result.filter(t => getMonthKey(t.date) === filterMonth);
-
-    // Hide returns
-    if (hideReturns) result = result.filter(t => t.amount <= 0);
 
     // Search
     if (searchQuery.trim()) {
@@ -409,7 +440,7 @@ const ReconciliationPage: React.FC = () => {
     else if (quickFilter === 'company') result = result.filter(t => t.paymentType === 'company');
     else if (quickFilter === 'personal') result = result.filter(t => t.paymentType !== 'company');
     else if (quickFilter === 'fuel') result = result.filter(t => isFuelTransaction(t));
-    else if (quickFilter === 'unassigned') result = result.filter(t => !t.projectId && !t.paymentType);
+    else if (quickFilter === 'unassigned') result = result.filter(t => t.paymentType === 'company' && !t.projectId);
 
     // Sort
     result = [...result].sort((a, b) => {
@@ -427,7 +458,7 @@ const ReconciliationPage: React.FC = () => {
     });
 
     return result;
-  }, [enrichedTransactions, quickFilter, filterMonth, hideReturns, searchQuery, sortField, sortDir]);
+  }, [enrichedTransactions, quickFilter, filterMonth, searchQuery, sortField, sortDir]);
 
   // Summary from FILTERED data (reacts to filters)
   const summaryData = useMemo(() => {
@@ -446,7 +477,7 @@ const ReconciliationPage: React.FC = () => {
   );
 
   // Reset page when filter changes
-  useEffect(() => { setPage(0); }, [quickFilter, filterMonth, hideReturns, searchQuery]);
+  useEffect(() => { setPage(0); }, [quickFilter, filterMonth, searchQuery]);
 
   // ─── Column Sort ────────────────────────────────────────
 
@@ -463,16 +494,17 @@ const ReconciliationPage: React.FC = () => {
 
   const handleExportCSV = useCallback(() => {
     const BOM = '\uFEFF';
+    const esc = (s: string) => `"${(s || '').replace(/"/g, '""')}"`;
     const headers = ['Date', 'Merchant', 'Raw Description', 'Location', 'Amount', 'Type', 'Category', 'Project'];
     const rows = filteredTransactions.map(t => [
-      renderDate(t.date),
-      t.cleanMerchant || '',
-      `"${(t.rawDescription || '').replace(/"/g, '""')}"`,
-      (t as unknown as { _location?: string })._location || '',
+      esc(renderDate(t.date)),
+      esc(t.cleanMerchant || ''),
+      esc(t.rawDescription || ''),
+      esc((t as unknown as { _location?: string })._location || ''),
       Math.abs(t.amount).toFixed(2),
       t.paymentType === 'company' ? 'Company' : 'Personal',
-      COST_CATEGORY_LABELS[t.categoryId] || t.categoryId,
-      projects.find(p => p.id === t.projectId)?.name || '',
+      esc(COST_CATEGORY_LABELS[t.categoryId] || t.categoryId),
+      esc(projects.find(p => p.id === t.projectId)?.name || ''),
     ]);
     const csv = BOM + [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -499,7 +531,6 @@ const ReconciliationPage: React.FC = () => {
     if (filterMonth !== 'all') filterInfo.push(`Month: ${filterMonth}`);
     if (quickFilter !== 'all') filterInfo.push(`Filter: ${quickFilter}`);
     if (searchQuery) filterInfo.push(`Search: ${searchQuery}`);
-    if (hideReturns) filterInfo.push('Returns hidden');
     if (filterInfo.length > 0) pdf.text(`Filters: ${filterInfo.join(' | ')}`, 14, 22);
 
     const tableData = filteredTransactions.map(t => [
@@ -526,7 +557,7 @@ const ReconciliationPage: React.FC = () => {
     pdf.setFontSize(10);
     pdf.text(`Total: $${total.toLocaleString('en-US', { minimumFractionDigits: 2 })} | Count: ${filteredTransactions.length}`, 14, finalY + 8);
     pdf.save(`reconciliation-${now.toISOString().slice(0, 10)}.pdf`);
-  }, [filteredTransactions, view, filterMonth, quickFilter, hideReturns, searchQuery, projects]);
+  }, [filteredTransactions, view, filterMonth, quickFilter, searchQuery, projects]);
 
   // ─── Render ─────────────────────────────────────────────
 
@@ -537,7 +568,7 @@ const ReconciliationPage: React.FC = () => {
   const draftLowConf = draftTotal - draftHighConf;
   const autopilotPercent = draftTotal > 0 ? Math.round((draftHighConf / draftTotal) * 100) : 0;
   const fmtCard = (n: number) => '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  const tampaCount = enrichedTransactions.filter(t => isTampaArea(t._location) && t.status === 'draft').length;
+  const tampaCount = filteredTransactions.filter(t => isTampaArea(t._location)).length;
 
   return (
     <Box p={3} sx={{ maxWidth: 1500, mx: 'auto' }}>
@@ -626,7 +657,7 @@ const ReconciliationPage: React.FC = () => {
           <Box display="flex" alignItems="center" gap={0.5}>
             <CalendarMonthIcon color="action" fontSize="small" />
             <Select size="small" value={filterMonth} onChange={e => setFilterMonth(e.target.value)} sx={{ minWidth: 170, bgcolor: 'white' }}>
-              <MenuItem value="all">Все месяцы ({enrichedTransactions.length})</MenuItem>
+              <MenuItem value="all">Все месяцы</MenuItem>
               {availableMonths.map(mk => {
                 const [y, m] = mk.split('-');
                 const count = enrichedTransactions.filter(t => getMonthKey(t.date) === mk).length;
@@ -635,18 +666,14 @@ const ReconciliationPage: React.FC = () => {
             </Select>
           </Box>
 
-          {/* Hide Returns */}
-          <FormControlLabel
-            control={<Switch size="small" checked={hideReturns} onChange={e => setHideReturns(e.target.checked)} />}
-            label="Скрыть возвраты"
-          />
+
 
           {/* Quick Filters — scrollable */}
           {view === 'draft' && (
             <Box display="flex" alignItems="center" gap={0.5} sx={{ overflowX: 'auto', flexShrink: 0 }}>
               <FilterListIcon color="action" fontSize="small" />
               <ToggleButtonGroup size="small" value={quickFilter} exclusive onChange={(_, v) => v && setQuickFilter(v)}>
-                <ToggleButton value="all">All ({enrichedTransactions.length})</ToggleButton>
+                <ToggleButton value="all">All ({monthFilteredTransactions.length})</ToggleButton>
                 <ToggleButton value="tampa">🏗️ Tampa ({filterStats.tampa.count})</ToggleButton>
                 <ToggleButton value="company">🏢 Комп. ({filterStats.company.count})</ToggleButton>
                 <ToggleButton value="personal">👤 Личн. ({filterStats.personal.count})</ToggleButton>
@@ -700,11 +727,11 @@ const ReconciliationPage: React.FC = () => {
 
       {/* ─── Table ─── */}
       <TableContainer component={Paper} elevation={2} sx={{ maxHeight: 'calc(100vh - 340px)' }}>
-        <Table size="small" stickyHeader>
+        <Table size="small" stickyHeader sx={{ tableLayout: 'fixed' }}>
           <TableHead>
             <TableRow>
               {view === 'draft' && (
-                <TableCell padding="checkbox">
+                <TableCell padding="checkbox" sx={{ width: 42 }}>
                   <Checkbox
                     size="small"
                     indeterminate={selectedIds.size > 0 && !paginatedTransactions.every(t => selectedIds.has(t.id))}
@@ -713,33 +740,29 @@ const ReconciliationPage: React.FC = () => {
                   />
                 </TableCell>
               )}
-              <TableCell><strong>Статус</strong></TableCell>
-              <TableCell>
+              <TableCell sx={{ width: 78 }}>
                 <TableSortLabel active={sortField === 'date'} direction={sortField === 'date' ? sortDir : 'desc'} onClick={() => handleSort('date')}>
                   <strong>Дата</strong>
                 </TableSortLabel>
               </TableCell>
-              <TableCell><strong>Из Банка</strong></TableCell>
               <TableCell>
                 <TableSortLabel active={sortField === 'cleanMerchant'} direction={sortField === 'cleanMerchant' ? sortDir : 'asc'} onClick={() => handleSort('cleanMerchant')}>
                   <strong>Контрагент</strong>
                 </TableSortLabel>
               </TableCell>
-              <TableCell><strong>Локация</strong></TableCell>
-              <TableCell>
+              <TableCell sx={{ width: 115 }}>
                 <TableSortLabel active={sortField === 'amount'} direction={sortField === 'amount' ? sortDir : 'desc'} onClick={() => handleSort('amount')}>
                   <strong>Сумма</strong>
                 </TableSortLabel>
               </TableCell>
-              <TableCell><strong>Тип</strong></TableCell>
-              <TableCell>
+              <TableCell sx={{ width: 100 }}><strong>Тип</strong></TableCell>
+              <TableCell sx={{ width: 135 }}>
                 <TableSortLabel active={sortField === 'categoryId'} direction={sortField === 'categoryId' ? sortDir : 'asc'} onClick={() => handleSort('categoryId')}>
                   <strong>Категория</strong>
                 </TableSortLabel>
               </TableCell>
-              <TableCell><strong>Проект</strong></TableCell>
-              <TableCell align="center"><strong>✓</strong></TableCell>
-              <TableCell align="right"><strong>Действия</strong></TableCell>
+              <TableCell sx={{ width: 155 }}><strong>Проект</strong></TableCell>
+              <TableCell align="center" sx={{ width: 70 }}><strong>✓</strong></TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
@@ -747,89 +770,101 @@ const ReconciliationPage: React.FC = () => {
               const isLow = view === 'draft' && t.confidence === 'low';
               const loc = t._location;
               const isTampa = isTampaArea(loc);
-              const bg = isLow ? '#fefce8' : isTampa ? '#fff8e1' : '#fff';
+              const isInlineApproved = approvedIds.has(t.id);
+              const bg = isInlineApproved ? '#e8f5e9' : isLow ? '#fefce8' : isTampa ? '#fff8e1' : '#fff';
 
               return (
-                <TableRow key={t.id} sx={{ backgroundColor: bg }} hover>
+                <TableRow key={t.id} sx={{ backgroundColor: bg, opacity: isInlineApproved ? 0.85 : 1, transition: 'background-color 0.3s ease' }} hover>
                   {view === 'draft' && (
                     <TableCell padding="checkbox">
                       <Checkbox size="small" checked={selectedIds.has(t.id)} onChange={() => toggleSelect(t.id)} />
                     </TableCell>
                   )}
+                  {/* Date */}
+                  <TableCell sx={{ whiteSpace: 'nowrap', fontSize: '0.8rem' }}>{renderDate(t.date)}</TableCell>
+                  {/* Merchant + Location + Raw (merged) */}
                   <TableCell>
-                    {view === 'draft' ? (
-                      isLow
-                        ? <Chip icon={<WarningAmberIcon />} label="LLM" color="warning" size="small" variant="outlined" />
-                        : <Chip icon={<CheckCircleIcon />} label="Правило" color="success" size="small" variant="outlined" />
-                    ) : (
-                      <Chip icon={<CheckCircleIcon />} label="OK" color="primary" size="small" variant="outlined" />
-                    )}
+                    <Tooltip title={t.rawDescription || ''} placement="bottom-start" arrow>
+                      <Box sx={{ overflow: 'hidden' }}>
+                        <Box display="flex" alignItems="center" gap={0.5}>
+                          {isInlineApproved ? (
+                            <CheckCircleIcon sx={{ fontSize: 14, color: 'success.main', flexShrink: 0 }} />
+                          ) : isLow ? (
+                            <WarningAmberIcon sx={{ fontSize: 14, color: 'warning.main', flexShrink: 0 }} />
+                          ) : (
+                            <CheckCircleIcon sx={{ fontSize: 14, color: 'success.light', flexShrink: 0 }} />
+                          )}
+                          <Typography variant="body2" fontWeight="bold" noWrap>{t.cleanMerchant}</Typography>
+                        </Box>
+                        {loc && (
+                          <Chip label={loc} size="small" color={isTampa ? 'warning' : 'default'} variant={isTampa ? 'filled' : 'outlined'} sx={{ fontSize: '0.65rem', height: 18, mt: 0.3 }} />
+                        )}
+                      </Box>
+                    </Tooltip>
                   </TableCell>
-                  <TableCell sx={{ whiteSpace: 'nowrap' }}>{renderDate(t.date)}</TableCell>
-                  <TableCell sx={{ fontSize: '0.78rem', color: 'text.secondary', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {t.rawDescription}
-                  </TableCell>
-                  <TableCell sx={{ fontWeight: 'bold', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {t.cleanMerchant}
-                  </TableCell>
+                  {/* Amount */}
                   <TableCell>
-                    {loc ? (
-                      <Chip label={loc} size="small" color={isTampa ? 'warning' : 'default'} variant={isTampa ? 'filled' : 'outlined'} sx={{ fontSize: '0.73rem' }} />
-                    ) : (
-                      <Typography variant="caption" color="text.disabled">—</Typography>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    {view === 'draft' ? (
+                    {view === 'draft' && !isInlineApproved ? (
                       <TextField
                         size="small"
                         type="number"
                         value={t.amount}
                         onChange={e => handleUpdate(t.id, 'amount', parseFloat(e.target.value) || 0)}
                         slotProps={{ input: { startAdornment: <InputAdornment position="start">$</InputAdornment>, style: { textAlign: 'right' } } }}
-                        sx={{ width: 100 }}
+                        sx={{ width: 105 }}
                       />
                     ) : (
-                      <Typography fontWeight="bold" color={t.amount < 0 ? 'error.main' : 'success.main'}>
+                      <Typography fontWeight="bold" fontSize="0.85rem" color={t.amount < 0 ? 'error.main' : 'text.primary'}>
                         ${Math.abs(t.amount).toFixed(2)}
                       </Typography>
                     )}
                   </TableCell>
+                  {/* Type */}
                   <TableCell>
-                    <Select size="small" value={t.paymentType || 'cash'} onChange={e => handleUpdate(t.id, 'paymentType', e.target.value)} sx={{ minWidth: 120, bgcolor: 'white' }} disabled={view === 'approved'}>
+                    <Select size="small" value={t.paymentType || 'cash'} onChange={e => handleUpdate(t.id, 'paymentType', e.target.value)} sx={{ minWidth: 90, fontSize: '0.8rem', bgcolor: 'white' }} disabled={view === 'approved' || isInlineApproved}>
                       <MenuItem value="company">🏢 Комп.</MenuItem>
                       <MenuItem value="cash">💵 Личн.</MenuItem>
                     </Select>
                   </TableCell>
+                  {/* Category */}
                   <TableCell>
-                    <Select size="small" value={t.categoryId || 'other'} onChange={e => handleUpdate(t.id, 'categoryId', e.target.value)} sx={{ minWidth: 140, bgcolor: 'white' }} disabled={view === 'approved'}>
+                    <Select size="small" value={t.categoryId || 'other'} onChange={e => handleUpdate(t.id, 'categoryId', e.target.value)} sx={{ minWidth: 125, fontSize: '0.8rem', bgcolor: 'white' }} disabled={view === 'approved' || isInlineApproved}>
                       {Object.keys(COST_CATEGORY_LABELS).map(c => (
                         <MenuItem key={c} value={c}>{COST_CATEGORY_LABELS[c]}</MenuItem>
                       ))}
                     </Select>
                   </TableCell>
+                  {/* Project */}
                   <TableCell>
-                    <Select size="small" value={t.projectId || ''} onChange={e => handleUpdate(t.id, 'projectId', e.target.value)} disabled={t.paymentType !== 'company' || view === 'approved'} displayEmpty sx={{ minWidth: 150, bgcolor: 'white' }}>
+                    <Select size="small" value={t.projectId || ''} onChange={e => handleUpdate(t.id, 'projectId', e.target.value)} disabled={t.paymentType !== 'company' || view === 'approved' || isInlineApproved} displayEmpty sx={{ minWidth: 140, fontSize: '0.8rem', bgcolor: 'white' }}>
                       <MenuItem value=""><em>—</em></MenuItem>
                       {projects.map(p => <MenuItem key={p.id} value={p.id}>{p.name}</MenuItem>)}
                     </Select>
                   </TableCell>
+                  {/* Actions: ✓ approve / undo / split */}
                   <TableCell align="center">
-                    {view === 'approved' && (
-                      <Tooltip title={t.verifiedBy ? `Проверил: ${t.verifiedBy}` : 'Отметить'}>
-                        <Checkbox size="small" checked={!!t.verifiedBy} onChange={() => handleVerify(t.id, !!t.verifiedBy)} icon={<VerifiedIcon color="disabled" />} checkedIcon={<VerifiedIcon color="success" />} />
-                      </Tooltip>
-                    )}
-                  </TableCell>
-                  <TableCell align="right">
                     {view === 'approved' ? (
-                      <Button variant="outlined" color="error" size="small" startIcon={<UndoIcon />} onClick={() => handleUndo(t.id)} disabled={submitting}>
-                        Undo
-                      </Button>
+                      <Box display="flex" alignItems="center" justifyContent="center" gap={0.5}>
+                        <Tooltip title={t.verifiedBy ? `Проверил: ${t.verifiedBy}` : 'Отметить'}>
+                          <Checkbox size="small" checked={!!t.verifiedBy} onChange={() => handleVerify(t.id, !!t.verifiedBy)} icon={<VerifiedIcon color="disabled" />} checkedIcon={<VerifiedIcon color="success" />} sx={{ p: 0.3 }} />
+                        </Tooltip>
+                        <Tooltip title="Отменить">
+                          <span><Button size="small" color="error" onClick={() => handleUndo(t.id)} disabled={submitting} sx={{ minWidth: 'auto', p: 0.3 }}><UndoIcon fontSize="small" /></Button></span>
+                        </Tooltip>
+                      </Box>
+                    ) : isInlineApproved ? (
+                      <Tooltip title="✅ Утверждено">
+                        <VerifiedIcon color="success" fontSize="small" />
+                      </Tooltip>
                     ) : (
-                      <Button variant="outlined" size="small" onClick={() => handleSplit(t.id)} disabled={submitting} sx={{ minWidth: 'auto' }}>
-                        ✂️
-                      </Button>
+                      <Box display="flex" alignItems="center" justifyContent="center" gap={0}>
+                        <Tooltip title="Утвердить">
+                          <Checkbox size="small" checked={false} onChange={() => handleApproveSingle(t.id)} icon={<VerifiedIcon color="disabled" />} checkedIcon={<VerifiedIcon color="success" />} disabled={submitting} sx={{ p: 0.3 }} />
+                        </Tooltip>
+                        <Tooltip title="Разделить">
+                          <span><Button size="small" onClick={() => handleSplit(t.id)} disabled={submitting} sx={{ minWidth: 'auto', p: 0.3, fontSize: '0.85rem' }}>✂️</Button></span>
+                        </Tooltip>
+                      </Box>
                     )}
                   </TableCell>
                 </TableRow>
@@ -837,7 +872,7 @@ const ReconciliationPage: React.FC = () => {
             })}
             {paginatedTransactions.length === 0 && (
               <TableRow>
-                <TableCell colSpan={12} align="center" sx={{ py: 6 }}>
+                <TableCell colSpan={view === 'draft' ? 9 : 8} align="center" sx={{ py: 6 }}>
                   <Typography variant="h6" color="text.secondary">
                     {searchQuery ? `Ничего не найдено по "${searchQuery}"` : view === 'draft' ? "🎉 Нет выписок для сверки." : "Список пуст."}
                   </Typography>

@@ -41,6 +41,7 @@ import { Contact } from '../../types/contact.types';
 import { Project } from '../../types/project.types';
 import { useAuth } from '../../auth/AuthContext';
 import ProjectFinanceTab from '../../components/crm/ProjectFinanceTab';
+import ClientExpensesTab from '../../components/crm/ClientExpensesTab';
 import ClientEditDialog from '../../components/crm/ClientEditDialog';
 import ClientTasksTab from '../../components/crm/ClientTasksTab';
 
@@ -243,6 +244,7 @@ const getStatusColor = (status: string): 'primary' | 'success' | 'default' => {
                     <Tab label="Details" />
                     <Tab label={`Проекты (${projects.length + sites.length})`} />
                     <Tab label="💰 Finance" />
+                    <Tab label="🧾 Расходы" />
                     <Tab label="Tasks" />
                 </Tabs>
             </Paper>
@@ -527,6 +529,10 @@ const getStatusColor = (status: string): 'primary' | 'success' | 'default' => {
             </TabPanel>
 
             <TabPanel value={tabValue} index={3}>
+                <ClientExpensesTab clientId={client.id} clientName={client.name} />
+            </TabPanel>
+
+            <TabPanel value={tabValue} index={4}>
                 <ClientTasksTab clientId={client.id} clientName={client.name} />
             </TabPanel>
 

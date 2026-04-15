@@ -5,6 +5,7 @@ import { Toaster } from 'react-hot-toast';
 import AppRouter from './router/AppRouter';
 import { AuthProvider } from './auth/AuthContext';
 import PWAInstallBanner from './components/pwa/PWAInstallBanner';
+import ErrorBoundary from './components/ErrorBoundary';
 
 // Создание зеленой темы (аналогично my-business-app)
 const theme = createTheme({
@@ -40,13 +41,15 @@ function App() {
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
-      <Toaster position="top-right" />
-      <BrowserRouter>
-        <AuthProvider>
-          <AppRouter />
-          <PWAInstallBanner />
-        </AuthProvider>
-      </BrowserRouter>
+      <ErrorBoundary>
+        <Toaster position="top-right" />
+        <BrowserRouter>
+          <AuthProvider>
+            <AppRouter />
+            <PWAInstallBanner />
+          </AuthProvider>
+        </BrowserRouter>
+      </ErrorBoundary>
     </ThemeProvider>
   );
 }

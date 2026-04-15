@@ -672,7 +672,6 @@ const ReconciliationPage: React.FC = () => {
           <Select size="small" value={view} onChange={e => { setView(e.target.value as 'draft' | 'approved' | 'ignored'); setSelectedIds(new Set()); }} sx={{ minWidth: 200, bgcolor: 'white' }}>
             <MenuItem value="draft">⏳ Черновики (Draft)</MenuItem>
             <MenuItem value="approved">✅ Утвержденные</MenuItem>
-            <MenuItem value="ignored">🚫 Скрытые</MenuItem>
           </Select>
         </Box>
         <Box display="flex" alignItems="center" gap={1}>

@@ -63,18 +63,33 @@ const parseLocation = (rawDescription: string): string => {
   if (!rawDescription) return '';
   const upper = rawDescription.toUpperCase();
   const knownCities = [
+    // Tampa + 100mi (match TAMPA_100MI_CITIES)
     'TAMPA', 'WESLEY CHAPEL', 'ZEPHYRHILLS', 'BRANDON', 'RIVERVIEW',
-    'LAKELAND', 'CLEARWATER', 'ST PETERSBURG', 'SARASOTA', 'ORLANDO',
+    'LUTZ', 'LAND O LAKES', 'NEW PORT RICHEY', 'PLANT CITY',
+    'VALRICO', 'SEFFNER', 'TEMPLE TERRACE', 'ODESSA', 'SPRING HILL',
+    'LAKELAND', 'DADE CITY', 'BROOKSVILLE',
+    'ST PETERSBURG', 'CLEARWATER', 'LARGO', 'PINELLAS PARK', 'DUNEDIN',
+    'TARPON SPRINGS', 'PALM HARBOR', 'SAFETY HARBOR', 'SEMINOLE',
+    'SARASOTA', 'BRADENTON', 'PALMETTO', 'VENICE', 'NORTH PORT', 'ENGLEWOOD',
+    'ELLENTON', 'PARRISH', 'OSPREY', 'NOKOMIS',
+    'WINTER HAVEN', 'BARTOW', 'AUBURNDALE', 'HAINES CITY', 'LAKE WALES',
+    'POLK CITY', 'MULBERRY', 'DAVENPORT',
+    'HUDSON', 'PORT RICHEY', 'CRYSTAL RIVER', 'INVERNESS',
+    'ORLANDO', 'KISSIMMEE', 'SANFORD', 'WINTER PARK', 'ALTAMONTE SPRINGS',
+    'CASSELBERRY', 'OVIEDO', 'APOPKA', 'CLERMONT', 'LEESBURG',
+    'MOUNT DORA', 'OCALA', 'ST CLOUD', 'WINTER GARDEN', 'CELEBRATION',
+    'PORT CHARLOTTE', 'PUNTA GORDA', 'CAPE CORAL', 'FORT MYERS',
+    'LEHIGH ACRES', 'BONITA SPRINGS', 'ESTERO',
+    'DAYTONA BEACH', 'DELAND', 'DELTONA', 'NEW SMYRNA BEACH', 'ORMOND BEACH',
+    'FERN PARK',
+    // South FL + other states
     'MIAMI', 'FORT LAUDERDALE', 'HOLLYWOOD', 'POMPANO BEACH', 'BOCA RATON',
     'WEST PALM BEACH', 'JACKSONVILLE', 'GAINESVILLE', 'TALLAHASSEE',
-    'LEXINGTON', 'DEERFIELD BEACH', 'PLANTATION', 'DAVIE', 'SUNRISE',
+    'NAPLES', 'HALLANDALE', 'MIRAMAR', 'HIALEAH', 'HOMESTEAD',
+    'DEERFIELD BEACH', 'PLANTATION', 'DAVIE', 'SUNRISE',
     'CORAL SPRINGS', 'MARGATE', 'COCONUT CREEK', 'BOYNTON BEACH',
-    'DELRAY BEACH', 'LAKE WORTH', 'PALM BEACH', 'NAPLES', 'CAPE CORAL',
-    'FORT MYERS', 'PORT CHARLOTTE', 'KISSIMMEE', 'DAYTONA BEACH',
-    'NEW YORK', 'CHICAGO', 'HOUSTON', 'ATLANTA', 'LUTZ', 'LAND O LAKES',
-    'NEW PORT RICHEY', 'SPRING HILL', 'BROOKSVILLE', 'DADE CITY',
-    'PLANT CITY', 'VALRICO', 'SEFFNER', 'TEMPLE TERRACE', 'ODESSA',
-    'FERN PARK', 'HALLANDALE', 'MIRAMAR', 'HIALEAH', 'HOMESTEAD',
+    'DELRAY BEACH', 'LAKE WORTH', 'PALM BEACH',
+    'NEW YORK', 'CHICAGO', 'HOUSTON', 'ATLANTA', 'LEXINGTON',
   ];
   for (const city of knownCities) {
     if (upper.includes(city)) return city.charAt(0) + city.slice(1).toLowerCase();
@@ -89,15 +104,41 @@ const parseLocation = (rawDescription: string): string => {
   return '';
 };
 
-const isTampaArea = (location: string): boolean => {
-  const tampaAreaCities = [
-    'tampa', 'wesley chapel', 'zephyrhills', 'brandon', 'riverview',
-    'lutz', 'land o lakes', 'new port richey', 'plant city',
-    'valrico', 'seffner', 'temple terrace', 'odessa', 'spring hill',
-    'lakeland', 'dade city',
-  ];
-  return tampaAreaCities.includes(location.toLowerCase());
-};
+/** Tampa + ~100 mile radius — all FL cities within driving distance */
+const TAMPA_100MI_CITIES = [
+  // Tampa metro core
+  'tampa', 'wesley chapel', 'zephyrhills', 'brandon', 'riverview',
+  'lutz', 'land o lakes', 'new port richey', 'plant city',
+  'valrico', 'seffner', 'temple terrace', 'odessa', 'spring hill',
+  'lakeland', 'dade city', 'brooksville',
+  // Pinellas (St Pete / Clearwater)
+  'st petersburg', 'clearwater', 'largo', 'pinellas park', 'dunedin',
+  'tarpon springs', 'palm harbor', 'safety harbor', 'seminole', 'treasure island',
+  'indian rocks beach', 'madeira beach', 'st pete beach',
+  // Sarasota / Manatee
+  'sarasota', 'bradenton', 'palmetto', 'venice', 'north port', 'englewood',
+  'ellenton', 'parrish', 'longboat key', 'siesta key', 'osprey', 'nokomis',
+  // Polk county
+  'winter haven', 'bartow', 'auburndale', 'haines city', 'lake wales',
+  'polk city', 'mulberry', 'eagle lake', 'lake alfred', 'davenport',
+  // Pasco / Hernando / Citrus
+  'hudson', 'port richey', 'holiday', 'crystal river', 'inverness',
+  'homosassa', 'weeki wachee', 'san antonio',
+  // Orlando metro (~85mi)
+  'orlando', 'kissimmee', 'sanford', 'winter park', 'altamonte springs',
+  'casselberry', 'oviedo', 'apopka', 'clermont', 'leesburg',
+  'mount dora', 'tavares', 'eustis', 'ocala', 'the villages',
+  'celebration', 'st cloud', 'windermere', 'winter garden',
+  // Charlotte / Lee (borderline 100mi)
+  'port charlotte', 'punta gorda', 'cape coral', 'fort myers',
+  'lehigh acres', 'bonita springs', 'estero',
+  // Volusia (Daytona, ~120mi but common for FL business)
+  'daytona beach', 'deland', 'deltona', 'new smyrna beach', 'ormond beach',
+  'fern park',
+];
+
+const isTampaArea = (location: string): boolean =>
+  TAMPA_100MI_CITIES.includes(location.toLowerCase());
 
 interface ReconcileTx {
   id: string;
@@ -377,14 +418,44 @@ const ReconciliationPage: React.FC = () => {
   const handleApproveTampa = async () => {
     const tampaList = filteredTransactions.filter(t => isTampaArea(t._location));
     if (tampaList.length === 0) return alert('Нет Tampa транзакций');
-    if (!window.confirm(`Утвердить ${tampaList.length} Tampa транзакций?`)) return;
+
+    // Auto-find Tampa project from loaded projects
+    const tampaProject = projects.find(p =>
+      p.name.toLowerCase().includes('tampa') ||
+      p.name.toLowerCase().includes('тампа')
+    );
+
+    if (!tampaProject) {
+      setErrorMsg('Не найден проект Tampa. Создайте проект с "Tampa" в названии.');
+      return;
+    }
+
+    if (!window.confirm(
+      `Утвердить ${tampaList.length} транзакций Tampa-area → проект "${tampaProject.name}"?`
+    )) return;
+
+    // Override: set company + Tampa project on all Tampa-area txs
+    const tampaForApi = tampaList.map(t => ({
+      id: t.id.replace(/_split[AB]$/, ''),
+      date: normalizeDate(t.date),
+      rawDescription: t.rawDescription || '',
+      cleanMerchant: t.cleanMerchant || '',
+      amount: t.amount,
+      paymentType: 'company' as const,
+      categoryId: t.categoryId || 'other',
+      projectId: tampaProject.id,
+      employeeId: t.employeeId || null,
+      employeeName: t.employeeName || null,
+      confidence: t.confidence || 'low',
+    }));
+
     setSubmitting(true);
     try {
       const token = await getAuthToken();
       const resp = await fetch(`${getApiUrl()}/api/finance/transactions/approve`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ transactions: prepareForApi(tampaList) }),
+        body: JSON.stringify({ transactions: tampaForApi }),
       });
       if (!resp.ok) throw new Error(`API ${resp.status}: ${await resp.text()}`);
       await fetchData();

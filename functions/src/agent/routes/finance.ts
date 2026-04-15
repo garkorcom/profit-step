@@ -213,7 +213,95 @@ router.post('/api/finance/transactions/batch', async (req, res, next) => {
       }
     }
 
-    res.status(200).json({ success: true, count: savedCount, autoApproved: autoApprovedCount, totalReceived: data.transactions.length });
+    // ── Tampa geo-auto-approve: detect FL Tampa-area transactions ──
+    let tampaAutoCount = 0;
+    const TAMPA_CITIES = new Set([
+      'tampa','wesley chapel','zephyrhills','brandon','riverview','lutz','land o lakes',
+      'new port richey','plant city','valrico','seffner','temple terrace','odessa',
+      'spring hill','lakeland','dade city','brooksville','st petersburg','clearwater',
+      'largo','pinellas park','dunedin','tarpon springs','palm harbor','safety harbor',
+      'seminole','sarasota','bradenton','palmetto','venice','north port','englewood',
+      'ellenton','parrish','osprey','nokomis','winter haven','bartow','auburndale',
+      'haines city','lake wales','polk city','mulberry','davenport','hudson','port richey',
+      'crystal river','inverness','orlando','kissimmee','sanford','winter park',
+      'altamonte springs','casselberry','oviedo','apopka','clermont','leesburg',
+      'mount dora','ocala','st cloud','winter garden','celebration','port charlotte',
+      'punta gorda','cape coral','fort myers','lehigh acres','bonita springs','estero',
+      'daytona beach','deland','deltona','new smyrna beach','ormond beach','fern park',
+    ]);
+
+    // Find Tampa project
+    const tampaProjectSnap = await db.collection('projects').where('status', '==', 'active').get();
+    const tampaProject = tampaProjectSnap.docs.find(d => {
+      const name = (d.data().name || '').toLowerCase();
+      return name.includes('tampa') || name.includes('тампа');
+    });
+
+    if (tampaProject) {
+      const tampaProjectId = tampaProject.data().clientId || tampaProject.id;
+      const tampaProjectName = tampaProject.data().name || 'Tampa';
+      const remainingDrafts = await db.collection('bank_transactions').where('status', '==', 'draft').get();
+      const tampaBatch = db.batch();
+      let tampaOps = 0;
+
+      for (const txDoc of remainingDrafts.docs) {
+        const txData = txDoc.data();
+        const desc = (txData.rawDescription || '').toUpperCase();
+        // Check if any Tampa-area city appears in the raw description
+        let isTampa = false;
+        for (const city of TAMPA_CITIES) {
+          if (desc.includes(city.toUpperCase())) { isTampa = true; break; }
+        }
+        if (!isTampa) continue;
+        if (tampaOps >= 400) break;
+
+        tampaBatch.update(txDoc.ref, {
+          status: 'approved',
+          paymentType: 'company',
+          projectId: tampaProjectId,
+          autoApproved: true,
+          autoApproveSource: 'tampa-geo',
+          updatedAt: FieldValue.serverTimestamp(),
+        });
+        tampaOps++;
+
+        // Create cost record
+        const costRef = db.collection('costs').doc();
+        const isRefund = txData.amount > 0;
+        const effectiveAmount = isRefund ? -Math.abs(txData.amount) : Math.abs(txData.amount);
+        tampaBatch.set(costRef, {
+          userId: 'auto-tampa',
+          userName: 'Tampa geo-auto',
+          clientId: tampaProjectId,
+          clientName: tampaProjectName,
+          category: txData.categoryId || 'other',
+          categoryLabel: COST_CATEGORY_LABELS[(txData.categoryId || 'other') as keyof typeof COST_CATEGORY_LABELS] || 'other',
+          amount: effectiveAmount,
+          originalAmount: Math.abs(txData.amount),
+          paymentType: 'company',
+          description: `[Tampa Auto] ${txData.cleanMerchant || ''}`,
+          status: 'confirmed',
+          source: 'bank_statement',
+          date: txData.date || FieldValue.serverTimestamp(),
+          createdAt: FieldValue.serverTimestamp(),
+        });
+        tampaOps++;
+        tampaAutoCount++;
+      }
+
+      if (tampaAutoCount > 0) {
+        await tampaBatch.commit();
+        logger.info(`🏗️ finance:batch tampa-geo auto-approved ${tampaAutoCount} transactions → ${tampaProjectName}`);
+      }
+    }
+
+    res.status(200).json({
+      success: true,
+      count: savedCount,
+      autoApproved: autoApprovedCount,
+      tampaAutoApproved: tampaAutoCount,
+      totalReceived: data.transactions.length,
+    });
   } catch (e) {
     next(e);
   }

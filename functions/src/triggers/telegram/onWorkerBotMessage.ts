@@ -297,13 +297,10 @@ async function handleMessage(message: any) {
         if (activeSession && activeSession.data().awaitingLocation) {
             await activeSession.ref.update({
                 awaitingLocation: false,
-                awaitingChecklist: true,
-                checklistStep: 0,
-                checklistAnswers: {},
                 startLocation: null
             });
-            await sendMessage(chatId, "⏩ Локация пропущена.\n\n📋 Пройди чеклист перед началом работы:");
-            await sendChecklistQuestion(chatId, 0);
+            await sendMessage(chatId, "⏩ Локация пропущена. Смена активна!");
+            await sendMainMenu(chatId, userId);
         } else {
             // Normal media skip flow
             await handleSkipMedia(chatId, userId);
@@ -853,19 +850,22 @@ async function initWorkSession(chatId: number, userId: number, clientId: string,
         }, { merge: true });
     }
 
-    // 4. Create Session — immediately active (simplified flow)
+    // 4. Create Session (Pending Location)
+    // Use Timestamp.now() instead of serverTimestamp() to avoid race condition:
+    // getActiveSession() queries with orderBy('startTime') — serverTimestamp sentinel
+    // value may not be resolved yet, causing "Ты не на смене" ghost message.
     const sessionRef = await db.collection('work_sessions').add({
         employeeId: userId,
         employeeName: employeeName,
-        platformUserId: platformUserId,
-        companyId: companyId,
+        platformUserId: platformUserId, // Link to platform user
+        companyId: companyId,           // Link to company
         clientId: clientId,
         clientName: clientName,
-        startTime: admin.firestore.Timestamp.now(), // Use Timestamp.now() to avoid race condition
+        startTime: admin.firestore.Timestamp.now(),
         status: 'active',
         service: serviceName || null,
-        awaitingLocation: true, // Still ask for location (anti-fraud) but session is running
-        hourlyRate: hourlyRate,
+        awaitingLocation: true,
+        hourlyRate: hourlyRate, // Snapshot rate
         taskId: null,
         taskTitle: null
     });
@@ -1136,18 +1136,20 @@ async function handleLocationConfirmStart(chatId: number, userId: number) {
     // value may not be resolved yet, causing "Ты не на смене" ghost message.
     const sessionStartTime = admin.firestore.Timestamp.now();
 
-    // Simplified flow: session is IMMEDIATELY active — no mandatory checklist/photo/voice
+    const fullClientName = serviceName ? `${clientName} - ${serviceName}` : clientName;
+
     await db.collection('work_sessions').add({
         employeeId: userId,
         employeeName: employeeName,
         platformUserId: platformUserId,
         companyId: companyId,
         clientId: clientId,
-        clientName: serviceName ? `${clientName} - ${serviceName}` : clientName,
+        clientName: fullClientName,
         startTime: sessionStartTime,
         status: 'active',
         service: serviceName || null,
         startLocation: location,
+        awaitingLocation: false,
         hourlyRate: hourlyRate,
         taskId: null,
         taskTitle: null
@@ -1157,22 +1159,19 @@ async function handleLocationConfirmStart(chatId: number, userId: number) {
 
     // ─── hourlyRate = 0 warning ───
     if (!hourlyRate) {
-        await sendMessage(chatId, '⚠️ Ставка не установлена ($0/ч). Свяжись с руководителем.');
+        await sendMessage(chatId, '⚠️ Внимание! Ваша почасовая ставка не установлена ($0/ч). Пожалуйста, свяжитесь с руководителем для уточнения.');
     }
 
-    const displayName = serviceName ? `${clientName} - ${serviceName}` : clientName;
     await sendMessage(chatId,
         `✅ *Смена начата!*\n\n` +
-        `🏢 Объект: *${displayName}*\n` +
-        `💵 Ставка: $${hourlyRate}/ч\n\n` +
-        `📸 _Можешь отправить фото с объекта_\n` +
-        `🎙 _Или голосовое — что планируешь делать_`
+        `🏢 Объект: *${fullClientName}*\n` +
+        `⏱ Таймер запущен. Работаем!`
     );
 
-    // Show work menu immediately — worker can start
+    // Immediately show work menu — worker can start right away
     await sendMainMenu(chatId, userId);
 
-    await sendAdminNotification(`👤 *${employeeName}:*\n▶️ *Work Started (Location)*\n📍 ${displayName}`);
+    await sendAdminNotification(`👤 *${employeeName}:*\n▶️ *Work Started (Location)*\n📍 ${clientName}`);
 }
 
 /**
@@ -1308,7 +1307,6 @@ async function handleLocationNewClient(chatId: number, userId: number, clientId:
     // Use Timestamp.now() instead of serverTimestamp() — see comment in handleLocationConfirmStart
     const sessionStartTime = admin.firestore.Timestamp.now();
 
-    // Simplified flow: session IMMEDIATELY active
     await db.collection('work_sessions').add({
         employeeId: userId,
         employeeName: employeeName,
@@ -1319,6 +1317,7 @@ async function handleLocationNewClient(chatId: number, userId: number, clientId:
         startTime: sessionStartTime,
         status: 'active',
         startLocation: location,
+        awaitingLocation: false,
         hourlyRate: hourlyRate,
         taskId: null,
         taskTitle: null
@@ -1326,21 +1325,22 @@ async function handleLocationNewClient(chatId: number, userId: number, clientId:
 
     await pendingStartRef.delete();
 
+    // ─── hourlyRate = 0 warning ───
     if (!hourlyRate) {
-        await sendMessage(chatId, '⚠️ Ставка не установлена ($0/ч). Свяжись с руководителем.');
+        await sendMessage(chatId, '⚠️ Внимание! Ваша почасовая ставка не установлена ($0/ч). Пожалуйста, свяжитесь с руководителем для уточнения.');
     }
 
     await sendMessage(chatId,
         `✅ *Смена начата!*\n\n` +
         `🏢 Объект: *${clientName}*\n` +
-        `💵 Ставка: $${hourlyRate}/ч\n` +
-        `📍 Координаты объекта сохранены.\n\n` +
-        `📸 _Можешь отправить фото с объекта_\n` +
-        `🎙 _Или голосовое — что планируешь делать_`
+        `📍 Координаты объекта сохранены в базу.\n` +
+        `⏱ Таймер запущен. Работаем!`
     );
 
+    // Immediately show work menu — worker can start right away
     await sendMainMenu(chatId, userId);
-    await sendAdminNotification(`👤 *${employeeName}:*\n▶️ *Work Started (New Location)*\n📍 ${clientName}`);
+
+    await sendAdminNotification(`👤 *${employeeName}:*\n▶️ *Work Started (New DB Location)*\n📍 ${clientName}`);
 }
 
 async function pauseWorkSession(chatId: number, userId: number) {
@@ -1762,14 +1762,10 @@ async function handleText(chatId: number, userId: number, text: string) {
             companyId: companyId,
             clientId: 'custom',
             clientName: text,
-            startTime: admin.firestore.FieldValue.serverTimestamp(),
+            startTime: admin.firestore.Timestamp.now(),
             status: 'active',
             startLocation: location,
             awaitingLocation: false,
-            awaitingChecklist: true,
-            checklistStep: 0,
-            checklistAnswers: {},
-            awaitingStartPhoto: false,
             hourlyRate: hourlyRate,
             taskId: null,
             taskTitle: null
@@ -1777,9 +1773,9 @@ async function handleText(chatId: number, userId: number, text: string) {
 
         await pendingStartRef.delete();
         await sendMessage(chatId,
-            `✅ *Смена начата!*\n\n🏢 Объект: *${text}* (ручной ввод)\n\n📋 Пройди чеклист перед началом работы:`
+            `✅ *Смена начата!*\n\n🏢 Объект: *${text}* (ручной ввод)\n⏱ Таймер запущен. Работаем!`
         );
-        await sendChecklistQuestion(chatId, 0);
+        await sendMainMenu(chatId, userId);
         await sendAdminNotification(`👤 *${employeeName}:*\n▶️ *Work Started (Manual)*\n📍 ${text}`);
         return;
     }
@@ -2015,22 +2011,45 @@ async function finalizeSession(chatId: number, userId: number, activeSession: an
     }
 
     // BUG-6 fix: Calculate salary balance from work_sessions (3 buckets: earned/paid/adjustments)
+    // BUG-6b fix: Query by BOTH Telegram ID and platform UID to catch
+    // payments/adjustments created from Web CRM (which uses platform UID)
     let balanceInfo = '';
     try {
         const yearStart = new Date(new Date().getFullYear(), 0, 1);
-        const sessionsSnap = await admin.firestore().collection('work_sessions')
-            .where('employeeId', '==', userId)
-            .where('status', '==', 'completed')
-            .where('startTime', '>=', admin.firestore.Timestamp.fromDate(yearStart))
-            .get();
+        const yearStartTs = admin.firestore.Timestamp.fromDate(yearStart);
+
+        // Collect all possible employeeId variants for this worker
+        const idVariants: (string | number)[] = [userId, String(userId)];
+        const platformUser = await findPlatformUser(userId);
+        if (platformUser?.id) {
+            idVariants.push(platformUser.id);
+        }
+        const uniqueIds = [...new Set(idVariants.map(String))];
+
+        // Run parallel queries for each ID variant (uses existing composite index)
+        const queries = uniqueIds.map(id =>
+            admin.firestore().collection('work_sessions')
+                .where('employeeId', '==', id)
+                .where('status', '==', 'completed')
+                .where('startTime', '>=', yearStartTs)
+                .get()
+        );
+        const snapshots = await Promise.all(queries);
+
+        // Merge & deduplicate by document ID
+        const docsMap = new Map<string, any>();
+        snapshots.forEach(snap => {
+            snap.docs.forEach(d => {
+                if (!docsMap.has(d.id)) docsMap.set(d.id, d.data());
+            });
+        });
 
         // Split into 3 buckets (same formula as API summary & FinancePage)
         let earned = 0;   // regular + correction
         let paid = 0;     // payment records
         let adjustments = 0; // manual_adjustment
 
-        sessionsSnap.docs.forEach((d: any) => {
-            const data = d.data();
+        docsMap.forEach((data: any) => {
             const amount = data.sessionEarnings || 0;
             const type = data.type || 'regular';
             if (type === 'payment') {
@@ -2038,23 +2057,34 @@ async function finalizeSession(chatId: number, userId: number, activeSession: an
             } else if (type === 'manual_adjustment') {
                 adjustments += amount;
             } else {
-                // regular + correction
-                earned += amount;
+                // regular + correction — skip voided
+                if (!data.isVoided) {
+                    earned += amount;
+                }
             }
         });
 
         // Also check legacy payments collection (backward compat)
         try {
-            const legacySnap = await admin.firestore().collection('payments')
-                .where('employeeId', '==', String(userId))
-                .get();
-            legacySnap.docs.forEach((d: any) => {
-                paid += Math.abs(d.data().amount || 0);
+            const legacyQueries = uniqueIds.map(id =>
+                admin.firestore().collection('payments')
+                    .where('employeeId', '==', id)
+                    .get()
+            );
+            const legacySnaps = await Promise.all(legacyQueries);
+            const legacySeen = new Set<string>();
+            legacySnaps.forEach(snap => {
+                snap.docs.forEach(d => {
+                    if (!legacySeen.has(d.id)) {
+                        legacySeen.add(d.id);
+                        paid += Math.abs(d.data().amount || 0);
+                    }
+                });
             });
         } catch (_) { /* legacy collection may not exist */ }
 
         const balance = earned - paid + adjustments;
-        balanceInfo = `\n💳 Баланс: $${balance.toFixed(2)} (начислено $${earned.toFixed(2)} - выплачено $${paid.toFixed(2)})`;
+        balanceInfo = `\n💚 Баланс ЗП: $${balance.toFixed(2)}\n📊 Начислено с начала года: $${earned.toFixed(2)}\nВыплачено: $${paid.toFixed(2)}`;
     } catch (e) {
         console.error('Balance calc error:', e);
     }

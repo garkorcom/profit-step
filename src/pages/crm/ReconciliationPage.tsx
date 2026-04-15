@@ -4,7 +4,7 @@ import {
   TableCell, TableContainer, TableHead, TableRow,
   Select, MenuItem, Chip, CircularProgress, Alert,
   ToggleButton, ToggleButtonGroup, Card, CardContent,
-  Checkbox, Tooltip,
+  Checkbox, Tooltip, IconButton,
   TextField, InputAdornment, TablePagination, TableSortLabel,
 } from '@mui/material';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
@@ -16,10 +16,18 @@ import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdf';
 import FileDownloadIcon from '@mui/icons-material/FileDownload';
 import SearchIcon from '@mui/icons-material/Search';
 import VerifiedIcon from '@mui/icons-material/Verified';
+import SettingsIcon from '@mui/icons-material/Settings';
+import ChatBubbleOutlineIcon from '@mui/icons-material/ChatBubbleOutline';
+import ChatBubbleIcon from '@mui/icons-material/ChatBubble';
+import AutoApproveRulesDialog from '../../components/crm/AutoApproveRulesDialog';
+import CategoryChipPicker from '../../components/crm/CategoryChipPicker';
+import TransactionNoteDrawer from '../../components/crm/TransactionNoteDrawer';
+import ExpenseAnalyticsPanel from '../../components/crm/ExpenseAnalyticsPanel';
 import { db } from '../../firebase/firebase';
 import { collection, query, where, getDocs, Timestamp, orderBy, doc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 import { errorMessage } from '../../utils/errorMessage';
+import { useAuth } from '../../auth/AuthContext';
 
 const COST_CATEGORY_LABELS: Record<string, string> = {
   materials: '🧱 Материалы',
@@ -98,10 +106,18 @@ interface ReconcileTx {
   paymentType: 'company' | 'cash';
   categoryId: string;
   projectId: string | null;
+  employeeId?: string | null;
+  employeeName?: string | null;
+  note?: string;
   confidence: 'high' | 'low';
   status: 'draft' | 'approved' | 'ignored';
   verifiedBy?: string | null;
   verifiedAt?: Timestamp | null;
+}
+
+interface EmployeeOption {
+  id: string;
+  name: string;
 }
 
 // ─── Helpers ────────────────────────────────────────────────
@@ -137,10 +153,13 @@ const fmtDollar = (n: number) =>
 // ─── Component ──────────────────────────────────────────────
 
 const ReconciliationPage: React.FC = () => {
+  const { userProfile } = useAuth();
+
   // Data
   const [view, setView] = useState<'draft' | 'approved'>('draft');
   const [transactions, setTransactions] = useState<ReconcileTx[]>([]);
   const [projects, setProjects] = useState<{ id: string; name: string }[]>([]);
+  const [employees, setEmployees] = useState<EmployeeOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -149,6 +168,8 @@ const ReconciliationPage: React.FC = () => {
   const [quickFilter, setQuickFilter] = useState<QuickFilter>('all');
   const [filterMonth, setFilterMonth] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [amountMin, setAmountMin] = useState<number | ''>('');
+  const [amountMax, setAmountMax] = useState<number | ''>('');
 
   // Table state
   const [page, setPage] = useState(0);
@@ -157,6 +178,9 @@ const ReconciliationPage: React.FC = () => {
   const [sortDir, setSortDir] = useState<SortDir>('desc');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [approvedIds, setApprovedIds] = useState<Set<string>>(new Set()); // rows approved inline (green)
+  const [rulesOpen, setRulesOpen] = useState(false);
+  const [noteDrawerTxId, setNoteDrawerTxId] = useState<string | null>(null);
+  const [analyticsOpen, setAnalyticsOpen] = useState(false);
 
   // ─── Data Fetching ──────────────────────────────────────
 
@@ -175,8 +199,16 @@ const ReconciliationPage: React.FC = () => {
       const txSnap = await getDocs(txQuery);
       setTransactions(txSnap.docs.map(d => ({ id: d.id, ...d.data() } as ReconcileTx)));
 
-      const prjSnap = await getDocs(query(collection(db, 'projects'), where('status', '==', 'active')));
+      const [prjSnap, empSnap] = await Promise.all([
+        getDocs(query(collection(db, 'projects'), where('status', '==', 'active'))),
+        userProfile?.companyId
+          ? getDocs(query(collection(db, 'users'), where('companyId', '==', userProfile.companyId), where('status', '==', 'active')))
+          : Promise.resolve(null),
+      ]);
       setProjects(prjSnap.docs.map(d => ({ id: d.id, name: d.data().name || d.id })));
+      if (empSnap) {
+        setEmployees(empSnap.docs.map(d => ({ id: d.id, name: d.data().displayName || d.data().email || d.id })).sort((a, b) => a.name.localeCompare(b.name)));
+      }
     } catch (e: unknown) {
       console.error("Failed to fetch:", e);
       const msg = errorMessage(e);
@@ -221,6 +253,8 @@ const ReconciliationPage: React.FC = () => {
       paymentType: t.paymentType || 'cash',
       categoryId: t.categoryId || 'other',
       projectId: t.projectId || null,
+      employeeId: t.employeeId || null,
+      employeeName: t.employeeName || null,
       confidence: t.confidence || 'low',
     }));
 
@@ -359,6 +393,18 @@ const ReconciliationPage: React.FC = () => {
     }
   }, []);
 
+  // ─── Note save ─────────────────────────────────────────
+
+  const handleSaveNote = useCallback(async (txId: string, note: string) => {
+    try {
+      const txRef = doc(db, 'bank_transactions', txId);
+      await updateDoc(txRef, { note });
+      setTransactions(prev => prev.map(t => t.id === txId ? { ...t, note } : t));
+    } catch (e) {
+      console.error('Save note failed', e);
+    }
+  }, []);
+
   // ─── Bulk Category/Type Change ──────────────────────────
 
   const handleBulkUpdate = (field: 'categoryId' | 'paymentType', value: string) => {
@@ -435,6 +481,10 @@ const ReconciliationPage: React.FC = () => {
       );
     }
 
+    // Amount range
+    if (amountMin !== '') result = result.filter(t => Math.abs(t.amount) >= amountMin);
+    if (amountMax !== '') result = result.filter(t => Math.abs(t.amount) <= amountMax);
+
     // Quick filter
     if (quickFilter === 'tampa') result = result.filter(t => isTampaArea(t._location));
     else if (quickFilter === 'company') result = result.filter(t => t.paymentType === 'company');
@@ -458,7 +508,7 @@ const ReconciliationPage: React.FC = () => {
     });
 
     return result;
-  }, [enrichedTransactions, quickFilter, filterMonth, searchQuery, sortField, sortDir]);
+  }, [enrichedTransactions, quickFilter, filterMonth, searchQuery, amountMin, amountMax, sortField, sortDir]);
 
   // Summary from FILTERED data (reacts to filters)
   const summaryData = useMemo(() => {
@@ -477,7 +527,7 @@ const ReconciliationPage: React.FC = () => {
   );
 
   // Reset page when filter changes
-  useEffect(() => { setPage(0); }, [quickFilter, filterMonth, searchQuery]);
+  useEffect(() => { setPage(0); }, [quickFilter, filterMonth, searchQuery, amountMin, amountMax]);
 
   // ─── Column Sort ────────────────────────────────────────
 
@@ -582,6 +632,11 @@ const ReconciliationPage: React.FC = () => {
           </Select>
         </Box>
         <Box display="flex" alignItems="center" gap={1}>
+          <Tooltip title="Правила авто-утверждения">
+            <Button size="small" variant="outlined" startIcon={<SettingsIcon />} onClick={() => setRulesOpen(true)}>
+              Правила
+            </Button>
+          </Tooltip>
           <Button size="small" variant="outlined" startIcon={<FileDownloadIcon />} onClick={handleExportCSV} disabled={!filteredTransactions.length}>
             CSV
           </Button>
@@ -640,6 +695,21 @@ const ReconciliationPage: React.FC = () => {
         </Box>
       )}
 
+      {/* ─── Analytics Panel ─── */}
+      {enrichedTransactions.length > 0 && (
+        <ExpenseAnalyticsPanel
+          transactions={filteredTransactions.map(t => ({
+            amount: t.amount,
+            categoryId: t.categoryId,
+            cleanMerchant: t.cleanMerchant,
+            date: normalizeDate(t.date),
+            paymentType: t.paymentType,
+          }))}
+          expanded={analyticsOpen}
+          onToggle={() => setAnalyticsOpen(prev => !prev)}
+        />
+      )}
+
       {/* ─── Filters Row ─── */}
       {enrichedTransactions.length > 0 && (
         <Box mb={2} display="flex" alignItems="center" gap={1.5} flexWrap="wrap">
@@ -666,7 +736,28 @@ const ReconciliationPage: React.FC = () => {
             </Select>
           </Box>
 
-
+          {/* Amount Range */}
+          <Box display="flex" alignItems="center" gap={0.5}>
+            <TextField
+              size="small"
+              type="number"
+              placeholder="От $"
+              value={amountMin}
+              onChange={e => setAmountMin(e.target.value === '' ? '' : Number(e.target.value))}
+              slotProps={{ input: { startAdornment: <InputAdornment position="start">$</InputAdornment> } }}
+              sx={{ width: 95, bgcolor: 'white' }}
+            />
+            <Typography variant="caption" color="text.secondary">–</Typography>
+            <TextField
+              size="small"
+              type="number"
+              placeholder="До $"
+              value={amountMax}
+              onChange={e => setAmountMax(e.target.value === '' ? '' : Number(e.target.value))}
+              slotProps={{ input: { startAdornment: <InputAdornment position="start">$</InputAdornment> } }}
+              sx={{ width: 95, bgcolor: 'white' }}
+            />
+          </Box>
 
           {/* Quick Filters — scrollable */}
           {view === 'draft' && (
@@ -756,6 +847,7 @@ const ReconciliationPage: React.FC = () => {
                 </TableSortLabel>
               </TableCell>
               <TableCell sx={{ width: 100 }}><strong>Тип</strong></TableCell>
+              <TableCell sx={{ width: 120 }}><strong>Сотрудник</strong></TableCell>
               <TableCell sx={{ width: 135 }}>
                 <TableSortLabel active={sortField === 'categoryId'} direction={sortField === 'categoryId' ? sortDir : 'asc'} onClick={() => handleSort('categoryId')}>
                   <strong>Категория</strong>
@@ -826,13 +918,35 @@ const ReconciliationPage: React.FC = () => {
                       <MenuItem value="cash">💵 Личн.</MenuItem>
                     </Select>
                   </TableCell>
-                  {/* Category */}
+                  {/* Employee (for personal expenses) */}
                   <TableCell>
-                    <Select size="small" value={t.categoryId || 'other'} onChange={e => handleUpdate(t.id, 'categoryId', e.target.value)} sx={{ minWidth: 125, fontSize: '0.8rem', bgcolor: 'white' }} disabled={view === 'approved' || isInlineApproved}>
-                      {Object.keys(COST_CATEGORY_LABELS).map(c => (
-                        <MenuItem key={c} value={c}>{COST_CATEGORY_LABELS[c]}</MenuItem>
-                      ))}
-                    </Select>
+                    {t.paymentType === 'cash' ? (
+                      <Select
+                        size="small"
+                        value={t.employeeId || ''}
+                        onChange={e => {
+                          const emp = employees.find(em => em.id === e.target.value);
+                          handleUpdate(t.id, 'employeeId', e.target.value || null);
+                          handleUpdate(t.id, 'employeeName', emp?.name || null);
+                        }}
+                        displayEmpty
+                        disabled={view === 'approved' || isInlineApproved}
+                        sx={{ minWidth: 110, fontSize: '0.75rem', bgcolor: 'white' }}
+                      >
+                        <MenuItem value=""><em>—</em></MenuItem>
+                        {employees.map(emp => <MenuItem key={emp.id} value={emp.id}>{emp.name}</MenuItem>)}
+                      </Select>
+                    ) : (
+                      <Typography variant="caption" color="text.disabled">—</Typography>
+                    )}
+                  </TableCell>
+                  {/* Category — icon picker */}
+                  <TableCell>
+                    <CategoryChipPicker
+                      value={t.categoryId || 'other'}
+                      onChange={(val) => handleUpdate(t.id, 'categoryId', val)}
+                      disabled={view === 'approved' || isInlineApproved}
+                    />
                   </TableCell>
                   {/* Project */}
                   <TableCell>
@@ -848,6 +962,11 @@ const ReconciliationPage: React.FC = () => {
                         <Tooltip title={t.verifiedBy ? `Проверил: ${t.verifiedBy}` : 'Отметить'}>
                           <Checkbox size="small" checked={!!t.verifiedBy} onChange={() => handleVerify(t.id, !!t.verifiedBy)} icon={<VerifiedIcon color="disabled" />} checkedIcon={<VerifiedIcon color="success" />} sx={{ p: 0.3 }} />
                         </Tooltip>
+                        <Tooltip title="Заметка">
+                          <IconButton size="small" onClick={() => setNoteDrawerTxId(t.id)} sx={{ p: 0.3 }}>
+                            {t.note ? <ChatBubbleIcon fontSize="small" color="info" /> : <ChatBubbleOutlineIcon fontSize="small" color="disabled" />}
+                          </IconButton>
+                        </Tooltip>
                         <Tooltip title="Отменить">
                           <span><Button size="small" color="error" onClick={() => handleUndo(t.id)} disabled={submitting} sx={{ minWidth: 'auto', p: 0.3 }}><UndoIcon fontSize="small" /></Button></span>
                         </Tooltip>
@@ -861,6 +980,11 @@ const ReconciliationPage: React.FC = () => {
                         <Tooltip title="Утвердить">
                           <Checkbox size="small" checked={false} onChange={() => handleApproveSingle(t.id)} icon={<VerifiedIcon color="disabled" />} checkedIcon={<VerifiedIcon color="success" />} disabled={submitting} sx={{ p: 0.3 }} />
                         </Tooltip>
+                        <Tooltip title="Заметка">
+                          <IconButton size="small" onClick={() => setNoteDrawerTxId(t.id)} sx={{ p: 0.3 }}>
+                            {t.note ? <ChatBubbleIcon fontSize="small" color="info" /> : <ChatBubbleOutlineIcon fontSize="small" color="disabled" />}
+                          </IconButton>
+                        </Tooltip>
                         <Tooltip title="Разделить">
                           <span><Button size="small" onClick={() => handleSplit(t.id)} disabled={submitting} sx={{ minWidth: 'auto', p: 0.3, fontSize: '0.85rem' }}>✂️</Button></span>
                         </Tooltip>
@@ -872,7 +996,7 @@ const ReconciliationPage: React.FC = () => {
             })}
             {paginatedTransactions.length === 0 && (
               <TableRow>
-                <TableCell colSpan={view === 'draft' ? 9 : 8} align="center" sx={{ py: 6 }}>
+                <TableCell colSpan={view === 'draft' ? 10 : 9} align="center" sx={{ py: 6 }}>
                   <Typography variant="h6" color="text.secondary">
                     {searchQuery ? `Ничего не найдено по "${searchQuery}"` : view === 'draft' ? "🎉 Нет выписок для сверки." : "Список пуст."}
                   </Typography>
@@ -894,6 +1018,33 @@ const ReconciliationPage: React.FC = () => {
         rowsPerPageOptions={[25, 50, 100]}
         labelRowsPerPage="Строк:"
         labelDisplayedRows={({ from, to, count }) => `${from}–${to} из ${count}`}
+      />
+
+      {/* Auto-approve rules dialog */}
+      <AutoApproveRulesDialog open={rulesOpen} onClose={() => setRulesOpen(false)} />
+
+      {/* Transaction note drawer */}
+      <TransactionNoteDrawer
+        open={!!noteDrawerTxId}
+        onClose={() => setNoteDrawerTxId(null)}
+        transaction={(() => {
+          if (!noteDrawerTxId) return null;
+          const tx = transactions.find(t => t.id === noteDrawerTxId);
+          if (!tx) return null;
+          const proj = projects.find(p => p.id === tx.projectId);
+          return {
+            id: tx.id,
+            cleanMerchant: tx.cleanMerchant,
+            rawDescription: tx.rawDescription,
+            amount: tx.amount,
+            date: normalizeDate(tx.date),
+            categoryId: tx.categoryId,
+            paymentType: tx.paymentType,
+            projectName: proj?.name,
+            note: tx.note,
+          };
+        })()}
+        onSaveNote={handleSaveNote}
       />
     </Box>
   );

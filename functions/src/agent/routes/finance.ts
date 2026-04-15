@@ -146,7 +146,74 @@ router.post('/api/finance/transactions/batch', async (req, res, next) => {
       await batch.commit();
     }
 
-    res.status(200).json({ success: true, count: savedCount, totalReceived: data.transactions.length });
+    // ── Auto-approve pass: check finance_rules with autoApprove=true ──
+    let autoApprovedCount = 0;
+    const rulesSnap = await db.collection('finance_rules').where('autoApprove', '==', true).get();
+    if (rulesSnap.size > 0) {
+      const autoRules = new Map<string, { paymentType: string; categoryId: string; projectId: string | null }>();
+      rulesSnap.docs.forEach(d => {
+        const rd = d.data();
+        autoRules.set(d.id, {
+          paymentType: rd.defaultPaymentType || 'cash',
+          categoryId: rd.defaultCategoryId || 'other',
+          projectId: rd.defaultProjectId || null,
+        });
+      });
+
+      // Re-query newly saved drafts that match auto-approve rules
+      const draftsSnap = await db.collection('bank_transactions').where('status', '==', 'draft').get();
+      const autoApproveBatch = db.batch();
+      let opsCount = 0;
+      for (const doc of draftsSnap.docs) {
+        const txData = doc.data();
+        const merchant = (txData.cleanMerchant || '').trim().toLowerCase();
+        const rule = autoRules.get(merchant);
+        if (!rule) continue;
+        if (opsCount >= 450) break; // safety: batch limit
+
+        // Auto-approve: update the bank_transaction
+        autoApproveBatch.update(doc.ref, {
+          status: 'approved',
+          paymentType: rule.paymentType,
+          categoryId: rule.categoryId,
+          projectId: rule.projectId,
+          autoApproved: true,
+          updatedAt: FieldValue.serverTimestamp(),
+        });
+        opsCount++;
+
+        // Create cost if company + projectId
+        if (rule.paymentType === 'company' && rule.projectId) {
+          const costRef = db.collection('costs').doc();
+          const isRefund = txData.amount > 0;
+          const effectiveAmount = isRefund ? -Math.abs(txData.amount) : Math.abs(txData.amount);
+          autoApproveBatch.set(costRef, {
+            userId: 'auto-approve',
+            userName: 'Auto-approve rule',
+            clientId: rule.projectId,
+            clientName: 'Auto-approved via rule',
+            category: rule.categoryId,
+            categoryLabel: COST_CATEGORY_LABELS[rule.categoryId as keyof typeof COST_CATEGORY_LABELS] || rule.categoryId,
+            amount: effectiveAmount,
+            originalAmount: Math.abs(txData.amount),
+            paymentType: rule.paymentType,
+            description: `[Auto] ${txData.cleanMerchant || ''}`,
+            status: 'confirmed',
+            source: 'bank_statement',
+            date: txData.date || FieldValue.serverTimestamp(),
+            createdAt: FieldValue.serverTimestamp(),
+          });
+          opsCount++;
+        }
+        autoApprovedCount++;
+      }
+      if (autoApprovedCount > 0) {
+        await autoApproveBatch.commit();
+        logger.info(`🤖 finance:batch auto-approved ${autoApprovedCount} transactions`);
+      }
+    }
+
+    res.status(200).json({ success: true, count: savedCount, autoApproved: autoApprovedCount, totalReceived: data.transactions.length });
   } catch (e) {
     next(e);
   }
@@ -168,25 +235,32 @@ router.post('/api/finance/transactions/approve', async (req, res, next) => {
 
       for (const t of chunk) {
         let generatedCostId: string | null = null;
-        
-        // Действие А: Копирует данные и создает документы в costs 
-        if (t.paymentType === 'company' && t.projectId) {
+
+        // Действие А: Создаёт costs — для company (с проектом) ИЛИ personal (с сотрудником)
+        const shouldCreateCost =
+          (t.paymentType === 'company' && t.projectId) ||
+          (t.paymentType === 'cash' && t.employeeId);
+
+        if (shouldCreateCost) {
            const costRef = db.collection('costs').doc();
            generatedCostId = costRef.id;
-           
+
            const isRefund = t.amount > 0;
            const effectiveAmount = isRefund ? -Math.abs(t.amount) : Math.abs(t.amount);
-           
+
            batch.set(costRef, {
-             userId: req.agentUserId || 'system',
-             userName: req.agentUserName || 'system',
-             clientId: t.projectId,
-             clientName: 'Reconciled via Bank', 
+             userId: t.employeeId || req.agentUserId || 'system',
+             userName: t.employeeName || req.agentUserName || 'system',
+             clientId: t.projectId || null,
+             clientName: t.paymentType === 'cash' ? 'Personal expense' : 'Reconciled via Bank',
              category: t.categoryId,
              categoryLabel: COST_CATEGORY_LABELS[t.categoryId as keyof typeof COST_CATEGORY_LABELS] || t.categoryId,
              amount: effectiveAmount,
              originalAmount: Math.abs(t.amount),
              taxAmount: t.taxAmount || 0,
+             paymentType: t.paymentType,
+             employeeId: t.employeeId || null,
+             employeeName: t.employeeName || null,
              description: `[Bank] ${t.cleanMerchant}${t.rawDescription ? ' - ' + t.rawDescription : ''}`,
              receiptPhotoUrl: null,
              voiceNoteUrl: null,
@@ -217,6 +291,8 @@ router.post('/api/finance/transactions/approve', async (req, res, next) => {
            paymentType: t.paymentType,
            categoryId: t.categoryId,
            projectId: t.projectId || null,
+           employeeId: t.employeeId || null,
+           employeeName: t.employeeName || null,
            costId: generatedCostId,
            updatedAt: FieldValue.serverTimestamp(),
         });
@@ -264,5 +340,46 @@ router.post('/api/finance/transactions/undo', async (req, res, next) => {
   }
 });
 
+
+// ─── GET /api/finance/rules ──────────────────────────────────────────
+
+router.get('/api/finance/rules', async (_req, res, next) => {
+  try {
+    const snap = await db.collection('finance_rules').get();
+    const rules = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    res.json({ rules });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// ─── PUT /api/finance/rules/:id ─────────────────────────────────────
+
+router.put('/api/finance/rules/:id', async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { autoApprove, defaultPaymentType, defaultCategoryId, defaultProjectId } = req.body;
+    const update: Record<string, unknown> = { updatedAt: FieldValue.serverTimestamp() };
+    if (typeof autoApprove === 'boolean') update.autoApprove = autoApprove;
+    if (defaultPaymentType) update.defaultPaymentType = defaultPaymentType;
+    if (defaultCategoryId) update.defaultCategoryId = defaultCategoryId;
+    if (defaultProjectId !== undefined) update.defaultProjectId = defaultProjectId || null;
+    await db.collection('finance_rules').doc(id).update(update);
+    res.json({ success: true });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// ─── DELETE /api/finance/rules/:id ──────────────────────────────────
+
+router.delete('/api/finance/rules/:id', async (req, res, next) => {
+  try {
+    await db.collection('finance_rules').doc(req.params.id).delete();
+    res.json({ success: true });
+  } catch (e) {
+    next(e);
+  }
+});
 
 export default router;

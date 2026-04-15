@@ -24,13 +24,15 @@ export const FinanceBatchSchema = z.object({
 export const FinanceApproveSchema = z.object({
   transactions: z.array(z.object({
     id: z.string().min(1),
-    date: z.string(), 
+    date: z.string(),
     rawDescription: z.string(),
     cleanMerchant: z.string(),
     amount: z.number(),
     paymentType: z.enum(['company', 'cash']),
     categoryId: z.string(),
     projectId: z.string().nullable().optional(),
+    employeeId: z.string().nullable().optional(),
+    employeeName: z.string().nullable().optional(),
     confidence: z.enum(['high', 'low']),
     taxAmount: z.number().optional().default(0),
   }))

@@ -19,6 +19,8 @@ import VerifiedIcon from '@mui/icons-material/Verified';
 import SettingsIcon from '@mui/icons-material/Settings';
 import ChatBubbleOutlineIcon from '@mui/icons-material/ChatBubbleOutline';
 import ChatBubbleIcon from '@mui/icons-material/ChatBubble';
+import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
+import RestoreIcon from '@mui/icons-material/Restore';
 import AutoApproveRulesDialog from '../../components/crm/AutoApproveRulesDialog';
 import CategoryChipPicker from '../../components/crm/CategoryChipPicker';
 import TransactionNoteDrawer from '../../components/crm/TransactionNoteDrawer';
@@ -156,7 +158,7 @@ const ReconciliationPage: React.FC = () => {
   const { userProfile } = useAuth();
 
   // Data
-  const [view, setView] = useState<'draft' | 'approved'>('draft');
+  const [view, setView] = useState<'draft' | 'approved' | 'ignored'>('draft');
   const [transactions, setTransactions] = useState<ReconcileTx[]>([]);
   const [projects, setProjects] = useState<{ id: string; name: string }[]>([]);
   const [employees, setEmployees] = useState<EmployeeOption[]>([]);
@@ -195,6 +197,8 @@ const ReconciliationPage: React.FC = () => {
     try {
       const txQuery = view === 'draft'
         ? query(collection(db, 'bank_transactions'), where('status', '==', 'draft'))
+        : view === 'ignored'
+        ? query(collection(db, 'bank_transactions'), where('status', '==', 'ignored'))
         : query(collection(db, 'bank_transactions'), where('status', '==', 'approved'), orderBy('updatedAt', 'desc'));
       const txSnap = await getDocs(txQuery);
       setTransactions(txSnap.docs.map(d => ({ id: d.id, ...d.data() } as ReconcileTx)));
@@ -328,6 +332,45 @@ const ReconciliationPage: React.FC = () => {
       // Revert on error
       setApprovedIds(prev => { const next = new Set(prev); next.delete(id); return next; });
       setErrorMsg("Ошибка: " + (e as Error).message);
+    }
+  };
+
+  const handleIgnore = async (id: string) => {
+    // Optimistic: remove from list
+    setTransactions(prev => prev.filter(t => t.id !== id));
+    try {
+      const txRef = doc(db, 'bank_transactions', id);
+      await updateDoc(txRef, { status: 'ignored', updatedAt: serverTimestamp() });
+    } catch (e) {
+      setErrorMsg('Ошибка скрытия: ' + (e as Error).message);
+      await fetchData(); // reload on error
+    }
+  };
+
+  const handleBulkIgnore = async () => {
+    if (!window.confirm(`Скрыть ${selectedIds.size} транзакций?`)) return;
+    const ids = Array.from(selectedIds);
+    setTransactions(prev => prev.filter(t => !selectedIds.has(t.id)));
+    setSelectedIds(new Set());
+    try {
+      await Promise.all(ids.map(id => {
+        const txRef = doc(db, 'bank_transactions', id);
+        return updateDoc(txRef, { status: 'ignored', updatedAt: serverTimestamp() });
+      }));
+    } catch (e) {
+      setErrorMsg('Ошибка скрытия: ' + (e as Error).message);
+      await fetchData();
+    }
+  };
+
+  const handleRestore = async (id: string) => {
+    setTransactions(prev => prev.filter(t => t.id !== id));
+    try {
+      const txRef = doc(db, 'bank_transactions', id);
+      await updateDoc(txRef, { status: 'draft', updatedAt: serverTimestamp() });
+    } catch (e) {
+      setErrorMsg('Ошибка восстановления: ' + (e as Error).message);
+      await fetchData();
     }
   };
 
@@ -626,9 +669,10 @@ const ReconciliationPage: React.FC = () => {
       <Box display="flex" justifyContent="space-between" alignItems="center" mb={2} flexWrap="wrap" gap={2}>
         <Box display="flex" alignItems="center" gap={2}>
           <Typography variant="h4" fontWeight="bold">Reconciliation Hub</Typography>
-          <Select size="small" value={view} onChange={e => { setView(e.target.value as 'draft' | 'approved'); setSelectedIds(new Set()); }} sx={{ minWidth: 200, bgcolor: 'white' }}>
+          <Select size="small" value={view} onChange={e => { setView(e.target.value as 'draft' | 'approved' | 'ignored'); setSelectedIds(new Set()); }} sx={{ minWidth: 200, bgcolor: 'white' }}>
             <MenuItem value="draft">⏳ Черновики (Draft)</MenuItem>
             <MenuItem value="approved">✅ Утвержденные</MenuItem>
+            <MenuItem value="ignored">🚫 Скрытые</MenuItem>
           </Select>
         </Box>
         <Box display="flex" alignItems="center" gap={1}>
@@ -792,6 +836,9 @@ const ReconciliationPage: React.FC = () => {
           <Button size="small" variant="contained" color="success" onClick={handleApproveSelected} disabled={submitting}>
             ✅ Утвердить ({selectedIds.size})
           </Button>
+          <Button size="small" variant="outlined" color="warning" startIcon={<VisibilityOffIcon />} onClick={handleBulkIgnore} disabled={submitting}>
+            Скрыть ({selectedIds.size})
+          </Button>
           <Button size="small" variant="text" onClick={() => setSelectedIds(new Set())}>Сбросить</Button>
         </Paper>
       )}
@@ -913,7 +960,7 @@ const ReconciliationPage: React.FC = () => {
                   </TableCell>
                   {/* Type */}
                   <TableCell>
-                    <Select size="small" value={t.paymentType || 'cash'} onChange={e => handleUpdate(t.id, 'paymentType', e.target.value)} sx={{ minWidth: 90, fontSize: '0.8rem', bgcolor: 'white' }} disabled={view === 'approved' || isInlineApproved}>
+                    <Select size="small" value={t.paymentType || 'cash'} onChange={e => handleUpdate(t.id, 'paymentType', e.target.value)} sx={{ minWidth: 90, fontSize: '0.8rem', bgcolor: 'white' }} disabled={view !== 'draft' || isInlineApproved}>
                       <MenuItem value="company">🏢 Комп.</MenuItem>
                       <MenuItem value="cash">💵 Личн.</MenuItem>
                     </Select>
@@ -930,7 +977,7 @@ const ReconciliationPage: React.FC = () => {
                           handleUpdate(t.id, 'employeeName', emp?.name || null);
                         }}
                         displayEmpty
-                        disabled={view === 'approved' || isInlineApproved}
+                        disabled={view !== 'draft' || isInlineApproved}
                         sx={{ minWidth: 110, fontSize: '0.75rem', bgcolor: 'white' }}
                       >
                         <MenuItem value=""><em>—</em></MenuItem>
@@ -945,17 +992,17 @@ const ReconciliationPage: React.FC = () => {
                     <CategoryChipPicker
                       value={t.categoryId || 'other'}
                       onChange={(val) => handleUpdate(t.id, 'categoryId', val)}
-                      disabled={view === 'approved' || isInlineApproved}
+                      disabled={view !== 'draft' || isInlineApproved}
                     />
                   </TableCell>
                   {/* Project */}
                   <TableCell>
-                    <Select size="small" value={t.projectId || ''} onChange={e => handleUpdate(t.id, 'projectId', e.target.value)} disabled={t.paymentType !== 'company' || view === 'approved' || isInlineApproved} displayEmpty sx={{ minWidth: 140, fontSize: '0.8rem', bgcolor: 'white' }}>
+                    <Select size="small" value={t.projectId || ''} onChange={e => handleUpdate(t.id, 'projectId', e.target.value)} disabled={t.paymentType !== 'company' || view !== 'draft' || isInlineApproved} displayEmpty sx={{ minWidth: 140, fontSize: '0.8rem', bgcolor: 'white' }}>
                       <MenuItem value=""><em>—</em></MenuItem>
                       {projects.map(p => <MenuItem key={p.id} value={p.id}>{p.name}</MenuItem>)}
                     </Select>
                   </TableCell>
-                  {/* Actions: ✓ approve / undo / split */}
+                  {/* Actions: ✓ approve / undo / hide / restore */}
                   <TableCell align="center">
                     {view === 'approved' ? (
                       <Box display="flex" alignItems="center" justifyContent="center" gap={0.5}>
@@ -971,6 +1018,12 @@ const ReconciliationPage: React.FC = () => {
                           <span><Button size="small" color="error" onClick={() => handleUndo(t.id)} disabled={submitting} sx={{ minWidth: 'auto', p: 0.3 }}><UndoIcon fontSize="small" /></Button></span>
                         </Tooltip>
                       </Box>
+                    ) : view === 'ignored' ? (
+                      <Tooltip title="Восстановить в черновики">
+                        <IconButton size="small" color="primary" onClick={() => handleRestore(t.id)}>
+                          <RestoreIcon fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
                     ) : isInlineApproved ? (
                       <Tooltip title="✅ Утверждено">
                         <VerifiedIcon color="success" fontSize="small" />
@@ -980,13 +1033,15 @@ const ReconciliationPage: React.FC = () => {
                         <Tooltip title="Утвердить">
                           <Checkbox size="small" checked={false} onChange={() => handleApproveSingle(t.id)} icon={<VerifiedIcon color="disabled" />} checkedIcon={<VerifiedIcon color="success" />} disabled={submitting} sx={{ p: 0.3 }} />
                         </Tooltip>
+                        <Tooltip title="Скрыть">
+                          <IconButton size="small" onClick={() => handleIgnore(t.id)} sx={{ p: 0.3 }}>
+                            <VisibilityOffIcon fontSize="small" color="disabled" />
+                          </IconButton>
+                        </Tooltip>
                         <Tooltip title="Заметка">
                           <IconButton size="small" onClick={() => setNoteDrawerTxId(t.id)} sx={{ p: 0.3 }}>
                             {t.note ? <ChatBubbleIcon fontSize="small" color="info" /> : <ChatBubbleOutlineIcon fontSize="small" color="disabled" />}
                           </IconButton>
-                        </Tooltip>
-                        <Tooltip title="Разделить">
-                          <span><Button size="small" onClick={() => handleSplit(t.id)} disabled={submitting} sx={{ minWidth: 'auto', p: 0.3, fontSize: '0.85rem' }}>✂️</Button></span>
                         </Tooltip>
                       </Box>
                     )}

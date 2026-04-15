@@ -297,10 +297,13 @@ async function handleMessage(message: any) {
         if (activeSession && activeSession.data().awaitingLocation) {
             await activeSession.ref.update({
                 awaitingLocation: false,
+                awaitingChecklist: true,
+                checklistStep: 0,
+                checklistAnswers: {},
                 startLocation: null
             });
-            await sendMessage(chatId, "⏩ Локация пропущена. Смена активна!");
-            await sendMainMenu(chatId, userId);
+            await sendMessage(chatId, "⏩ Локация пропущена.\n\n📋 Пройди чеклист перед началом работы:");
+            await sendChecklistQuestion(chatId, 0);
         } else {
             // Normal media skip flow
             await handleSkipMedia(chatId, userId);
@@ -850,22 +853,19 @@ async function initWorkSession(chatId: number, userId: number, clientId: string,
         }, { merge: true });
     }
 
-    // 4. Create Session (Pending Location)
-    // Use Timestamp.now() instead of serverTimestamp() to avoid race condition:
-    // getActiveSession() queries with orderBy('startTime') — serverTimestamp sentinel
-    // value may not be resolved yet, causing "Ты не на смене" ghost message.
+    // 4. Create Session — immediately active (simplified flow)
     const sessionRef = await db.collection('work_sessions').add({
         employeeId: userId,
         employeeName: employeeName,
-        platformUserId: platformUserId, // Link to platform user
-        companyId: companyId,           // Link to company
+        platformUserId: platformUserId,
+        companyId: companyId,
         clientId: clientId,
         clientName: clientName,
-        startTime: admin.firestore.Timestamp.now(),
+        startTime: admin.firestore.Timestamp.now(), // Use Timestamp.now() to avoid race condition
         status: 'active',
         service: serviceName || null,
-        awaitingLocation: true,
-        hourlyRate: hourlyRate, // Snapshot rate
+        awaitingLocation: true, // Still ask for location (anti-fraud) but session is running
+        hourlyRate: hourlyRate,
         taskId: null,
         taskTitle: null
     });
@@ -1136,20 +1136,18 @@ async function handleLocationConfirmStart(chatId: number, userId: number) {
     // value may not be resolved yet, causing "Ты не на смене" ghost message.
     const sessionStartTime = admin.firestore.Timestamp.now();
 
-    const fullClientName = serviceName ? `${clientName} - ${serviceName}` : clientName;
-
+    // Simplified flow: session is IMMEDIATELY active — no mandatory checklist/photo/voice
     await db.collection('work_sessions').add({
         employeeId: userId,
         employeeName: employeeName,
         platformUserId: platformUserId,
         companyId: companyId,
         clientId: clientId,
-        clientName: fullClientName,
+        clientName: serviceName ? `${clientName} - ${serviceName}` : clientName,
         startTime: sessionStartTime,
         status: 'active',
         service: serviceName || null,
         startLocation: location,
-        awaitingLocation: false,
         hourlyRate: hourlyRate,
         taskId: null,
         taskTitle: null
@@ -1159,19 +1157,22 @@ async function handleLocationConfirmStart(chatId: number, userId: number) {
 
     // ─── hourlyRate = 0 warning ───
     if (!hourlyRate) {
-        await sendMessage(chatId, '⚠️ Внимание! Ваша почасовая ставка не установлена ($0/ч). Пожалуйста, свяжитесь с руководителем для уточнения.');
+        await sendMessage(chatId, '⚠️ Ставка не установлена ($0/ч). Свяжись с руководителем.');
     }
 
+    const displayName = serviceName ? `${clientName} - ${serviceName}` : clientName;
     await sendMessage(chatId,
         `✅ *Смена начата!*\n\n` +
-        `🏢 Объект: *${fullClientName}*\n` +
-        `⏱ Таймер запущен. Работаем!`
+        `🏢 Объект: *${displayName}*\n` +
+        `💵 Ставка: $${hourlyRate}/ч\n\n` +
+        `📸 _Можешь отправить фото с объекта_\n` +
+        `🎙 _Или голосовое — что планируешь делать_`
     );
 
-    // Immediately show work menu — worker can start right away
+    // Show work menu immediately — worker can start
     await sendMainMenu(chatId, userId);
 
-    await sendAdminNotification(`👤 *${employeeName}:*\n▶️ *Work Started (Location)*\n📍 ${clientName}`);
+    await sendAdminNotification(`👤 *${employeeName}:*\n▶️ *Work Started (Location)*\n📍 ${displayName}`);
 }
 
 /**
@@ -1307,6 +1308,7 @@ async function handleLocationNewClient(chatId: number, userId: number, clientId:
     // Use Timestamp.now() instead of serverTimestamp() — see comment in handleLocationConfirmStart
     const sessionStartTime = admin.firestore.Timestamp.now();
 
+    // Simplified flow: session IMMEDIATELY active
     await db.collection('work_sessions').add({
         employeeId: userId,
         employeeName: employeeName,
@@ -1317,7 +1319,6 @@ async function handleLocationNewClient(chatId: number, userId: number, clientId:
         startTime: sessionStartTime,
         status: 'active',
         startLocation: location,
-        awaitingLocation: false,
         hourlyRate: hourlyRate,
         taskId: null,
         taskTitle: null
@@ -1325,22 +1326,21 @@ async function handleLocationNewClient(chatId: number, userId: number, clientId:
 
     await pendingStartRef.delete();
 
-    // ─── hourlyRate = 0 warning ───
     if (!hourlyRate) {
-        await sendMessage(chatId, '⚠️ Внимание! Ваша почасовая ставка не установлена ($0/ч). Пожалуйста, свяжитесь с руководителем для уточнения.');
+        await sendMessage(chatId, '⚠️ Ставка не установлена ($0/ч). Свяжись с руководителем.');
     }
 
     await sendMessage(chatId,
         `✅ *Смена начата!*\n\n` +
         `🏢 Объект: *${clientName}*\n` +
-        `📍 Координаты объекта сохранены в базу.\n` +
-        `⏱ Таймер запущен. Работаем!`
+        `💵 Ставка: $${hourlyRate}/ч\n` +
+        `📍 Координаты объекта сохранены.\n\n` +
+        `📸 _Можешь отправить фото с объекта_\n` +
+        `🎙 _Или голосовое — что планируешь делать_`
     );
 
-    // Immediately show work menu — worker can start right away
     await sendMainMenu(chatId, userId);
-
-    await sendAdminNotification(`👤 *${employeeName}:*\n▶️ *Work Started (New DB Location)*\n📍 ${clientName}`);
+    await sendAdminNotification(`👤 *${employeeName}:*\n▶️ *Work Started (New Location)*\n📍 ${clientName}`);
 }
 
 async function pauseWorkSession(chatId: number, userId: number) {
@@ -1762,10 +1762,14 @@ async function handleText(chatId: number, userId: number, text: string) {
             companyId: companyId,
             clientId: 'custom',
             clientName: text,
-            startTime: admin.firestore.Timestamp.now(),
+            startTime: admin.firestore.FieldValue.serverTimestamp(),
             status: 'active',
             startLocation: location,
             awaitingLocation: false,
+            awaitingChecklist: true,
+            checklistStep: 0,
+            checklistAnswers: {},
+            awaitingStartPhoto: false,
             hourlyRate: hourlyRate,
             taskId: null,
             taskTitle: null
@@ -1773,9 +1777,9 @@ async function handleText(chatId: number, userId: number, text: string) {
 
         await pendingStartRef.delete();
         await sendMessage(chatId,
-            `✅ *Смена начата!*\n\n🏢 Объект: *${text}* (ручной ввод)\n⏱ Таймер запущен. Работаем!`
+            `✅ *Смена начата!*\n\n🏢 Объект: *${text}* (ручной ввод)\n\n📋 Пройди чеклист перед началом работы:`
         );
-        await sendMainMenu(chatId, userId);
+        await sendChecklistQuestion(chatId, 0);
         await sendAdminNotification(`👤 *${employeeName}:*\n▶️ *Work Started (Manual)*\n📍 ${text}`);
         return;
     }

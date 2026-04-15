@@ -10,7 +10,7 @@ const TIME_ZONE = 'America/New_York';
 
 export const generateDailyPayroll = functions.pubsub.schedule('0 4 * * *') // Every day at 4:00 AM Florida time
     .timeZone(TIME_ZONE)
-    .onRun(async (context) => {
+    .onRun(async (_context) => {
         console.log('💰 Running generateDailyPayroll...');
 
         const now = admin.firestore.Timestamp.now();
@@ -28,6 +28,12 @@ export const generateDailyPayroll = functions.pubsub.schedule('0 4 * * *') // Ev
         const yesterday = fromZonedTime(startOfYesterdayFlorida, TIME_ZONE);
         const endOfYesterday = fromZonedTime(endOfYesterdayFlorida, TIME_ZONE);
 
+        // Idempotency key: one payroll run per calendar day (Florida)
+        const y = yesterdayFlorida.getFullYear();
+        const m = String(yesterdayFlorida.getMonth() + 1).padStart(2, '0');
+        const d = String(yesterdayFlorida.getDate()).padStart(2, '0');
+        const payrollDateKey = `${y}-${m}-${d}`;
+
         // 2. Fetch Completed/Auto-Closed Sessions for Yesterday (Florida time)
         // We use 'endTime' to determine which day the money belongs to
         const startTimestamp = admin.firestore.Timestamp.fromDate(yesterday);
@@ -37,8 +43,19 @@ export const generateDailyPayroll = functions.pubsub.schedule('0 4 * * *') // Ev
         console.log(`📅 Florida Now: ${nowInFlorida.toString()}`);
         console.log(`📅 Yesterday Florida: ${startOfYesterdayFlorida.toString()} — ${endOfYesterdayFlorida.toString()}`);
         console.log(`📅 Query Range (UTC): ${yesterday.toISOString()} — ${endOfYesterday.toISOString()}`);
+        console.log(`📅 Payroll date key: ${payrollDateKey}`);
 
         try {
+            // ── Idempotency guard ────────────────────────────────────
+            const idempRef = db.collection('payroll_runs').doc(payrollDateKey);
+            const idempSnap = await idempRef.get();
+
+            if (idempSnap.exists) {
+                console.log(`⚠️ Payroll for ${payrollDateKey} already processed. Skipping.`);
+                return null;
+            }
+
+            // ── Query sessions ───────────────────────────────────────
             const sessionsSnapshot = await db.collection('work_sessions')
                 .where('status', 'in', ['completed', 'auto_closed'])
                 .where('endTime', '>=', startTimestamp)
@@ -47,6 +64,14 @@ export const generateDailyPayroll = functions.pubsub.schedule('0 4 * * *') // Ev
 
             if (sessionsSnapshot.empty) {
                 console.log('✅ No completed sessions found for yesterday.');
+                // Still mark as processed so we don't retry
+                await idempRef.set({
+                    date: payrollDateKey,
+                    processedAt: now,
+                    sessionsProcessed: 0,
+                    ledgerEntriesCreated: 0,
+                    sessionEarningsUpdated: 0,
+                });
                 return null;
             }
 
@@ -86,9 +111,13 @@ export const generateDailyPayroll = functions.pubsub.schedule('0 4 * * *') // Ev
                 }
             });
 
-            // 4. Calculate Paroll & Create Ledger Entries
-            const batch = db.batch();
-            let operationsCount = 0;
+            // 4. Calculate Payroll & Create Ledger Entries
+            // Firestore batch limit = 500 operations. Split if needed.
+            const MAX_BATCH_OPS = 450; // leave headroom
+            let batch = db.batch();
+            let batchOps = 0;
+            let ledgerCount = 0;
+            let earningsUpdated = 0;
 
             for (const doc of sessionsSnapshot.docs) {
                 const session = doc.data();
@@ -103,9 +132,10 @@ export const generateDailyPayroll = functions.pubsub.schedule('0 4 * * *') // Ev
                 // Create Ledger Entry
                 const ledgerRef = db.collection('payroll_ledger').doc();
                 batch.set(ledgerRef, {
-                    type: 'work_session', // vs 'adjustment'
-                    date: admin.firestore.Timestamp.fromDate(yesterday), // The day work was done
+                    type: 'work_session',
+                    date: admin.firestore.Timestamp.fromDate(yesterday),
                     processedAt: now,
+                    payrollDate: payrollDateKey,
 
                     employeeId: session.employeeId,
                     employeeName: session.employeeName,
@@ -119,14 +149,47 @@ export const generateDailyPayroll = functions.pubsub.schedule('0 4 * * *') // Ev
                     hourlyRate: rate,
                     amount: totalAmount,
 
-                    description: `Shift at ${session.clientName}`
+                    description: `Shift at ${session.clientName || 'Unknown'}`,
                 });
+                batchOps++;
+                ledgerCount++;
 
-                operationsCount++;
+                // Safety net: update sessionEarnings on the work_session if it's
+                // missing or zero (e.g., auto_closed sessions, or sessions where
+                // the bot failed to calculate earnings).
+                const existingEarnings = session.sessionEarnings || 0;
+                if (existingEarnings === 0 && totalAmount > 0) {
+                    batch.update(doc.ref, {
+                        sessionEarnings: totalAmount,
+                        sessionEarningsSource: 'payroll_backfill',
+                    });
+                    batchOps++;
+                    earningsUpdated++;
+                }
+
+                // Commit batch if approaching limit
+                if (batchOps >= MAX_BATCH_OPS) {
+                    await batch.commit();
+                    batch = db.batch();
+                    batchOps = 0;
+                }
             }
 
-            await batch.commit();
-            console.log(`✅ Generated payroll: ${operationsCount} records created.`);
+            // Commit remaining operations
+            if (batchOps > 0) {
+                await batch.commit();
+            }
+
+            // 5. Mark payroll run as completed (idempotency)
+            await idempRef.set({
+                date: payrollDateKey,
+                processedAt: now,
+                sessionsProcessed: sessionsSnapshot.size,
+                ledgerEntriesCreated: ledgerCount,
+                sessionEarningsUpdated: earningsUpdated,
+            });
+
+            console.log(`✅ Generated payroll for ${payrollDateKey}: ${ledgerCount} ledger records, ${earningsUpdated} sessionEarnings backfilled.`);
 
         } catch (error) {
             console.error('❌ Error generating payroll:', error);

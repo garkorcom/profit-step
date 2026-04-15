@@ -21,6 +21,7 @@ export const ListTasksQuerySchema = z.object({
   clientId: z.string().min(1).optional(),
   clientIds: z.string().min(1).optional(), // comma-separated, max 10 (Firestore 'in' limit)
   clientName: z.string().min(2).optional(),
+  projectId: z.string().min(1).optional(),
   status: z.string().optional(),
   assigneeId: z.string().optional(),
   priority: z.enum(['high', 'medium', 'low', 'none']).optional(),

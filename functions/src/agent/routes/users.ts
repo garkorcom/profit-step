@@ -408,4 +408,72 @@ router.post('/api/bot/notify', async (req, res, next) => {
   }
 });
 
+// ─── POST /api/users/migrate-multi-user ─────────────────────────────
+// One-time migration: add status='active' to users, type='master' to agent_tokens.
+// Master Token only. Safe to run multiple times (idempotent).
+
+router.post('/api/users/migrate-multi-user', async (req, res, next) => {
+  try {
+    if (req.agentTokenType !== 'master') {
+      res.status(403).json({ error: 'Master Token required' });
+      return;
+    }
+
+    const dryRun = req.query.dryRun === 'true';
+    const results: { users: { total: number; updated: number; skipped: number; names: string[] }; tokens: { total: number; updated: number; skipped: number } } = {
+      users: { total: 0, updated: 0, skipped: 0, names: [] },
+      tokens: { total: 0, updated: 0, skipped: 0 },
+    };
+
+    // Migration 1: users.status
+    const usersSnap = await db.collection('users').get();
+    results.users.total = usersSnap.size;
+    const batch = db.batch();
+
+    for (const userDoc of usersSnap.docs) {
+      const data = userDoc.data();
+      if (data.status) {
+        results.users.skipped++;
+        continue;
+      }
+      results.users.names.push(`${userDoc.id} (${data.displayName || data.name || '?'})`);
+      if (!dryRun) {
+        batch.update(userDoc.ref, { status: 'active' });
+      }
+      results.users.updated++;
+    }
+
+    if (!dryRun && results.users.updated > 0) {
+      await batch.commit();
+    }
+
+    // Migration 2: agent_tokens.type
+    const tokensSnap = await db.collection('agent_tokens').get();
+    results.tokens.total = tokensSnap.size;
+
+    for (const tokenDoc of tokensSnap.docs) {
+      const data = tokenDoc.data();
+      if (data.type) {
+        results.tokens.skipped++;
+        continue;
+      }
+      if (!dryRun) {
+        await tokenDoc.ref.update({ type: 'master' });
+      }
+      results.tokens.updated++;
+    }
+
+    logger.info('🔄 migrate-multi-user', { dryRun, users: results.users.updated, tokens: results.tokens.updated });
+
+    res.json({
+      dryRun,
+      ...results,
+      message: dryRun ? 'Dry run — no writes made' : 'Migration complete',
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
+
 export default router;

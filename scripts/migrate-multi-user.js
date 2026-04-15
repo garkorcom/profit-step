@@ -16,9 +16,18 @@
 const admin = require('firebase-admin');
 
 const DRY_RUN = process.argv.includes('--dry-run');
+const PROJECT_ID = 'profit-step';
 
 if (!admin.apps.length) {
-  admin.initializeApp();
+  // Try service account first, then fall back to gcloud ADC
+  try {
+    const sa = require('../serviceAccountKey.json');
+    admin.initializeApp({ credential: admin.credential.cert(sa), projectId: PROJECT_ID });
+    console.log('Auth: serviceAccountKey.json');
+  } catch {
+    admin.initializeApp({ projectId: PROJECT_ID });
+    console.log('Auth: Application Default Credentials (gcloud)');
+  }
 }
 const db = admin.firestore();
 

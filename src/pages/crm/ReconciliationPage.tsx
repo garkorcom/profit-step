@@ -42,7 +42,7 @@ const COST_CATEGORY_LABELS: Record<string, string> = {
   other: '📦 Прочее',
 };
 
-type QuickFilter = 'all' | 'tampa' | 'company' | 'personal' | 'unassigned' | 'fuel';
+type QuickFilter = 'all' | 'tampa' | 'company' | 'personal' | 'unassigned' | 'fuel' | 'duplicates';
 type SortField = 'date' | 'amount' | 'cleanMerchant' | 'categoryId';
 type SortDir = 'asc' | 'desc';
 
@@ -554,6 +554,23 @@ const ReconciliationPage: React.FC = () => {
     [transactions]
   );
 
+  /** Detect potential duplicates: same date + same absolute amount */
+  const duplicateIds = useMemo(() => {
+    const groups = new Map<string, string[]>();
+    enrichedTransactions.forEach(t => {
+      const d = toDate(t.date);
+      const key = d
+        ? `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}|${Math.abs(t.amount).toFixed(2)}`
+        : `?|${Math.abs(t.amount).toFixed(2)}`;
+      const arr = groups.get(key) || [];
+      arr.push(t.id);
+      groups.set(key, arr);
+    });
+    const ids = new Set<string>();
+    groups.forEach(arr => { if (arr.length > 1) arr.forEach(id => ids.add(id)); });
+    return ids;
+  }, [enrichedTransactions]);
+
   const availableMonths = useMemo(() => {
     const months = new Set<string>();
     enrichedTransactions.forEach(t => { const mk = getMonthKey(t.date); if (mk) months.add(mk); });
@@ -576,8 +593,9 @@ const ReconciliationPage: React.FC = () => {
       personal: calc(monthFilteredTransactions.filter(t => t.paymentType !== 'company')),
       fuel: calc(monthFilteredTransactions.filter(t => isFuelTransaction(t))),
       unassigned: calc(monthFilteredTransactions.filter(t => t.paymentType === 'company' && !t.projectId)),
+      duplicates: calc(monthFilteredTransactions.filter(t => duplicateIds.has(t.id))),
     };
-  }, [monthFilteredTransactions]);
+  }, [monthFilteredTransactions, duplicateIds]);
 
   const filteredTransactions = useMemo(() => {
     let result = enrichedTransactions;
@@ -605,6 +623,7 @@ const ReconciliationPage: React.FC = () => {
     else if (quickFilter === 'personal') result = result.filter(t => t.paymentType !== 'company');
     else if (quickFilter === 'fuel') result = result.filter(t => isFuelTransaction(t));
     else if (quickFilter === 'unassigned') result = result.filter(t => t.paymentType === 'company' && !t.projectId);
+    else if (quickFilter === 'duplicates') result = result.filter(t => duplicateIds.has(t.id));
 
     // Sort
     result = [...result].sort((a, b) => {
@@ -622,7 +641,7 @@ const ReconciliationPage: React.FC = () => {
     });
 
     return result;
-  }, [enrichedTransactions, quickFilter, filterMonth, searchQuery, amountMin, amountMax, sortField, sortDir]);
+  }, [enrichedTransactions, quickFilter, filterMonth, searchQuery, amountMin, amountMax, sortField, sortDir, duplicateIds]);
 
   // Summary from FILTERED data (reacts to filters)
   const summaryData = useMemo(() => {
@@ -884,6 +903,11 @@ const ReconciliationPage: React.FC = () => {
                 <ToggleButton value="personal">👤 Личн. ({filterStats.personal.count})</ToggleButton>
                 <ToggleButton value="fuel">⛽ Топливо ({filterStats.fuel.count})</ToggleButton>
                 <ToggleButton value="unassigned">❓ Без кат. ({filterStats.unassigned.count})</ToggleButton>
+                {filterStats.duplicates.count > 0 && (
+                  <ToggleButton value="duplicates" sx={{ color: 'warning.main' }}>
+                    ⚠️ Дубли ({filterStats.duplicates.count})
+                  </ToggleButton>
+                )}
               </ToggleButtonGroup>
             </Box>
           )}
@@ -1005,9 +1029,14 @@ const ReconciliationPage: React.FC = () => {
                           )}
                           <Typography variant="body2" fontWeight="bold" noWrap>{t.cleanMerchant}</Typography>
                         </Box>
-                        {loc && (
-                          <Chip label={loc} size="small" color={isTampa ? 'warning' : 'default'} variant={isTampa ? 'filled' : 'outlined'} sx={{ fontSize: '0.65rem', height: 18, mt: 0.3 }} />
-                        )}
+                        <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', mt: 0.3 }}>
+                          {loc && (
+                            <Chip label={loc} size="small" color={isTampa ? 'warning' : 'default'} variant={isTampa ? 'filled' : 'outlined'} sx={{ fontSize: '0.65rem', height: 18 }} />
+                          )}
+                          {duplicateIds.has(t.id) && (
+                            <Chip label="Дубль?" size="small" color="warning" variant="filled" sx={{ fontSize: '0.65rem', height: 18, fontWeight: 'bold' }} />
+                          )}
+                        </Box>
                       </Box>
                     </Tooltip>
                   </TableCell>

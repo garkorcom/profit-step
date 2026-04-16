@@ -1,5 +1,9 @@
 # Profit Step API — Доработки и рекомендации
 
+> ⚠️ **LEGACY (2026-04-02, API v4.2.0).** Актуальная документация API v4.5.0:
+> [`docs/CRM_API_GUIDE.md`](../docs/CRM_API_GUIDE.md) и live spec
+> https://profit-step.web.app/api/docs/spec.json
+
 > Глубокий аудит системы на основе ревью ~4200 строк кода API, middleware,
 > helpers, cron jobs, и результатов 99 тестов.
 > Дата анализа: **2026-04-02** | Фаза 1 ✅ | Фаза 2 ✅ | Фаза 3 ✅

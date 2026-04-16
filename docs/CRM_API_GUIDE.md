@@ -1,9 +1,11 @@
 # CRM Profit Step — Agent API Reference
 
-**Version:** 4.4.0  
-**Date:** 15 April 2026  
+**Version:** 4.5.0  
+**Date:** 16 April 2026  
 **Base URL:** `https://profit-step.web.app/api/`  
-**Direct Function URL:** `https://us-central1-profit-step.cloudfunctions.net/agentApi/api/`
+**Direct Function URL:** `https://us-central1-profit-step.cloudfunctions.net/agentApi/api/`  
+**Live OpenAPI spec:** `https://profit-step.web.app/api/docs/spec.json` (always canonical)  
+**Agent system prompt:** [`AI_ASSISTANT_BOT_PROMPT.md`](./AI_ASSISTANT_BOT_PROMPT.md)
 
 ---
 

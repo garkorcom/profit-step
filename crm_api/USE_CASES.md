@@ -1,5 +1,9 @@
 # 50 Use Cases — Profit Step API на стройплощадке
 
+> ⚠️ **LEGACY (2026-04-02, API v4.2.0).** Актуальные сценарии см. в
+> [`docs/AI_ASSISTANT_BOT_PROMPT.md`](../docs/AI_ASSISTANT_BOT_PROMPT.md) и live spec
+> https://profit-step.web.app/api/docs/spec.json
+
 > Реальные сценарии использования API агентами (OpenClaw), ботами (Telegram) и интеграциями на строительных объектах.
 
 ---

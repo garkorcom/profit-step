@@ -1,8 +1,13 @@
 # OpenClaw Agent Integration Guide — Profit Step CRM API
 
-> **Version:** 5.0.0 | **Updated:** 2026-04-13 | **API Version:** 4.3.0  
-> **Live Swagger UI:** https://profit-step.web.app/api/docs  
+> **Version:** 5.1.0 | **Updated:** 2026-04-16 | **API Version:** 4.5.0
+> **Live Swagger UI:** https://profit-step.web.app/api/docs
 > **Spec JSON:** https://profit-step.web.app/api/docs/spec.json
+> **Auth canonical reference:** [`docs/AI_ASSISTANT_BOT_PROMPT.md`](./docs/AI_ASSISTANT_BOT_PROMPT.md)
+>
+> Auth section (§2) verified against prod `agentMiddleware.ts` on 2026-04-16 — only
+> two modes exist: static master token (`AGENT_API_KEY`) and Firebase Auth JWT.
+> Any mention of per-employee 40-hex tokens elsewhere in the repo is outdated.
 
 ---
 

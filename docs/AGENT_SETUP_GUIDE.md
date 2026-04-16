@@ -57,50 +57,67 @@ curl https://us-central1-profit-step.cloudfunctions.net/agentApi/api/health
 ### First authenticated request
 
 ```bash
-export PROFIT_STEP_TOKEN="your-40-hex-token-here"
+# Master token = value of AGENT_API_KEY on the backend (ask Denis)
+export PROFIT_STEP_TOKEN="<master-token-from-denis>"
 
 curl -H "Authorization: Bearer $PROFIT_STEP_TOKEN" \
      -H "Content-Type: application/json" \
-     https://us-central1-profit-step.cloudfunctions.net/agentApi/api/events/types
+     https://profit-step.web.app/api/dashboard
 ```
 
-If you see event types — you're in. If you get 401 — check the token section below.
+If you see dashboard JSON — you're in. If you get 401 — token is wrong or unset. See [`AI_ASSISTANT_BOT_PROMPT.md`](./AI_ASSISTANT_BOT_PROMPT.md) for details.
 
 ---
 
 ## 2. Authentication
 
-The API supports **3 authentication modes**. For remote agents, you'll use mode 3.
+> **Verified against prod code on 2026-04-16** — `agentMiddleware.ts` at `functions/src/agent/agentMiddleware.ts:58-145`.
+>
+> Earlier versions of this guide described a third "Per-employee token" mode backed
+> by an `agent_tokens` collection. **That mode is not wired into the middleware.**
+> There is migration code for the collection (`POST /api/users/migrate-multi-user`),
+> but the auth layer only checks the two modes below. Tokens created via the old
+> admin UI will return 401 until the feature is finished.
 
-| Mode | Who Uses It | Token Format | Access Level |
+The API supports **2 authentication modes**, both using the same header:
+
+```
+Authorization: Bearer <token>
+```
+
+| Mode | Who Uses It | Token Source | Access Level |
 |------|-------------|--------------|--------------|
-| **Static API Key** | Server-to-server, legacy | `AGENT_API_KEY` from env | Full admin |
-| **Firebase JWT** | Browser / React frontend | Firebase ID token | Full admin |
-| **Per-employee token** | **AI agents (you)** | 40 hex chars | Scoped (RBAC) |
+| **Static master token** | Server-to-server, AI agents, bots (OpenClaw, `@crmapiprofit_bot`, etc.) | Value of `AGENT_API_KEY` env var on Firebase Functions | Full admin |
+| **Firebase JWT** | Browser / React frontend | `getIdToken()` from Firebase Auth | Full admin (for logged-in users) |
 
 ### How it works
 
 ```
 Your Agent → HTTP Request
                ↓
-         Authorization: Bearer <40-hex-token>
+         Authorization: Bearer <token>
                ↓
          agentMiddleware.ts validates:
-           1. Token exists in `agent_tokens` collection
-           2. Token not expired (expiresAt > now)
-           3. Token not revoked (revokedAt == null)
+           IF token === process.env.AGENT_API_KEY  → master
+           ELSE admin.auth().verifyIdToken(token)  → JWT
+           ELSE 401 "Invalid authorization token"
                ↓
          Sets on request:
-           req.agentUserId    = employee Firebase UID
-           req.agentUserName  = employee name
-           req.agentScopes    = ['tasks:read', 'tasks:write', ...]
-           req.agentRole      = 'user' | 'manager' | 'admin'
-           req.agentTokenId   = token document ID
+           req.agentUserId    = OWNER_UID (master) or decoded.uid (JWT)
+           req.agentUserName  = OWNER_DISPLAY_NAME or decoded.name
+           req.agentTokenType = 'master' | 'jwt'
+           req.effectiveRole  = 'admin' (both modes default to admin)
                ↓
          Rate limit check (60 req/min)
                ↓
-         Route handler (scope check → business logic)
+         Route handler (business logic)
 ```
+
+### Acting as another user (master token only)
+
+A request with the master token may include `X-Impersonate-User: <firebaseUid>` to
+act on behalf of that user. The middleware loads the user's role/scopes/team and
+populates `req.effective*` fields. JWT mode ignores this header.
 
 ### Headers — Every Request
 
@@ -119,52 +136,58 @@ X-Idempotency-Key: <uuid>  # Prevents duplicate creates
 
 ## 3. Getting Your Token
 
-### Option A: Ask Denis (admin)
+### Ask Denis for the master token
 
-Denis creates tokens via the admin API or Firebase Console:
-
-```bash
-# Admin creates token for employee
-curl -X POST \
-  -H "Authorization: Bearer <admin-token>" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "employeeId": "<firebase-uid>",
-    "scopes": ["tasks:read", "tasks:write", "time:read", "time:write",
-               "inventory:read", "inventory:write", "events:read"],
-    "label": "AI Agent — MacBook Remote",
-    "expiresInDays": 90
-  }' \
-  https://us-central1-profit-step.cloudfunctions.net/agentApi/api/agent-tokens
-```
-
-Response:
-```json
-{
-  "tokenId": "abc123...",
-  "token": "a1b2c3d4e5f6...40hex...",   // <-- SAVE THIS. Shown ONCE.
-  "webhookSecret": "def456...",           // For webhook HMAC signing
-  "expiresAt": "2026-07-12T00:00:00Z"
-}
-```
-
-**IMPORTANT:** The `token` value is shown **only once** at creation. Save it immediately.
-
-### Option B: Token Rotation
-
-If your token is compromised or expiring:
+The master token is the value of the `AGENT_API_KEY` environment variable on the
+Firebase Functions deployment. Denis can retrieve it via:
 
 ```bash
-curl -X POST \
-  -H "Authorization: Bearer <admin-token>" \
-  https://us-central1-profit-step.cloudfunctions.net/agentApi/api/agent-tokens/<tokenId>/rotate
+# On Denis's machine — reveals current master token
+firebase functions:config:get        # if still using functions.config()
+# or
+cat functions/.env                   # if migrated to dotenv
+# or check Firebase Console → Functions → Environment
 ```
 
-Returns a new token. Old one is immediately invalidated.
+Denis hands this value to you (via secure channel — 1Password, signal, etc.).
+Store it in your platform's secrets manager:
 
-### Available Scopes
+| Platform | Where to store |
+|---|---|
+| OpenClaw | Bot settings → Secrets → `PROFIT_STEP_TOKEN` |
+| Local dev | `export PROFIT_STEP_TOKEN="..."` in `.env` (gitignored) |
+| Cloud Run / other | Secret Manager or platform-native secret |
 
-| Scope | What It Allows |
+### Token rotation
+
+If the master token is leaked or you want to rotate it:
+
+```bash
+# Denis generates a new random token, e.g.:
+openssl rand -hex 32
+
+# Denis updates AGENT_API_KEY on Firebase and redeploys agentApi
+firebase functions:secrets:set AGENT_API_KEY         # then paste new value
+firebase deploy --only functions:agentApi
+
+# Denis distributes new token to all agent platforms
+```
+
+All clients using the old token will start getting 401 until updated.
+
+### Role and scope enforcement
+
+With only a master token, every call is treated as **admin** (full access).
+Individual route handlers do not currently enforce scopes — once you have the
+master token, you can call any endpoint.
+
+If/when per-employee tokens are finished, the scopes table below will apply. For
+now it is **aspirational documentation**, not enforced at runtime:
+
+<details>
+<summary>Planned RBAC scopes (not yet enforced)</summary>
+
+| Scope | What It Will Allow |
 |-------|---------------|
 | `tasks:read` | List/view GTD tasks |
 | `tasks:write` | Create/update/archive tasks |
@@ -186,6 +209,8 @@ Returns a new token. Old one is immediately invalidated.
 | `dashboard:read` | View dashboards |
 | `admin` | **Full access** (all of the above) |
 
+</details>
+
 ---
 
 ## 4. Python SDK
@@ -205,7 +230,7 @@ pip install httpx
 
 ```python
 import os
-os.environ["PROFIT_STEP_TOKEN"] = "your-40-hex-token"
+os.environ["PROFIT_STEP_TOKEN"] = "<master-token-from-denis>"
 # Optional: override URL
 # os.environ["PROFIT_STEP_API_URL"] = "https://..."
 
@@ -913,17 +938,17 @@ class SmartAgent:
 ## Environment Variables Summary (for `.env` on your machine)
 
 ```bash
-# Required
-PROFIT_STEP_TOKEN=your-40-hex-token-from-admin
+# Required — master token, value of AGENT_API_KEY on the Firebase Functions side
+PROFIT_STEP_TOKEN=<master-token-from-denis>
 
-# Optional
-PROFIT_STEP_API_URL=https://us-central1-profit-step.cloudfunctions.net/agentApi
+# Optional — override base URL
+PROFIT_STEP_API_URL=https://profit-step.web.app/api
 ```
 
 That's it. One token, one URL. Everything else is handled by the API.
 
 ---
 
-*Last updated: 2026-04-12*
-*CRM version: 4.2.0*
-*Guide version: 1.0*
+*Last updated: 2026-04-16 — auth sections rewritten to match actual middleware (removed fictional per-employee token mode)*
+*CRM version: 4.5.0*
+*Guide version: 2.0*

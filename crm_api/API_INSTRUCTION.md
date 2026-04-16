@@ -1,5 +1,19 @@
 # Profit Step CRM — API Reference
 
+> ⚠️ **LEGACY — этот файл зафиксирован на v4.2.0 (2026-04-02) и устарел.**
+>
+> **Актуальные источники правды (2026-04-16, API v4.5.0):**
+> - **Live OpenAPI spec** (всегда канон): https://profit-step.web.app/api/docs/spec.json
+> - **Human reference** (полный список endpoint'ов): [`docs/CRM_API_GUIDE.md`](../docs/CRM_API_GUIDE.md)
+> - **Для AI-ботов** (системный промпт с auth flow): [`docs/AI_ASSISTANT_BOT_PROMPT.md`](../docs/AI_ASSISTANT_BOT_PROMPT.md)
+> - **Для openclaw/серверных интеграций**: [`OPENCLAW_AGENT_INTEGRATION_GUIDE.md`](../OPENCLAW_AGENT_INTEGRATION_GUIDE.md)
+>
+> Этот файл сохранён как историческая справка по архитектуре фаз 1–4 (модульная миграция
+> `agentApi.ts`). Endpoint'ы, схемы и примеры могут расходиться с прод — **не использовать
+> для настройки ботов или серверных интеграций**.
+
+---
+
 > Полная документация по REST API для интеграции с CRM Profit Step.
 > **v4.2.0** | Модульная архитектура: `agentApi.ts` (86 строк) + 11 route modules + 9 schema modules.
 > Фазы 1–4 ✅ | Последнее обновление: **2026-04-02**

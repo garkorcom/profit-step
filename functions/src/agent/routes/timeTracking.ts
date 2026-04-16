@@ -23,7 +23,8 @@ const router = Router();
 
 // ─── POST /api/time-tracking ────────────────────────────────────────
 
-router.post('/api/time-tracking', async (req, res, next) => {
+/** Main time-tracking handler — extracted as named function for route aliasing */
+const handleTimeTracking: import('express').RequestHandler = async (req, res, next) => {
   try {
     const data = TimeTrackingSchema.parse(req.body);
     const userId = req.effectiveUserId || req.agentUserId!;
@@ -536,8 +537,32 @@ router.post('/api/time-tracking', async (req, res, next) => {
   } catch (e) {
     next(e);
   }
+};
+
+router.post('/api/time-tracking', handleTimeTracking);
+
+// ─── POST /api/time-tracking/stop — Convenience alias ──────────────
+// Bots & agents call POST /stop directly. Delegates to the main handler
+// by injecting action:'stop' into the body.
+
+router.post('/api/time-tracking/stop', (req, res, next) => {
+  req.body = { ...req.body, action: 'stop' };
+  handleTimeTracking(req, res, next);
 });
 
+// ─── POST /api/time-tracking/start — Convenience alias ─────────────
+
+router.post('/api/time-tracking/start', (req, res, next) => {
+  req.body = { ...req.body, action: 'start' };
+  handleTimeTracking(req, res, next);
+});
+
+// ─── POST /api/time-tracking/status — Convenience alias ────────────
+
+router.post('/api/time-tracking/status', (req, res, next) => {
+  req.body = { ...req.body, action: 'status' };
+  handleTimeTracking(req, res, next);
+});
 
 // ─── GET /api/time-tracking/active-all ──────────────────────────────
 

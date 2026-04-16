@@ -41,9 +41,10 @@ describe('scopesForRole', () => {
     expect(scopes).toHaveLength(3);
   });
 
-  it('returns foreman scopes with team:read', () => {
+  it('returns foreman scopes with team:read + team:write', () => {
     const scopes = scopesForRole('foreman');
     expect(scopes).toContain('team:read');
+    expect(scopes).toContain('team:write');
     expect(scopes).toContain('tasks:read');
     expect(scopes).toContain('tasks:write');
     expect(scopes).toContain('time:read');
@@ -51,19 +52,26 @@ describe('scopesForRole', () => {
     expect(scopes).toContain('costs:read');
     expect(scopes).toContain('files:read');
     expect(scopes).toContain('inventory:read');
-    expect(scopes).toHaveLength(8);
+    expect(scopes).toHaveLength(9);
   });
 
-  it('returns manager scopes with finance:read', () => {
+  it('returns manager scopes with finance + users + webhooks', () => {
     const scopes = scopesForRole('manager');
     expect(scopes).toContain('finance:read');
+    expect(scopes).toContain('finance:write');
     expect(scopes).toContain('tasks:read');
     expect(scopes).toContain('tasks:write');
     expect(scopes).toContain('costs:read');
     expect(scopes).toContain('costs:write');
     expect(scopes).toContain('time:read');
     expect(scopes).toContain('inventory:read');
-    expect(scopes).toHaveLength(7);
+    expect(scopes).toContain('team:read');
+    expect(scopes).toContain('team:write');
+    expect(scopes).toContain('users:read');
+    expect(scopes).toContain('users:manage');
+    expect(scopes).toContain('webhooks:read');
+    expect(scopes).toContain('webhooks:manage');
+    expect(scopes).toHaveLength(14);
   });
 
   it('returns accountant scopes with payroll access', () => {

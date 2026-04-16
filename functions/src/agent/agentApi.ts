@@ -21,6 +21,7 @@ import {
   timeTrackingRoutes, financeRoutes, userRoutes,
   estimateRoutes, projectRoutes, siteRoutes, erpRoutes, inventoryRoutes,
   sharingRoutes, activityRoutes, fileRoutes, feedbackRoutes, teamRoutes,
+  webhookRoutes,
 } from './routes';
 import docsRoutes from './routes/docs';
 import portalRoutes from './routes/portal';
@@ -67,6 +68,7 @@ const routes = [
   timeTrackingRoutes, financeRoutes, userRoutes,
   estimateRoutes, projectRoutes, siteRoutes, erpRoutes, inventoryRoutes,
   sharingRoutes, activityRoutes, fileRoutes, feedbackRoutes, teamRoutes,
+  webhookRoutes,
 ];
 routes.forEach(r => app.use(r));
 

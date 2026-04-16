@@ -39,8 +39,8 @@ function scopesForRole(role: string): string[] {
     worker:     ['tasks:read', 'tasks:write', 'time:read', 'time:write', 'costs:write', 'files:write', 'inventory:read'],
     driver:     ['tasks:read', 'tasks:write', 'time:read', 'time:write', 'costs:write', 'files:write', 'inventory:read'],
     supply:     ['inventory:read', 'inventory:write', 'costs:read'],
-    foreman:    ['tasks:read', 'tasks:write', 'time:read', 'time:write', 'costs:read', 'files:read', 'inventory:read', 'team:read'],
-    manager:    ['tasks:read', 'tasks:write', 'costs:read', 'costs:write', 'time:read', 'inventory:read', 'finance:read'],
+    foreman:    ['tasks:read', 'tasks:write', 'time:read', 'time:write', 'costs:read', 'files:read', 'inventory:read', 'team:read', 'team:write'],
+    manager:    ['tasks:read', 'tasks:write', 'costs:read', 'costs:write', 'time:read', 'inventory:read', 'finance:read', 'finance:write', 'team:read', 'team:write', 'users:read', 'users:manage', 'webhooks:read', 'webhooks:manage'],
     accountant: ['costs:read', 'time:read', 'payroll:read', 'payroll:write', 'finance:read'],
     admin:      ['admin'],
   };

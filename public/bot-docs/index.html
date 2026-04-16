@@ -1,0 +1,496 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Profit Step CRM — Docs для AI-бота</title>
+  <meta name="description" content="Канонический системный промпт и 50 use-cases для AI-ассистентов, работающих с Profit Step CRM API v4.5.0.">
+  <meta name="robots" content="noindex">
+
+  <link rel="icon" href="/favicon.ico">
+
+  <!-- Marked.js for markdown rendering -->
+  <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
+  <!-- DOMPurify to sanitize rendered HTML -->
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
+  <!-- highlight.js for code coloring -->
+  <link rel="stylesheet"
+        href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/github.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/core.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/bash.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/json.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/http.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/javascript.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/python.min.js"></script>
+
+  <style>
+    :root {
+      --bg: #f6f8fa;
+      --surface: #ffffff;
+      --border: #d0d7de;
+      --text: #1f2328;
+      --muted: #656d76;
+      --accent: #0969da;
+      --accent-soft: #ddf4ff;
+      --warn-bg: #fff8c5;
+      --warn-border: #d4a72c;
+      --ok-bg: #dafbe1;
+      --ok-border: #1a7f37;
+      --code-bg: #f6f8fa;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0; padding: 0;
+      background: var(--bg);
+      color: var(--text);
+      font: 16px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 18px 24px;
+      position: sticky; top: 0; z-index: 10;
+    }
+    header h1 {
+      margin: 0; font-size: 20px; font-weight: 600;
+    }
+    header .sub {
+      color: var(--muted); font-size: 13px; margin-top: 4px;
+    }
+    header .badges {
+      display: inline-flex; gap: 6px; margin-left: 10px;
+    }
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 10px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-size: 12px; font-weight: 500;
+    }
+    .container {
+      max-width: 960px;
+      margin: 24px auto;
+      padding: 0 20px;
+    }
+    .tabs {
+      display: flex; gap: 2px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 24px;
+      flex-wrap: wrap;
+    }
+    .tab {
+      padding: 10px 16px;
+      cursor: pointer;
+      border: 1px solid transparent;
+      border-bottom: none;
+      border-radius: 6px 6px 0 0;
+      background: transparent;
+      font-size: 14px; font-weight: 500;
+      color: var(--muted);
+      user-select: none;
+    }
+    .tab:hover { color: var(--text); }
+    .tab.active {
+      background: var(--surface);
+      border-color: var(--border);
+      color: var(--text);
+      margin-bottom: -1px;
+    }
+    .panel { display: none; }
+    .panel.active { display: block; }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 20px 24px;
+      margin-bottom: 16px;
+    }
+    .card h2, .card h3, .card h4 {
+      margin-top: 0.8em;
+    }
+    .card h2:first-child, .card h3:first-child, .card h1:first-child {
+      margin-top: 0;
+    }
+    .card p { margin: 0 0 12px; }
+    .card ul, .card ol { padding-left: 24px; }
+    .card li { margin-bottom: 4px; }
+    .card blockquote {
+      margin: 0 0 12px;
+      padding: 10px 14px;
+      border-left: 4px solid var(--border);
+      color: var(--muted);
+      background: var(--bg);
+      border-radius: 0 6px 6px 0;
+    }
+    .card code {
+      background: var(--code-bg);
+      border-radius: 4px;
+      padding: 1px 6px;
+      font-family: var(--mono);
+      font-size: 0.92em;
+    }
+    .card pre {
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 14px;
+      overflow-x: auto;
+      font-family: var(--mono);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    .card pre code {
+      background: transparent;
+      padding: 0;
+      font-size: inherit;
+    }
+    .card table {
+      border-collapse: collapse;
+      margin: 12px 0;
+    }
+    .card table th, .card table td {
+      border: 1px solid var(--border);
+      padding: 6px 12px;
+      text-align: left;
+    }
+    .card table th { background: var(--bg); }
+    .card a { color: var(--accent); }
+    .card hr { border: none; border-top: 1px solid var(--border); margin: 24px 0; }
+
+    .note {
+      padding: 12px 14px;
+      border-radius: 6px;
+      margin-bottom: 16px;
+      font-size: 14px;
+    }
+    .note.warn { background: var(--warn-bg); border: 1px solid var(--warn-border); }
+    .note.ok   { background: var(--ok-bg);   border: 1px solid var(--ok-border); }
+
+    .copy-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 14px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      margin-bottom: 12px;
+    }
+    .copy-row code {
+      background: transparent; padding: 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    button.copy, button.btn {
+      background: var(--accent);
+      color: #fff;
+      border: 0;
+      padding: 7px 14px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+    }
+    button.copy:hover, button.btn:hover { opacity: 0.9; }
+    button.copy.copied { background: var(--ok-border); }
+    button.btn.secondary {
+      background: var(--surface);
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+
+    .loading {
+      text-align: center;
+      color: var(--muted);
+      padding: 40px 0;
+    }
+
+    footer {
+      max-width: 960px;
+      margin: 40px auto 32px;
+      padding: 0 20px;
+      color: var(--muted);
+      font-size: 13px;
+      text-align: center;
+    }
+    footer a { color: var(--muted); }
+
+    @media (max-width: 600px) {
+      .container { padding: 0 12px; }
+      .card { padding: 16px; }
+      header { padding: 14px 16px; }
+      .tab { padding: 8px 10px; font-size: 13px; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>
+    Profit Step CRM — Docs для AI-бота
+    <span class="badges">
+      <span class="badge">API v4.5.0</span>
+      <span class="badge">Updated 2026-04-16</span>
+    </span>
+  </h1>
+  <div class="sub">
+    Канонический системный промпт + 50 пошаговых кейсов для ботов,
+    работающих с <code>https://profit-step.web.app/api</code>.
+  </div>
+</header>
+
+<div class="container">
+
+  <div class="note warn">
+    <strong>Для программиста:</strong> всё что нужно — (1) скопировать блок
+    <b>SYSTEM PROMPT</b> со вкладки «System Prompt» в настройки бота
+    (openclaw.ai / Claude / OpenAI Assistants), (2) завести секрет
+    <code>PROFIT_STEP_TOKEN</code> со значением мастер-токена (даёт Денис),
+    (3) настроить HTTP-tool с заголовком
+    <code>Authorization: Bearer ${secrets.PROFIT_STEP_TOKEN}</code>.
+    Детали — на вкладке «Auth &amp; Setup».
+  </div>
+
+  <div class="tabs" role="tablist">
+    <button class="tab active" data-tab="prompt" role="tab">System Prompt</button>
+    <button class="tab" data-tab="cases" role="tab">50 Use Cases</button>
+    <button class="tab" data-tab="auth" role="tab">Auth &amp; Setup</button>
+    <button class="tab" data-tab="api" role="tab">API Spec</button>
+  </div>
+
+  <!-- ─── Panel: System Prompt ───────────────────────────── -->
+  <div class="panel active" id="panel-prompt">
+    <div class="copy-row">
+      <code>docs/AI_ASSISTANT_BOT_PROMPT.md</code>
+      <div>
+        <button class="btn secondary" onclick="window.open('/bot-docs/prompt.md','_blank')">View raw .md</button>
+        <button class="copy" id="copy-prompt">Copy markdown</button>
+      </div>
+    </div>
+    <div class="card" id="content-prompt">
+      <div class="loading">Загружаю промпт…</div>
+    </div>
+  </div>
+
+  <!-- ─── Panel: Use Cases ───────────────────────────────── -->
+  <div class="panel" id="panel-cases">
+    <div class="copy-row">
+      <code>docs/AI_ASSISTANT_USE_CASES.md</code>
+      <div>
+        <button class="btn secondary" onclick="window.open('/bot-docs/use-cases.md','_blank')">View raw .md</button>
+        <button class="copy" id="copy-cases">Copy markdown</button>
+      </div>
+    </div>
+    <div class="card" id="content-cases">
+      <div class="loading">Загружаю 50 кейсов…</div>
+    </div>
+  </div>
+
+  <!-- ─── Panel: Auth & Setup ────────────────────────────── -->
+  <div class="panel" id="panel-auth">
+    <div class="card">
+      <h2>Авторизация — только 2 режима в проде</h2>
+
+      <p>Проверено против <code>functions/src/agent/agentMiddleware.ts</code>
+         на 2026-04-16. Остальные описания в старых доках
+         (<code>docs/AGENT_SETUP_GUIDE.md</code>, <code>crm_api/*</code>)
+         либо помечены как <b>LEGACY</b>, либо описывают незапущенные планы.</p>
+
+      <table>
+        <thead><tr><th>Режим</th><th>Для кого</th><th>Header</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><b>Static Master Token</b><br><code>AGENT_API_KEY</code> (env)</td>
+            <td>Серверные интеграции, openclaw-боты, скрипты</td>
+            <td><code>Authorization: Bearer &lt;token&gt;</code></td>
+          </tr>
+          <tr>
+            <td><b>Firebase ID Token</b> (JWT)</td>
+            <td>Браузерный фронтенд (<code>https://profit-step.web.app</code>)</td>
+            <td><code>Authorization: Bearer &lt;firebase_id_token&gt;</code></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <p>Любой третий вариант (например «per-employee 40-hex token» из
+      старой документации) <b>не работает</b> — сервер вернёт 401.</p>
+
+      <h3>Опциональные заголовки</h3>
+      <ul>
+        <li><code>X-Source: agent</code> — для пометки в audit log</li>
+        <li><code>X-Idempotency-Key: &lt;uuid&gt;</code> — защита от дублей при POST</li>
+        <li><code>X-Impersonate-User: &lt;firebase_uid&gt;</code> — master-токен действует от имени сотрудника (применяются его RLS + role scopes)</li>
+      </ul>
+
+      <h3>Настройка openclaw.ai</h3>
+      <ol>
+        <li>В <b>Bot settings → Secrets</b> добавь переменную
+          <code>PROFIT_STEP_TOKEN</code> со значением мастер-токена, который
+          выдаёт Денис.</li>
+        <li>В HTTP-tool бота в секции <b>Headers</b> пропиши:
+<pre><code>Authorization: Bearer ${secrets.PROFIT_STEP_TOKEN}
+Content-Type: application/json</code></pre>
+        </li>
+        <li>В <b>System Prompt</b> бота скопируй целиком блок SYSTEM PROMPT
+          со вкладки «System Prompt» на этой странице.</li>
+      </ol>
+
+      <h3>Smoke-test</h3>
+      <p>Перед подключением бота проверь, что токен живой:</p>
+<pre><code class="language-bash">export PROFIT_STEP_TOKEN="&lt;мастер-токен-от-дениса&gt;"
+
+# 1. /health без авторизации — должен ответить 200
+curl -s https://profit-step.web.app/api/health | jq
+
+# 2. С плохим токеном — должен ответить 401
+curl -s -H "Authorization: Bearer fake" \
+     https://profit-step.web.app/api/dashboard | jq
+# Ожидаемо: {"error":"Invalid authorization token"}
+
+# 3. С правильным токеном — должен отдать JSON дашборда
+curl -s -H "Authorization: Bearer $PROFIT_STEP_TOKEN" \
+     https://profit-step.web.app/api/dashboard | jq '. | keys'
+# Ожидаемо: список ключей (activeSessions, tasksDueToday, ...)
+</code></pre>
+
+      <div class="note warn">
+        Если шаг (3) вернул 401 — токен устарел или не тот. Попроси Дениса
+        выдать актуальный <code>AGENT_API_KEY</code> (он же <code>PROFIT_STEP_TOKEN</code>
+        для openclaw). Не пытайся угадать токен и не проси пользователя его
+        ввести — это секрет сервера.
+      </div>
+
+      <h3>Частые ошибки</h3>
+      <table>
+        <thead><tr><th>HTTP</th><th>Код</th><th>Что делать</th></tr></thead>
+        <tbody>
+          <tr><td>400</td><td>VALIDATION_ERROR</td><td>Смотреть <code>details[]</code>, исправить поле, повторить</td></tr>
+          <tr><td>401</td><td>—</td><td>Обновить секрет <code>PROFIT_STEP_TOKEN</code>; не повторять</td></tr>
+          <tr><td>404</td><td>NOT_FOUND</td><td>Не выдумывать ID. Сначала <code>/search</code></td></tr>
+          <tr><td>409</td><td>DUPLICATE_*</td><td>Показать дубль пользователю, спросить «использовать?» или передать <code>force:true</code></td></tr>
+          <tr><td>429</td><td>RATE_LIMITED</td><td>Подождать <code>retryAfterMs</code> из ответа (лимит 60/мин)</td></tr>
+          <tr><td>500</td><td>INTERNAL_ERROR</td><td>Передать <code>requestId</code> Денису</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ─── Panel: API Spec ─────────────────────────────────── -->
+  <div class="panel" id="panel-api">
+    <div class="card">
+      <h2>Live OpenAPI spec</h2>
+      <p>Источник правды для списка endpoint'ов — всегда актуальный JSON:</p>
+      <div class="copy-row">
+        <code>https://profit-step.web.app/api/docs/spec.json</code>
+        <button class="btn" onclick="window.open('/api/docs/spec.json','_blank')">Открыть JSON</button>
+      </div>
+      <p>Человеко-читаемая версия (Swagger UI):</p>
+      <div class="copy-row">
+        <code>https://profit-step.web.app/api/docs</code>
+        <button class="btn" onclick="window.open('/api/docs','_blank')">Открыть Swagger</button>
+      </div>
+      <p>Оба endpoint'а публичные и не требуют авторизации. Бот может
+         подтянуть спеку в рантайме если ему нужен точный формат.</p>
+
+      <h3>Сводка (на 2026-04-16, API v4.5.0)</h3>
+      <ul>
+        <li><b>78 endpoints</b> всего: 73 защищённых + 5 публичных</li>
+        <li>Ресурсы: clients, tasks (GTD), costs, time-tracking, projects, estimates, ERP (change orders, purchase orders, plan-vs-fact), finance, inventory, sites, teams, files, sharing, portal, webhooks, activity, feedback</li>
+        <li>Rate limit: 60 запросов / 60 сек на пользователя</li>
+        <li>Timezone: Eastern Time (ET) на стороне сервера</li>
+      </ul>
+    </div>
+  </div>
+
+</div>
+
+<footer>
+  Profit Step CRM · v4.5.0 · <a href="/">profit-step.web.app</a> ·
+  <a href="/api/docs">/api/docs</a> · Last updated 2026-04-16
+</footer>
+
+<script>
+(function() {
+  // ── Tab switcher ──────────────────────────────────
+  const tabs   = document.querySelectorAll('.tab');
+  const panels = document.querySelectorAll('.panel');
+
+  function setActive(name) {
+    tabs.forEach(t => t.classList.toggle('active', t.dataset.tab === name));
+    panels.forEach(p => p.classList.toggle('active', p.id === 'panel-' + name));
+    if (location.hash !== '#' + name) {
+      history.replaceState(null, '', '#' + name);
+    }
+  }
+  tabs.forEach(t => t.addEventListener('click', () => setActive(t.dataset.tab)));
+  const hashTab = (location.hash || '').replace('#', '');
+  if (['prompt','cases','auth','api'].includes(hashTab)) setActive(hashTab);
+
+  // ── Marked config ────────────────────────────────
+  const markedOpts = {
+    gfm: true,
+    breaks: false,
+    headerIds: true,
+    highlight: function(code, lang) {
+      try {
+        if (lang && hljs.getLanguage(lang)) {
+          return hljs.highlight(code, { language: lang }).value;
+        }
+        return hljs.highlightAuto(code).value;
+      } catch (e) { return code; }
+    }
+  };
+  if (window.marked && typeof marked.setOptions === 'function') {
+    marked.setOptions(markedOpts);
+  }
+
+  // ── Loader ───────────────────────────────────────
+  async function loadMd(url, containerId, copyBtnId, rawStoreKey) {
+    const container = document.getElementById(containerId);
+    const copyBtn   = document.getElementById(copyBtnId);
+    try {
+      const res = await fetch(url, { cache: 'no-cache' });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const raw = await res.text();
+      const html = DOMPurify.sanitize(marked.parse(raw), {
+        ADD_ATTR: ['target']
+      });
+      container.innerHTML = html;
+      // Syntax-highlight post-render
+      container.querySelectorAll('pre code').forEach(block => {
+        try { hljs.highlightElement(block); } catch (_) {}
+      });
+      // Store raw for copy
+      window['__md_' + rawStoreKey] = raw;
+      copyBtn.addEventListener('click', () => {
+        navigator.clipboard.writeText(raw).then(() => {
+          copyBtn.classList.add('copied');
+          const originalText = copyBtn.textContent;
+          copyBtn.textContent = '✓ Скопировано';
+          setTimeout(() => {
+            copyBtn.classList.remove('copied');
+            copyBtn.textContent = originalText;
+          }, 2000);
+        }).catch(err => {
+          console.error('Copy failed', err);
+          alert('Не удалось скопировать. Открой raw .md и скопируй вручную.');
+        });
+      });
+    } catch (e) {
+      container.innerHTML =
+        '<div class="note warn">Не удалось загрузить <code>' + url +
+        '</code>: ' + e.message + '. Попробуй <a href="' + url +
+        '" target="_blank">открыть raw-файл</a>.</div>';
+    }
+  }
+
+  loadMd('/bot-docs/prompt.md',   'content-prompt', 'copy-prompt', 'prompt');
+  loadMd('/bot-docs/use-cases.md','content-cases',  'copy-cases',  'cases');
+})();
+</script>
+
+</body>
+</html>

@@ -21,6 +21,7 @@ module.exports = {
   },
   moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json', 'node'],
   testTimeout: 30000, // 30 seconds for emulator tests
+  forceExit: true,    // prevent zombie jest-worker processes
   setupFilesAfterEnv: ['<rootDir>/test/setup.ts'],
   globals: {
     'ts-jest': {

@@ -2044,47 +2044,56 @@ async function finalizeSession(chatId: number, userId: number, activeSession: an
             });
         });
 
-        // Split into 3 buckets (same formula as API summary & FinancePage)
-        let earned = 0;   // regular + correction
-        let paid = 0;     // payment records
-        let adjustments = 0; // manual_adjustment
+        // Split into 3 buckets — MUST match payroll.ts calculatePayrollBuckets()
+        // Formula: Balance = Salary + Adjustments - Payments - Expenses
+        let earned = 0;       // regular sessions (non-voided)
+        let paid = 0;         // type='payment' from work_sessions ONLY
+        let adjustments = 0;  // type='correction' or 'manual_adjustment'
 
         docsMap.forEach((data: any) => {
             const amount = data.sessionEarnings || 0;
             const type = data.type || 'regular';
             if (type === 'payment') {
                 paid += Math.abs(amount);
-            } else if (type === 'manual_adjustment') {
+            } else if (type === 'correction' || type === 'manual_adjustment') {
                 adjustments += amount;
             } else {
-                // regular + correction — skip voided
+                // regular work sessions — skip voided
                 if (!data.isVoided) {
                     earned += amount;
                 }
             }
         });
 
-        // Also check legacy payments collection (backward compat)
+        // NOTE: Legacy 'payments' collection is NOT queried here.
+        // All payments are now stored as work_sessions with type='payment'.
+        // Querying both caused double-counting (BUG fix 2026-04-15).
+
+        // Query employee expenses from costs collection (same as FinancePage)
+        // costs use 'userId' field (not employeeId) and 'createdAt' for dates
+        let expenses = 0;
         try {
-            const legacyQueries = uniqueIds.map(id =>
-                admin.firestore().collection('payments')
-                    .where('employeeId', '==', id)
+            const costQueries = uniqueIds.map(id =>
+                admin.firestore().collection('costs')
+                    .where('userId', '==', id)
+                    .where('createdAt', '>=', yearStartTs)
                     .get()
             );
-            const legacySnaps = await Promise.all(legacyQueries);
-            const legacySeen = new Set<string>();
-            legacySnaps.forEach(snap => {
+            const costSnaps = await Promise.all(costQueries);
+            const costSeen = new Set<string>();
+            costSnaps.forEach(snap => {
                 snap.docs.forEach(d => {
-                    if (!legacySeen.has(d.id)) {
-                        legacySeen.add(d.id);
-                        paid += Math.abs(d.data().amount || 0);
+                    if (!costSeen.has(d.id)) {
+                        costSeen.add(d.id);
+                        expenses += Math.abs(d.data().amount || 0);
                     }
                 });
             });
-        } catch (_) { /* legacy collection may not exist */ }
+        } catch (_) { /* costs collection may not have composite index */ }
 
-        const balance = earned - paid + adjustments;
-        balanceInfo = `\n💚 Баланс ЗП: $${balance.toFixed(2)}\n📊 Начислено с начала года: $${earned.toFixed(2)}\nВыплачено: $${paid.toFixed(2)}`;
+        const balance = earned + adjustments - paid - expenses;
+        const expenseLine = expenses > 0 ? `\n🧾 Расходы: $${expenses.toFixed(2)}` : '';
+        balanceInfo = `\n💚 Баланс ЗП: $${balance.toFixed(2)}\n📊 Начислено с начала года: $${earned.toFixed(2)}\nВыплачено: $${paid.toFixed(2)}${expenseLine}`;
     } catch (e) {
         console.error('Balance calc error:', e);
     }

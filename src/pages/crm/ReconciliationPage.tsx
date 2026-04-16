@@ -21,6 +21,12 @@ import ChatBubbleOutlineIcon from '@mui/icons-material/ChatBubbleOutline';
 import ChatBubbleIcon from '@mui/icons-material/ChatBubble';
 import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
 import RestoreIcon from '@mui/icons-material/Restore';
+import TelegramIcon from '@mui/icons-material/Telegram';
+import HourglassEmptyIcon from '@mui/icons-material/HourglassEmpty';
+import Dialog from '@mui/material/Dialog';
+import DialogTitle from '@mui/material/DialogTitle';
+import DialogContent from '@mui/material/DialogContent';
+import DialogActions from '@mui/material/DialogActions';
 import AutoApproveRulesDialog from '../../components/crm/AutoApproveRulesDialog';
 import CategoryChipPicker from '../../components/crm/CategoryChipPicker';
 import TransactionNoteDrawer from '../../components/crm/TransactionNoteDrawer';
@@ -156,6 +162,8 @@ interface ReconcileTx {
   status: 'draft' | 'approved' | 'ignored';
   verifiedBy?: string | null;
   verifiedAt?: Timestamp | null;
+  clarificationStatus?: 'pending' | 'answered' | 'send_failed' | null;
+  clarificationAskedAt?: Timestamp | null;
 }
 
 interface EmployeeOption {
@@ -224,6 +232,11 @@ const ReconciliationPage: React.FC = () => {
   const [rulesOpen, setRulesOpen] = useState(false);
   const [noteDrawerTxId, setNoteDrawerTxId] = useState<string | null>(null);
   const [analyticsOpen, setAnalyticsOpen] = useState(false);
+
+  // Ask employee via Telegram
+  const [askDialogTxId, setAskDialogTxId] = useState<string | null>(null);
+  const [askMessage, setAskMessage] = useState('');
+  const [askSending, setAskSending] = useState(false);
 
   // ─── Data Fetching ──────────────────────────────────────
 
@@ -518,6 +531,43 @@ const ReconciliationPage: React.FC = () => {
       console.error('Save note failed', e);
     }
   }, []);
+
+  // ─── Ask Employee via Telegram ─────────────────────────
+
+  const handleAskEmployee = useCallback(async () => {
+    if (!askDialogTxId) return;
+    setAskSending(true);
+    try {
+      const token = await getAuthToken();
+      const resp = await fetch(`${getApiUrl()}/api/finance/transactions/${askDialogTxId}/ask-employee`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ message: askMessage || undefined }),
+      });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.error || `API ${resp.status}`);
+
+      // Update local state with clarification status
+      setTransactions(prev => prev.map(t =>
+        t.id === askDialogTxId
+          ? { ...t, clarificationStatus: data.clarificationStatus as ReconcileTx['clarificationStatus'] }
+          : t
+      ));
+
+      setAskDialogTxId(null);
+      setAskMessage('');
+
+      if (data.delivered) {
+        // Brief success — no need for alert, the chip will appear
+      } else {
+        setErrorMsg(`Telegram не доставлен: ${data.reason} — ${data.details || ''}`);
+      }
+    } catch (e) {
+      setErrorMsg('Ошибка отправки: ' + (e as Error).message);
+    } finally {
+      setAskSending(false);
+    }
+  }, [askDialogTxId, askMessage]);
 
   // ─── Bulk Category/Type Change ──────────────────────────
 
@@ -1142,6 +1192,19 @@ const ReconciliationPage: React.FC = () => {
                             {t.note ? <ChatBubbleIcon fontSize="small" color="info" /> : <ChatBubbleOutlineIcon fontSize="small" color="disabled" />}
                           </IconButton>
                         </Tooltip>
+                        {t.employeeId && (
+                          t.clarificationStatus === 'pending' ? (
+                            <Tooltip title="Ожидает ответа">
+                              <HourglassEmptyIcon fontSize="small" color="warning" sx={{ ml: 0.3 }} />
+                            </Tooltip>
+                          ) : (
+                            <Tooltip title="Спросить в Telegram">
+                              <IconButton size="small" onClick={() => { setAskDialogTxId(t.id); setAskMessage(''); }} sx={{ p: 0.3 }}>
+                                <TelegramIcon fontSize="small" color="primary" />
+                              </IconButton>
+                            </Tooltip>
+                          )
+                        )}
                       </Box>
                     )}
                   </TableCell>
@@ -1200,6 +1263,69 @@ const ReconciliationPage: React.FC = () => {
         })()}
         onSaveNote={handleSaveNote}
       />
+
+      {/* Ask Employee via Telegram dialog */}
+      <Dialog
+        open={!!askDialogTxId}
+        onClose={() => { if (!askSending) { setAskDialogTxId(null); setAskMessage(''); } }}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>
+          <Box display="flex" alignItems="center" gap={1}>
+            <TelegramIcon color="primary" />
+            Спросить сотрудника
+          </Box>
+        </DialogTitle>
+        <DialogContent>
+          {(() => {
+            const tx = askDialogTxId ? transactions.find(t => t.id === askDialogTxId) : null;
+            if (!tx) return null;
+            return (
+              <Box>
+                <Typography variant="body2" color="text.secondary" gutterBottom>
+                  Отправить Telegram-сообщение сотруднику <strong>{tx.employeeName || '—'}</strong> с вопросом о транзакции:
+                </Typography>
+                <Paper variant="outlined" sx={{ p: 1.5, my: 1.5, bgcolor: '#f5f5f5' }}>
+                  <Typography variant="body2">
+                    <strong>${Math.abs(tx.amount).toFixed(2)}</strong> &bull; {tx.cleanMerchant} &bull; {renderDate(tx.date)}
+                  </Typography>
+                  {tx.rawDescription && (
+                    <Typography variant="caption" color="text.secondary">{tx.rawDescription}</Typography>
+                  )}
+                </Paper>
+                <TextField
+                  fullWidth
+                  multiline
+                  minRows={2}
+                  maxRows={4}
+                  placeholder="Можешь пояснить эту транзакцию? Это рабочая трата или личная?"
+                  value={askMessage}
+                  onChange={e => setAskMessage(e.target.value)}
+                  disabled={askSending}
+                  sx={{ mt: 1 }}
+                />
+                <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
+                  Оставьте пустым для стандартного вопроса
+                </Typography>
+              </Box>
+            );
+          })()}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => { setAskDialogTxId(null); setAskMessage(''); }} disabled={askSending}>
+            Отмена
+          </Button>
+          <Button
+            variant="contained"
+            onClick={handleAskEmployee}
+            disabled={askSending}
+            startIcon={askSending ? <CircularProgress size={16} /> : <TelegramIcon />}
+          >
+            {askSending ? 'Отправка...' : 'Отправить'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };

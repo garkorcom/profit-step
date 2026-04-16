@@ -41,3 +41,7 @@ export const FinanceApproveSchema = z.object({
 export const FinanceUndoSchema = z.object({
   transactionIds: z.array(z.string().min(1)),
 });
+
+export const AskEmployeeSchema = z.object({
+  message: z.string().min(1).max(2000).optional(),
+});

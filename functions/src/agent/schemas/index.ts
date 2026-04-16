@@ -9,3 +9,4 @@ export * from './erpSchemas';
 export * from './estimateProjectSchemas';
 export * from './inventorySchemas';
 export * from './fileSchemas';
+export * from './teamSchemas';

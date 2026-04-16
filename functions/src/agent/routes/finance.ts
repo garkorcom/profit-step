@@ -3,12 +3,13 @@
  */
 import { Router } from 'express';
 
-import { db, FieldValue, Timestamp, logger, fuzzySearchClient, COST_CATEGORY_LABELS } from '../routeContext';
+import { db, FieldValue, Timestamp, logger, fuzzySearchClient, COST_CATEGORY_LABELS, logAgentActivity } from '../routeContext';
 import {
   ProjectStatusQuery,
   FinanceBatchSchema,
   FinanceApproveSchema,
   FinanceUndoSchema,
+  AskEmployeeSchema,
 } from '../schemas';
 
 const router = Router();
@@ -493,6 +494,149 @@ router.delete('/api/finance/rules/:id', async (req, res, next) => {
     }
     await db.collection('finance_rules').doc(req.params.id).delete();
     res.json({ success: true });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// ─── POST /api/finance/transactions/:id/ask-employee ───────────────────
+// Sends Telegram message to assigned employee asking to clarify transaction.
+
+router.post('/api/finance/transactions/:id/ask-employee', async (req, res, next) => {
+  try {
+    const rlsRole = req.effectiveRole || 'admin';
+    if (rlsRole === 'worker' || rlsRole === 'driver' || rlsRole === 'supply') {
+      res.status(403).json({ error: 'Requires foreman/manager/accountant/admin role' });
+      return;
+    }
+
+    const { id } = req.params;
+    const body = AskEmployeeSchema.parse(req.body);
+
+    // 1. Load the bank transaction
+    const txDoc = await db.collection('bank_transactions').doc(id).get();
+    if (!txDoc.exists) {
+      res.status(404).json({ error: `Transaction ${id} not found` });
+      return;
+    }
+
+    const tx = txDoc.data()!;
+    const employeeId = tx.employeeId;
+    if (!employeeId) {
+      res.status(400).json({ error: 'Transaction has no assigned employee. Assign an employee first.' });
+      return;
+    }
+
+    // 2. Find employee's Telegram ID
+    const userDoc = await db.collection('users').doc(employeeId).get();
+    if (!userDoc.exists) {
+      res.status(404).json({ error: `Employee ${employeeId} not found` });
+      return;
+    }
+
+    const userData = userDoc.data()!;
+    const telegramId = userData.telegramId ? Number(userData.telegramId) : null;
+    if (!telegramId) {
+      res.status(400).json({
+        error: `Employee "${userData.displayName || employeeId}" has no Telegram ID linked. Link it first via PATCH /api/users/:uid/telegram-link`,
+        employeeName: userData.displayName || employeeId,
+      });
+      return;
+    }
+
+    // 3. Build message
+    const amount = Math.abs(tx.amount || 0).toFixed(2);
+    const merchant = tx.cleanMerchant || tx.rawDescription || 'Unknown';
+    const dateStr = tx.date
+      ? (typeof tx.date === 'string' ? tx.date : new Date(tx.date._seconds * 1000).toLocaleDateString('ru-RU'))
+      : '';
+    const categoryLabel = COST_CATEGORY_LABELS[tx.categoryId as keyof typeof COST_CATEGORY_LABELS] || tx.categoryId || '';
+
+    const customMessage = body.message || '';
+    const messageText = [
+      `💳 *Вопрос по транзакции*`,
+      ``,
+      `Сумма: *$${amount}*`,
+      `Продавец: ${merchant}`,
+      dateStr ? `Дата: ${dateStr}` : '',
+      categoryLabel ? `Категория: ${categoryLabel}` : '',
+      ``,
+      customMessage || `Можешь пояснить эту транзакцию? Это рабочая трата или личная?`,
+      ``,
+      `_Ответь в этот чат — сообщение будет видно в CRM._`,
+    ].filter(Boolean).join('\n');
+
+    // 4. Send Telegram message
+    const botToken = process.env.TELEGRAM_BOT_TOKEN;
+    if (!botToken) {
+      res.status(503).json({ error: 'Telegram bot token not configured' });
+      return;
+    }
+
+    const tgResp = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: telegramId,
+        text: messageText,
+        parse_mode: 'Markdown',
+      }),
+    });
+
+    const tgResult = await tgResp.json() as { ok: boolean; result?: { message_id: number }; description?: string };
+
+    // 5. Update bank_transaction with clarification status
+    const updateFields: Record<string, unknown> = {
+      clarificationStatus: tgResult.ok ? 'pending' : 'send_failed',
+      clarificationAskedAt: FieldValue.serverTimestamp(),
+      clarificationAskedBy: req.agentUserId || 'system',
+      updatedAt: FieldValue.serverTimestamp(),
+    };
+    if (tgResult.ok && tgResult.result?.message_id) {
+      updateFields.clarificationTelegramMsgId = tgResult.result.message_id;
+    }
+
+    await db.collection('bank_transactions').doc(id).update(updateFields);
+
+    logger.info('💳 finance:ask-employee', {
+      txId: id,
+      employeeId,
+      telegramId,
+      delivered: tgResult.ok,
+    });
+
+    await logAgentActivity({
+      userId: req.agentUserId!,
+      action: 'transaction_ask_employee',
+      endpoint: `/api/finance/transactions/${id}/ask-employee`,
+      metadata: {
+        txId: id,
+        employeeId,
+        amount: tx.amount,
+        merchant,
+        delivered: tgResult.ok,
+      },
+    });
+
+    if (tgResult.ok) {
+      res.json({
+        delivered: true,
+        messageId: tgResult.result?.message_id,
+        employeeName: userData.displayName || employeeId,
+        clarificationStatus: 'pending',
+      });
+    } else {
+      const reason = tgResult.description?.includes('blocked') ? 'user_blocked_bot'
+        : tgResult.description?.includes('not found') ? 'chat_not_found'
+        : 'telegram_error';
+      res.json({
+        delivered: false,
+        reason,
+        details: tgResult.description,
+        employeeName: userData.displayName || employeeId,
+        clarificationStatus: 'send_failed',
+      });
+    }
   } catch (e) {
     next(e);
   }

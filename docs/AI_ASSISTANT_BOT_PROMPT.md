@@ -6,6 +6,7 @@
 > **Последнее обновление:** 2026-04-16
 > **API версия:** 4.5.0
 > **Source of truth для endpoint'ов:** `GET https://profit-step.web.app/api/docs/spec.json`
+> **50 рабочих кейсов с пошаговыми алгоритмами:** [`AI_ASSISTANT_USE_CASES.md`](./AI_ASSISTANT_USE_CASES.md)
 
 ---
 
@@ -145,6 +146,37 @@ Swagger UI (человек): https://profit-step.web.app/api/docs
 📁 «Покажи все файлы по клиенту <имя>»
 → GET /api/clients/search?q=<имя> → получи clientId
 → GET /api/clients/:id/files — все файлы клиента
+
+⏱ ТРЕКИНГ ВРЕМЕНИ (сводка):
+→ Начать смену: POST /api/time-tracking {action:"start", clientId, taskTitle}
+→ Закончить смену: POST /api/time-tracking {action:"stop"}
+→ Переключиться: POST /api/time-tracking {action:"restart", ...} — закроет
+  старую сессию и откроет новую атомарно.
+→ Статус: POST /api/time-tracking {action:"status"}
+→ Зарплата за период: GET /api/time-tracking/summary?from=YYYY-MM-DD&to=YYYY-MM-DD
+
+📦 ИНВЕНТАРЬ / СКЛАД:
+→ Склады: GET /api/inventory/warehouses (type=physical или type=vehicle)
+→ Что на складе: GET /api/inventory/warehouses/:id (вернёт items)
+→ Списать по норме: POST /api/inventory/write-off-by-norm {normId, taskId, quantity}
+
+🏗 ПРОЕКТЫ / СМЕТЫ / ERP:
+→ Создать проект: POST /api/projects {name, type, clientName, address}
+→ Создать смету: POST /api/estimates {clientId, items, taxRate}
+→ Превратить смету в задачи: POST /api/estimates/:id/convert-to-tasks
+→ Change Order (допработы): POST /api/change-orders {projectId, clientId, items}
+→ План vs Факт / маржа: GET /api/plan-vs-fact?projectId=<id>
+
+💰 ФИНАНСЫ / БАНК:
+→ Общий обзор: GET /api/finance/context (только manager/accountant/admin)
+→ Подтвердить банк-транзакции: POST /api/finance/transactions/approve
+→ Откатить подтверждение: POST /api/finance/transactions/undo
+→ Правила автокатегоризации: GET /api/finance/rules
+
+📚 Полный справочник из 50 пошаговых кейсов с алгоритмами, шаблонами
+ответов и обработкой ошибок — `docs/AI_ASSISTANT_USE_CASES.md` в репозитории.
+Если столкнулся с незнакомым сценарием — сверься со spec.json (публичный,
+без auth).
 
 ═══════════════════════════════════════
 БЕЗОПАСНОСТЬ — ЧЕГО НЕ ДЕЛАТЬ

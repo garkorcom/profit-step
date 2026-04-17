@@ -14,6 +14,8 @@ const CATEGORY_META: Record<string, { emoji: string; label: string; color: strin
   housing: { emoji: '🏠', label: 'Жилье', color: '#2e7d32' },
   food: { emoji: '🍔', label: 'Питание', color: '#c62828' },
   permit: { emoji: '📄', label: 'Документы', color: '#00838f' },
+  salary: { emoji: '👷', label: 'ЗП', color: '#4e342e' },
+  income: { emoji: '📈', label: 'Доход', color: '#388e3c' },
   other: { emoji: '📦', label: 'Прочее', color: '#546e7a' },
 };
 

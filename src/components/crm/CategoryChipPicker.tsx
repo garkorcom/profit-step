@@ -13,6 +13,8 @@ const CATEGORIES: { id: string; emoji: string; label: string }[] = [
   { id: 'housing', emoji: '🏠', label: 'Жилье' },
   { id: 'food', emoji: '🍔', label: 'Питание' },
   { id: 'permit', emoji: '📄', label: 'Документы' },
+  { id: 'salary', emoji: '👷', label: 'ЗП' },
+  { id: 'income', emoji: '📈', label: 'Доход' },
   { id: 'other', emoji: '📦', label: 'Прочее' },
 ];
 

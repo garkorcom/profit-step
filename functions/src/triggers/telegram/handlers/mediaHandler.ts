@@ -40,21 +40,50 @@ export async function handleSkipMedia(chatId: number, userId: number) {
             locationMismatch: true,
             locationMismatchReason: "Location skipped at finish"
         });
+        // F-6: mirror the new end-photo prompt wording.
         await sendMessage(chatId,
-            "⏩ Локация пропущена. ⚠️ Отметка о пропуске сохранена.\n\n📸 Теперь отправь **фото** (или файл/видео) выполненной работы.",
+            "⏩ Локация пропущена. ⚠️ Отметка о пропуске сохранена.\n\n" +
+            "📸 *Финальное фото объекта / результата работы.*\n" +
+            "Это нужно для подтверждения выполнения — пришли 1–2 фото.",
             { keyboard: [[{ text: "⏩ Пропустить фото" }]], resize_keyboard: true }
         );
     } else if (sessionData.awaitingEndPhoto) {
-        // Skip End Photo → go to voice
+        // F-7: worker refused to send the final photo. We used to silently
+        // drop into the voice step (skippedEndPhoto was written but admin
+        // never learned). Now: explicit audit trail + admin push so Denis
+        // can spot patterns (same worker always skipping, specific project
+        // always empty).
+        const skippedAt = admin.firestore.Timestamp.now();
         await activeSession.ref.update({
             awaitingEndPhoto: false,
             awaitingEndVoice: true,
-            skippedEndPhoto: true
+            skippedEndPhoto: true,
+            endPhotoSkipped: true,
+            endPhotoSkipReason: 'worker_skipped_on_finish',
+            endPhotoSkippedAt: skippedAt
         });
         await sendMessage(chatId,
-            "⏩ Фото пропущено.\n\n🎙 Запиши голосовое: Что успел сделать?",
+            "⏩ Фото пропущено. Админ уведомлён.\n\n🎙 Запиши голосовое: Что успел сделать?",
             { keyboard: [[{ text: "⏩ Пропустить (Слабый интернет)" }]], resize_keyboard: true }
         );
+        await sendAdminNotification(
+            `⚠️ *Final photo skipped*\n` +
+            `👤 ${sessionData.employeeName || 'Unknown worker'}\n` +
+            `📍 ${sessionData.clientName || 'Unknown project'}`
+        );
+        // N-4: observability — mirror into activity_logs so project timeline
+        // shows the gap, same way we log "Медиа окончания смены" on success.
+        if (sessionData.clientId && sessionData.clientId !== 'no_project') {
+            await db.collection('activity_logs').add({
+                companyId: sessionData.companyId || 'system',
+                projectId: sessionData.clientId,
+                type: 'note',
+                content: 'Финальное фото пропущено работником',
+                performedBy: sessionData.employeeName || 'Сотрудник',
+                performedAt: admin.firestore.FieldValue.serverTimestamp(),
+                isInternalOnly: false
+            });
+        }
     } else if (sessionData.awaitingEndVoice) {
         // Skip End Voice → IMMEDIATE FINALIZE
         await finalizeSession(chatId, userId, activeSession, "Описание не указано");
@@ -64,16 +93,40 @@ export async function handleSkipMedia(chatId: number, userId: number) {
         await finalizeSession(chatId, userId, activeSession, "Описание не указано");
 
     } else if (sessionData.awaitingStartPhoto) {
-        // Skip Start Photo → go to voice
+        // F-3: worker can't/won't send the start selfie. We keep the shift
+        // active (locking the whole bot on a camera prompt is worse than
+        // having a flagged session), but:
+        //   - write a persistent audit trail (startPhotoSkipped* fields)
+        //   - push admin in real time
+        //   - drop straight to the main menu — no voice step
+        const skippedAt = admin.firestore.Timestamp.now();
         await activeSession.ref.update({
             awaitingStartPhoto: false,
-            awaitingStartVoice: true,
-            skippedStartPhoto: true
+            skippedStartPhoto: true,
+            startPhotoSkipped: true,
+            startPhotoSkipReason: 'worker_refused_no_camera',
+            startPhotoSkippedAt: skippedAt
         });
         await sendMessage(chatId,
-            "⏩ Фото пропущено.\n\n🎙 Запиши голосовое: что планируешь сегодня делать?",
-            { keyboard: [[{ text: "⏩ Пропустить (Слабый интернет)" }]], resize_keyboard: true }
+            "⚠️ Ок, смена идёт без фото. Админ уведомлён, что ты не прислал подтверждение на старте."
         );
+        await sendMainMenu(chatId, userId);
+        await sendAdminNotification(
+            `⚠️ *Start selfie skipped*\n` +
+            `👤 ${sessionData.employeeName || 'Unknown worker'}\n` +
+            `📍 ${sessionData.clientName || 'Unknown project'}`
+        );
+        if (sessionData.clientId && sessionData.clientId !== 'no_project') {
+            await db.collection('activity_logs').add({
+                companyId: sessionData.companyId || 'system',
+                projectId: sessionData.clientId,
+                type: 'note',
+                content: 'Селфи старта пропущено работником',
+                performedBy: sessionData.employeeName || 'Сотрудник',
+                performedAt: admin.firestore.FieldValue.serverTimestamp(),
+                isInternalOnly: false
+            });
+        }
     } else if (sessionData.awaitingStartVoice) {
         // Skip Start Voice → session started
         await activeSession.ref.update({
@@ -136,16 +189,21 @@ export async function handleMediaUpload(chatId: number, userId: number, message:
 
         await sendMessage(chatId, `✅ Фото принято! Объект *${sessionData.clientName}* время старта *${timeStr}*\n\n🚀 Сессия начата, удачной работы!`);
 
-        // Fix 7: Write main update FIRST, then fire face verification AFTER
+        // Fix 7: Write main update FIRST, then fire face verification AFTER.
+        // F-2: we no longer chain a mandatory "voice" step after the start
+        // selfie — that was part of the abandoned 8-step checklist. The
+        // shift is already active (created in locationFlow), and the main
+        // menu (Break / Finish) is already visible from before the prompt.
         await activeSession.ref.update({
             startPhotoId: fileId,
             startPhotoUrl: url,
             startMediaType: message.video ? 'video' : (message.document ? 'document' : 'photo'),
-            awaitingStartPhoto: false,
-            awaitingStartVoice: true
+            awaitingStartPhoto: false
         });
 
         // --- FACE VERIFICATION (Asynchronous, AFTER main update) ---
+        // F-4: on mismatch, additionally send an immediate Telegram push to
+        // admin so the warning is actionable, not just a row-level chip.
         const platformUserUrl = (await findPlatformUser(userId))?.referenceFacePhotoUrl;
         if (platformUserUrl && url) {
             verifyEmployeeFace(platformUserUrl, url).then(async (matchResult) => {
@@ -155,7 +213,18 @@ export async function handleMediaUpload(chatId: number, userId: number, message:
                     faceMismatchReason: matchResult.reason
                 });
                 if (!matchResult.match) {
-                    await sendMessage(chatId, `⚠️ *ПРЕДУПРЕЖДЕНИЕ:*\nСистема не смогла сопоставить ваше лицо с профилем (${Math.round(matchResult.confidence)}%).\nСмена продолжена, но админ уведомлен.`);
+                    const confPct = Math.round(matchResult.confidence);
+                    await sendMessage(chatId, `⚠️ *ПРЕДУПРЕЖДЕНИЕ:*\nСистема не смогла сопоставить ваше лицо с профилем (${confPct}%).\nСмена продолжена, но админ уведомлен.`);
+
+                    // F-4: synchronous admin push so Denis can react in real
+                    // time, not only when opening the dashboard.
+                    await sendAdminNotification(
+                        `⚠️ *Face mismatch*\n` +
+                        `👤 ${sessionData.employeeName || 'Unknown worker'}\n` +
+                        `📍 ${sessionData.clientName || 'Unknown project'}\n` +
+                        `🎯 Confidence: ${confPct}%\n` +
+                        (matchResult.reason ? `ℹ️ ${matchResult.reason}` : '')
+                    );
                 }
             }).catch(e => console.error("Face verification background task failed", e));
         }
@@ -174,13 +243,8 @@ export async function handleMediaUpload(chatId: number, userId: number, message:
             });
         }
 
-        await sendMessage(chatId,
-            "🎙 Запиши голосовое: что планируешь сегодня делать?",
-            {
-                keyboard: [[{ text: "⏩ Пропустить (Слабый интернет)" }]],
-                resize_keyboard: true
-            }
-        );
+        // F-2: hand the worker back the main menu — no voice step.
+        await sendMainMenu(chatId, userId);
 
     } else if (sessionData.awaitingEndPhoto) {
         // Save End Media

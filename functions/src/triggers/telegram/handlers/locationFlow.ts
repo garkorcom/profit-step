@@ -127,8 +127,13 @@ export async function handleLocation(chatId: number, userId: number, location: a
 
         await activeSession.ref.update(updatePayload);
 
+        // F-6: clearer prompt. Admin needs visual proof of the finished work,
+        // not just a timestamp — be explicit so workers don't send a random
+        // selfie of the ceiling.
         await sendMessage(chatId,
-            `📍 *Геопозиция получена.*${distanceInfo}\n\n📸 Теперь отправь **фото** (или файл/видео) выполненной работы.`,
+            `📍 *Геопозиция получена.*${distanceInfo}\n\n` +
+            `📸 *Финальное фото объекта / результата работы.*\n` +
+            `Это нужно для подтверждения выполнения — пришли 1–2 фото.`,
             { keyboard: [[{ text: "⏩ Пропустить фото" }]], resize_keyboard: true }
         );
         return;
@@ -271,6 +276,12 @@ export async function handleLocationConfirmStart(chatId: number, userId: number)
         service: serviceName || null,
         startLocation: location,
         awaitingLocation: false,
+        // F-1: force a selfie check-in right after the shift is created.
+        // mediaHandler.handleMediaUpload and handleSkipMedia both branch on
+        // this flag. Keep the shift active regardless — the worker can still
+        // hit Break/Finish from the main menu even if they haven't sent the
+        // selfie yet (see spec Q-1: we don't lock the menu).
+        awaitingStartPhoto: true,
         hourlyRate: hourlyRate,
         taskId: null,
         taskTitle: null
@@ -289,8 +300,22 @@ export async function handleLocationConfirmStart(chatId: number, userId: number)
         `⏱ Таймер запущен. Работаем!`
     );
 
-    // Immediately show work menu — worker can start right away
+    // Show the work menu (Break / Finish Work) BEFORE asking for the selfie
+    // so the worker isn't trapped if their camera is busy. The photo prompt
+    // that follows carries its own keyboard with a skip button.
     await sendMainMenu(chatId, userId);
+
+    // F-1: selfie request. The "skip" button is a normal keyboard text
+    // — onWorkerBotMessage.ts routes `⏩ Пропустить фото` → handleSkipMedia,
+    // which branches on awaitingStartPhoto (see mediaHandler.ts).
+    await sendMessage(chatId,
+        `📸 *Сделай селфи на фоне объекта.*\n\n` +
+        `Так мы подтверждаем, что ты на месте. Просто сфоткай себя и пришли в чат.`,
+        {
+            keyboard: [[{ text: '⏩ Пропустить фото' }]],
+            resize_keyboard: true
+        }
+    );
 
     await sendAdminNotification(`👤 *${employeeName}:*\n▶️ *Work Started (Location)*\n📍 ${clientName}`);
 }
@@ -313,8 +338,11 @@ export async function handleLocationConfirmFinish(chatId: number, userId: number
 
     await activeSession.ref.update({ awaitingEndPhoto: true });
 
+    // F-6: same wording as the location-based finish so admin sees identical
+    // expectations regardless of path.
     await sendMessage(chatId,
-        "📸 Отправь **фото** выполненной работы (или нажми Пропустить).",
+        `📸 *Финальное фото объекта / результата работы.*\n` +
+        `Это нужно для подтверждения выполнения — пришли 1–2 фото (или нажми Пропустить).`,
         {
             keyboard: [[{ text: "⏩ Пропустить фото" }]],
             resize_keyboard: true
@@ -439,6 +467,8 @@ export async function handleLocationNewClient(chatId: number, userId: number, cl
         status: 'active',
         startLocation: location,
         awaitingLocation: false,
+        // F-1: see handleLocationConfirmStart for rationale.
+        awaitingStartPhoto: true,
         hourlyRate: hourlyRate,
         taskId: null,
         taskTitle: null
@@ -458,8 +488,18 @@ export async function handleLocationNewClient(chatId: number, userId: number, cl
         `⏱ Таймер запущен. Работаем!`
     );
 
-    // Immediately show work menu — worker can start right away
+    // Show menu first so Break/Finish stay reachable (see Q-1 in spec).
     await sendMainMenu(chatId, userId);
+
+    // F-1: selfie prompt with skip button.
+    await sendMessage(chatId,
+        `📸 *Сделай селфи на фоне объекта.*\n\n` +
+        `Так мы подтверждаем, что ты на месте. Просто сфоткай себя и пришли в чат.`,
+        {
+            keyboard: [[{ text: '⏩ Пропустить фото' }]],
+            resize_keyboard: true
+        }
+    );
 
     await sendAdminNotification(`👤 *${employeeName}:*\n▶️ *Work Started (New DB Location)*\n📍 ${clientName}`);
 }

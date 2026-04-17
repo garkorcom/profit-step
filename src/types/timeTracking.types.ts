@@ -1,5 +1,14 @@
 import { Timestamp } from 'firebase/firestore';
 
+/**
+ * Reasons a worker's start- or end-of-shift selfie may be absent.
+ * Stored as a plain string in Firestore; this enum keeps call sites honest.
+ */
+export type PhotoSkipReason =
+    | 'worker_refused_no_camera'     // Worker tapped the "skip" button at shift start
+    | 'worker_skipped_on_finish'     // Worker tapped "skip" at shift end
+    | 'timeout_auto_skip';           // Reserved for future auto-timeout scheduler
+
 export interface WorkSession {
     id: string;
     employeeId: number | string;
@@ -100,4 +109,16 @@ export interface WorkSession {
     faceMatch?: boolean;
     faceConfidence?: number;
     faceMismatchReason?: string;
+
+    // === SELFIE / SHIFT-PHOTO SKIP AUDIT ===
+    // Set when the worker explicitly skipped the start-of-shift selfie.
+    // Admin UI surfaces these as a warning chip (TimeTrackingTable.tsx).
+    startPhotoSkipped?: boolean;
+    startPhotoSkipReason?: PhotoSkipReason;
+    startPhotoSkippedAt?: Timestamp;
+
+    // Same, for the end-of-shift photo.
+    endPhotoSkipped?: boolean;
+    endPhotoSkipReason?: PhotoSkipReason;
+    endPhotoSkippedAt?: Timestamp;
 }

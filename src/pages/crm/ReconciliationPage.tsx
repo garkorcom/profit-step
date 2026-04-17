@@ -285,7 +285,7 @@ const ReconciliationPage: React.FC = () => {
                   <strong>Контрагент</strong>
                 </TableSortLabel>
               </TableCell>
-              <TableCell sx={{ width: 115 }}>
+              <TableCell sx={{ width: 220 }}>
                 <TableSortLabel active={filters.sortField === 'amount'} direction={filters.sortField === 'amount' ? filters.sortDir : 'desc'} onClick={() => filters.handleSort('amount' as SortField)}>
                   <strong>Сумма</strong>
                 </TableSortLabel>

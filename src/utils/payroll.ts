@@ -1,15 +1,21 @@
 /**
  * Unified Payroll Balance Calculation
  *
- * Single source of truth for the formula:
- *   Balance = Salary - Payments - Expenses
+ * Salary balance formula (2026-04-17):
+ *   Balance = Salary + Adjustments − Payments
  *
- * Salary  = sessionEarnings from regular/undefined sessions (NOT voided)
- * Payments = abs(sessionEarnings) from type='payment' entries
- * Expenses = from costs collection (passed in separately)
+ * Business expenses (from `costs` collection) are a SEPARATE ledger and
+ * intentionally NOT subtracted from the salary balance — mixing them
+ * produced nonsense negative balances for admins/owners who log their
+ * own business spend under their userId (see scripts/verify-balance-formula.ts).
  *
- * Corrections (type='correction') and manual_adjustments are tracked
- * as a separate bucket and included in balance.
+ * `expenses` is still surfaced in the `PayrollBuckets` result so the UI
+ * can show it as a separate info card, but it is not deducted from `balance`.
+ *
+ * Salary      = sessionEarnings from regular/undefined sessions (NOT voided)
+ * Payments    = abs(sessionEarnings) from type='payment' entries
+ * Adjustments = sessionEarnings from type='correction' OR 'manual_adjustment'
+ * Expenses    = from costs collection (passed in separately, informational)
  */
 import { WorkSession } from '../types/timeTracking.types';
 
@@ -22,7 +28,7 @@ export interface PayrollBuckets {
     adjustments: number;
     /** Costs/expenses (from costs collection, passed in) */
     expenses: number;
-    /** salary + adjustments - payments - expenses */
+    /** salary + adjustments − payments  (expenses NOT subtracted, see file doc) */
     balance: number;
     /** Total work minutes (regular sessions only, excludes payments/adjustments) */
     totalMinutes: number;
@@ -64,7 +70,7 @@ export function calculatePayrollBuckets(
         }
     });
 
-    const balance = salary + adjustments - payments - expenses;
+    const balance = salary + adjustments - payments;
 
     return {
         salary,

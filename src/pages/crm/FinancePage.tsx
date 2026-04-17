@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
     Container, Typography, Box, Paper, Table, TableBody, TableCell, TableContainer, TableHead,
     TableRow, Chip, CircularProgress, Card, CardContent, Button, TextField,
@@ -49,7 +50,29 @@ interface CostEntry {
 }
 
 const FinancePage: React.FC = () => {
-    const [tabIndex, setTabIndex] = useState(0);
+    // Sync tab with ?tab=N query param so Header dropdown "Expenses / Invoices / P&L" works.
+    const [searchParams, setSearchParams] = useSearchParams();
+    const urlTabParam = parseInt(searchParams.get('tab') || '0', 10);
+    const initialTab = Number.isFinite(urlTabParam) && urlTabParam >= 0 && urlTabParam <= 3 ? urlTabParam : 0;
+    const [tabIndex, setTabIndexState] = useState(initialTab);
+
+    const setTabIndex = (v: number) => {
+        setTabIndexState(v);
+        if (v === 0) {
+            searchParams.delete('tab');
+        } else {
+            searchParams.set('tab', String(v));
+        }
+        setSearchParams(searchParams, { replace: true });
+    };
+
+    // React to URL changes (e.g. clicking nav link while already on this page)
+    useEffect(() => {
+        if (Number.isFinite(urlTabParam) && urlTabParam >= 0 && urlTabParam <= 3 && urlTabParam !== tabIndex) {
+            setTabIndexState(urlTabParam);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [urlTabParam]);
 
     // Ledger now consists of WorkSessions (regular, correction, manual_adjustment)
     const [entries, setEntries] = useState<WorkSession[]>([]);
@@ -63,6 +86,10 @@ const FinancePage: React.FC = () => {
     const [adjEmployee, setAdjEmployee] = useState('');
     const [adjAmount, setAdjAmount] = useState('');
     const [adjDesc, setAdjDesc] = useState('');
+    const [adjClientId, setAdjClientId] = useState('');
+
+    // Clients list for the "Project" dropdown in the adjustment form
+    const [clientsList, setClientsList] = useState<{ id: string; name: string }[]>([]);
 
     // Void Dialog
     const [voidTarget, setVoidTarget] = useState<WorkSession | null>(null);
@@ -263,6 +290,23 @@ const FinancePage: React.FC = () => {
         }
     }, [employees.length, entries]);
 
+    // Fetch clients once for the "Project" dropdown in adjustment form
+    useEffect(() => {
+        const fetchClients = async () => {
+            try {
+                const snap = await getDocs(query(collection(db, 'clients'), orderBy('name', 'asc')));
+                setClientsList(snap.docs
+                    .map(d => ({ id: d.id, name: (d.data().name || '') as string, status: (d.data().status || '') as string }))
+                    .filter(c => c.name && c.status !== 'done')
+                    .map(({ id, name }) => ({ id, name }))
+                );
+            } catch (err) {
+                console.error('fetch clients failed', err);
+            }
+        };
+        fetchClients();
+    }, []);
+
     // Pagination
     const [page, setPage] = useState(0);
     const [rowsPerPage, setRowsPerPage] = useState(25);
@@ -271,29 +315,35 @@ const FinancePage: React.FC = () => {
     const [confirmAction, setConfirmAction] = useState<{ type: 'payment' | 'adjustment'; summary: string; execute: () => Promise<void> } | null>(null);
 
     const handleAddAdjustment = async () => {
-        if (!adjEmployee || !adjAmount || !adjDesc) return;
+        // Only employee + amount are required. Description and project are optional.
+        if (!adjEmployee || !adjAmount) return;
 
         try {
             const employee = uniqueEmployees.find(e => e.id === adjEmployee) || employees.find(e => e.id === adjEmployee);
             const amt = parseFloat(adjAmount);
+            if (isNaN(amt)) return;
+
+            const selectedClient = adjClientId ? clientsList.find(c => c.id === adjClientId) : undefined;
+            const clientLabel = selectedClient ? ` on ${selectedClient.name}` : '';
+            const descLabel = adjDesc ? ` — ${adjDesc}` : '';
 
             setConfirmAction({
                 type: 'adjustment',
-                summary: `${employee?.name || 'Unknown'}: ${amt >= 0 ? '+' : ''}$${amt.toFixed(2)} — ${adjDesc}`,
+                summary: `${employee?.name || 'Unknown'}: ${amt >= 0 ? '+' : ''}$${amt.toFixed(2)}${clientLabel}${descLabel}`,
                 execute: async () => {
                     const adjustmentSession: Partial<WorkSession> = {
                         type: 'manual_adjustment',
                         startTime: Timestamp.now(),
                         employeeId: adjEmployee,
                         employeeName: employee?.name || 'Unknown',
-                        clientName: 'Manual Adjustment',
-                        clientId: 'manual_adj',
+                        clientName: selectedClient?.name || 'Manual Adjustment',
+                        clientId: selectedClient?.id || 'manual_adj',
                         status: 'completed',
                         finalizationStatus: 'finalized',
                         durationMinutes: 0,
                         hourlyRate: 0,
                         sessionEarnings: amt,
-                        description: adjDesc,
+                        description: adjDesc || (amt >= 0 ? 'Manual accrual / bonus' : 'Manual deduction'),
                     };
 
                     await addDoc(collection(db, 'work_sessions'), adjustmentSession);
@@ -302,6 +352,7 @@ const FinancePage: React.FC = () => {
                     setAdjEmployee('');
                     setAdjAmount('');
                     setAdjDesc('');
+                    setAdjClientId('');
                     fetchLedger();
                 }
             });
@@ -641,18 +692,21 @@ const FinancePage: React.FC = () => {
                             </Card>
                         </Box>
                         <Box sx={{ flex: 1, minWidth: 160 }}>
-                            <Card sx={{ bgcolor: '#ff9800', color: 'white', height: '100%' }}>
-                                <CardContent>
-                                    <Typography variant="body2" sx={{ opacity: 0.8 }}>Expenses ({stats.costsCount})</Typography>
-                                    <Typography variant="h4" fontWeight="bold">${stats.expenses.toFixed(2)}</Typography>
-                                </CardContent>
-                            </Card>
+                            <Tooltip title="Бизнес-расходы (материалы/инструменты/топливо и т.п.) привязанные к сотруднику через коллекцию costs. Это ОТДЕЛЬНЫЙ реестр — не вычитается из зарплатного баланса. Видны в разделе Expenses." arrow>
+                                <Card sx={{ bgcolor: '#ff9800', color: 'white', height: '100%' }}>
+                                    <CardContent>
+                                        <Typography variant="body2" sx={{ opacity: 0.8 }}>Expenses ({stats.costsCount})</Typography>
+                                        <Typography variant="h4" fontWeight="bold">${stats.expenses.toFixed(2)}</Typography>
+                                        <Typography variant="caption" sx={{ opacity: 0.7 }}>business (info only)</Typography>
+                                    </CardContent>
+                                </Card>
+                            </Tooltip>
                         </Box>
                         <Box sx={{ flex: 1, minWidth: 160 }}>
                             <Card sx={{ bgcolor: stats.balance >= 0 ? '#4caf50' : '#f44336', color: 'white', height: '100%' }}>
                                 <CardContent>
-                                    <Tooltip title={`Salary ($${stats.salary.toFixed(0)}) ${stats.adjustments !== 0 ? `+ Adj ($${stats.adjustments.toFixed(0)}) ` : ''}- Payments ($${stats.payments.toFixed(0)}) - Expenses ($${stats.expenses.toFixed(0)})`} arrow>
-                                        <Typography variant="body2" sx={{ opacity: 0.8 }}>Balance</Typography>
+                                    <Tooltip title={`Salary ($${stats.salary.toFixed(0)}) ${stats.adjustments !== 0 ? `+ Adj ($${stats.adjustments.toFixed(0)}) ` : ''}− Payments ($${stats.payments.toFixed(0)}). Business expenses НЕ вычитаются (отдельный реестр).`} arrow>
+                                        <Typography variant="body2" sx={{ opacity: 0.8 }}>Salary Balance</Typography>
                                     </Tooltip>
                                     <Typography variant="h4" fontWeight="bold">${stats.balance.toFixed(2)}</Typography>
                                 </CardContent>
@@ -962,14 +1016,14 @@ const FinancePage: React.FC = () => {
 
             {/* Adjustment Dialog */}
             <Dialog open={openAdjDialog} onClose={() => setOpenAdjDialog(false)} maxWidth="xs" fullWidth>
-                <DialogTitle>Add Manual Adjustment</DialogTitle>
+                <DialogTitle>Add Manual Adjustment / Bonus</DialogTitle>
                 <DialogContent>
                     <Box display="flex" flexDirection="column" gap={2} mt={1}>
-                        <FormControl fullWidth size="small">
-                            <InputLabel>Employee</InputLabel>
+                        <FormControl fullWidth size="small" required>
+                            <InputLabel>Employee *</InputLabel>
                             <Select
                                 value={adjEmployee}
-                                label="Employee"
+                                label="Employee *"
                                 onChange={(e) => setAdjEmployee(e.target.value)}
                             >
                                 {uniqueEmployees.map(emp => (
@@ -978,20 +1032,35 @@ const FinancePage: React.FC = () => {
                             </Select>
                         </FormControl>
                         <TextField
-                            label="Amount ($)"
+                            label="Amount ($) *"
                             type="number"
                             fullWidth
                             size="small"
-                            helperText="Use negative for deductions (e.g. -50)"
+                            required
+                            helperText="Положительное = премия/начисление. Отрицательное (напр. -50) = удержание."
                             value={adjAmount}
                             onChange={(e) => setAdjAmount(e.target.value)}
                         />
+                        <FormControl fullWidth size="small">
+                            <InputLabel>Project (optional)</InputLabel>
+                            <Select
+                                value={adjClientId}
+                                label="Project (optional)"
+                                onChange={(e) => setAdjClientId(e.target.value)}
+                            >
+                                <MenuItem value=""><em>— без проекта —</em></MenuItem>
+                                {clientsList.map(c => (
+                                    <MenuItem key={c.id} value={c.id}>{c.name}</MenuItem>
+                                ))}
+                            </Select>
+                        </FormControl>
                         <TextField
-                            label="Reason / Description"
+                            label="Note (optional)"
                             fullWidth
                             multiline
                             rows={2}
                             size="small"
+                            placeholder="Напр.: премия за переработку, бонус за выполненный проект"
                             value={adjDesc}
                             onChange={(e) => setAdjDesc(e.target.value)}
                         />
@@ -999,7 +1068,7 @@ const FinancePage: React.FC = () => {
                 </DialogContent>
                 <DialogActions>
                     <Button onClick={() => setOpenAdjDialog(false)}>Cancel</Button>
-                    <Button onClick={handleAddAdjustment} variant="contained">Save</Button>
+                    <Button onClick={handleAddAdjustment} variant="contained" disabled={!adjEmployee || !adjAmount}>Save</Button>
                 </DialogActions>
             </Dialog>
 

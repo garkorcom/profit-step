@@ -94,7 +94,7 @@ const TransactionRow: React.FC<TransactionRowProps> = ({
         </Tooltip>
       </TableCell>
       {/* Amount */}
-      <TableCell>
+      <TableCell sx={{ minWidth: 200 }}>
         {view === 'draft' && !isInlineApproved ? (
           <TextField
             size="small"
@@ -102,11 +102,17 @@ const TransactionRow: React.FC<TransactionRowProps> = ({
             value={t.amount}
             onChange={e => onUpdate(t.id, 'amount', parseFloat(e.target.value) || 0)}
             slotProps={{ input: { startAdornment: <InputAdornment position="start">$</InputAdornment>, style: { textAlign: 'right' } } }}
-            sx={{ width: 105 }}
+            sx={{ width: 190 }}
           />
         ) : (
-          <Typography fontWeight="bold" fontSize="0.85rem" color={t.amount < 0 ? 'error.main' : 'text.primary'}>
-            ${Math.abs(t.amount).toFixed(2)}
+          <Typography
+            fontWeight="bold"
+            fontSize="0.95rem"
+            color={t.amount < 0 ? 'error.main' : 'text.primary'}
+            noWrap
+            sx={{ fontVariantNumeric: 'tabular-nums' }}
+          >
+            ${Math.abs(t.amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </Typography>
         )}
       </TableCell>

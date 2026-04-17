@@ -294,22 +294,15 @@ export async function handleLocationConfirmStart(chatId: number, userId: number)
         await sendMessage(chatId, '⚠️ Внимание! Ваша почасовая ставка не установлена ($0/ч). Пожалуйста, свяжитесь с руководителем для уточнения.');
     }
 
+    // NEW flow (2026-04-17, Denis's verbal spec):
+    //   location confirm → selfie request → plan request → "Смена начата!"
+    // The "✅ Смена начата!" announcement + main menu are deferred until
+    // after the plan voice/text/skip step (see mediaHandler voice path and
+    // textFallbacks.awaitingStartVoice path). The session itself is already
+    // active in Firestore (status='active'), so the timer is running — we
+    // just hold the announcement so the worker sees a coherent flow.
     await sendMessage(chatId,
-        `✅ *Смена начата!*\n\n` +
-        `🏢 Объект: *${fullClientName}*\n` +
-        `⏱ Таймер запущен. Работаем!`
-    );
-
-    // Show the work menu (Break / Finish Work) BEFORE asking for the selfie
-    // so the worker isn't trapped if their camera is busy. The photo prompt
-    // that follows carries its own keyboard with a skip button.
-    await sendMainMenu(chatId, userId);
-
-    // F-1: selfie request. The "skip" button is a normal keyboard text
-    // — onWorkerBotMessage.ts routes `⏩ Пропустить фото` → handleSkipMedia,
-    // which branches on awaitingStartPhoto (see mediaHandler.ts).
-    await sendMessage(chatId,
-        `📸 *Сделай селфи на фоне объекта.*\n\n` +
+        `📸 *Сделай селфи на фоне объекта — ${fullClientName}.*\n\n` +
         `Так мы подтверждаем, что ты на месте. Просто сфоткай себя и пришли в чат.`,
         {
             keyboard: [[{ text: '⏩ Пропустить фото' }]],

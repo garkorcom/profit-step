@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Profit Step Platform — Build Construction Tools on Our API</title>
+    <meta name="description" content="Python SDK, webhooks, and multi-tenant API for construction CRM. Build Telegram bots, accounting integrations, vertical tools. Revenue share for marketplace partners.">
+    <meta name="keywords" content="construction API, contractor SDK, AI agent platform, profit-step API, construction webhooks">
+    <meta property="og:title" content="Profit Step Platform — Build on Our API">
+    <meta property="og:description" content="89 endpoints, Python SDK, webhooks. The infrastructure for construction AI agents and integrations.">
+    <meta property="og:type" content="website">
+    <link rel="icon" href="/favicon.ico">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#e8f5e9',
+                            100: '#c8e6c9',
+                            500: '#4caf50',
+                            600: '#43a047',
+                            700: '#388e3c',
+                            800: '#2e7d32',
+                            900: '#1b5e20',
+                        },
+                        ink: {
+                            900: '#0a0a0a',
+                            800: '#1a1a1a',
+                            700: '#404040',
+                            500: '#737373',
+                            300: '#d4d4d4',
+                        },
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'ui-monospace', 'monospace'],
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        code, pre { font-family: 'JetBrains Mono', monospace; }
+        .code-block {
+            background: #0a0a0a;
+            color: #e8f5e9;
+            border-radius: 12px;
+            padding: 1.5rem;
+            font-size: 0.92rem;
+            line-height: 1.6;
+            overflow-x: auto;
+        }
+        .code-block .kw { color: #ff79c6; }
+        .code-block .str { color: #f1fa8c; }
+        .code-block .com { color: #6272a4; }
+        .code-block .fn { color: #8be9fd; }
+        .gradient-bg {
+            background: linear-gradient(135deg, #e8f5e9 0%, #f1f8e9 50%, #ffffff 100%);
+        }
+        .noise::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background-image: radial-gradient(circle at 20% 30%, rgba(76, 175, 80, 0.08) 0%, transparent 50%),
+                              radial-gradient(circle at 80% 70%, rgba(56, 142, 60, 0.08) 0%, transparent 50%);
+            pointer-events: none;
+        }
+    </style>
+</head>
+
+<body class="bg-white text-ink-900">
+
+<!-- Nav -->
+<nav class="sticky top-0 z-50 backdrop-blur-md bg-white/80 border-b border-ink-300/50">
+    <div class="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
+        <a href="/" class="flex items-center gap-2">
+            <span class="text-2xl">🧱</span>
+            <span class="font-bold text-lg">Profit Step <span class="text-brand-700">Platform</span></span>
+        </a>
+        <div class="hidden md:flex gap-8 text-sm font-medium text-ink-700">
+            <a href="#who" class="hover:text-brand-700">Who builds</a>
+            <a href="#sdk" class="hover:text-brand-700">Python SDK</a>
+            <a href="#api" class="hover:text-brand-700">API</a>
+            <a href="#pricing" class="hover:text-brand-700">Pricing</a>
+            <a href="/api/docs/spec.json" target="_blank" class="hover:text-brand-700">OpenAPI →</a>
+        </div>
+        <a href="#contact" class="bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition">Get token</a>
+    </div>
+</nav>
+
+<!-- Hero -->
+<section class="gradient-bg noise relative overflow-hidden">
+    <div class="max-w-5xl mx-auto px-6 py-24 md:py-32 relative">
+        <div class="inline-block bg-brand-100 text-brand-800 text-xs font-bold px-3 py-1.5 rounded-full mb-8 tracking-wide">
+            ⚡ PLATFORM & ECOSYSTEM
+        </div>
+        <h1 class="text-5xl md:text-7xl font-black tracking-tight mb-6 leading-[1.05]">
+            Build construction tools<br>
+            on <span class="text-brand-700">our API.</span>
+        </h1>
+        <p class="text-xl md:text-2xl text-ink-700 mb-10 max-w-3xl leading-relaxed">
+            Python SDK, webhooks, and a multi-tenant CRM backend used by real contractors every day.
+            Ship a Telegram bot, an accounting integration, or a vertical SaaS on top — and we'll split revenue.
+        </p>
+        <div class="flex flex-wrap gap-4">
+            <a href="#sdk" class="bg-brand-600 hover:bg-brand-700 text-white px-8 py-4 rounded-xl font-semibold shadow-lg shadow-brand-500/20 transition">
+                Install the SDK →
+            </a>
+            <a href="/api/docs/spec.json" target="_blank" class="bg-white hover:bg-ink-300/30 border border-ink-300 px-8 py-4 rounded-xl font-semibold transition">
+                Browse 89 endpoints
+            </a>
+        </div>
+        <div class="mt-12 flex flex-wrap gap-8 text-sm text-ink-500">
+            <div><span class="text-ink-900 font-bold">89</span> REST endpoints</div>
+            <div><span class="text-ink-900 font-bold">9</span> SDK domains, typed models</div>
+            <div><span class="text-ink-900 font-bold">Webhooks</span> with HMAC signatures</div>
+            <div><span class="text-ink-900 font-bold">Multi-tenant</span> RLS-enforced</div>
+        </div>
+    </div>
+</section>
+
+<!-- Who builds -->
+<section id="who" class="py-24 bg-white">
+    <div class="max-w-7xl mx-auto px-6">
+        <h2 class="text-4xl md:text-5xl font-black mb-4 tracking-tight">Who builds on Profit Step</h2>
+        <p class="text-xl text-ink-700 mb-16 max-w-3xl">Four audiences. Different needs, same platform.</p>
+
+        <div class="grid md:grid-cols-2 gap-6">
+            <!-- 1 -->
+            <div class="border border-ink-300/70 rounded-2xl p-8 hover:border-brand-500 hover:shadow-xl transition">
+                <div class="text-3xl mb-4">🏗️</div>
+                <h3 class="text-2xl font-bold mb-2">Contractors</h3>
+                <p class="text-brand-700 font-semibold mb-4">use Profit Step as their CRM</p>
+                <p class="text-ink-700 mb-4">Electrical, plumbing, HVAC, general. 5-100 employees. Get estimates, payroll, reconciliation, time-tracking bot — out of the box.</p>
+                <div class="text-sm text-ink-500">💵 Pays: $49-899/mo SaaS subscription</div>
+            </div>
+
+            <!-- 2 -->
+            <div class="border border-ink-300/70 rounded-2xl p-8 hover:border-brand-500 hover:shadow-xl transition">
+                <div class="text-3xl mb-4">🤖</div>
+                <h3 class="text-2xl font-bold mb-2">AI Agent Developers</h3>
+                <p class="text-brand-700 font-semibold mb-4">build bots on our API</p>
+                <p class="text-ink-700 mb-4">Telegram, Slack, Discord, WhatsApp integrations. Custom GPTs. OpenClaw marketplace entries. Use the Python SDK, ship in hours instead of weeks.</p>
+                <div class="text-sm text-ink-500">💵 Pays: $0-999/mo API tier (by request volume)</div>
+            </div>
+
+            <!-- 3 -->
+            <div class="border border-ink-300/70 rounded-2xl p-8 hover:border-brand-500 hover:shadow-xl transition">
+                <div class="text-3xl mb-4">📊</div>
+                <h3 class="text-2xl font-bold mb-2">Integrators</h3>
+                <p class="text-brand-700 font-semibold mb-4">sync with bookkeeping & payroll</p>
+                <p class="text-ink-700 mb-4">QuickBooks, Xero, ADP, Gusto. You build the connector, list it on the Profit Step marketplace, split revenue 75/25 with us.</p>
+                <div class="text-sm text-ink-500">💵 Earns: 75% revenue share of their subscribers</div>
+            </div>
+
+            <!-- 4 -->
+            <div class="border border-ink-300/70 rounded-2xl p-8 hover:border-brand-500 hover:shadow-xl transition">
+                <div class="text-3xl mb-4">🏢</div>
+                <h3 class="text-2xl font-bold mb-2">White-label Partners</h3>
+                <p class="text-brand-700 font-semibold mb-4">resell under their own brand</p>
+                <p class="text-ink-700 mb-4">Trade associations, franchise networks, industry marketplaces. We provide the backend, you brand the UI. Enterprise-only.</p>
+                <div class="text-sm text-ink-500">💵 Pays: $5k-50k/mo + setup fee</div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- SDK -->
+<section id="sdk" class="py-24 bg-ink-900 text-white">
+    <div class="max-w-7xl mx-auto px-6">
+        <div class="grid md:grid-cols-2 gap-16 items-center">
+            <div>
+                <div class="text-brand-500 text-sm font-bold tracking-wider mb-4">PYTHON SDK · v0.1.0-beta</div>
+                <h2 class="text-4xl md:text-5xl font-black mb-6 tracking-tight">One import.<br>Typed API.</h2>
+                <p class="text-xl text-ink-300 mb-8 leading-relaxed">
+                    Pydantic models for every resource, pytest-friendly mocks, 3 auth modes, retry + rate-limit handling built in.
+                    Escape hatch for domains not yet covered.
+                </p>
+                <div class="space-y-3 mb-8 text-ink-300">
+                    <div class="flex items-start gap-3"><span class="text-brand-500 mt-0.5">✓</span> Works with master key, per-employee impersonation, or Firebase JWT</div>
+                    <div class="flex items-start gap-3"><span class="text-brand-500 mt-0.5">✓</span> 8 domains: tasks, time, costs, events, clients, projects, payroll, webhooks</div>
+                    <div class="flex items-start gap-3"><span class="text-brand-500 mt-0.5">✓</span> `psa` CLI for quick scripts</div>
+                    <div class="flex items-start gap-3"><span class="text-brand-500 mt-0.5">✓</span> MIT license, open source on GitHub</div>
+                </div>
+                <a href="https://github.com/garkorcom/profit-step/tree/main/sdk/python" target="_blank" class="inline-flex items-center gap-2 text-brand-500 hover:text-brand-100 font-semibold">
+                    Source on GitHub →
+                </a>
+            </div>
+
+            <div class="space-y-4">
+                <div class="code-block">
+<span class="com"># Install</span>
+<span class="kw">$</span> pip install profit-step-agent
+
+<span class="com"># Use</span>
+<span class="kw">from</span> profit_step_agent <span class="kw">import</span> CRMAgent
+
+agent = <span class="fn">CRMAgent</span>(token=<span class="str">"ak_..."</span>)
+
+<span class="com"># Typed results</span>
+tasks = agent.tasks.<span class="fn">list</span>(status=<span class="str">"next_action"</span>)
+<span class="kw">for</span> t <span class="kw">in</span> tasks:
+    <span class="fn">print</span>(t.title, t.due_date)
+
+<span class="com"># Time tracking</span>
+agent.time.<span class="fn">start</span>(client_id=<span class="str">"xyz"</span>)
+
+<span class="com"># Act as a specific worker</span>
+<span class="kw">with</span> agent.<span class="fn">impersonate</span>(<span class="str">"worker-uid-123"</span>):
+    own_tasks = agent.tasks.<span class="fn">list</span>()
+                </div>
+                <div class="text-sm text-ink-500">Full quickstart: <a href="https://github.com/garkorcom/profit-step/blob/main/sdk/python/README.md" class="underline hover:text-brand-500">sdk/python/README.md</a></div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- API features -->
+<section id="api" class="py-24 bg-white">
+    <div class="max-w-7xl mx-auto px-6">
+        <div class="grid md:grid-cols-4 gap-8">
+            <div class="md:col-span-2">
+                <h2 class="text-4xl md:text-5xl font-black mb-6 tracking-tight">REST + webhooks.<br>Production-grade.</h2>
+                <p class="text-xl text-ink-700 mb-8">Auto-generated OpenAPI spec, HMAC-signed webhooks, rate-limited per token. Battle-tested on a live construction business.</p>
+                <a href="/api/docs/spec.json" target="_blank" class="inline-flex items-center gap-2 text-brand-700 hover:text-brand-900 font-semibold">
+                    View OpenAPI spec →
+                </a>
+            </div>
+            <div class="space-y-4">
+                <div class="bg-brand-50 p-5 rounded-xl">
+                    <div class="text-3xl font-black text-brand-700">89</div>
+                    <div class="text-sm text-ink-700 font-medium">REST endpoints across 21 domains</div>
+                </div>
+                <div class="bg-brand-50 p-5 rounded-xl">
+                    <div class="text-3xl font-black text-brand-700">9</div>
+                    <div class="text-sm text-ink-700 font-medium">Typed SDK domains (v0.1)</div>
+                </div>
+            </div>
+            <div class="space-y-4">
+                <div class="bg-brand-50 p-5 rounded-xl">
+                    <div class="text-3xl font-black text-brand-700">60/min</div>
+                    <div class="text-sm text-ink-700 font-medium">Rate limit per token (free tier)</div>
+                </div>
+                <div class="bg-brand-50 p-5 rounded-xl">
+                    <div class="text-3xl font-black text-brand-700">3</div>
+                    <div class="text-sm text-ink-700 font-medium">Auth modes (key / JWT / impersonation)</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="mt-16 grid md:grid-cols-3 gap-6 text-sm">
+            <div class="border border-ink-300/70 rounded-xl p-6">
+                <div class="font-bold text-brand-700 mb-2">📊 Core domains</div>
+                <p class="text-ink-700">time-tracking, payroll, tasks (GTD), clients, projects, costs</p>
+            </div>
+            <div class="border border-ink-300/70 rounded-xl p-6">
+                <div class="font-bold text-brand-700 mb-2">💰 Financial</div>
+                <p class="text-ink-700">reconciliation, estimates, purchase orders, change orders, ERP</p>
+            </div>
+            <div class="border border-ink-300/70 rounded-xl p-6">
+                <div class="font-bold text-brand-700 mb-2">🔧 Infrastructure</div>
+                <p class="text-ink-700">inventory, files, users/contacts, teams, webhooks, activity audit</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Pricing -->
+<section id="pricing" class="py-24 bg-ink-900/5">
+    <div class="max-w-7xl mx-auto px-6">
+        <h2 class="text-4xl md:text-5xl font-black mb-4 tracking-tight">Pricing</h2>
+        <p class="text-xl text-ink-700 mb-12 max-w-3xl">
+            Start free. Pay as you grow. Revenue share if you sell tools on our marketplace.
+        </p>
+
+        <!-- Two columns of pricing: API + SaaS -->
+        <div class="grid lg:grid-cols-2 gap-8">
+            <!-- API tiers -->
+            <div>
+                <h3 class="text-2xl font-bold mb-6 text-brand-700">For developers (API tiers)</h3>
+                <div class="space-y-4">
+                    <div class="bg-white border border-ink-300/70 p-6 rounded-xl">
+                        <div class="flex justify-between items-start mb-2">
+                            <div class="font-bold text-lg">Free (hobby)</div>
+                            <div class="text-2xl font-black">$0</div>
+                        </div>
+                        <div class="text-sm text-ink-500 mb-3">1,000 req/day · basic support</div>
+                        <div class="text-sm text-ink-700">For side projects, POCs, learning.</div>
+                    </div>
+                    <div class="bg-white border-2 border-brand-500 p-6 rounded-xl relative">
+                        <div class="absolute -top-3 left-6 bg-brand-600 text-white text-xs font-bold px-3 py-1 rounded-full">POPULAR</div>
+                        <div class="flex justify-between items-start mb-2">
+                            <div class="font-bold text-lg">Dev</div>
+                            <div class="text-2xl font-black">$29<span class="text-sm text-ink-500 font-normal">/mo</span></div>
+                        </div>
+                        <div class="text-sm text-ink-500 mb-3">50,000 req/day · email support</div>
+                        <div class="text-sm text-ink-700">For indie devs shipping 1-3 integrations.</div>
+                    </div>
+                    <div class="bg-white border border-ink-300/70 p-6 rounded-xl">
+                        <div class="flex justify-between items-start mb-2">
+                            <div class="font-bold text-lg">Scale</div>
+                            <div class="text-2xl font-black">$199<span class="text-sm text-ink-500 font-normal">/mo</span></div>
+                        </div>
+                        <div class="text-sm text-ink-500 mb-3">500,000 req/day · priority support</div>
+                        <div class="text-sm text-ink-700">For integrators serving 10+ customers.</div>
+                    </div>
+                    <div class="bg-white border border-ink-300/70 p-6 rounded-xl">
+                        <div class="flex justify-between items-start mb-2">
+                            <div class="font-bold text-lg">Enterprise</div>
+                            <div class="text-2xl font-black">$999+<span class="text-sm text-ink-500 font-normal">/mo</span></div>
+                        </div>
+                        <div class="text-sm text-ink-500 mb-3">Unlimited · SLA · dedicated support</div>
+                        <div class="text-sm text-ink-700">White-label, marketplace, high-volume.</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- SaaS tiers -->
+            <div>
+                <h3 class="text-2xl font-bold mb-6 text-brand-700">For contractors (SaaS)</h3>
+                <div class="space-y-4">
+                    <div class="bg-white border border-ink-300/70 p-6 rounded-xl">
+                        <div class="flex justify-between items-start mb-2">
+                            <div class="font-bold text-lg">Starter</div>
+                            <div class="text-2xl font-black">$49<span class="text-sm text-ink-500 font-normal">/mo</span></div>
+                        </div>
+                        <div class="text-sm text-ink-500 mb-3">Up to 5 workers</div>
+                        <div class="text-sm text-ink-700">Time-tracking bot, estimates, payroll basics.</div>
+                    </div>
+                    <div class="bg-white border-2 border-brand-500 p-6 rounded-xl relative">
+                        <div class="absolute -top-3 left-6 bg-brand-600 text-white text-xs font-bold px-3 py-1 rounded-full">MOST CHOSEN</div>
+                        <div class="flex justify-between items-start mb-2">
+                            <div class="font-bold text-lg">Pro</div>
+                            <div class="text-2xl font-black">$149<span class="text-sm text-ink-500 font-normal">/mo</span></div>
+                        </div>
+                        <div class="text-sm text-ink-500 mb-3">Up to 20 workers · AI estimator</div>
+                        <div class="text-sm text-ink-700">Everything + AI-bot, reconciliation, full payroll.</div>
+                    </div>
+                    <div class="bg-white border border-ink-300/70 p-6 rounded-xl">
+                        <div class="flex justify-between items-start mb-2">
+                            <div class="font-bold text-lg">Business</div>
+                            <div class="text-2xl font-black">$349<span class="text-sm text-ink-500 font-normal">/mo</span></div>
+                        </div>
+                        <div class="text-sm text-ink-500 mb-3">Up to 100 workers · multi-tenant · API access</div>
+                        <div class="text-sm text-ink-700">For growing firms + those using partner integrations.</div>
+                    </div>
+                    <div class="bg-white border border-ink-300/70 p-6 rounded-xl">
+                        <div class="flex justify-between items-start mb-2">
+                            <div class="font-bold text-lg">Enterprise</div>
+                            <div class="text-2xl font-black">$899+<span class="text-sm text-ink-500 font-normal">/mo</span></div>
+                        </div>
+                        <div class="text-sm text-ink-500 mb-3">Unlimited · white-label · custom</div>
+                        <div class="text-sm text-ink-700">Franchise networks, associations, resellers.</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Marketplace deal -->
+        <div class="mt-12 bg-gradient-to-br from-brand-50 to-brand-100/50 p-8 rounded-2xl border border-brand-500/30">
+            <div class="flex items-start gap-4">
+                <div class="text-4xl">🛍️</div>
+                <div>
+                    <h3 class="text-2xl font-bold mb-2">Marketplace revenue share</h3>
+                    <p class="text-ink-700 mb-3">
+                        List your integration on the Profit Step marketplace. We handle billing, authentication, customer support.
+                        You focus on the product. <span class="font-bold">75% goes to you, 25% to us.</span>
+                    </p>
+                    <p class="text-sm text-ink-500">Example: $19/mo tool × 200 subscribers = $3,800/mo → your cut $2,850/mo.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Use cases -->
+<section class="py-24 bg-white">
+    <div class="max-w-7xl mx-auto px-6">
+        <h2 class="text-4xl md:text-5xl font-black mb-12 tracking-tight">What to build</h2>
+        <div class="grid md:grid-cols-3 gap-6">
+            <div class="p-6 border border-ink-300/70 rounded-xl hover:border-brand-500 transition">
+                <div class="text-3xl mb-3">📱</div>
+                <h3 class="font-bold text-lg mb-2">Telegram / Slack bots</h3>
+                <p class="text-ink-700 text-sm">Notify on cost-approval, payroll-ready, task-assigned. Bidirectional — workers message the bot, bot files it into CRM.</p>
+            </div>
+            <div class="p-6 border border-ink-300/70 rounded-xl hover:border-brand-500 transition">
+                <div class="text-3xl mb-3">📈</div>
+                <h3 class="font-bold text-lg mb-2">BI dashboards</h3>
+                <p class="text-ink-700 text-sm">Pull time-series data via `/events`, feed into Grafana / Metabase. Project profitability, worker utilization, job-costing deep dives.</p>
+            </div>
+            <div class="p-6 border border-ink-300/70 rounded-xl hover:border-brand-500 transition">
+                <div class="text-3xl mb-3">💸</div>
+                <h3 class="font-bold text-lg mb-2">Accounting connectors</h3>
+                <p class="text-ink-700 text-sm">Sync approved costs to QuickBooks, payroll periods to ADP, invoices to Xero. The marketplace pays well for these.</p>
+            </div>
+            <div class="p-6 border border-ink-300/70 rounded-xl hover:border-brand-500 transition">
+                <div class="text-3xl mb-3">🤖</div>
+                <h3 class="font-bold text-lg mb-2">AI estimators</h3>
+                <p class="text-ink-700 text-sm">Blueprint OCR + LLM scoping → draft estimates in CRM. Sell as add-on to Starter/Pro tier customers.</p>
+            </div>
+            <div class="p-6 border border-ink-300/70 rounded-xl hover:border-brand-500 transition">
+                <div class="text-3xl mb-3">📋</div>
+                <h3 class="font-bold text-lg mb-2">Compliance / audit</h3>
+                <p class="text-ink-700 text-sm">Subscribe to `activity.*` webhooks, archive every state change for 7 years. Sell to contractors in regulated regions.</p>
+            </div>
+            <div class="p-6 border border-ink-300/70 rounded-xl hover:border-brand-500 transition">
+                <div class="text-3xl mb-3">🏷️</div>
+                <h3 class="font-bold text-lg mb-2">Vertical reseller SaaS</h3>
+                <p class="text-ink-700 text-sm">Take Profit Step, brand it "ElectriPro CRM for Master Electricians", resell at 2-3× price. White-label tier.</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- CTA / Contact -->
+<section id="contact" class="py-24 bg-gradient-to-br from-brand-700 to-brand-900 text-white">
+    <div class="max-w-4xl mx-auto px-6 text-center">
+        <h2 class="text-4xl md:text-6xl font-black mb-6 tracking-tight">Start building today.</h2>
+        <p class="text-xl md:text-2xl text-brand-100 mb-10">
+            Get a token, install the SDK, ship your first integration this week.
+        </p>
+        <div class="flex flex-wrap gap-4 justify-center mb-12">
+            <a href="mailto:dev@garkor.com?subject=Profit%20Step%20API%20access" class="bg-white text-brand-800 hover:bg-brand-50 px-8 py-4 rounded-xl font-bold shadow-xl transition">
+                Request API token
+            </a>
+            <a href="/api/docs/spec.json" target="_blank" class="bg-white/10 hover:bg-white/20 backdrop-blur-sm border border-white/30 px-8 py-4 rounded-xl font-semibold transition">
+                Browse OpenAPI spec
+            </a>
+        </div>
+        <div class="grid md:grid-cols-3 gap-6 text-left">
+            <div class="bg-white/10 p-5 rounded-xl backdrop-blur-sm">
+                <div class="font-bold mb-1">📧 Email</div>
+                <a href="mailto:dev@garkor.com" class="text-brand-100 text-sm hover:text-white">dev@garkor.com</a>
+            </div>
+            <div class="bg-white/10 p-5 rounded-xl backdrop-blur-sm">
+                <div class="font-bold mb-1">💬 GitHub</div>
+                <a href="https://github.com/garkorcom/profit-step/issues" target="_blank" class="text-brand-100 text-sm hover:text-white">File an issue</a>
+            </div>
+            <div class="bg-white/10 p-5 rounded-xl backdrop-blur-sm">
+                <div class="font-bold mb-1">📚 Docs</div>
+                <a href="/bot-docs/" class="text-brand-100 text-sm hover:text-white">Agent bot docs</a>
+            </div>
+        </div>
+    </div>
+</section>
+
+<footer class="py-8 bg-ink-900 text-ink-500 text-sm">
+    <div class="max-w-7xl mx-auto px-6 flex flex-wrap gap-4 justify-between">
+        <div>© 2026 GARKOR Corp · Profit Step Platform</div>
+        <div class="flex gap-6">
+            <a href="/" class="hover:text-brand-500">Main site</a>
+            <a href="/saas-landing/" class="hover:text-brand-500">For contractors</a>
+            <a href="/bot-docs/" class="hover:text-brand-500">Bot docs</a>
+            <a href="https://github.com/garkorcom/profit-step" target="_blank" class="hover:text-brand-500">GitHub</a>
+        </div>
+    </div>
+</footer>
+
+</body>
+</html>

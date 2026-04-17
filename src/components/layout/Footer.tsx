@@ -47,6 +47,15 @@ const Footer: React.FC = () => {
         { label: 'Сообщество', path: '/community' },
         { label: 'Статус', path: '/status' },
       ]
+    },
+    {
+      title: 'Разработчикам',
+      links: [
+        { label: 'Platform & API', path: '/platform/', external: true },
+        { label: 'Python SDK', path: 'https://github.com/garkorcom/profit-step/tree/main/sdk/python', external: true },
+        { label: 'OpenAPI спец', path: '/api/docs/spec.json', external: true },
+        { label: 'Bot docs', path: '/bot-docs/', external: true },
+      ]
     }
   ];
 
@@ -98,24 +107,38 @@ const Footer: React.FC = () => {
                 {section.title}
               </Typography>
               <Stack spacing={2}>
-                {section.links.map((link) => (
-                  <MuiLink
-                    key={link.path}
-                    component={Link}
-                    to={link.path}
-                    sx={{
-                      color: 'inherit',
-                      textDecoration: 'none',
-                      fontSize: '0.875rem',
-                      transition: 'color 0.2s',
-                      '&:hover': {
-                        color: '#38bdf8', // Sky-400
-                      },
-                    }}
-                  >
-                    {link.label}
-                  </MuiLink>
-                ))}
+                {section.links.map((link) => {
+                  const commonSx = {
+                    color: 'inherit',
+                    textDecoration: 'none',
+                    fontSize: '0.875rem',
+                    transition: 'color 0.2s',
+                    '&:hover': {
+                      color: '#38bdf8',
+                    },
+                  } as const;
+                  const isExternal = 'external' in link && link.external;
+                  return isExternal ? (
+                    <MuiLink
+                      key={link.path}
+                      href={link.path}
+                      target={link.path.startsWith('http') ? '_blank' : undefined}
+                      rel={link.path.startsWith('http') ? 'noopener noreferrer' : undefined}
+                      sx={commonSx}
+                    >
+                      {link.label}
+                    </MuiLink>
+                  ) : (
+                    <MuiLink
+                      key={link.path}
+                      component={Link}
+                      to={link.path}
+                      sx={commonSx}
+                    >
+                      {link.label}
+                    </MuiLink>
+                  );
+                })}
               </Stack>
             </Grid>
           ))}

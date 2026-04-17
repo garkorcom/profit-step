@@ -31,8 +31,9 @@
  * with setup.ts's emulator pointers.
  */
 
-import express, { Request, Response, NextFunction } from 'express';
-import request from 'supertest';
+import * as express from 'express';
+import type { Request, Response, NextFunction } from 'express';
+import * as request from 'supertest';
 
 // ─── Mock admin before importing routes ───────────────────────────────
 

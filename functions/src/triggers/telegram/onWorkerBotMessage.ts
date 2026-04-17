@@ -226,7 +226,7 @@ async function handleMessage(message: any) {
     } else if (text === '❌ Cancel' || text === '/cancel') {
         await logBotAction(userId, userId, 'cancel_action');
         await handleCancel(chatId, userId);
-    } else if (text === '⏩ Skip' || text === '⏩ Пропустить (Слабый интернет)' || text === '⏩ Пропустить фото') {
+    } else if (text === '⏩ Skip' || text === '⏩ Пропустить' || text === '⏩ Пропустить (Слабый интернет)' || text === '⏩ Пропустить фото') {
         await logBotAction(userId, userId, 'skip_media');
         // Check if we are awaiting location specifically (since Location uses string match fallback)
         const activeSession = await getActiveSession(userId);

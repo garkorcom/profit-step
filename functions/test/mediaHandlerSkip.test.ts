@@ -91,7 +91,7 @@ describe('handleSkipMedia — selfie check-in audit trail', () => {
         jest.clearAllMocks();
     });
 
-    it('F-3: skip at shift start writes audit fields, pushes admin, no voice step', async () => {
+    it('F-3: skip at shift start writes audit fields, pushes admin, chains plan step', async () => {
         mockGetActiveSession.mockResolvedValue(buildSession({ awaitingStartPhoto: true }));
 
         await handleSkipMedia(/* chatId */ 111, /* userId */ 222);
@@ -100,14 +100,12 @@ describe('handleSkipMedia — selfie check-in audit trail', () => {
         const payload = mockUpdate.mock.calls[0][0];
         expect(payload).toMatchObject({
             awaitingStartPhoto: false,
+            awaitingStartVoice: true,            // 2026-04-17: chain plan step
             skippedStartPhoto: true,
             startPhotoSkipped: true,
             startPhotoSkipReason: 'worker_refused_no_camera',
         });
         expect(payload.startPhotoSkippedAt).toBeDefined();
-
-        // Should NOT chain a voice step — that was the 8-step-flow trap.
-        expect(payload.awaitingStartVoice).toBeUndefined();
 
         // Admin push with worker + project context.
         expect(mockSendAdminNotification).toHaveBeenCalledTimes(1);
@@ -116,8 +114,14 @@ describe('handleSkipMedia — selfie check-in audit trail', () => {
         expect(adminMsg).toContain('Иван');
         expect(adminMsg).toContain('BMW Tampa');
 
-        // Worker dropped to main menu.
-        expect(mockSendMainMenu).toHaveBeenCalledWith(111, 222);
+        // Main menu is NOT shown yet — the shift is only "announced" after
+        // the plan step completes (voice / text / second skip).
+        expect(mockSendMainMenu).not.toHaveBeenCalled();
+
+        // Worker sees 2 messages: skip acknowledgement + plan prompt.
+        expect(mockSendMessage).toHaveBeenCalledTimes(2);
+        const planPrompt = mockSendMessage.mock.calls[1][1] as string;
+        expect(planPrompt).toContain('планируешь');
 
         // Activity log for project timeline.
         expect(mockActivityAdd).toHaveBeenCalledTimes(1);
@@ -125,6 +129,30 @@ describe('handleSkipMedia — selfie check-in audit trail', () => {
             projectId: 'client-1',
             content: 'Селфи старта пропущено работником',
         });
+    });
+
+    it('F-3b: skip at plan step (awaitingStartVoice) announces shift start + shows menu', async () => {
+        mockGetActiveSession.mockResolvedValue(buildSession({ awaitingStartVoice: true }));
+
+        await handleSkipMedia(111, 222);
+
+        expect(mockUpdate).toHaveBeenCalledTimes(1);
+        const payload = mockUpdate.mock.calls[0][0];
+        expect(payload).toMatchObject({
+            awaitingStartVoice: false,
+            skippedStartVoice: true,
+        });
+
+        // Announcement + main menu — this is the moment the worker sees "Смена начата!"
+        expect(mockSendMessage).toHaveBeenCalledTimes(1);
+        const announcement = mockSendMessage.mock.calls[0][1] as string;
+        expect(announcement).toContain('Смена начата');
+        expect(announcement).toContain('BMW Tampa');
+        expect(mockSendMainMenu).toHaveBeenCalledWith(111, 222);
+
+        // Plan-skip is not an admin-visible event — no push, no activity log.
+        expect(mockSendAdminNotification).not.toHaveBeenCalled();
+        expect(mockActivityAdd).not.toHaveBeenCalled();
     });
 
     it('F-7: skip at shift end writes audit fields + keeps voice step + pushes admin', async () => {

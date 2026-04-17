@@ -93,24 +93,30 @@ export async function handleSkipMedia(chatId: number, userId: number) {
         await finalizeSession(chatId, userId, activeSession, "Описание не указано");
 
     } else if (sessionData.awaitingStartPhoto) {
-        // F-3: worker can't/won't send the start selfie. We keep the shift
-        // active (locking the whole bot on a camera prompt is worse than
-        // having a flagged session), but:
-        //   - write a persistent audit trail (startPhotoSkipped* fields)
-        //   - push admin in real time
-        //   - drop straight to the main menu — no voice step
+        // F-3: worker can't/won't send the start selfie. Keep the shift
+        // active + write audit trail + push admin in real time. Then move
+        // to the plan step (awaitingStartVoice), NOT straight to main menu —
+        // the "Смена начата!" announcement comes after plan is resolved.
         const skippedAt = admin.firestore.Timestamp.now();
         await activeSession.ref.update({
             awaitingStartPhoto: false,
+            awaitingStartVoice: true,
             skippedStartPhoto: true,
             startPhotoSkipped: true,
             startPhotoSkipReason: 'worker_refused_no_camera',
             startPhotoSkippedAt: skippedAt
         });
         await sendMessage(chatId,
-            "⚠️ Ок, смена идёт без фото. Админ уведомлён, что ты не прислал подтверждение на старте."
+            "⚠️ Ок, без фото. Админ уведомлён."
         );
-        await sendMainMenu(chatId, userId);
+        await sendMessage(chatId,
+            `📝 *Что планируешь сделать сегодня?*\n\n` +
+            `Запиши голосовое или напиши текстом. Если не сейчас — жми *Пропустить*.`,
+            {
+                keyboard: [[{ text: '⏩ Пропустить' }]],
+                resize_keyboard: true
+            }
+        );
         await sendAdminNotification(
             `⚠️ *Start selfie skipped*\n` +
             `👤 ${sessionData.employeeName || 'Unknown worker'}\n` +
@@ -128,12 +134,18 @@ export async function handleSkipMedia(chatId: number, userId: number) {
             });
         }
     } else if (sessionData.awaitingStartVoice) {
-        // Skip Start Voice → session started
+        // Skip plan (voice or text) → this is the moment the shift is
+        // announced to the worker (selfie + plan flow complete).
         await activeSession.ref.update({
             awaitingStartVoice: false,
             skippedStartVoice: true
         });
-        await sendMessage(chatId, "✅ Смена началась! Удачи!", { remove_keyboard: true });
+        await sendMessage(chatId,
+            `✅ *Смена начата!*\n\n` +
+            `🏢 Объект: *${sessionData.clientName}*\n` +
+            `⏱ Таймер запущен. Удачной работы!`,
+            { remove_keyboard: true }
+        );
         await sendMainMenu(chatId, userId);
     } else {
         await sendMessage(chatId, "⚠️ Нечего пропускать.");
@@ -187,19 +199,29 @@ export async function handleMediaUpload(chatId: number, userId: number, message:
 
         const timeStr = new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', timeZone: 'America/New_York' });
 
-        await sendMessage(chatId, `✅ Фото принято! Объект *${sessionData.clientName}* время старта *${timeStr}*\n\n🚀 Сессия начата, удачной работы!`);
+        await sendMessage(chatId, `✅ Фото принято! Объект *${sessionData.clientName}* время старта *${timeStr}*.`);
 
         // Fix 7: Write main update FIRST, then fire face verification AFTER.
-        // F-2: we no longer chain a mandatory "voice" step after the start
-        // selfie — that was part of the abandoned 8-step checklist. The
-        // shift is already active (created in locationFlow), and the main
-        // menu (Break / Finish) is already visible from before the prompt.
+        // 2026-04-17: chain the plan voice/text step after the selfie. The
+        // shift is announced as "Смена начата!" only after plan is captured
+        // (or skipped) — see voice handler START_SHIFT branch, and
+        // textFallbacks.awaitingStartVoice / handleSkipMedia.awaitingStartVoice.
         await activeSession.ref.update({
             startPhotoId: fileId,
             startPhotoUrl: url,
             startMediaType: message.video ? 'video' : (message.document ? 'document' : 'photo'),
-            awaitingStartPhoto: false
+            awaitingStartPhoto: false,
+            awaitingStartVoice: true
         });
+
+        await sendMessage(chatId,
+            `📝 *Что планируешь сделать сегодня?*\n\n` +
+            `Запиши голосовое или напиши текстом. Если не сейчас — жми *Пропустить*.`,
+            {
+                keyboard: [[{ text: '⏩ Пропустить' }]],
+                resize_keyboard: true
+            }
+        );
 
         // --- FACE VERIFICATION (Asynchronous, AFTER main update) ---
         // F-4: on mismatch, additionally send an immediate Telegram push to
@@ -555,6 +577,13 @@ ${activeTasksContext}
             // Continue to normal flow
             await activeSession.ref.update(updates);
             await sendMessage(chatId, `📝 Записал задачу: *${aiData.summary}*\n\n_${aiData.description}_`);
+            // 2026-04-17: plan captured → announce shift start + show menu.
+            await sendMessage(chatId,
+                `✅ *Смена начата!*\n\n` +
+                `🏢 Объект: *${sessionData.clientName}*\n` +
+                `⏱ Таймер запущен. Работаем!`,
+                { remove_keyboard: true }
+            );
             await sendMainMenu(chatId, userId);
         } else if (context === 'END_SHIFT') {
             updates.resultSummary = aiData.summary;

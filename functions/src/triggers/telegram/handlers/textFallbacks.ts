@@ -111,7 +111,7 @@ export async function handleText(chatId: number, userId: number, text: string) {
         return;
     }
 
-    // Fix 1: Text fallback for Start Voice
+    // Fix 1: Text fallback for Start Voice (plan step)
     if (sessionData.awaitingStartVoice) {
         await logBotAction(userId, userId, 'smart_fallback_start_voice', { text_reason: text });
         await activeSession.ref.update({
@@ -119,7 +119,14 @@ export async function handleText(chatId: number, userId: number, text: string) {
             plannedTaskDescription: text,
             plannedTaskSummary: text
         });
-        await sendMessage(chatId, "✅ Текст сохранен вместо голосового.\n🚀 Сессия началась, удачной работы!", { remove_keyboard: true });
+        await sendMessage(chatId, `📝 Записал: *${text}*`);
+        // 2026-04-17: plan captured (text) → announce shift start + show menu.
+        await sendMessage(chatId,
+            `✅ *Смена начата!*\n\n` +
+            `🏢 Объект: *${sessionData.clientName}*\n` +
+            `⏱ Таймер запущен. Работаем!`,
+            { remove_keyboard: true }
+        );
         await sendMainMenu(chatId, userId);
         return;
     }

@@ -56,8 +56,20 @@ function initAdmin() {
     }
   }
 
+  const adcPath = path.join(
+    process.env.HOME || '~',
+    '.config/gcloud/application_default_credentials.json',
+  );
+  if (fs.existsSync(adcPath)) {
+    admin.initializeApp({
+      credential: admin.credential.applicationDefault(),
+      projectId: process.env.GOOGLE_CLOUD_PROJECT || 'profit-step',
+    });
+    return;
+  }
+
   throw new Error(
-    'No credentials found. Set GOOGLE_APPLICATION_CREDENTIALS env var OR place serviceAccountKey.json in functions/ or repo root.'
+    'No credentials found. Run `gcloud auth application-default login --project=profit-step` OR set GOOGLE_APPLICATION_CREDENTIALS OR place serviceAccountKey.json in functions/ or repo root.',
   );
 }
 

@@ -14,8 +14,30 @@ import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import BugReportIcon from '@mui/icons-material/BugReport';
 import PersonOffIcon from '@mui/icons-material/PersonOff';
 import LocationOffIcon from '@mui/icons-material/LocationOff';
-import { WorkSession } from '../../types/timeTracking.types';
+import NoPhotographyIcon from '@mui/icons-material/NoPhotography';
+import { WorkSession, PhotoSkipReason } from '../../types/timeTracking.types';
 import { formatDuration, formatDate, formatTime, getStatusColor } from '../../utils/dateFormatters';
+
+/** Human-readable label for the skip-reason enum, used in tooltip text. */
+const PHOTO_SKIP_REASON_LABEL: Record<PhotoSkipReason, string> = {
+    worker_refused_no_camera: 'Worker refused (no camera)',
+    worker_skipped_on_finish: 'Worker skipped on finish',
+    timeout_auto_skip: 'Auto-skipped (timeout)'
+};
+
+/** Format a Firestore Timestamp-ish value for tooltip text without exploding if it's missing. */
+const formatSkippedAt = (ts: unknown): string => {
+    if (!ts) return '';
+    try {
+        const maybeTimestamp = ts as { toDate?: () => Date };
+        const date: Date = typeof maybeTimestamp.toDate === 'function'
+            ? maybeTimestamp.toDate()
+            : new Date(ts as string | number | Date);
+        return date.toLocaleString('ru-RU', { timeZone: 'America/New_York' });
+    } catch {
+        return '';
+    }
+};
 
 interface TimeTrackingTableProps {
     sessions: WorkSession[];
@@ -337,6 +359,16 @@ const TimeTrackingTable: React.FC<TimeTrackingTableProps> = ({
                                                         <MuiLink href={session.startPhotoUrl} target="_blank">
                                                             <Chip icon={<PhotoCameraIcon />} label="Start" size="small" clickable color="primary" variant="outlined" />
                                                         </MuiLink>
+                                                    ) : session.startPhotoSkipped ? (
+                                                        <Tooltip title={`${PHOTO_SKIP_REASON_LABEL[session.startPhotoSkipReason as PhotoSkipReason] || 'Skipped'} • ${formatSkippedAt(session.startPhotoSkippedAt)}`}>
+                                                            <Chip
+                                                                icon={<NoPhotographyIcon />}
+                                                                label="Start skipped"
+                                                                size="small"
+                                                                color="warning"
+                                                                variant="filled"
+                                                            />
+                                                        </Tooltip>
                                                     ) : session.startPhotoId && (
                                                         <Tooltip title="Photo ID only (Old)">
                                                             <Chip icon={<PhotoCameraIcon />} label="Start" size="small" />
@@ -347,6 +379,16 @@ const TimeTrackingTable: React.FC<TimeTrackingTableProps> = ({
                                                         <MuiLink href={session.endPhotoUrl} target="_blank">
                                                             <Chip icon={<PhotoCameraIcon />} label="End" size="small" clickable color="primary" variant="outlined" />
                                                         </MuiLink>
+                                                    ) : session.endPhotoSkipped ? (
+                                                        <Tooltip title={`${PHOTO_SKIP_REASON_LABEL[session.endPhotoSkipReason as PhotoSkipReason] || 'Skipped'} • ${formatSkippedAt(session.endPhotoSkippedAt)}`}>
+                                                            <Chip
+                                                                icon={<NoPhotographyIcon />}
+                                                                label="End skipped"
+                                                                size="small"
+                                                                color="warning"
+                                                                variant="filled"
+                                                            />
+                                                        </Tooltip>
                                                     ) : session.endPhotoId && (
                                                         <Tooltip title="Photo ID only (Old)">
                                                             <Chip icon={<PhotoCameraIcon />} label="End" size="small" />

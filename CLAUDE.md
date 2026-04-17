@@ -90,9 +90,10 @@
 
 ## 3. Структура веток и pipeline
 
-**Production branch:** `main`
-**Integration branch:** `feature/project-hierarchy-fix` — сюда мерджатся фичи, отсюда деплоится
-**Работа агентов:** в worktrees под `.claude/worktrees/` (игнорируется git через `.gitignore` правило `.claude/worktrees/`)
+**Production branch:** `main` — здесь же integration. Фичи мерджатся через PR → main → деплой.
+**Работа агентов:** в worktrees под `.claude/worktrees/` (игнорируется git через `.gitignore` правило `.claude/worktrees/`). Feature branches создаются как `claude/<task-name>` или `feature/<name>`.
+
+> **Изменение 2026-04-16:** раньше integration-веткой значилась `feature/project-hierarchy-fix`, но с 13-16 апреля все 43 коммита уходили прямо в `main` через PR. Фактический workflow: `main` — одновременно production + integration. `feature/project-hierarchy-fix` всё ещё живёт в origin как stale-артефакт, не использовать.
 
 ### Pipeline для фич (через Машу — координационный агент)
 
@@ -174,30 +175,35 @@ cd .claude/worktrees/<task-name>
 
 ## 4. Текущее состояние проекта (обновлять при значимых изменениях)
 
-**Последнее обновление:** 2026-04-07
+**Последнее обновление:** 2026-04-16
 
-### Недавние большие изменения
+### Недавние большие изменения (13-16 апреля 2026)
 
-- **Vite migration** — проект переехал с CRA на Vite. `package.json` скрипты: `vite`, `vite build`, `vite preview`. Build output в `build/` (сконфигурировано в `vite.config.ts:12`), совпадает с `firebase.json` hosting.
-- **Client dashboard unified refactor в процессе** (см. `src/pages/dashbord-for-client/SPEC.md`):
-  - ✅ Phase 1 (коммит `84c408f`) — 5 portal-компонентов переехали в `src/components/client-dashboard/sections/`
-  - ✅ Phase 2 (коммит `6089c0f`) — `ClientDashboardLayout` + `ClientPortalPage` как обёртка
-  - ⏳ Phase 3 — конвертация `src/pages/dashboard/client/[id].tsx` (677 строк) в обёртку + internal-only секции (KPI cards, Cost breakdown, Internal notes, Red flags, Team activity, Share button)
-  - ⏳ Phase 4 — backend `portal.ts` + `portalFilter.ts` + `client_portal_tokens` + approval flow
-- **ERP V4** — Phase 1-3 в процессе (change orders, purchase orders, plan-vs-fact). Частично в ветке, частично в прод.
+- **Селфи check-in вернули в worker bot** — PR #14 [`b7441d9`](https://github.com/garkorcom/profit-step/commit/b7441d9). Flow: `awaitingStartPhoto` + loud-but-skippable (admin warning-chip в `TimeTrackingTable` + push при skip/face-mismatch). Селфи было случайно убрано в `961f482` (14 апр), вернули 16 апр.
+- **AI-бот `@crmapiprofit_bot`** — prompt переписан с анти-галлюцинационными guardrails (`97775cd`, `d974a80`, `a165305`), 50 use-cases (`ad88b88`), публичная страница для внешнего разработчика: https://profit-step.web.app/bot-docs/ (`2cd6956`). **На проде всё ещё врёт** — пока разработчик бота не обновит prompt.
+- **onWorkerBotMessage refactor** — 2142-строчный файл разбит на 6 модулей в `functions/src/triggers/telegram/handlers/` ([`7d66893`](https://github.com/garkorcom/profit-step/commit/7d66893)). `sessionManager.ts` (568 строк) и `locationFlow.ts` (465 строк) **без unit-тестов** — правь осторожно.
+- **Reconciliation UX overhaul** — `ReconciliationPage.tsx` разбит на hooks + компоненты, добавлены search/pagination/bulk ops/CSV export, auto-approve rules, Tampa +100mi auto-detect, duplicate detection, «ask employee via Telegram».
+- **Multi-user Telegram bot Phase 1-4** — backend готов (`58f94f3`, `70b9824`, `106a080`), RLS на dashboard/inventory/finance/activity/feedback ([`ceb8464`](https://github.com/garkorcom/profit-step/commit/ceb8464)).
+- **Client portal Phase 3+4** — внутренние секции вынесены в `internal-only/`, portal ходит через backend API endpoint вместо прямого Firestore (`57745a8`, `81f7cf9`).
+- **Unified payroll balance formula** `Salary - Payments - Expenses` ([`761fe8c`](https://github.com/garkorcom/profit-step/commit/761fe8c), [`20cf9a5`](https://github.com/garkorcom/profit-step/commit/20cf9a5)). **НЕ верифицировано** на реальных сотрудниках — исторические балансы могли "прыгнуть". См. `scripts/verify-balance-formula.ts`.
+- **ERP V4** — Phase 1-3 в процессе (change orders, purchase orders, plan-vs-fact).
 
 ### Pre-existing технический долг
 
 - **13 TypeScript ошибок** в `siteDashboard/`, `estimator/`, `ElectricalEstimatorPage` — pre-existing work от предыдущего AI-агента. Vite build проходит (warnings, не errors), но `tsc --noEmit` падает. **Не игнорируй при правке этих модулей** — добавлять новые ошибки нельзя.
-- **Backend тестов НОЛЬ** (130 .ts файлов в `functions/src/`). Любой рефакторинг без тестов — рулетка. См. `docs/tasks/` если там есть план покрытия.
-- **Глобальный ErrorBoundary отсутствует** (см. `docs/legacy-nov2025/TODO_FUTURE_IMPROVEMENTS.md`)
+- **Backend тесты** — уже не ноль. В `functions/test/` 25+ файлов (`multiUser`, `webhooks`, `teams`, `askEmployee`, `mediaHandlerSkip`, `scopeMatcher`, `portalFilter`, `inventory*`, `poisonPills` и др.). Но coverage неравномерный: критичные модули (`sessionManager`, `locationFlow`) без тестов.
+- **Глобальный ErrorBoundary** — добавлен в [`65d40ef`](https://github.com/garkorcom/profit-step/commit/65d40ef).
 - **Sentry не подключен**
 - **Offline detection** не реализован
 - **Zod валидация форм** — не везде
+- **Tampa +100mi auto-detect** — без UI для ревью false positives, без audit log.
 
-### Активные WIP коммиты
+### Живые риски после деплоев 13-16 апреля
 
-В ветке `feature/project-hierarchy-fix` может быть незакоммиченная работа от параллельных агентов. Всегда проверяй `git status` и **не затирай** чужие изменения.
+1. Balance formula — не верифицирована на проде, risk of "прыгающих" балансов у сотрудников.
+2. `@crmapiprofit_bot` — prompt на стороне внешнего разработчика не обновлён, бот галлюцинирует клиентам.
+3. RLS — добавлен, но cross-tenant bypass тест не запускался (см. `functions/test/rlsCrossTenant.test.ts`).
+4. Селфи-flow (PR #14) — первые 48 часов после деплоя требуют мониторинга логов.
 
 ---
 
@@ -317,3 +323,8 @@ npm run emulator:test                 # emulators + все тесты
 ## 11. История этого файла
 
 - **2026-04-07** — первая версия. Создана после рефакторинга client dashboard (Phase 1+2). Денис попросил "сохранить в корне инструкции для агентов".
+- **2026-04-09** — добавлена секция 3.1 про bridge Никита/Маша/Стёпа → Claude Code через `/pickup`.
+- **2026-04-16** — ревизия по фактическому состоянию репы после 4-дневного спринта (13-16 апр, 43 коммита):
+  - §3: integration branch больше не `feature/project-hierarchy-fix`, всё уходит прямо в `main` через PR.
+  - §4: полностью переписан — обновлены недавние изменения, "backend тестов ноль" → 25+ файлов, добавлена секция "живые риски".
+  - Актуальное состояние селфи-flow, AI-бота, onWorkerBotMessage refactor, RLS, balance formula.

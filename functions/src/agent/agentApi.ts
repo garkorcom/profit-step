@@ -25,6 +25,7 @@ import {
 } from './routes';
 import docsRoutes from './routes/docs';
 import portalRoutes from './routes/portal';
+import { warehouseRouter } from '../warehouse/api';
 
 // ─── Express App ────────────────────────────────────────────────────
 
@@ -69,6 +70,7 @@ const routes = [
   estimateRoutes, projectRoutes, siteRoutes, erpRoutes, inventoryRoutes,
   sharingRoutes, activityRoutes, fileRoutes, feedbackRoutes, teamRoutes,
   webhookRoutes, warehouseAIRoutes,
+  warehouseRouter,
 ];
 routes.forEach(r => app.use(r));
 

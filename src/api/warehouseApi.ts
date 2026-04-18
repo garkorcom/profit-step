@@ -16,7 +16,36 @@ import {
   query,
   where,
 } from 'firebase/firestore';
+import { getAuth } from 'firebase/auth';
 import { db } from '../firebase/firebase';
+
+// ═══════════════════════════════════════════════════════════════════
+//  REST API helpers (mutations go through the posting engine)
+// ═══════════════════════════════════════════════════════════════════
+
+async function authHeaders(): Promise<Record<string, string>> {
+  const token = await getAuth().currentUser?.getIdToken();
+  if (!token) throw new Error('Not authenticated. Please sign in again.');
+  return {
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${token}`,
+  };
+}
+
+async function postJson<T>(path: string, body: unknown): Promise<T> {
+  const res = await fetch(path, {
+    method: 'POST',
+    headers: await authHeaders(),
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    const code = err?.error?.code ?? 'HTTP_' + res.status;
+    const message = err?.error?.message ?? res.statusText;
+    throw new Error(`${code}: ${message}`);
+  }
+  return res.json() as Promise<T>;
+}
 
 // ═══════════════════════════════════════════════════════════════════
 //  Types (slim — mirrors functions/src/warehouse/core/types.ts but w/o
@@ -141,4 +170,45 @@ export async function listCategories(): Promise<WhCategoryClient[]> {
     ),
   );
   return snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as WhCategoryClient[];
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  Mutations (REST → posting engine)
+// ═══════════════════════════════════════════════════════════════════
+
+export interface CreateItemPayload {
+  sku: string;
+  name: string;
+  category: string;
+  baseUOM: string;
+  purchaseUOMs: Array<{ uom: string; factor: number; isDefault: boolean }>;
+  allowedIssueUOMs: string[];
+  lastPurchasePrice: number;
+  averageCost: number;
+  minStock?: number;
+  reorderPoint?: number;
+  isTrackable?: boolean;
+  notes?: string;
+}
+
+export interface CreateItemResponse {
+  itemId: string;
+  sku: string;
+}
+
+export async function createItem(payload: CreateItemPayload): Promise<CreateItemResponse> {
+  return postJson<CreateItemResponse>('/api/warehouse/items', payload);
+}
+
+export interface CreateLocationPayload {
+  name: string;
+  locationType: 'warehouse' | 'van' | 'site' | 'quarantine';
+  ownerEmployeeId?: string;
+  licensePlate?: string;
+  address?: string;
+  twoPhaseTransferEnabled?: boolean;
+}
+
+export async function createLocation(payload: CreateLocationPayload): Promise<{ locationId: string }> {
+  return postJson<{ locationId: string }>('/api/warehouse/locations', payload);
 }

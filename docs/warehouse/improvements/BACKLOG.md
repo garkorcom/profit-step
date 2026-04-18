@@ -36,6 +36,7 @@
 | P0 | UC4 Estimate Procurement | [`08_estimate_procurement/`](./08_estimate_procurement/) | 🔵 | 5 |
 | P1 | UC4 Web Sourcing | [`09_web_sourcing/`](./09_web_sourcing/) | 🔵 | 5 |
 | P1 | UC4 Vendor Email RFQ | [`10_vendor_email/`](./10_vendor_email/) | 🔵 | 5 |
+| P0 | Management UI (CRUD + doc wizard + reports) | [`11_management_ui/`](./11_management_ui/) | 🔵 | post-Phase 10 |
 
 ---
 

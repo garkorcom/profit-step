@@ -10,3 +10,4 @@ export * from './capabilities';
 export { callGeminiJSON } from './gemini';
 export { fuzzyMatchItem, pickBestMatch } from './fuzzy';
 export type { FuzzyCandidate, FuzzyMatch } from './fuzzy';
+export * from './providers';

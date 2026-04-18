@@ -22,6 +22,12 @@ import {
   proposeTaskWriteoff,
   buildProcurementPlan,
   buildReservationDrafts,
+  webSearchItem,
+  sendVendorRFQ,
+  getWebSearchProvider,
+  getWebSearchCache,
+  getRFQEmailProvider,
+  getDefaultRFQComposeOptions,
 } from '../../agent';
 import {
   loadCatalog,
@@ -32,6 +38,7 @@ import {
   loadWriteoffContext,
   loadBalancesForItems,
 } from '../loaders';
+import { WH_COLLECTIONS } from '../../database/collections';
 import { wrapRoute } from '../errorHandler';
 
 const router = Router();
@@ -92,6 +99,36 @@ const ProcurementPlanSchema = z
       .max(500),
     buildReservationDrafts: z.boolean().optional(),
     reservationDays: z.number().positive().optional(),
+  })
+  .strict();
+
+const WebSearchSchema = z
+  .object({
+    query: z.string().min(1).max(500),
+    specs: z.array(z.string()).optional(),
+    location: z.string().optional(),
+    maxResults: z.number().int().positive().max(10).optional(),
+  })
+  .strict();
+
+const SendRfqSchema = z
+  .object({
+    vendorId: z.string().min(1),
+    projectId: z.string().optional(),
+    note: z.string().max(2000).optional(),
+    items: z
+      .array(
+        z
+          .object({
+            itemHint: z.string().min(1),
+            qty: z.number().positive(),
+            unit: z.string().min(1),
+            specs: z.string().optional(),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(50),
   })
   .strict();
 
@@ -288,6 +325,132 @@ router.post(
         lineCount: result.ok ? result.lines.length : 0,
         totalEstimatedCost: result.ok ? result.totalEstimatedCost : 0,
         hasAnyShortfall: result.ok ? result.hasAnyShortfall : false,
+      },
+    });
+
+    res.status(200).json(result);
+  }),
+);
+
+// ═══════════════════════════════════════════════════════════════════
+//  POST /api/warehouse/agent/web-search      (UC4 sub — improvement 09)
+// ═══════════════════════════════════════════════════════════════════
+
+router.post(
+  '/api/warehouse/agent/web-search',
+  wrapRoute(async (req, res) => {
+    const data = WebSearchSchema.parse(req.body);
+
+    const provider = getWebSearchProvider();
+    const cache = getWebSearchCache(db);
+
+    const result = await webSearchItem(
+      {
+        query: data.query,
+        specs: data.specs,
+        location: data.location,
+        maxResults: data.maxResults,
+      },
+      { provider, cache },
+    );
+
+    logger.info('🏭 warehouse:agent.web-search', {
+      query: data.query,
+      provider: provider.name,
+      candidateCount: result.candidates.length,
+    });
+
+    await logAgentActivity({
+      userId: req.agentUserId!,
+      action: 'warehouse_ai_web_search',
+      endpoint: '/api/warehouse/agent/web-search',
+      metadata: {
+        query: data.query,
+        provider: provider.name,
+        candidateCount: result.candidates.length,
+      },
+    });
+
+    res.status(200).json(result);
+  }),
+);
+
+// ═══════════════════════════════════════════════════════════════════
+//  POST /api/warehouse/agent/send-rfq        (UC4 sub — improvement 10)
+// ═══════════════════════════════════════════════════════════════════
+
+router.post(
+  '/api/warehouse/agent/send-rfq',
+  wrapRoute(async (req, res) => {
+    const data = SendRfqSchema.parse(req.body);
+
+    const vendorSnap = await db.collection(WH_COLLECTIONS.vendors).doc(data.vendorId).get();
+    if (!vendorSnap.exists) {
+      res.status(404).json({ error: { code: 'VENDOR_NOT_FOUND', message: `Vendor ${data.vendorId} not found` } });
+      return;
+    }
+    const vendor = vendorSnap.data() as any;
+    const vendorEmail = vendor?.contactEmail;
+    if (!vendorEmail) {
+      res.status(400).json({
+        error: { code: 'VENDOR_NO_EMAIL', message: `Vendor ${data.vendorId} has no contactEmail` },
+      });
+      return;
+    }
+
+    let projectName: string | undefined;
+    if (data.projectId) {
+      const projectSnap = await db.collection('projects').doc(data.projectId).get();
+      projectName = projectSnap.exists ? (projectSnap.data() as any)?.name : undefined;
+    }
+
+    const provider = getRFQEmailProvider();
+    const compose = getDefaultRFQComposeOptions();
+
+    const result = await sendVendorRFQ(
+      {
+        vendorId: data.vendorId,
+        vendorName: vendor.name,
+        vendorEmail,
+        projectId: data.projectId,
+        projectName,
+        requesterName: req.agentUserId ?? 'api',
+        requesterCompany: 'Profit Step',
+        items: data.items,
+        note: data.note,
+      },
+      { provider, compose },
+    );
+
+    // Persist an RFQ record for audit + downstream parsing
+    await db.collection('wh_rfq_records').doc(result.rfqId).set({
+      rfqId: result.rfqId,
+      vendorId: data.vendorId,
+      projectId: data.projectId ?? null,
+      items: data.items,
+      envelope: result.envelope,
+      providerMessageId: result.providerMessageId ?? null,
+      sentAt: new Date().toISOString(),
+      status: 'pending',
+      schemaVersion: 1,
+    });
+
+    logger.info('🏭 warehouse:agent.send-rfq', {
+      rfqId: result.rfqId,
+      vendorId: data.vendorId,
+      provider: provider.name,
+      itemCount: data.items.length,
+    });
+
+    await logAgentActivity({
+      userId: req.agentUserId!,
+      action: 'warehouse_ai_send_rfq',
+      endpoint: '/api/warehouse/agent/send-rfq',
+      metadata: {
+        rfqId: result.rfqId,
+        vendorId: data.vendorId,
+        provider: provider.name,
+        itemCount: data.items.length,
       },
     });
 

@@ -6,6 +6,7 @@
 import React, { useEffect, useState } from 'react';
 import {
   Box,
+  Button,
   Chip,
   CircularProgress,
   Collapse,
@@ -18,8 +19,11 @@ import {
   TableContainer,
   TableHead,
   TableRow,
+  Tooltip,
   Typography,
 } from '@mui/material';
+import AddIcon from '@mui/icons-material/Add';
+import EditIcon from '@mui/icons-material/EditOutlined';
 import KeyboardArrowDown from '@mui/icons-material/KeyboardArrowDown';
 import KeyboardArrowUp from '@mui/icons-material/KeyboardArrowUp';
 import {
@@ -31,6 +35,8 @@ import {
   type WhItemClient,
   type WhLocationClient,
 } from '../../api/warehouseApi';
+import LocationFormDialog from './LocationFormDialog';
+import { useWarehousePermissions } from './hooks/useWarehousePermissions';
 
 const TYPE_LABELS: Record<LocationType, { label: string; color: 'primary' | 'secondary' | 'default' | 'warning' }> = {
   warehouse: { label: 'Склад', color: 'primary' },
@@ -44,11 +50,16 @@ interface Props {
 }
 
 export default function LocationsTab({ search }: Props) {
+  const perms = useWarehousePermissions();
   const [loading, setLoading] = useState(true);
   const [locations, setLocations] = useState<WhLocationClient[]>([]);
   const [itemsById, setItemsById] = useState<Map<string, WhItemClient>>(new Map());
   const [balancesByLocation, setBalancesByLocation] = useState<Map<string, WhBalanceClient[]>>(new Map());
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [dialogMode, setDialogMode] = useState<'create' | 'edit'>('create');
+  const [editLoc, setEditLoc] = useState<WhLocationClient | null>(null);
+  const [refreshTick, setRefreshTick] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -58,12 +69,26 @@ export default function LocationsTab({ search }: Props) {
       if (cancelled) return;
       setLocations(locs);
       setItemsById(new Map(items.map((i) => [i.id, i])));
+      setBalancesByLocation(new Map());
+      setExpanded(new Set());
       setLoading(false);
     })();
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [refreshTick]);
+
+  function openCreate() {
+    setEditLoc(null);
+    setDialogMode('create');
+    setDialogOpen(true);
+  }
+
+  function openEdit(loc: WhLocationClient) {
+    setEditLoc(loc);
+    setDialogMode('edit');
+    setDialogOpen(true);
+  }
 
   async function toggleExpand(locId: string) {
     const next = new Set(expanded);
@@ -102,26 +127,57 @@ export default function LocationsTab({ search }: Props) {
     );
   }
 
+  const hasWriteActions = perms.canWriteCatalog;
+
+  const dialogEl = (
+    <LocationFormDialog
+      open={dialogOpen}
+      mode={dialogMode}
+      location={editLoc}
+      onClose={() => setDialogOpen(false)}
+      onSaved={() => setRefreshTick((t) => t + 1)}
+    />
+  );
+
   if (filtered.length === 0) {
     return (
-      <Paper variant="outlined" sx={{ p: 3, textAlign: 'center', color: 'text.secondary' }}>
-        Локаций не найдено. Запустите <code>scripts/warehouse-reset.ts</code> чтобы заполнить базу.
-      </Paper>
+      <Stack spacing={2}>
+        {hasWriteActions && (
+          <Box sx={{ textAlign: 'right' }}>
+            <Button variant="contained" startIcon={<AddIcon />} onClick={openCreate}>
+              Новая локация
+            </Button>
+          </Box>
+        )}
+        <Paper variant="outlined" sx={{ p: 3, textAlign: 'center', color: 'text.secondary' }}>
+          Локаций не найдено. {hasWriteActions ? 'Нажмите «Новая локация» чтобы начать.' : 'Попросите администратора.'}
+        </Paper>
+        {dialogEl}
+      </Stack>
     );
   }
 
   return (
-    <TableContainer component={Paper} variant="outlined">
-      <Table size="small">
-        <TableHead>
-          <TableRow>
-            <TableCell width={40} />
-            <TableCell>Название</TableCell>
-            <TableCell>Тип</TableCell>
-            <TableCell>Владелец / адрес</TableCell>
-            <TableCell align="right">Позиций</TableCell>
-          </TableRow>
-        </TableHead>
+    <Stack spacing={2}>
+      {hasWriteActions && (
+        <Box sx={{ textAlign: 'right' }}>
+          <Button variant="contained" startIcon={<AddIcon />} onClick={openCreate}>
+            Новая локация
+          </Button>
+        </Box>
+      )}
+      <TableContainer component={Paper} variant="outlined">
+        <Table size="small">
+          <TableHead>
+            <TableRow>
+              <TableCell width={40} />
+              <TableCell>Название</TableCell>
+              <TableCell>Тип</TableCell>
+              <TableCell>Владелец / адрес</TableCell>
+              <TableCell align="right">Позиций</TableCell>
+              {hasWriteActions && <TableCell align="right">Действия</TableCell>}
+            </TableRow>
+          </TableHead>
         <TableBody>
           {filtered.map((loc) => {
             const open = expanded.has(loc.id);
@@ -146,9 +202,18 @@ export default function LocationsTab({ search }: Props) {
                       : loc.address ?? '—'}
                   </TableCell>
                   <TableCell align="right">{open ? nonZeroCount : '…'}</TableCell>
+                  {hasWriteActions && (
+                    <TableCell align="right">
+                      <Tooltip title="Редактировать">
+                        <IconButton size="small" onClick={() => openEdit(loc)}>
+                          <EditIcon fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                    </TableCell>
+                  )}
                 </TableRow>
                 <TableRow>
-                  <TableCell colSpan={5} sx={{ py: 0, borderBottom: open ? undefined : 'none' }}>
+                  <TableCell colSpan={hasWriteActions ? 6 : 5} sx={{ py: 0, borderBottom: open ? undefined : 'none' }}>
                     <Collapse in={open} unmountOnExit>
                       <Box sx={{ py: 2 }}>
                         {balances.length === 0 ? (
@@ -203,5 +268,7 @@ export default function LocationsTab({ search }: Props) {
         </TableBody>
       </Table>
     </TableContainer>
+      {dialogEl}
+    </Stack>
   );
 }

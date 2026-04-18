@@ -1,20 +1,16 @@
 /**
- * Warehouse page — view locations and their stock + catalog-wide item browser.
+ * Warehouse page — locations, items, documents.
  *
- * Read-only for MVP. Mutations (create item, post document, void) go
- * through the backend REST endpoints and will land in later admin pages.
- *
- * Spec: docs/warehouse/MAIN_SPEC.md §3.2.
+ * Management UI: create/edit items & locations, full document workflow
+ * (draft → post → void). Admin/manager roles write; others read-only.
+ * Spec: docs/warehouse/improvements/11_management_ui/SPEC.md.
  */
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useState } from 'react';
 import {
-  Box,
   Chip,
-  CircularProgress,
   Container,
   InputAdornment,
-  MenuItem,
   Paper,
   Stack,
   Tab,
@@ -25,12 +21,15 @@ import {
 import SearchIcon from '@mui/icons-material/Search';
 import LocationsTab from './LocationsTab';
 import ItemsTab from './ItemsTab';
+import DocumentsTab from './DocumentsTab';
+import { useWarehousePermissions } from './hooks/useWarehousePermissions';
 
-type WarehouseTab = 'locations' | 'items';
+type WarehouseTab = 'locations' | 'items' | 'documents';
 
 export default function WarehousePage() {
   const [tab, setTab] = useState<WarehouseTab>('locations');
   const [search, setSearch] = useState('');
+  const perms = useWarehousePermissions();
 
   return (
     <Container maxWidth="xl" sx={{ py: 3 }}>
@@ -38,7 +37,13 @@ export default function WarehousePage() {
         <Typography variant="h4" fontWeight={600}>
           🏭 Warehouse
         </Typography>
-        <Chip label="MVP (read-only)" size="small" color="warning" variant="outlined" />
+        {perms.canWriteCatalog ? (
+          <Chip label="Admin" size="small" color="primary" variant="outlined" />
+        ) : perms.canCreateDocuments ? (
+          <Chip label="Manager" size="small" color="primary" variant="outlined" />
+        ) : (
+          <Chip label="Read-only" size="small" variant="outlined" />
+        )}
       </Stack>
 
       <Paper variant="outlined" sx={{ mb: 2 }}>
@@ -46,6 +51,7 @@ export default function WarehousePage() {
           <Tabs value={tab} onChange={(_, v) => setTab(v)}>
             <Tab value="locations" label="📍 Локации" />
             <Tab value="items" label="📦 Товары" />
+            <Tab value="documents" label="📄 Документы" />
           </Tabs>
           <TextField
             placeholder="Поиск..."
@@ -66,6 +72,7 @@ export default function WarehousePage() {
 
       {tab === 'locations' && <LocationsTab search={search} />}
       {tab === 'items' && <ItemsTab search={search} />}
+      {tab === 'documents' && <DocumentsTab search={search} />}
     </Container>
   );
 }

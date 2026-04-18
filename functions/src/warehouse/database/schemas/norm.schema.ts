@@ -26,3 +26,12 @@ export const CreateWhNormSchema = z
   .strict();
 
 export type CreateWhNormInput = z.infer<typeof CreateWhNormSchema>;
+
+export const UpdateWhNormSchema = z
+  .object({
+    name: z.string().min(1).max(200).optional(),
+    description: z.string().max(1000).optional(),
+    items: z.array(NormItemSchema).min(1).optional(),
+    estimatedLaborHours: z.number().positive().optional(),
+  })
+  .strict();

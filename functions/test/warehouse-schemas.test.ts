@@ -10,6 +10,8 @@ import {
   CreateWhLocationSchema,
   CreateWhNormSchema,
   CreateWhVendorSchema,
+  UpdateWhNormSchema,
+  UpdateWhVendorSchema,
 } from '../src/warehouse/database/schemas';
 
 describe('CreateWhItemSchema', () => {
@@ -227,6 +229,47 @@ describe('CreateWhVendorSchema', () => {
       vendorType: 'online',
       contactEmail: 'not-an-email',
     });
+    expect(r.success).toBe(false);
+  });
+});
+
+describe('UpdateWhVendorSchema', () => {
+  it('accepts a partial update with just name', () => {
+    const r = UpdateWhVendorSchema.safeParse({ name: 'Home Depot Pro' });
+    expect(r.success).toBe(true);
+  });
+
+  it('accepts an empty update object (no-op)', () => {
+    const r = UpdateWhVendorSchema.safeParse({});
+    expect(r.success).toBe(true);
+  });
+
+  it('rejects unknown field', () => {
+    const r = UpdateWhVendorSchema.safeParse({ isActive: false });
+    expect(r.success).toBe(false);
+  });
+});
+
+describe('UpdateWhNormSchema', () => {
+  it('accepts a rename', () => {
+    const r = UpdateWhNormSchema.safeParse({ name: 'New label' });
+    expect(r.success).toBe(true);
+  });
+
+  it('accepts items replacement', () => {
+    const r = UpdateWhNormSchema.safeParse({
+      items: [{ itemId: 'item_x', qtyPerUnit: 2 }],
+    });
+    expect(r.success).toBe(true);
+  });
+
+  it('rejects empty items array', () => {
+    const r = UpdateWhNormSchema.safeParse({ items: [] });
+    expect(r.success).toBe(false);
+  });
+
+  it('rejects mutation of taskType', () => {
+    const r = UpdateWhNormSchema.safeParse({ taskType: 'other' });
     expect(r.success).toBe(false);
   });
 });

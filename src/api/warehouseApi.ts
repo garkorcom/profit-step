@@ -403,3 +403,221 @@ export async function voidDocument(
 ): Promise<VoidDocumentResult> {
   return postJson<VoidDocumentResult>(`/api/warehouse/documents/${id}/void`, { reason, note });
 }
+
+// ═══════════════════════════════════════════════════════════════════
+//  Norms (BoM — bill of materials per task type)
+// ═══════════════════════════════════════════════════════════════════
+
+export interface WhNormItemClient {
+  itemId: string;
+  qtyPerUnit: number;
+  note?: string;
+}
+
+export interface WhNormClient {
+  id: string;
+  taskType: string;
+  name: string;
+  description?: string;
+  items: WhNormItemClient[];
+  estimatedLaborHours?: number;
+  isActive: boolean;
+}
+
+export interface CreateNormPayload {
+  taskType: string;
+  name: string;
+  description?: string;
+  items: WhNormItemClient[];
+  estimatedLaborHours?: number;
+}
+
+export type UpdateNormPayload = Partial<Omit<CreateNormPayload, 'taskType'>>;
+
+export async function listNorms(): Promise<WhNormClient[]> {
+  const res = await requestJson<{ norms: WhNormClient[] }>('/api/warehouse/norms', 'GET');
+  return res.norms;
+}
+
+export async function createNorm(payload: CreateNormPayload): Promise<{ normId: string; taskType: string }> {
+  return postJson('/api/warehouse/norms', payload);
+}
+
+export async function updateNorm(id: string, payload: UpdateNormPayload): Promise<void> {
+  await requestJson(`/api/warehouse/norms/${id}`, 'PATCH', payload);
+}
+
+export async function archiveNorm(id: string): Promise<void> {
+  await requestJson(`/api/warehouse/norms/${id}`, 'DELETE');
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  Vendors
+// ═══════════════════════════════════════════════════════════════════
+
+export type VendorType = 'big_box' | 'local_supply' | 'subcontractor_proxy' | 'online';
+
+export interface WhVendorClient {
+  id: string;
+  name: string;
+  vendorType: VendorType;
+  contactEmail?: string;
+  contactPhone?: string;
+  contactName?: string;
+  defaultPaymentTerms?: string;
+  preferredForCategories?: string[];
+  apiEndpoint?: string;
+  apiCredentialsKey?: string;
+  isActive: boolean;
+}
+
+export interface CreateVendorPayload {
+  name: string;
+  vendorType: VendorType;
+  contactEmail?: string;
+  contactPhone?: string;
+  contactName?: string;
+  defaultPaymentTerms?: string;
+  preferredForCategories?: string[];
+  apiEndpoint?: string;
+  apiCredentialsKey?: string;
+}
+
+export type UpdateVendorPayload = Partial<CreateVendorPayload>;
+
+export async function listVendors(): Promise<WhVendorClient[]> {
+  const res = await requestJson<{ vendors: WhVendorClient[] }>('/api/warehouse/vendors', 'GET');
+  return res.vendors;
+}
+
+export async function createVendor(payload: CreateVendorPayload): Promise<{ vendorId: string; name: string }> {
+  return postJson('/api/warehouse/vendors', payload);
+}
+
+export async function updateVendor(id: string, payload: UpdateVendorPayload): Promise<void> {
+  await requestJson(`/api/warehouse/vendors/${id}`, 'PATCH', payload);
+}
+
+export async function archiveVendor(id: string): Promise<void> {
+  await requestJson(`/api/warehouse/vendors/${id}`, 'DELETE');
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  Ledger (read)
+// ═══════════════════════════════════════════════════════════════════
+
+export interface WhLedgerEntryClient {
+  id: string;
+  documentId: string;
+  documentNumber?: string;
+  lineId?: string;
+  itemId: string;
+  locationId: string;
+  deltaQty: number;
+  direction: 'in' | 'out';
+  unitCostAtPosting: number;
+  projectId?: string;
+  phaseCode?: string;
+  costCategory?: string;
+  reversalOf?: string;
+  eventDate: { seconds: number; nanoseconds: number } | string;
+  postedAt?: { seconds: number; nanoseconds: number };
+  postedBy?: string;
+}
+
+export interface LedgerFilter {
+  itemId?: string;
+  locationId?: string;
+  projectId?: string;
+  phaseCode?: string;
+  documentId?: string;
+  from?: string; // ISO
+  to?: string; // ISO
+}
+
+export async function listLedger(filter: LedgerFilter): Promise<{ entries: WhLedgerEntryClient[]; total: number }> {
+  const params = new URLSearchParams();
+  if (filter.itemId) params.set('itemId', filter.itemId);
+  if (filter.locationId) params.set('locationId', filter.locationId);
+  if (filter.projectId) params.set('projectId', filter.projectId);
+  if (filter.phaseCode) params.set('phaseCode', filter.phaseCode);
+  if (filter.documentId) params.set('documentId', filter.documentId);
+  if (filter.from) params.set('from', filter.from);
+  if (filter.to) params.set('to', filter.to);
+  return requestJson(`/api/warehouse/ledger?${params.toString()}`, 'GET');
+}
+
+export interface CostSummaryBucket {
+  totalCost: number;
+  entryCount: number;
+  [key: string]: unknown;
+}
+
+export interface CostSummaryResponse {
+  projectId: string;
+  groupBy: string | null;
+  buckets: CostSummaryBucket[];
+  totalCost: number;
+}
+
+export async function getCostSummary(params: { projectId: string; phaseCode?: string; groupBy?: string }): Promise<CostSummaryResponse> {
+  const qs = new URLSearchParams({ projectId: params.projectId });
+  if (params.phaseCode) qs.set('phaseCode', params.phaseCode);
+  if (params.groupBy) qs.set('groupBy', params.groupBy);
+  return requestJson(`/api/warehouse/ledger/cost-summary?${qs.toString()}`, 'GET');
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  Reports
+// ═══════════════════════════════════════════════════════════════════
+
+export interface LowStockReorderLine {
+  itemId: string;
+  itemName: string;
+  baseUOM: string;
+  totalAvailable: number;
+  minStock: number;
+  qtyToOrder: number;
+  estimatedUnitCost: number;
+  estimatedTotalCost: number;
+  preferredVendorId?: string;
+  preferredVendorName?: string;
+}
+
+export interface LowStockReorderReport {
+  generatedAt: string;
+  lines: LowStockReorderLine[];
+  byVendor: Array<{
+    vendorId: string | null;
+    vendorName: string | null;
+    lines: LowStockReorderLine[];
+    subtotal: number;
+  }>;
+  grandTotalEstimated: number;
+}
+
+export async function getLowStockReport(): Promise<LowStockReorderReport> {
+  return requestJson<LowStockReorderReport>('/api/warehouse/reports/low-stock', 'GET');
+}
+
+export interface DeadStockLine {
+  itemId: string;
+  itemName: string;
+  category: string;
+  totalOnHand: number;
+  totalValue: number;
+  daysSinceLastActivity: number;
+  suggestion: 'return_to_vendor' | 'clearance' | 'write_off';
+}
+
+export interface DeadStockReport {
+  generatedAt: string;
+  thresholdDays: number;
+  totalItems: number;
+  totalValue: number;
+  lines: DeadStockLine[];
+}
+
+export async function getDeadStockReport(thresholdDays = 90): Promise<DeadStockReport> {
+  return requestJson<DeadStockReport>(`/api/warehouse/reports/dead-stock?thresholdDays=${thresholdDays}`, 'GET');
+}

@@ -4,7 +4,7 @@
 
 import { Router } from 'express';
 import { db, FieldValue, logAgentActivity } from '../../../agent/routeContext';
-import { CreateWhNormSchema } from '../../database/schemas';
+import { CreateWhNormSchema, UpdateWhNormSchema } from '../../database/schemas';
 import { WH_COLLECTIONS } from '../../database/collections';
 import { wrapRoute } from '../errorHandler';
 
@@ -65,6 +65,40 @@ router.get(
       return;
     }
     res.status(200).json({ norm: { id: snap.id, ...snap.data() } });
+  }),
+);
+
+router.patch(
+  '/api/warehouse/norms/:id',
+  wrapRoute(async (req, res) => {
+    const updates = UpdateWhNormSchema.parse(req.body);
+    const ref = db.collection(WH_COLLECTIONS.norms).doc(req.params.id);
+    const existing = await ref.get();
+    if (!existing.exists) {
+      res.status(404).json({ error: { code: 'DOCUMENT_NOT_FOUND', message: `Norm ${req.params.id} not found` } });
+      return;
+    }
+    await ref.update({ ...updates, updatedAt: FieldValue.serverTimestamp() });
+    res.status(200).json({ normId: req.params.id, updated: Object.keys(updates) });
+  }),
+);
+
+router.delete(
+  '/api/warehouse/norms/:id',
+  wrapRoute(async (req, res) => {
+    const ref = db.collection(WH_COLLECTIONS.norms).doc(req.params.id);
+    const existing = await ref.get();
+    if (!existing.exists) {
+      res.status(404).json({ error: { code: 'DOCUMENT_NOT_FOUND', message: `Norm ${req.params.id} not found` } });
+      return;
+    }
+    await ref.update({
+      isActive: false,
+      archivedAt: FieldValue.serverTimestamp(),
+      archivedBy: req.agentUserId ?? 'api',
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    res.status(200).json({ normId: req.params.id, archived: true });
   }),
 );
 

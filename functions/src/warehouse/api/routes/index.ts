@@ -11,6 +11,8 @@ import ledger from './ledger';
 import items from './items';
 import locations from './locations';
 import norms from './norms';
+import vendors from './vendors';
+import reports from './reports';
 import agent from './agent';
 import rfqInbound from './rfqInbound';
 
@@ -21,6 +23,8 @@ warehouseRouter.use(ledger);
 warehouseRouter.use(items);
 warehouseRouter.use(locations);
 warehouseRouter.use(norms);
+warehouseRouter.use(vendors);
+warehouseRouter.use(reports);
 warehouseRouter.use(agent);
 warehouseRouter.use(rfqInbound);
 

@@ -1,8 +1,7 @@
 /**
- * Warehouse page — locations, items, documents.
+ * Warehouse page — locations, items, documents, norms, vendors, ledger, reports.
  *
- * Management UI: create/edit items & locations, full document workflow
- * (draft → post → void). Admin/manager roles write; others read-only.
+ * Full management UI. Admin/manager roles write; others read-only.
  * Spec: docs/warehouse/improvements/11_management_ui/SPEC.md.
  */
 
@@ -22,9 +21,13 @@ import SearchIcon from '@mui/icons-material/Search';
 import LocationsTab from './LocationsTab';
 import ItemsTab from './ItemsTab';
 import DocumentsTab from './DocumentsTab';
+import NormsTab from './NormsTab';
+import VendorsTab from './VendorsTab';
+import LedgerTab from './LedgerTab';
+import ReportsTab from './ReportsTab';
 import { useWarehousePermissions } from './hooks/useWarehousePermissions';
 
-type WarehouseTab = 'locations' | 'items' | 'documents';
+type WarehouseTab = 'locations' | 'items' | 'documents' | 'norms' | 'vendors' | 'ledger' | 'reports';
 
 export default function WarehousePage() {
   const [tab, setTab] = useState<WarehouseTab>('locations');
@@ -48,17 +51,21 @@ export default function WarehousePage() {
 
       <Paper variant="outlined" sx={{ mb: 2 }}>
         <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ px: 2 }}>
-          <Tabs value={tab} onChange={(_, v) => setTab(v)}>
+          <Tabs value={tab} onChange={(_, v) => setTab(v)} variant="scrollable" scrollButtons="auto">
             <Tab value="locations" label="📍 Локации" />
             <Tab value="items" label="📦 Товары" />
             <Tab value="documents" label="📄 Документы" />
+            <Tab value="norms" label="📐 Нормы" />
+            <Tab value="vendors" label="🏪 Поставщики" />
+            <Tab value="ledger" label="📊 Ledger" />
+            <Tab value="reports" label="📈 Отчёты" />
           </Tabs>
           <TextField
             placeholder="Поиск..."
             size="small"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            sx={{ width: 280, my: 1 }}
+            sx={{ width: 240, my: 1 }}
             InputProps={{
               startAdornment: (
                 <InputAdornment position="start">
@@ -73,6 +80,10 @@ export default function WarehousePage() {
       {tab === 'locations' && <LocationsTab search={search} />}
       {tab === 'items' && <ItemsTab search={search} />}
       {tab === 'documents' && <DocumentsTab search={search} />}
+      {tab === 'norms' && <NormsTab search={search} />}
+      {tab === 'vendors' && <VendorsTab search={search} />}
+      {tab === 'ledger' && <LedgerTab search={search} />}
+      {tab === 'reports' && <ReportsTab search={search} />}
     </Container>
   );
 }

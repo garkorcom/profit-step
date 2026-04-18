@@ -19,3 +19,19 @@ export const CreateWhVendorSchema = z
     apiCredentialsKey: z.string().optional(),
   })
   .strict();
+
+export type CreateWhVendorInput = z.infer<typeof CreateWhVendorSchema>;
+
+export const UpdateWhVendorSchema = z
+  .object({
+    name: z.string().min(1).max(100).optional(),
+    vendorType: VendorTypeSchema.optional(),
+    contactEmail: z.string().email().optional(),
+    contactPhone: z.string().max(32).optional(),
+    contactName: z.string().max(100).optional(),
+    defaultPaymentTerms: z.string().max(100).optional(),
+    preferredForCategories: z.array(z.string()).optional(),
+    apiEndpoint: z.string().url().optional(),
+    apiCredentialsKey: z.string().optional(),
+  })
+  .strict();

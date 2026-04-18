@@ -17,3 +17,12 @@ export {
   type TaskOverrunInput,
   type TaskOverrunResult,
 } from './proposeTaskWriteoff';
+
+export {
+  parseReceipt,
+  type ParseReceiptInput,
+  type ParseReceiptResult,
+  type ParseReceiptOk,
+  type ParsedReceiptLine,
+  type GeminiVisionCaller,
+} from './parseReceipt';

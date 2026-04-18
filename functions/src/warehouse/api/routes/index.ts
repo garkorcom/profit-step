@@ -11,6 +11,7 @@ import ledger from './ledger';
 import items from './items';
 import locations from './locations';
 import norms from './norms';
+import agent from './agent';
 
 const warehouseRouter = Router();
 warehouseRouter.use(documents);
@@ -19,5 +20,6 @@ warehouseRouter.use(ledger);
 warehouseRouter.use(items);
 warehouseRouter.use(locations);
 warehouseRouter.use(norms);
+warehouseRouter.use(agent);
 
 export default warehouseRouter;

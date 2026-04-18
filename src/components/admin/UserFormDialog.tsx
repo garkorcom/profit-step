@@ -558,6 +558,24 @@ const UserFormDialog: React.FC<UserFormDialogProps> = ({
                                 )}
                             />
 
+                            {/* Telegram ID — for linking admin-created user to worker bot account */}
+                            <Controller
+                                name="telegramId"
+                                control={control}
+                                render={({ field }) => (
+                                    <TextField
+                                        {...field}
+                                        label={`Telegram ID ${field.value ? '✓ связан с Worker Bot' : '(не связан)'}`}
+                                        fullWidth
+                                        margin="normal"
+                                        placeholder="123456789"
+                                        helperText="Связывает аккаунт с Telegram-ботом @gartime_bot. Попросите работника отправить боту /me — он пришлёт свой ID в ответе."
+                                        disabled={loading}
+                                        FormHelperTextProps={{ sx: { whiteSpace: 'normal' } }}
+                                    />
+                                )}
+                            />
+
                             {/* Title */}
                             <Controller
                                 name="title"
@@ -733,22 +751,7 @@ const UserFormDialog: React.FC<UserFormDialogProps> = ({
                                 )}
                             />
 
-                            {/* Telegram ID */}
-                            <Controller
-                                name="telegramId"
-                                control={control}
-                                render={({ field }) => (
-                                    <TextField
-                                        {...field}
-                                        label="Telegram ID"
-                                        fullWidth
-                                        margin="normal"
-                                        placeholder="123456789"
-                                        helperText="ID для привязки к Worker Bot"
-                                        disabled={loading}
-                                    />
-                                )}
-                            />
+            {/* Telegram ID moved to Основное tab for discoverability */}
 
                             {/* Referred By */}
                             <Controller

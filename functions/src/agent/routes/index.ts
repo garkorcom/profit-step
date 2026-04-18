@@ -13,6 +13,7 @@ export { default as projectRoutes } from './projects';
 export { default as siteRoutes } from './sites';
 export { default as erpRoutes } from './erp';
 export { default as inventoryRoutes } from './inventory';
+export { default as warehouseAIRoutes } from './warehouseAI';
 export { default as sharingRoutes } from './sharing';
 export { default as activityRoutes } from './activity';
 export { default as fileRoutes } from './files';

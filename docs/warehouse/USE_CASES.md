@@ -1,8 +1,10 @@
-# 50 Warehouse Use Cases — Profit Step Inventory V3
+# 50 Warehouse Use Cases
 
-> **Спутник документ к:** [`WAREHOUSE_SPEC_V3.md`](./WAREHOUSE_SPEC_V3.md)
-> **Дата:** 2026-04-17
-> **Аудитория:** разработчик / agent, имплементирующий Phase 0-2
+> **Parent:** [`MAIN_SPEC.md`](./MAIN_SPEC.md)
+> **Role:** regression test suite — 50 детальных сценариев для coverage
+> **Дата:** 2026-04-17 (v1), перенесено 2026-04-18 в новую структуру
+> **Аудитория:** разработчик, имплементирующий core + improvements
+> **Note:** endpoint-ссылки внутри были под старую `/api/inventory/*` схему. При реализации использовать новые `/api/warehouse/*` endpoints (см. [`core/04_external_api/SPEC.md`](./core/04_external_api/SPEC.md))
 
 Каждый кейс описывает: actor → trigger → flow → expected outcome → edge cases → relevant endpoints/events.
 

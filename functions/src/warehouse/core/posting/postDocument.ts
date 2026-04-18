@@ -281,7 +281,7 @@ export async function postDocument(
       lastLedgerEntryId: ledgerEntryIds[ledgerEntryIds.length - 1],
       lastEventDate: doc.eventDate,
       updatedAt: tx.serverTimestamp(),
-      needsReconciliation: balance.onHandQty < 0 ? true : undefined,
+      ...(balance.onHandQty < 0 ? { needsReconciliation: true } : {}),
     });
   }
 

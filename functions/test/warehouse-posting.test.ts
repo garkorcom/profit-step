@@ -370,6 +370,73 @@ describe('postDocument — receipt', () => {
       code: 'VALIDATION_ERROR',
     });
   });
+
+  // Regression: Firestore admin SDK rejects `undefined` as a field value
+  // unless `ignoreUndefinedProperties` is enabled. postDocument used to write
+  // `needsReconciliation: undefined` for non-negative balances, which blew up
+  // on the first real post from UI with an INTERNAL_ERROR.
+  it('never writes `undefined` field values to balances (Firestore compat)', async () => {
+    const store = buildStoreBasics();
+    store.seed(WH_COLLECTIONS.documents, 'doc_rcp_regression', {
+      id: 'doc_rcp_regression',
+      docType: 'receipt',
+      status: 'draft',
+      eventDate: { _ts: 'event' },
+      destinationLocationId: LOC_WH.id,
+      source: 'ui',
+    });
+    store.seedLines(WH_COLLECTIONS.documents, 'doc_rcp_regression', [
+      { id: 'ln1', lineNumber: 1, itemId: 'item_outlet', uom: 'each', qty: 3, unitCost: 2.0 },
+    ]);
+
+    const writes: Array<{ collection: string; data: Record<string, unknown> }> = [];
+    const strictTx: PostTx = {
+      get: async (c, id) => store.coll(c).get(id),
+      getLines: async (pc, pid, _sub) => {
+        if (pc === WH_COLLECTIONS.ledger) return store.ledgerByDocument.get(pid) ?? [];
+        return store.lines.get(`${pc}:${pid}`) ?? [];
+      },
+      set: (collection, _id, data) => {
+        for (const [k, v] of Object.entries(data)) {
+          if (v === undefined) {
+            throw new Error(`STRICT_FAKE_TX: undefined at ${collection}.${k}`);
+          }
+        }
+        writes.push({ collection, data });
+      },
+      merge: (collection, _id, data) => {
+        for (const [k, v] of Object.entries(data)) {
+          if (v === undefined) {
+            throw new Error(`STRICT_FAKE_TX: undefined at ${collection}.${k} (merge)`);
+          }
+        }
+        writes.push({ collection, data });
+      },
+      create: (collection, data) => {
+        for (const [k, v] of Object.entries(data)) {
+          if (v === undefined) {
+            throw new Error(`STRICT_FAKE_TX: undefined at ${collection}.${k} (create)`);
+          }
+        }
+        writes.push({ collection, data });
+        return `${collection}_seq_${writes.length}`;
+      },
+      serverTimestamp: () => '__TS__',
+    };
+
+    // If any write contained `undefined`, strictTx would have thrown and
+    // rejected this promise. Passing = all writes are Firestore-compatible.
+    await expect(
+      postDocument(strictTx, 'doc_rcp_regression', { userId: 'user_a' }),
+    ).resolves.toBeDefined();
+
+    const balanceWrites = writes.filter((w) => w.collection === WH_COLLECTIONS.balances);
+    expect(balanceWrites.length).toBeGreaterThan(0);
+    // needsReconciliation key must be absent when onHandQty >= 0.
+    for (const w of balanceWrites) {
+      expect('needsReconciliation' in w.data).toBe(false);
+    }
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════

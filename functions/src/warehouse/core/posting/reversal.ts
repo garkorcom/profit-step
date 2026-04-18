@@ -152,11 +152,12 @@ export async function voidDocument(
       const balance = await tx.get<WhBalance>(WH_COLLECTIONS.balances, key);
       if (!balance) continue; // should not happen
       const onHandAfter = balance.onHandQty + delta.onHand;
+      const needsRecon = onHandAfter < 0 ? true : balance.needsReconciliation;
       tx.merge(WH_COLLECTIONS.balances, key, {
         onHandQty: onHandAfter,
         availableQty: onHandAfter - balance.reservedQty,
         updatedAt: tx.serverTimestamp(),
-        needsReconciliation: onHandAfter < 0 ? true : balance.needsReconciliation,
+        ...(needsRecon !== undefined ? { needsReconciliation: needsRecon } : {}),
       });
     }
 

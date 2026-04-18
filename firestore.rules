@@ -605,6 +605,100 @@ service cloud.firestore {
 
     // ==================== DEFAULT DENY ====================
 
+    // ==================== WAREHOUSE MODULE (wh_*) ====================
+    // Read-only from client SDK; all writes flow through backend Cloud Functions
+    // (admin SDK bypasses rules). This mirrors the posting-engine single-write-path
+    // design from docs/warehouse/core/02_posting_engine/SPEC.md.
+
+    match /wh_items/{itemId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    match /wh_categories/{categoryId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    match /wh_locations/{locationId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    match /wh_documents/{documentId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+
+      match /lines/{lineId} {
+        allow read: if isSignedIn();
+        allow write: if false;
+      }
+    }
+
+    match /wh_ledger/{entryId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    match /wh_balances/{balanceId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    match /wh_norms/{normId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    match /wh_vendors/{vendorId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    match /wh_count_sessions/{sessionId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+
+      match /lines/{lineId} {
+        allow read: if isSignedIn();
+        allow write: if false;
+      }
+    }
+
+    match /wh_events/{eventId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    match /wh_audit_log/{id} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    match /wh_rfq_records/{id} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    match /wh_vendor_quotes/{id} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    // These are internal — admin SDK only, client has no business reading them
+    match /wh_idempotency_keys/{key} {
+      allow read, write: if false;
+    }
+    match /wh_migrations_applied/{id} {
+      allow read, write: if false;
+    }
+    match /wh_counters/{id} {
+      allow read, write: if false;
+    }
+    match /wh_web_search_cache/{id} {
+      allow read, write: if false;
+    }
+
     // Запретить доступ ко всем остальным документам
     match /{document=**} {
       allow read, write: if false;

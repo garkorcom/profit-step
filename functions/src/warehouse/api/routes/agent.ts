@@ -20,8 +20,18 @@ import {
   parseOnSiteInventory,
   parseReceipt,
   proposeTaskWriteoff,
+  buildProcurementPlan,
+  buildReservationDrafts,
 } from '../../agent';
-import { loadCatalog, loadClients, loadVendors, loadWriteoffContext } from '../loaders';
+import {
+  loadCatalog,
+  loadCatalogFull,
+  loadClients,
+  loadVendors,
+  loadVendorsFull,
+  loadWriteoffContext,
+  loadBalancesForItems,
+} from '../loaders';
 import { wrapRoute } from '../errorHandler';
 
 const router = Router();
@@ -58,6 +68,30 @@ const ProposeWriteoffSchema = z
     locationId: z.string().min(1),
     projectId: z.string().optional(),
     phaseCode: z.string().optional(),
+  })
+  .strict();
+
+const ProcurementPlanSchema = z
+  .object({
+    estimateId: z.string().min(1),
+    projectId: z.string().min(1),
+    destinationLocationId: z.string().optional(),
+    estimateLines: z
+      .array(
+        z
+          .object({
+            id: z.string().min(1),
+            itemHint: z.string().min(1),
+            qty: z.number().positive(),
+            unit: z.string().min(1),
+            unitCost: z.number().nonnegative(),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(500),
+    buildReservationDrafts: z.boolean().optional(),
+    reservationDays: z.number().positive().optional(),
   })
   .strict();
 
@@ -150,6 +184,68 @@ router.post(
 // ═══════════════════════════════════════════════════════════════════
 //  POST /api/warehouse/agent/propose-writeoff
 // ═══════════════════════════════════════════════════════════════════
+
+// ═══════════════════════════════════════════════════════════════════
+//  POST /api/warehouse/agent/procurement-plan   (UC4)
+// ═══════════════════════════════════════════════════════════════════
+
+router.post(
+  '/api/warehouse/agent/procurement-plan',
+  wrapRoute(async (req, res) => {
+    const data = ProcurementPlanSchema.parse(req.body);
+
+    const [catalog, vendors] = await Promise.all([loadCatalogFull(db), loadVendorsFull(db)]);
+    const balances = await loadBalancesForItems(
+      db,
+      catalog.map((i) => i.id),
+    );
+
+    const plan = buildProcurementPlan({
+      estimateId: data.estimateId,
+      projectId: data.projectId,
+      estimateLines: data.estimateLines,
+      catalog,
+      balances,
+      vendors,
+    });
+
+    const reservationDrafts = data.buildReservationDrafts && data.destinationLocationId
+      ? buildReservationDrafts(plan, {
+          destinationLocationId: data.destinationLocationId,
+          catalog,
+          reservationDays: data.reservationDays ?? 7,
+        })
+      : [];
+
+    logger.info('🏭 warehouse:agent.procurement-plan', {
+      estimateId: data.estimateId,
+      projectId: data.projectId,
+      lineCount: data.estimateLines.length,
+      internalAllocationCount: plan.buckets.internalAllocation.length,
+      buyFromVendorCount: plan.buckets.buyFromVendor.length,
+      needsQuoteCount: plan.buckets.needsQuote.length,
+      needsWebSearchCount: plan.buckets.needsWebSearch.length,
+      reservationDraftCount: reservationDrafts.length,
+    });
+
+    await logAgentActivity({
+      userId: req.agentUserId!,
+      action: 'warehouse_ai_procurement_plan',
+      endpoint: '/api/warehouse/agent/procurement-plan',
+      metadata: {
+        estimateId: data.estimateId,
+        projectId: data.projectId,
+        lineCount: data.estimateLines.length,
+        totalEstimateValue: plan.summary.totalEstimateValue,
+        internallyAllocatedValue: plan.summary.internallyAllocatedValue,
+        externalPurchaseValue: plan.summary.externalPurchaseValue,
+        allInternallyAvailable: plan.summary.allInternallyAvailable,
+      },
+    });
+
+    res.status(200).json({ plan, reservationDrafts });
+  }),
+);
 
 router.post(
   '/api/warehouse/agent/propose-writeoff',

@@ -26,3 +26,41 @@ export {
   type ParsedReceiptLine,
   type GeminiVisionCaller,
 } from './parseReceipt';
+
+export {
+  buildProcurementPlan,
+  buildReservationDrafts,
+  type BuildProcurementPlanInput,
+  type ProcurementPlan,
+  type EstimateLine,
+  type InternalAllocationEntry,
+  type BuyFromVendorEntry,
+  type NeedsQuoteEntry,
+  type NeedsWebSearchEntry,
+  type ReservationDraftPayload,
+} from './buildProcurementPlan';
+
+export {
+  webSearchItem,
+  InMemoryWebSearchProvider,
+  InMemoryWebSearchCache,
+  type WebSearchQuery,
+  type WebSearchCandidate,
+  type WebSearchResult,
+  type WebSearchProvider,
+  type WebSearchCache,
+  type WebSearchItemOptions,
+} from './webSearchItem';
+
+export {
+  sendVendorRFQ,
+  composeRFQEnvelope,
+  InMemoryRFQEmailProvider,
+  type RFQRequest,
+  type RFQLineItem,
+  type RFQEnvelope,
+  type RFQSendResult,
+  type RFQEmailProvider,
+  type ComposeRFQOptions,
+  type SendRFQOptions,
+} from './sendVendorRFQ';

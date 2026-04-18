@@ -8,7 +8,7 @@
 
 import type * as admin from 'firebase-admin';
 import type { FuzzyCandidate } from '../agent';
-import type { WhBalance, WhItem, WhNorm } from '../core/types';
+import type { WhBalance, WhItem, WhNorm, WhVendor } from '../core/types';
 import { makeBalanceKey } from '../core/types';
 import { WH_COLLECTIONS } from '../database/collections';
 
@@ -66,6 +66,61 @@ export async function loadVendors(
 ): Promise<Array<{ id: string; name: string }>> {
   const snap = await db.collection(WH_COLLECTIONS.vendors).where('isActive', '==', true).get();
   return snap.docs.map((d) => ({ id: d.id, name: String((d.data() as any)?.name ?? '') }));
+}
+
+/**
+ * Load full vendor objects (with category preferences) — used by
+ * buildProcurementPlan to find preferred vendor per item category.
+ */
+export async function loadVendorsFull(
+  db: admin.firestore.Firestore,
+): Promise<WhVendor[]> {
+  const snap = await db.collection(WH_COLLECTIONS.vendors).where('isActive', '==', true).get();
+  return snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as WhVendor));
+}
+
+/**
+ * Load all active catalog items as full WhItem objects (not just FuzzyCandidate).
+ * Used by UC4 procurement planner which needs category/baseUOM/averageCost.
+ */
+export async function loadCatalogFull(
+  db: admin.firestore.Firestore,
+  options: { limit?: number } = {},
+): Promise<WhItem[]> {
+  const snap = await db
+    .collection(WH_COLLECTIONS.items)
+    .where('isActive', '==', true)
+    .limit(options.limit ?? 500)
+    .get();
+  return snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as WhItem));
+}
+
+/**
+ * Load all balances across locations for a set of items. Used by UC4
+ * to compute total availability. Returns a Map keyed by `${loc}__${item}`.
+ */
+export async function loadBalancesForItems(
+  db: admin.firestore.Firestore,
+  itemIds: string[],
+): Promise<Map<string, WhBalance>> {
+  const balances = new Map<string, WhBalance>();
+  if (itemIds.length === 0) return balances;
+
+  // Firestore `in` supports up to 30 values; chunk.
+  const chunks: string[][] = [];
+  for (let i = 0; i < itemIds.length; i += 30) {
+    chunks.push(itemIds.slice(i, i + 30));
+  }
+
+  for (const chunk of chunks) {
+    const snap = await db.collection(WH_COLLECTIONS.balances).where('itemId', 'in', chunk).get();
+    for (const d of snap.docs) {
+      const data = d.data() as any;
+      balances.set(d.id, { id: d.id, ...data } as WhBalance);
+    }
+  }
+
+  return balances;
 }
 
 // ═══════════════════════════════════════════════════════════════════

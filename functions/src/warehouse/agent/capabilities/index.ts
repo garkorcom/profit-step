@@ -64,3 +64,15 @@ export {
   type ComposeRFQOptions,
   type SendRFQOptions,
 } from './sendVendorRFQ';
+
+export {
+  parseRfqReply,
+  correlateRfqId,
+  type ParseRfqReplyInput,
+  type ParseRfqReplyResult,
+  type ParsedRfqReplyOk,
+  type QuoteLine,
+  type QuoteOverall,
+  type InboundEnvelopeFields,
+  type RfqReplyGeminiCaller,
+} from './parseRfqReply';

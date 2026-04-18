@@ -12,6 +12,7 @@ import items from './items';
 import locations from './locations';
 import norms from './norms';
 import agent from './agent';
+import rfqInbound from './rfqInbound';
 
 const warehouseRouter = Router();
 warehouseRouter.use(documents);
@@ -21,5 +22,6 @@ warehouseRouter.use(items);
 warehouseRouter.use(locations);
 warehouseRouter.use(norms);
 warehouseRouter.use(agent);
+warehouseRouter.use(rfqInbound);
 
 export default warehouseRouter;

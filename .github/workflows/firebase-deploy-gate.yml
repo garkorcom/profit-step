@@ -68,7 +68,7 @@ jobs:
 
       - name: 🔥 Start Firebase Emulators (background)
         run: |
-          firebase emulators:start --only firestore,auth,storage &
+          firebase emulators:start --only firestore,auth,storage --project=profit-step-test &
           echo "Waiting for emulators to start..."
           sleep 15
           echo "✅ Emulators started"

@@ -69,8 +69,12 @@ describe('useGTDTasks', () => {
         mockAddDoc.mockClear();
         mockDeleteDoc.mockClear();
         mockUnsubscribe.mockClear();
-        // Re-apply onSnapshot implementation (clearAllMocks would reset it)
+        // Re-apply onSnapshot implementation AND clear call history —
+        // without mockClear, call counts leak across tests and the
+        // "should not subscribe when user is null" assertion sees calls
+        // from the previous test's hook mount.
         const { onSnapshot } = require('firebase/firestore');
+        onSnapshot.mockClear();
         onSnapshot.mockImplementation((_q: any, cb: any) => {
             onSnapshotCallback = cb;
             return mockUnsubscribe;
@@ -94,7 +98,9 @@ describe('useGTDTasks', () => {
         });
 
         it('should subscribe and organize tasks into columns', () => {
-            const { result } = renderHook(() => useGTDTasks(mockUser));
+            // showAllTasks=true bypasses the V1 ownership filter — tests here
+            // only exercise status-based grouping, not task ownership.
+            const { result } = renderHook(() => useGTDTasks(mockUser, true));
 
             act(() => {
                 emitSnapshot([

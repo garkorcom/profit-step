@@ -94,6 +94,9 @@ describe('useExpensesBoard', () => {
         firestore.arrayUnion.mockImplementation(((entry: any) => ({ _arrayUnion: entry })) as any);
         firestore.Timestamp.now.mockReturnValue({ seconds: Math.floor(Date.now() / 1000), nanoseconds: 0 });
 
+        // Clear onSnapshot call history so the "should not subscribe" test
+        // doesn't see calls from previous tests' hook mounts.
+        firestore.onSnapshot.mockClear();
         firestore.onSnapshot.mockImplementation((q: any, cb: any, _err?: any) => {
             const collectionName = q.path || 'unknown';
             if (!mockQueryCallbacks[collectionName]) {

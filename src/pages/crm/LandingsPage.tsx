@@ -11,13 +11,16 @@ import {
 import { Campaign as CampaignIcon, OpenInNew as OpenInNewIcon } from '@mui/icons-material';
 
 const LandingsPage: React.FC = () => {
+  // URL falls back to the env var so dev-only landings (e.g. the CCTV
+  // sample on :3003) don't dangle at localhost in prod. Unset = hidden.
+  const cctvLandingUrl = import.meta.env.VITE_CCTV_LANDING_URL || '';
   const landings = [
     {
       id: 1,
       title: 'CCTV Video Surveillance',
       description: 'Landing page for Turnkey Video Surveillance Systems. Features Russian/English i18n, dark mode glassmorphism, and Framer Motion animations.',
       status: 'Development',
-      url: 'http://localhost:3003',
+      url: cctvLandingUrl,
       repo: 'cctv-landing',
       tech: ['Next.js 16', 'Tailwind v4', 'Framer Motion'],
     }
@@ -80,11 +83,12 @@ const LandingsPage: React.FC = () => {
                 color="primary"
                 endIcon={<OpenInNewIcon />}
                 fullWidth
-                href={landing.url}
+                href={landing.url || undefined}
+                disabled={!landing.url}
                 target="_blank"
                 rel="noopener noreferrer"
               >
-                Открыть сайт
+                {landing.url ? 'Открыть сайт' : 'URL не настроен'}
               </Button>
             </Paper>
           </Grid>

@@ -17,6 +17,12 @@ interface BlueprintDevice { id: string; type: string }
 interface BlueprintRoom { name: string; zone_type: string; devices?: BlueprintDevice[] }
 interface ParsedBlueprint { rooms?: BlueprintRoom[] }
 
+// LangGraph Blueprint-AI service runs on a separate Python process (default
+// port 8000). When VITE_BLUEPRINT_AI_URL is not set we keep the endpoint
+// empty — fetch() then throws a TypeError immediately and the existing
+// try/catch surfaces a clean "service not running" message to the user.
+const BLUEPRINT_AI_URL = import.meta.env.VITE_BLUEPRINT_AI_URL || '';
+
 export const EstimatorLangGraphUI: React.FC = () => {
     const [status, setStatus] = useState<'idle' | 'uploading' | 'processing' | 'review' | 'pricing' | 'completed'>('idle');
     const [bom, setBom] = useState<BomItem[]>([]);
@@ -50,7 +56,12 @@ export const EstimatorLangGraphUI: React.FC = () => {
         formData.append('thread_id', newThread);
 
         try {
-            const res = await fetch('http://localhost:8000/api/upload-blueprint', {
+            if (!BLUEPRINT_AI_URL) {
+                setError("Blueprint-AI сервис не настроен. Укажи VITE_BLUEPRINT_AI_URL в .env.");
+                setStatus('idle');
+                return;
+            }
+            const res = await fetch(`${BLUEPRINT_AI_URL}/api/upload-blueprint`, {
                 method: 'POST',
                 body: formData
             });
@@ -95,7 +106,12 @@ export const EstimatorLangGraphUI: React.FC = () => {
         setThreadId(newThread);
         
         try {
-            const res = await fetch('http://localhost:8000/api/estimate', {
+            if (!BLUEPRINT_AI_URL) {
+                setError("Blueprint-AI сервис не настроен. Укажи VITE_BLUEPRINT_AI_URL в .env.");
+                setStatus('idle');
+                return;
+            }
+            const res = await fetch(`${BLUEPRINT_AI_URL}/api/estimate`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ blueprint_path: blueprintFile, thread_id: newThread })
@@ -121,7 +137,12 @@ export const EstimatorLangGraphUI: React.FC = () => {
         setStatus('pricing');
         setError('');
         try {
-            const res = await fetch('http://localhost:8000/api/estimate/resume', {
+            if (!BLUEPRINT_AI_URL) {
+                setError("Blueprint-AI сервис не настроен. Укажи VITE_BLUEPRINT_AI_URL в .env.");
+                setStatus('idle');
+                return;
+            }
+            const res = await fetch(`${BLUEPRINT_AI_URL}/api/estimate/resume`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ thread_id: threadId, approve: true })

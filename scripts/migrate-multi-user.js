@@ -16,7 +16,7 @@
 const admin = require('firebase-admin');
 
 const DRY_RUN = process.argv.includes('--dry-run');
-const PROJECT_ID = 'profit-step';
+const PROJECT_ID = process.env.GOOGLE_CLOUD_PROJECT || 'profit-step';
 
 if (!admin.apps.length) {
   // Try service account first, then fall back to gcloud ADC

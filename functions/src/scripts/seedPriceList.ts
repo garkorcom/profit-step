@@ -10,7 +10,7 @@ import * as admin from 'firebase-admin';
 
 // Initialize if not already
 if (!admin.apps.length) {
-  admin.initializeApp({ projectId: 'profit-step' });
+  admin.initializeApp({ projectId: process.env.GOOGLE_CLOUD_PROJECT || 'profit-step' });
 }
 const db = admin.firestore();
 

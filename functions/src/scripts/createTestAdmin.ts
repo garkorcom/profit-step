@@ -4,7 +4,7 @@ import * as admin from 'firebase-admin';
 // Initialize Firebase Admin (assumes GOOGLE_APPLICATION_CREDENTIALS or default auth)
 if (admin.apps.length === 0) {
     admin.initializeApp({
-        projectId: 'profit-step'
+        projectId: process.env.GOOGLE_CLOUD_PROJECT || 'profit-step'
     });
 }
 

@@ -11,7 +11,7 @@ const { getFirestore, Timestamp } = require('firebase-admin/firestore');
 // Initialize with ADC (from `firebase login`)
 initializeApp({
     credential: applicationDefault(),
-    projectId: 'profit-step',
+    projectId: process.env.GOOGLE_CLOUD_PROJECT || 'profit-step',
 });
 
 const db = getFirestore();

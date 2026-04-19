@@ -107,7 +107,11 @@ interface Service {
 
 // ─── API Config ──────────────────────────────────────────────────────────────
 
-const INFRA_API = import.meta.env.VITE_INFRA_API_URL || 'http://localhost:8001';
+// Infra Dashboard is a separate local service (default port 8001) that
+// not every deployment has running. When VITE_INFRA_API_URL is empty, the
+// page renders an empty-state instead of thrashing fetch on localhost from
+// a browser that's nowhere near the dev box.
+const INFRA_API = import.meta.env.VITE_INFRA_API_URL || '';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -710,6 +714,11 @@ const InfraMapPage: React.FC = () => {
   }, []);
 
   const fetchData = useCallback(async () => {
+    if (!INFRA_API) {
+      setError('Инфра-дашборд не настроен. Укажи VITE_INFRA_API_URL в .env.');
+      setLoading(false);
+      return;
+    }
     try {
       setError(null);
       const [agentsRes, serversRes, topologyRes, servicesRes] = await Promise.all([

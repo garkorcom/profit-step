@@ -10,7 +10,7 @@ import { getFirestore, collection, addDoc, Timestamp, getDocs, query, where } fr
 const firebaseConfig = {
   apiKey: "AIzaSyDjBgLGw60VDlMkFu3w9DiSwTftH6nTh8E",
   authDomain: "profit-step.firebaseapp.com",
-  projectId: "profit-step",
+  projectId: process.env.GOOGLE_CLOUD_PROJECT || "profit-step",
   storageBucket: "profit-step.firebasestorage.app",
   messagingSenderId: "155664324159",
   appId: "1:155664324159:web:87900e4aab0a78aa57ca8a",

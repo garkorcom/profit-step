@@ -44,6 +44,7 @@ import ProjectFinanceTab from '../../components/crm/ProjectFinanceTab';
 import ClientExpensesTab from '../../components/crm/ClientExpensesTab';
 import ClientEditDialog from '../../components/crm/ClientEditDialog';
 import ClientTasksTab from '../../components/crm/ClientTasksTab';
+import ClientMeetingsTab from '../../components/crm/ClientMeetingsTab';
 
 interface TabPanelProps {
     children?: React.ReactNode;
@@ -246,6 +247,7 @@ const getStatusColor = (status: string): 'primary' | 'success' | 'default' => {
                     <Tab label="💰 Finance" />
                     <Tab label="🧾 Расходы" />
                     <Tab label="Tasks" />
+                    <Tab label="📅 Встречи" />
                 </Tabs>
             </Paper>
 
@@ -534,6 +536,10 @@ const getStatusColor = (status: string): 'primary' | 'success' | 'default' => {
 
             <TabPanel value={tabValue} index={4}>
                 <ClientTasksTab clientId={client.id} clientName={client.name} />
+            </TabPanel>
+
+            <TabPanel value={tabValue} index={5}>
+                <ClientMeetingsTab clientId={client.id} clientName={client.name} />
             </TabPanel>
 
             <ClientEditDialog

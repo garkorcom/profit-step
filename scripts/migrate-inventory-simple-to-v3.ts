@@ -108,9 +108,17 @@ interface MigrationStats {
 }
 
 async function initAdmin(): Promise<void> {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const serviceAccount = require('../service-account-key.json');
-  initializeApp({ credential: cert(serviceAccount) });
+  // Prefer service-account-key.json when present (explicit project binding);
+  // fall back to Google Application Default Credentials so `gcloud auth
+  // application-default login` + `gcloud config set project profit-step`
+  // is enough to run the script without handling a key file.
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const serviceAccount = require('../service-account-key.json');
+    initializeApp({ credential: cert(serviceAccount) });
+  } catch {
+    initializeApp({ projectId: process.env.GCLOUD_PROJECT ?? 'profit-step' });
+  }
 }
 
 async function migrate(): Promise<MigrationStats> {

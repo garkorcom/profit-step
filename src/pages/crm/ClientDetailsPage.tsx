@@ -57,6 +57,7 @@ import ClientFilesTab from '../../components/crm/client-card-v2/tabs/ClientFiles
 import { useClientKPI } from '../../components/crm/client-card-v2/hooks/useClientKPI';
 import { useClientInsights } from '../../components/crm/client-card-v2/hooks/useClientInsights';
 import { addClientToFavorites, removeClientFromFavorites } from '../../api/clientInsightsApi';
+import CreateDealDialog from '../../components/crm/client-card-v2/CreateDealDialog';
 
 interface TabPanelProps {
     children?: React.ReactNode;
@@ -109,6 +110,7 @@ const ClientDetailsPage: React.FC = () => {
     const { data: kpi, loading: kpiLoading } = useClientKPI(id);
     const { data: insights, loading: insightsLoading } = useClientInsights(id);
     const [isFavorite, setIsFavorite] = useState(false);
+    const [createDealOpen, setCreateDealOpen] = useState(false);
     const toggleFavorite = async () => {
         if (!id) return;
         const prev = isFavorite;
@@ -266,6 +268,18 @@ const getStatusColor = (status: string): 'primary' | 'success' | 'default' => {
                 kpiLoading={kpiLoading}
                 isFavorite={isFavorite}
                 onToggleFavorite={toggleFavorite}
+                onCreateDeal={() => setCreateDealOpen(true)}
+            />
+
+            <CreateDealDialog
+                open={createDealOpen}
+                onClose={() => setCreateDealOpen(false)}
+                clientId={client.id}
+                clientName={client.name}
+                onCreated={() => {
+                    // Auto-navigate user to the Deals tab (index 3) so they see the new one
+                    setTabValue(3);
+                }}
             />
 
             <Grid container spacing={2}>

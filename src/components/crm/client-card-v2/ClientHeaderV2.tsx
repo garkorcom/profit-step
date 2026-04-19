@@ -23,6 +23,8 @@ import WarningIcon from '@mui/icons-material/Warning';
 import EventIcon from '@mui/icons-material/Event';
 import HistoryIcon from '@mui/icons-material/History';
 
+import BusinessCenterOutlinedIcon from '@mui/icons-material/BusinessCenterOutlined';
+
 import { Client, LifecycleStage, ClientSegment } from '../../../types/crm.types';
 import { ClientKPIResponse } from '../../../api/clientInsightsApi';
 
@@ -32,6 +34,7 @@ interface Props {
   kpiLoading: boolean;
   isFavorite: boolean;
   onToggleFavorite: () => void;
+  onCreateDeal?: () => void;
 }
 
 const LIFECYCLE_LABELS: Record<LifecycleStage, string> = {
@@ -87,7 +90,7 @@ function KPICell({ icon, label, value, tooltip }: { icon: React.ReactNode; label
   return tooltip ? <Tooltip title={tooltip} arrow>{cell}</Tooltip> : cell;
 }
 
-const ClientHeaderV2: React.FC<Props> = ({ client, kpi, kpiLoading, isFavorite, onToggleFavorite }) => {
+const ClientHeaderV2: React.FC<Props> = ({ client, kpi, kpiLoading, isFavorite, onToggleFavorite, onCreateDeal }) => {
   const lifecycle = (client.lifecycleStage ?? 'lead') as LifecycleStage;
   const segment = (client.segment ?? 'B') as ClientSegment;
   const isCompany = client.type === 'company' || client.type === 'commercial';
@@ -146,6 +149,13 @@ const ClientHeaderV2: React.FC<Props> = ({ client, kpi, kpiLoading, isFavorite, 
                 {isFavorite ? <StarIcon sx={{ color: '#ffc107' }} /> : <StarBorderIcon />}
               </IconButton>
             </Tooltip>
+            {onCreateDeal && (
+              <Tooltip title="Создать сделку для клиента" arrow>
+                <IconButton size="small" color="primary" onClick={onCreateDeal}>
+                  <BusinessCenterOutlinedIcon />
+                </IconButton>
+              </Tooltip>
+            )}
             {kpi?.stale && (
               <Tooltip title="Метрики устарели, обновляются…" arrow>
                 <CircularProgress size={16} />

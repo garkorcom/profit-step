@@ -396,5 +396,123 @@ router.post('/api/estimates/:id/convert-to-tasks', async (req, res, next) => {
   }
 });
 
+// ═══════════════════════════════════════════════════════════════════
+// CLIENT JOURNEY SPRINT 1.2
+// POST /api/estimates/from-tasks — build an Estimate from a task set
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * Groups billable tasks into estimate line items. Each billable task becomes
+ * one line item with: description=title, qty=quantity||1, unit=unit||'шт',
+ * unitPrice=rate||estimatedPriceClient, total=unitPrice*qty (or estimatedPriceClient).
+ *
+ * Tasks without `billable=true` are skipped. Caller must pass the full list
+ * of task IDs they selected in the constructor UI.
+ */
+router.post('/api/estimates/from-tasks', async (req, res, next) => {
+  try {
+    const taskIds = Array.isArray(req.body?.taskIds)
+      ? (req.body.taskIds as unknown[]).filter(x => typeof x === 'string') as string[]
+      : [];
+    const clientId = typeof req.body?.clientId === 'string' ? req.body.clientId : null;
+    const projectId = typeof req.body?.projectId === 'string' ? req.body.projectId : null;
+    const address = typeof req.body?.address === 'string' ? req.body.address : '';
+    const estimateType = req.body?.estimateType === 'internal' ? 'internal' : 'commercial';
+
+    if (taskIds.length === 0 || !clientId) {
+      res.status(400).json({ error: 'taskIds[] and clientId required' });
+      return;
+    }
+
+    // Load tasks + validate billable
+    const tasksSnaps = await Promise.all(taskIds.map(id => db.collection('gtd_tasks').doc(id).get()));
+    const billableTasks = tasksSnaps
+      .filter(s => s.exists)
+      .map(s => ({ id: s.id, ...s.data() } as Record<string, unknown> & { id: string }))
+      .filter(t => t.billable === true);
+
+    if (billableTasks.length === 0) {
+      res.status(400).json({
+        error: 'No billable tasks found in selection (set task.billable=true first)',
+        checked: taskIds.length,
+      });
+      return;
+    }
+
+    const items = billableTasks.map((t) => {
+      const qty = typeof t.quantity === 'number' && t.quantity > 0 ? t.quantity : 1;
+      const unit = typeof t.unit === 'string' && t.unit.length > 0 ? t.unit : 'шт';
+      const unitPrice = typeof t.rate === 'number' && t.rate > 0
+        ? t.rate
+        : typeof t.estimatedPriceClient === 'number' && t.estimatedPriceClient > 0
+          ? t.estimatedPriceClient / qty
+          : 0;
+      const total = typeof t.estimatedPriceClient === 'number' && t.estimatedPriceClient > 0
+        ? t.estimatedPriceClient
+        : unitPrice * qty;
+      return {
+        sourceTaskId: t.id,
+        description: typeof t.title === 'string' ? t.title : '(задача без названия)',
+        quantity: qty,
+        unit,
+        unitPrice,
+        total,
+      };
+    });
+
+    const subtotal = items.reduce((s, it) => s + it.total, 0);
+    const companyId = await resolveOwnerCompanyId();
+    const number = `EST-${Date.now().toString().slice(-6)}`;
+
+    // Fetch client for name snapshot
+    const clientSnap = await db.collection('clients').doc(clientId).get();
+    if (!clientSnap.exists) {
+      res.status(404).json({ error: 'Client not found' });
+      return;
+    }
+    const client = clientSnap.data()!;
+
+    const doc = {
+      number,
+      clientId,
+      clientName: client.name ?? null,
+      projectId: projectId ?? null,
+      companyId,
+      estimateType,
+      items,
+      internalItems: estimateType === 'internal' ? items : [],
+      clientItems: estimateType === 'commercial' ? items : [],
+      address: address || client.address || '',
+      subtotal,
+      tax: 0,
+      total: subtotal,
+      status: 'draft',
+      version: 1,
+      sourceTaskIds: billableTasks.map(t => t.id),
+      createdFrom: 'tasks',
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    };
+
+    const ref = await db.collection('estimates').add(doc);
+    await logAgentActivity({
+      userId: req.agentUserId!,
+      action: 'estimate_created_from_tasks',
+      endpoint: '/api/estimates/from-tasks',
+      metadata: { estimateId: ref.id, clientId, itemCount: items.length, subtotal, taskCount: billableTasks.length },
+    });
+
+    res.status(201).json({
+      estimateId: ref.id,
+      number,
+      itemCount: items.length,
+      subtotal,
+      skippedTasks: taskIds.length - billableTasks.length,
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
 
 export default router;

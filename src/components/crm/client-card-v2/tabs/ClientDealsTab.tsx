@@ -2,26 +2,15 @@ import React, { useEffect, useState } from 'react';
 import { Alert, Box, Button, Chip, CircularProgress, Paper, Stack, Table, TableBody, TableCell, TableHead, TableRow, Typography } from '@mui/material';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import { Link as RouterLink } from 'react-router-dom';
-import { collection, query, where, orderBy, getDocs, limit } from 'firebase/firestore';
-import { db } from '../../../../firebase/firebase';
+import { DealResource, listDeals } from '../../../../api/dealsApi';
 
 interface Props {
   clientId: string;
   clientName?: string;
 }
 
-interface DealDoc {
-  id: string;
-  title?: string;
-  stage?: string;
-  status?: string;
-  value?: { amount: number; currency: string };
-  expectedCloseDate?: { toDate: () => Date };
-  priority?: string;
-}
-
 const ClientDealsTab: React.FC<Props> = ({ clientId }) => {
-  const [deals, setDeals] = useState<DealDoc[]>([]);
+  const [deals, setDeals] = useState<DealResource[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -29,10 +18,8 @@ const ClientDealsTab: React.FC<Props> = ({ clientId }) => {
     let cancelled = false;
     (async () => {
       try {
-        const snap = await getDocs(
-          query(collection(db, 'deals'), where('clientId', '==', clientId), orderBy('createdAt', 'desc'), limit(50)),
-        );
-        if (!cancelled) setDeals(snap.docs.map(d => ({ id: d.id, ...d.data() } as DealDoc)));
+        const list = await listDeals({ clientId, limit: 50 });
+        if (!cancelled) setDeals(list);
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : 'Не удалось загрузить сделки');
       } finally {
@@ -90,12 +77,18 @@ const ClientDealsTab: React.FC<Props> = ({ clientId }) => {
               <TableRow key={d.id} hover>
                 <TableCell>{d.title ?? '—'}</TableCell>
                 <TableCell><Chip size="small" label={d.stage ?? '—'} variant="outlined" /></TableCell>
-                <TableCell><Chip size="small" label={d.status ?? '—'} color={d.status === 'won' ? 'success' : d.status === 'lost' ? 'default' : 'primary'} /></TableCell>
+                <TableCell>
+                  <Chip
+                    size="small"
+                    label={d.status}
+                    color={d.status === 'won' ? 'success' : d.status === 'lost' ? 'default' : 'primary'}
+                  />
+                </TableCell>
                 <TableCell align="right">
                   {d.value ? `${d.value.currency} ${d.value.amount.toLocaleString('en-US')}` : '—'}
                 </TableCell>
                 <TableCell>
-                  {d.expectedCloseDate ? d.expectedCloseDate.toDate().toLocaleDateString('ru-RU') : '—'}
+                  {d.expectedCloseDate ? new Date(d.expectedCloseDate).toLocaleDateString('ru-RU') : '—'}
                 </TableCell>
               </TableRow>
             ))}

@@ -21,6 +21,9 @@ export { default as teamRoutes } from './teams';
 export { default as webhookRoutes } from './webhooks';
 export { default as meetingRoutes } from './meetings';
 export { default as clientInsightsRoutes } from './clientInsights';
+export { default as dealRoutes } from './deals';
+export { default as projectAutomationRoutes } from './projectAutomation';
+export { default as paymentScheduleRoutes } from './paymentSchedules';
 // portalRoutes is mounted BEFORE authMiddleware in agentApi.ts — it's
 // imported directly there, not via this barrel, to keep the "public
 // vs authenticated" distinction visible at the mount site.

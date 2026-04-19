@@ -672,3 +672,27 @@ export {
 // ========================================
 
 export { notifyAlerts, triggerAlerts } from './notifications/alertNotifications';
+
+// ========================================
+// CLIENT CARD V2 — scheduled metrics + triggers
+// Spec: docs/tasks/CLIENT_CARD_V2_SPEC.md §7
+// ========================================
+
+export { recomputeClientMetrics } from './scheduled/recomputeClientMetrics';
+export {
+  onInvoicePaidRecomputeMetrics,
+  onMeetingCompletedRecomputeMetrics,
+  onDealStatusChangeRecomputeMetrics,
+} from './triggers/firestore/clientMetricsTriggers';
+
+// ========================================
+// CLIENT JOURNEY — automation triggers
+// Spec: docs/tasks/CLIENT_JOURNEY_SPEC.md §2.1, §2.3, §5.1
+// ========================================
+export {
+  onMeetingCompletedAdvanceDeal,
+  onDealWonAutoCreateProject,
+  onProjectCreatedInitAssets,
+  onEstimateApprovedGenerateInvoice,
+  onWorkSessionCompletedAggregateTask,
+} from './triggers/firestore/clientJourneyTriggers';

@@ -1,0 +1,16 @@
+{
+  "_comment": "Multi-env Firebase project map. Switch with `firebase use <alias>`.",
+  "projects": {
+    "default": "profit-step",
+    "staging": "profit-step-staging",
+    "new": "profit-step-v2"
+  },
+  "targets": {
+    "_comment": "Optional — add hosting targets here if using multiple sites per project.",
+    "profit-step": {
+      "hosting": {
+        "app": ["profit-step"]
+      }
+    }
+  }
+}

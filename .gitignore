@@ -29,7 +29,9 @@ yarn-error.log*
 
 # Firebase
 .firebase
-.firebaserc
+# .firebaserc is NOW committed (canonical prod alias) — local overrides
+# go in .firebaserc.local (user-specific, gitignored).
+.firebaserc.local
 firebase-debug.log
 
 # IDE

@@ -35,6 +35,7 @@ from profit_step_agent.domains.costs import CostsDomain
 from profit_step_agent.domains.events import EventsDomain
 from profit_step_agent.domains.clients import ClientsDomain
 from profit_step_agent.domains.projects import ProjectsDomain
+from profit_step_agent.domains.inventory import InventoryDomain
 from profit_step_agent.domains.payroll import PayrollDomain
 from profit_step_agent.domains.webhooks import WebhooksDomain
 
@@ -50,6 +51,7 @@ class CRMAgent:
     - agent.events → EventsDomain
     - agent.clients → ClientsDomain
     - agent.projects → ProjectsDomain
+    - agent.inventory → InventoryDomain
     - agent.payroll → PayrollDomain
     - agent.webhooks → WebhooksDomain
 
@@ -81,6 +83,7 @@ class CRMAgent:
         self.events = EventsDomain(self._client)
         self.clients = ClientsDomain(self._client)
         self.projects = ProjectsDomain(self._client)
+        self.inventory = InventoryDomain(self._client)
         self.payroll = PayrollDomain(self._client)
         self.webhooks = WebhooksDomain(self._client)
 

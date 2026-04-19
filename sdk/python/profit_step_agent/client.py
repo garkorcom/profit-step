@@ -55,7 +55,7 @@ class CRMClient:
             headers={
                 "Authorization": f"Bearer {self.token}",
                 "Content-Type": "application/json",
-                "User-Agent": "profit-step-agent-sdk/0.1.0",
+                "User-Agent": "profit-step-agent-sdk/0.2.0",
             },
             timeout=timeout,
         )

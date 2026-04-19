@@ -209,7 +209,9 @@ describe('PATCH /api/clients/:id', () => {
     const data = doc.data()!;
     expect(data.name).toBe('Updated Name');
     expect(data.address).toBe('999 Updated Ave, Austin TX');
-    expect(data.phone).toBe('+1-555-999-0000');
+    // normalizePhone() strips punctuation and keeps only '+' + digits.
+    // '+1-555-999-0000' → '+15559990000'.
+    expect(data.phone).toBe('+15559990000');
     expect(data.email).toBe('updated@email.com');
     expect(data.notes).toBe('Updated via API call');
   });

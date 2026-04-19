@@ -43,6 +43,7 @@ const GTDCreatePage = React.lazy(() => import('../pages/crm/GTDCreatePage'));
 const UnifiedTasksPage = React.lazy(() => import('../pages/crm/UnifiedTasksPage'));
 const UnifiedCockpitPage = React.lazy(() => import('../pages/crm/UnifiedCockpitPage'));
 const ShoppingPage = React.lazy(() => import('../pages/crm/ShoppingPage'));
+const WarehousePage = React.lazy(() => import('../pages/warehouse/WarehousePage'));
 const PayrollPeriodsPage = React.lazy(() => import('../pages/crm/PayrollPeriodsPage'));
 const CostsReportPage = React.lazy(() => import('../pages/crm/CostsReportPage'));
 const RolesPage = React.lazy(() => import('../pages/admin/RolesPage'));
@@ -216,6 +217,7 @@ const AppRouter: React.FC = () => {
           <Route path="/crm/calendar" element={<Navigate to="/crm/tasks?view=calendar" replace />} />
           <Route path="/crm/inbox" element={<Navigate to="/crm/tasks?view=board" replace />} />
           <Route path="/crm/shopping" element={<ShoppingPage />} />
+          <Route path="/warehouse" element={<WarehousePage />} />
           <Route path="/crm/time-tracking" element={<TimeTrackingPage />} />
           <Route path="/crm/finance" element={<FinancePage />} />
           <Route path="/crm/bank-statements" element={<BankStatementsPage />} />

@@ -15,6 +15,7 @@ import { handleMediaUpload, handleVoiceMessage, handleSkipMedia } from './handle
 import { handleChecklistCallback } from './handlers/checklistFlow';
 import { handleStatusRequest, handleHelpRequest, handleMe, handleNameChange, handleTimezone } from './handlers/profileHandlers';
 import { handleText, handleCancel } from './handlers/textFallbacks';
+import { tryHandleWarehouseMessage } from './handlers/warehouseHandler';
 
 // Types
 import { TelegramUpdate } from './types/telegram';
@@ -115,6 +116,14 @@ async function handleMessage(message: any) {
         }
         await sendMessage(chatId, "🔒 Access Denied.\nPlease enter the access password:");
         return;
+    }
+
+    // 1b. Warehouse AI (beta feature flag — no-op unless user in WAREHOUSE_BETA_USERS)
+    try {
+        const claimedByWarehouse = await tryHandleWarehouseMessage(message);
+        if (claimedByWarehouse) return;
+    } catch (e: any) {
+        logger.error('Warehouse handler raised outside its guard', { error: e?.message, userId });
     }
 
     // 2. Main Logic

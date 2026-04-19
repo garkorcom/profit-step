@@ -21,10 +21,11 @@ import {
   timeTrackingRoutes, financeRoutes, userRoutes,
   estimateRoutes, projectRoutes, siteRoutes, erpRoutes, inventoryRoutes,
   sharingRoutes, activityRoutes, fileRoutes, feedbackRoutes, teamRoutes,
-  webhookRoutes,
+  webhookRoutes, warehouseAIRoutes,
 } from './routes';
 import docsRoutes from './routes/docs';
 import portalRoutes from './routes/portal';
+import { warehouseRouter } from '../warehouse/api';
 
 // ─── Express App ────────────────────────────────────────────────────
 
@@ -68,7 +69,8 @@ const routes = [
   timeTrackingRoutes, financeRoutes, userRoutes,
   estimateRoutes, projectRoutes, siteRoutes, erpRoutes, inventoryRoutes,
   sharingRoutes, activityRoutes, fileRoutes, feedbackRoutes, teamRoutes,
-  webhookRoutes,
+  webhookRoutes, warehouseAIRoutes,
+  warehouseRouter,
 ];
 routes.forEach(r => app.use(r));
 

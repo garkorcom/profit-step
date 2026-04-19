@@ -573,6 +573,12 @@ export { onWorkSessionUpdate } from './triggers/workSessions/onWorkSessionUpdate
 // Receipts: Ledger integration
 export { onReceiptUpdate } from './triggers/receipts/onReceiptUpdate';
 
+// Warehouse: scheduled reports (UC6 low-stock weekly, UC8 dead-stock monthly)
+export {
+  warehouseLowStockSnapshot,
+  warehouseDeadStockSnapshot,
+} from './warehouse/scheduled';
+
 // Notes: Inbox AI processing
 export { onNoteCreated } from './triggers/firestore/onNoteCreated';
 

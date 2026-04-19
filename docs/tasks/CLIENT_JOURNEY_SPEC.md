@@ -560,6 +560,95 @@
 
 ---
 
+## 12. 🔍 Audit: что УЖЕ работает из time-tracking
+
+Перечитал код после вопроса Дениса. Стало понятно, что некоторые gap'ы из §8 (ProductionItem) меньше, чем я изначально оценил.
+
+### 12.1. `work_sessions` — фундамент уже есть
+
+Поля в `WorkSession` interface (`src/types/timeTracking.types.ts`):
+- ✅ `clientId` + `clientName` — клиент-уровень агрегации
+- ✅ `projectId` + `projectName` — проект-уровень
+- ✅ `relatedTaskId` — таск-уровень (в TS типе; в Zod schema на бэке **нет** — см. §12.3 ниже)
+- ✅ `hourlyRate` — ставка сотрудника (snapshot на момент сессии)
+- ✅ `sessionEarnings` — вычисленная стоимость сессии
+- ✅ `durationMinutes` — длительность
+- ✅ Break tracking, geo, selfie, voice transcription, face match, finalization lifecycle
+
+На проде **297ч данных** сидит в `work_sessions`. Это бесплатный источник facts.
+
+### 12.2. `gtd_tasks` уже имеет plan/fact поля
+
+Поля на задаче (`src/types/gtd.types.ts`):
+- ✅ `estimatedDurationMinutes` — план часов
+- ✅ `actualDurationMinutes` — факт часов
+- ✅ `hourlyRate` (приоритет task → user)
+- ✅ `budgetAmount` — клиентская цена позиции (план дохода)
+- ✅ `paidAmount` — оплачено из этой позиции
+- ✅ `materialsCostPlanned` / `materialsCostActual` — материалы plan/fact
+- ✅ `progressPercentage` — прогресс
+
+### 12.3. Чего НЕТ — агрегаторов
+
+**Trigger, который обновляет `gtd_tasks.actualDurationMinutes` на основе завершённых `work_sessions`, НЕ СУЩЕСТВУЕТ.** Grep по `functions/src/triggers` и `functions/src/scheduled` ничего не нашёл.
+
+Также `relatedTaskId` **не в Zod schema** `timeTrackingSchemas.ts` — сейчас пишется только из frontend TS. API его не валидирует и не использует для чего-либо полезного на backend.
+
+### 12.4. Следствие — §8 ProductionItem становится SMALLER
+
+Изначально я предлагал создать **новую коллекцию `production_items`**, которая аггрегирует labor и materials. Это был scope 12-15ч.
+
+**С учётом §12.1-12.2 это не нужно.** Можно заменить на гораздо более дешёвый PR:
+
+### 12.5. Замена §8 — новый PR «aggregate-time-and-materials-on-tasks» (~4-5ч)
+
+**Scope:**
+1. **Добавить `relatedTaskId` в Zod schema** `timeTrackingSchemas.ts` (Create + Update)
+2. **Firestore trigger `onWorkSessionCompleted`**:
+   - Watches `work_sessions`
+   - On `status: 'active' → 'completed'`: если `relatedTaskId` set →
+     - `gtd_tasks/{taskId}.actualDurationMinutes` += `session.durationMinutes`
+     - `gtd_tasks/{taskId}.actualLaborCost` (new field) += `session.sessionEarnings`
+   - On session void: decrement обратно (через `beforeVoid` snapshot в audit log)
+   - **Idempotency guard** (CLAUDE.md §2.1): store `processedSessionIds` on task OR use session's `finalizationStatus='processed'` transition instead of completed
+3. **Firestore trigger `onCostCreated` with `relatedTaskId`**:
+   - Already exists partially? Need to verify — `calculateActualCost.ts` уже есть
+   - Если cost имеет `relatedTaskId` + category='materials' → `gtd_tasks/{taskId}.materialsCostActual` += `cost.amount`
+4. **Backfill script** для 297ч существующих `work_sessions`:
+   - `scripts/backfill-task-actuals.ts --dry-run / --commit`
+   - Для каждой completed session с `relatedTaskId` → add to task.actualDurationMinutes/LaborCost
+   - Идемпотентно через `session.finalizationStatus='processed'` marker
+
+**Acceptance:**
+- [ ] `onWorkSessionCompleted` trigger deployed, idempotent
+- [ ] Existing 297ч сессий backfilled — `gtd_tasks.actualDurationMinutes` > 0 для связанных задач
+- [ ] UI: таблица «План/Факт» в `ClientOverviewTab` показывает agg для каждой задачи проекта
+- [ ] Unit test: session with relatedTaskId → task.actualDurationMinutes increments by session.durationMinutes
+
+**Эффорт:** 4-5ч вместо 12-15ч.
+
+### 12.6. Пересчёт критического пути
+
+Критический путь **уменьшается с 80ч до ~70ч** потому что:
+- §8 (ProductionItem) убирается целиком (−12-15ч)
+- На его место §12.5 (Aggregator) добавляется (+4-5ч)
+
+Новый критический путь до полной end-to-end автоматизации: **~65-75ч**, из них MVP до первой оплаты — ~36-42ч.
+
+### 12.7. Pricing консистентность
+
+Заметил: `client.ltv` (в Client Card V2) сейчас считается как `SUM(invoices WHERE status=paid)`. Но можно было бы также считать `SUM(work_sessions.sessionEarnings WHERE clientId=X)` для сравнения с LTV — это даёт **labor-portion of revenue** для client.
+
+Не критично, но в §11 Close-Out page можно показать:
+- Revenue (invoices paid)
+- Labor cost realised (sum work_session earnings)
+- Materials cost (sum costs materials)
+- = Margin
+
+Это **уже всё есть в данных**, только не агрегируется в один report. Еще +2-3ч если захотим.
+
+---
+
 ## 11. References
 
 - Parent spec: [`CRM_OVERHAUL_SPEC_V1.md`](./CRM_OVERHAUL_SPEC_V1.md) §3-11

@@ -46,6 +46,18 @@ import ClientEditDialog from '../../components/crm/ClientEditDialog';
 import ClientTasksTab from '../../components/crm/ClientTasksTab';
 import ClientMeetingsTab from '../../components/crm/ClientMeetingsTab';
 
+// Client Card V2 components (CLIENT_CARD_V2_SPEC.md §6)
+import ClientHeaderV2 from '../../components/crm/client-card-v2/ClientHeaderV2';
+import ClientRightSidebar from '../../components/crm/client-card-v2/ClientRightSidebar';
+import ClientOverviewTab from '../../components/crm/client-card-v2/tabs/ClientOverviewTab';
+import ClientDealsTab from '../../components/crm/client-card-v2/tabs/ClientDealsTab';
+import ClientEstimatesTab from '../../components/crm/client-card-v2/tabs/ClientEstimatesTab';
+import ClientCommsTab from '../../components/crm/client-card-v2/tabs/ClientCommsTab';
+import ClientFilesTab from '../../components/crm/client-card-v2/tabs/ClientFilesTab';
+import { useClientKPI } from '../../components/crm/client-card-v2/hooks/useClientKPI';
+import { useClientInsights } from '../../components/crm/client-card-v2/hooks/useClientInsights';
+import { addClientToFavorites, removeClientFromFavorites } from '../../api/clientInsightsApi';
+
 interface TabPanelProps {
     children?: React.ReactNode;
     index: number;
@@ -92,6 +104,25 @@ const ClientDetailsPage: React.FC = () => {
 
     // Edit Dialog State
     const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+
+    // Client Card V2 state
+    const { data: kpi, loading: kpiLoading } = useClientKPI(id);
+    const { data: insights, loading: insightsLoading } = useClientInsights(id);
+    const [isFavorite, setIsFavorite] = useState(false);
+    const toggleFavorite = async () => {
+        if (!id) return;
+        const prev = isFavorite;
+        setIsFavorite(!prev);
+        try {
+            if (prev) {
+                await removeClientFromFavorites(id);
+            } else {
+                await addClientToFavorites(id);
+            }
+        } catch {
+            setIsFavorite(prev); // rollback
+        }
+    };
 
     useEffect(() => {
         const fetchData = async () => {
@@ -228,30 +259,39 @@ const getStatusColor = (status: string): 'primary' | 'success' | 'default' => {
                 Back to Clients
             </Button>
 
-            <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
-                <Box display="flex" alignItems="center" gap={2}>
-                    <Typography variant="h4">
-                        {client.name}
-                    </Typography>
-                    <IconButton size="small" onClick={() => setIsEditDialogOpen(true)}>
-                        <EditIcon fontSize="small" />
-                    </IconButton>
-                </Box>
-                <Chip label={getStatusLabel(client.status)} color={getStatusColor(client.status)} />
-            </Box>
+            {/* V2 sticky header replaces the plain h4 + status chip */}
+            <ClientHeaderV2
+                client={client}
+                kpi={kpi}
+                kpiLoading={kpiLoading}
+                isFavorite={isFavorite}
+                onToggleFavorite={toggleFavorite}
+            />
 
-            <Paper sx={{ width: '100%', mb: 2 }}>
-                <Tabs value={tabValue} onChange={handleTabChange} aria-label="client tabs">
-                    <Tab label="Details" />
-                    <Tab label={`Проекты (${projects.length + sites.length})`} />
-                    <Tab label="💰 Finance" />
-                    <Tab label="🧾 Расходы" />
-                    <Tab label="Tasks" />
-                    <Tab label="📅 Встречи" />
-                </Tabs>
-            </Paper>
+            <Grid container spacing={2}>
+                <Grid size={{ xs: 12, md: 9 }}>
+                    <Paper sx={{ width: '100%', mb: 2 }}>
+                        <Tabs value={tabValue} onChange={handleTabChange} aria-label="client tabs" variant="scrollable" scrollButtons="auto">
+                            <Tab label="📊 Обзор" />
+                            <Tab label="Details" />
+                            <Tab label={`Проекты (${projects.length + sites.length})`} />
+                            <Tab label="💼 Сделки" />
+                            <Tab label="📄 Сметы" />
+                            <Tab label="💰 Finance" />
+                            <Tab label="🧾 Расходы" />
+                            <Tab label="Tasks" />
+                            <Tab label="📅 Встречи" />
+                            <Tab label="💬 Коммуникации" />
+                            <Tab label="📁 Файлы" />
+                        </Tabs>
+                    </Paper>
 
-            <TabPanel value={tabValue} index={0}>
+                    {/* V2 Overview tab — index 0, new */}
+                    <TabPanel value={tabValue} index={0}>
+                        <ClientOverviewTab client={client} kpi={kpi} />
+                    </TabPanel>
+
+            <TabPanel value={tabValue} index={1}>
                 <Paper sx={{ p: 3 }}>
                     <Typography variant="h6" gutterBottom>Client Information</Typography>
                     <Typography><strong>Type:</strong> {client.type}</Typography>
@@ -378,7 +418,7 @@ const getStatusColor = (status: string): 'primary' | 'success' | 'default' => {
                 </Paper>
             </TabPanel>
 
-            <TabPanel value={tabValue} index={1}>
+            <TabPanel value={tabValue} index={2}>
                 <Box display="flex" justifyContent="flex-end" mb={2}>
                     <Button
                         variant="contained"
@@ -526,21 +566,48 @@ const getStatusColor = (status: string): 'primary' | 'success' | 'default' => {
                 )}
             </TabPanel>
 
-            <TabPanel value={tabValue} index={2}>
-                <ProjectFinanceTab clientId={client.id} clientName={client.name} />
-            </TabPanel>
-
             <TabPanel value={tabValue} index={3}>
-                <ClientExpensesTab clientId={client.id} clientName={client.name} />
+                <ClientDealsTab clientId={client.id} clientName={client.name} />
             </TabPanel>
 
             <TabPanel value={tabValue} index={4}>
-                <ClientTasksTab clientId={client.id} clientName={client.name} />
+                <ClientEstimatesTab clientId={client.id} />
             </TabPanel>
 
             <TabPanel value={tabValue} index={5}>
+                <ProjectFinanceTab clientId={client.id} clientName={client.name} />
+            </TabPanel>
+
+            <TabPanel value={tabValue} index={6}>
+                <ClientExpensesTab clientId={client.id} clientName={client.name} />
+            </TabPanel>
+
+            <TabPanel value={tabValue} index={7}>
+                <ClientTasksTab clientId={client.id} clientName={client.name} />
+            </TabPanel>
+
+            <TabPanel value={tabValue} index={8}>
                 <ClientMeetingsTab clientId={client.id} clientName={client.name} />
             </TabPanel>
+
+            <TabPanel value={tabValue} index={9}>
+                <ClientCommsTab client={client} />
+            </TabPanel>
+
+            <TabPanel value={tabValue} index={10}>
+                <ClientFilesTab clientId={client.id} />
+            </TabPanel>
+                </Grid>
+
+                <Grid size={{ xs: 12, md: 3 }}>
+                    <ClientRightSidebar
+                        client={client}
+                        kpi={kpi}
+                        insights={insights}
+                        insightsLoading={insightsLoading}
+                    />
+                </Grid>
+            </Grid>
 
             <ClientEditDialog
                 open={isEditDialogOpen}

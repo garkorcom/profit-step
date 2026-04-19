@@ -11,3 +11,4 @@ export * from './inventorySchemas';
 export * from './fileSchemas';
 export * from './teamSchemas';
 export * from './webhookSchemas';
+export * from './meetingSchemas';

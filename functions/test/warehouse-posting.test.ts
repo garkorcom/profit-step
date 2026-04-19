@@ -542,6 +542,77 @@ describe('postDocument — issue', () => {
 //  Transfer posting
 // ═══════════════════════════════════════════════════════════════════
 
+describe('postDocument — count (cycle count)', () => {
+  it('applies positive variance (found more than expected)', async () => {
+    const store = buildStoreBasics({ vanOnHand: { item_wire: 100 } });
+    store.seed(WH_COLLECTIONS.documents, 'doc_cnt_plus', {
+      id: 'doc_cnt_plus',
+      docType: 'count',
+      status: 'draft',
+      eventDate: '2026-04-18',
+      locationId: LOC_VAN.id,
+      source: 'ui',
+    });
+    store.seedLines(WH_COLLECTIONS.documents, 'doc_cnt_plus', [
+      { id: 'ln1', lineNumber: 1, itemId: 'item_wire', uom: 'ft', qty: 105, systemQty: 100, countedQty: 105 },
+    ]);
+
+    const tx = new FakeTx(store);
+    const result = await postDocument(tx, 'doc_cnt_plus', { userId: 'u' });
+    tx.commit();
+
+    expect(result.ledgerEntryIds).toHaveLength(1);
+    const vanBalance = store.coll(WH_COLLECTIONS.balances).get(makeBalanceKey(LOC_VAN.id, 'item_wire'));
+    expect(vanBalance.onHandQty).toBe(105);
+  });
+
+  it('applies negative variance (shrinkage) and flags reconciliation when below zero', async () => {
+    const store = buildStoreBasics({ vanOnHand: { item_wire: 20 } });
+    store.seed(WH_COLLECTIONS.documents, 'doc_cnt_minus', {
+      id: 'doc_cnt_minus',
+      docType: 'count',
+      status: 'draft',
+      eventDate: '2026-04-18',
+      locationId: LOC_VAN.id,
+      source: 'ui',
+    });
+    store.seedLines(WH_COLLECTIONS.documents, 'doc_cnt_minus', [
+      { id: 'ln1', lineNumber: 1, itemId: 'item_wire', uom: 'ft', qty: 18, systemQty: 20, countedQty: 18 },
+    ]);
+
+    const tx = new FakeTx(store);
+    const result = await postDocument(tx, 'doc_cnt_minus', { userId: 'u' });
+    tx.commit();
+
+    expect(result.ledgerEntryIds).toHaveLength(1);
+    const vanBalance = store.coll(WH_COLLECTIONS.balances).get(makeBalanceKey(LOC_VAN.id, 'item_wire'));
+    expect(vanBalance.onHandQty).toBe(18);
+  });
+
+  it('skips zero-variance lines (no ledger entry)', async () => {
+    const store = buildStoreBasics({ vanOnHand: { item_wire: 50 } });
+    store.seed(WH_COLLECTIONS.documents, 'doc_cnt_ok', {
+      id: 'doc_cnt_ok',
+      docType: 'count',
+      status: 'draft',
+      eventDate: '2026-04-18',
+      locationId: LOC_VAN.id,
+      source: 'ui',
+    });
+    store.seedLines(WH_COLLECTIONS.documents, 'doc_cnt_ok', [
+      { id: 'ln1', lineNumber: 1, itemId: 'item_wire', uom: 'ft', qty: 50, systemQty: 50, countedQty: 50 },
+    ]);
+
+    const tx = new FakeTx(store);
+    const result = await postDocument(tx, 'doc_cnt_ok', { userId: 'u' });
+    tx.commit();
+
+    expect(result.ledgerEntryIds).toHaveLength(0);
+    const vanBalance = store.coll(WH_COLLECTIONS.balances).get(makeBalanceKey(LOC_VAN.id, 'item_wire'));
+    expect(vanBalance.onHandQty).toBe(50); // unchanged
+  });
+});
+
 describe('postDocument — transfer', () => {
   it('transfer creates symmetric ledger + balance changes', async () => {
     const store = buildStoreBasics({ whOnHand: { item_wire: 500 } });

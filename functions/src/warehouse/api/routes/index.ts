@@ -13,6 +13,7 @@ import locations from './locations';
 import norms from './norms';
 import vendors from './vendors';
 import reports from './reports';
+import auditLog from './auditLog';
 import agent from './agent';
 import rfqInbound from './rfqInbound';
 
@@ -25,6 +26,7 @@ warehouseRouter.use(locations);
 warehouseRouter.use(norms);
 warehouseRouter.use(vendors);
 warehouseRouter.use(reports);
+warehouseRouter.use(auditLog);
 warehouseRouter.use(agent);
 warehouseRouter.use(rfqInbound);
 

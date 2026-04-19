@@ -122,4 +122,84 @@ router.delete(
   }),
 );
 
+/**
+ * Bulk create items. Each item validated independently via CreateWhItemSchema.
+ * Returns per-row status so the UI can show partial success (N created,
+ * M skipped as duplicates, K validation errors). Caps at 500 rows per call.
+ */
+router.post(
+  '/api/warehouse/items/bulk',
+  wrapRoute(async (req, res) => {
+    const input = req.body?.items;
+    if (!Array.isArray(input)) {
+      res.status(400).json({ error: { code: 'VALIDATION_ERROR', message: 'items must be an array' } });
+      return;
+    }
+    if (input.length > 500) {
+      res.status(400).json({
+        error: { code: 'VALIDATION_ERROR', message: `Max 500 rows per bulk call, got ${input.length}` },
+      });
+      return;
+    }
+
+    const created: Array<{ index: number; itemId: string; sku: string }> = [];
+    const skipped: Array<{ index: number; sku?: string; reason: string }> = [];
+    const errors: Array<{ index: number; sku?: string; code: string; message: string; issues?: unknown }> = [];
+
+    for (let i = 0; i < input.length; i++) {
+      const row = input[i];
+      const parsed = CreateWhItemSchema.safeParse(row);
+      if (!parsed.success) {
+        errors.push({
+          index: i,
+          sku: typeof row?.sku === 'string' ? row.sku : undefined,
+          code: 'VALIDATION_ERROR',
+          message: parsed.error.issues[0]?.message ?? 'invalid shape',
+          issues: parsed.error.issues,
+        });
+        continue;
+      }
+
+      const data = parsed.data;
+      const ref = db
+        .collection(WH_COLLECTIONS.items)
+        .doc(`item_${data.sku.toLowerCase().replace(/[^a-z0-9]/g, '_')}`);
+      const existing = await ref.get();
+      if (existing.exists) {
+        skipped.push({ index: i, sku: data.sku, reason: 'duplicate_sku' });
+        continue;
+      }
+      await ref.set({
+        id: ref.id,
+        schemaVersion: 1,
+        createdAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+        createdBy: req.agentUserId ?? 'api',
+        createdByType: 'human',
+        isActive: true,
+        ...data,
+      });
+      created.push({ index: i, itemId: ref.id, sku: data.sku });
+    }
+
+    logger.info('🏭 warehouse:items.bulk_create', {
+      total: input.length,
+      created: created.length,
+      skipped: skipped.length,
+      errors: errors.length,
+    });
+
+    if (created.length > 0) {
+      await logAgentActivity({
+        userId: req.agentUserId!,
+        action: 'warehouse_items_bulk_created',
+        endpoint: '/api/warehouse/items/bulk',
+        metadata: { created: created.length, skipped: skipped.length, errors: errors.length },
+      });
+    }
+
+    res.status(201).json({ created, skipped, errors, total: input.length });
+  }),
+);
+
 export default router;

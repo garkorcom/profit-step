@@ -32,6 +32,8 @@ import toast from 'react-hot-toast';
 import {
   getDeadStockReport,
   getLowStockReport,
+  listAuditLog,
+  type AuditEntry,
   type DeadStockReport,
   type LowStockReorderReport,
 } from '../../api/warehouseApi';
@@ -60,8 +62,15 @@ function downloadCsv(filename: string, rows: Array<Record<string, string | numbe
   URL.revokeObjectURL(url);
 }
 
+function formatAuditDate(value: AuditEntry['createdAt']): string {
+  if (!value) return '—';
+  if (typeof value === 'string') return new Date(value).toLocaleString('ru-RU');
+  if ('seconds' in value) return new Date(value.seconds * 1000).toLocaleString('ru-RU');
+  return '—';
+}
+
 export default function ReportsTab({ search: _search }: { search: string }) {
-  const [tab, setTab] = useState<'low_stock' | 'dead_stock'>('low_stock');
+  const [tab, setTab] = useState<'low_stock' | 'dead_stock' | 'audit'>('low_stock');
 
   const [lowLoading, setLowLoading] = useState(false);
   const [lowReport, setLowReport] = useState<LowStockReorderReport | null>(null);
@@ -69,6 +78,23 @@ export default function ReportsTab({ search: _search }: { search: string }) {
   const [deadLoading, setDeadLoading] = useState(false);
   const [deadReport, setDeadReport] = useState<DeadStockReport | null>(null);
   const [thresholdDays, setThresholdDays] = useState(90);
+
+  const [auditLoading, setAuditLoading] = useState(false);
+  const [auditEntries, setAuditEntries] = useState<AuditEntry[]>([]);
+  const [auditLoaded, setAuditLoaded] = useState(false);
+
+  async function loadAudit() {
+    setAuditLoading(true);
+    try {
+      const res = await listAuditLog({ limit: 200 });
+      setAuditEntries(res.entries);
+      setAuditLoaded(true);
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Не удалось загрузить audit log');
+    } finally {
+      setAuditLoading(false);
+    }
+  }
 
   async function loadLow() {
     setLowLoading(true);
@@ -132,6 +158,7 @@ export default function ReportsTab({ search: _search }: { search: string }) {
         <Tabs value={tab} onChange={(_, v) => setTab(v)}>
           <Tab value="low_stock" label="📉 Low stock (UC6)" />
           <Tab value="dead_stock" label="🪦 Dead stock (UC8)" />
+          <Tab value="audit" label="📜 Audit log" />
         </Tabs>
       </Paper>
 
@@ -275,6 +302,60 @@ export default function ReportsTab({ search: _search }: { search: string }) {
                       </TableRow>
                     );
                   })}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          )}
+        </Stack>
+      )}
+
+      {tab === 'audit' && (
+        <Stack spacing={2}>
+          <Stack direction="row" spacing={1} alignItems="center">
+            <Button variant="contained" startIcon={<RefreshIcon />} onClick={loadAudit} disabled={auditLoading}>
+              {auditLoading ? 'Грузим…' : auditLoaded ? 'Обновить' : 'Загрузить'}
+            </Button>
+            <Typography variant="body2" color="text.secondary">
+              Последние 200 warehouse_* событий (кто/когда/что)
+            </Typography>
+          </Stack>
+
+          {auditLoading ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+              <CircularProgress />
+            </Box>
+          ) : !auditLoaded ? (
+            <Alert severity="info">Нажмите «Загрузить» для получения истории операций склада.</Alert>
+          ) : auditEntries.length === 0 ? (
+            <Paper variant="outlined" sx={{ p: 3, textAlign: 'center', color: 'text.secondary' }}>
+              Нет событий. Не было warehouse-операций с auth через этот backend.
+            </Paper>
+          ) : (
+            <TableContainer component={Paper} variant="outlined">
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell>Дата</TableCell>
+                    <TableCell>Действие</TableCell>
+                    <TableCell>Пользователь</TableCell>
+                    <TableCell>Endpoint</TableCell>
+                    <TableCell>Метаданные</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {auditEntries.map((e) => (
+                    <TableRow key={e.id} hover>
+                      <TableCell sx={{ whiteSpace: 'nowrap' }}>{formatAuditDate(e.createdAt)}</TableCell>
+                      <TableCell>
+                        <Chip size="small" variant="outlined" label={e.action ?? '—'} />
+                      </TableCell>
+                      <TableCell sx={{ fontFamily: 'monospace', fontSize: 12 }}>{e.userId ?? '—'}</TableCell>
+                      <TableCell sx={{ fontFamily: 'monospace', fontSize: 12 }}>{e.endpoint ?? '—'}</TableCell>
+                      <TableCell sx={{ fontSize: 12, color: 'text.secondary', maxWidth: 400, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {e.metadata ? JSON.stringify(e.metadata) : '—'}
+                      </TableCell>
+                    </TableRow>
+                  ))}
                 </TableBody>
               </Table>
             </TableContainer>

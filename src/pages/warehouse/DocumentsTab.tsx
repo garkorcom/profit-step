@@ -52,6 +52,7 @@ import {
   type WhLocationClient,
 } from '../../api/warehouseApi';
 import DocumentFormDialog from './DocumentFormDialog';
+import CycleCountDialog from './CycleCountDialog';
 import { useWarehousePermissions } from './hooks/useWarehousePermissions';
 
 const DOC_TYPE_LABELS: Record<DocType, { emoji: string; label: string }> = {
@@ -101,6 +102,7 @@ export default function DocumentsTab({ search }: Props) {
   const [filterType, setFilterType] = useState<DocType | ''>('');
   const [filterStatus, setFilterStatus] = useState<DocStatus | ''>('');
   const [createOpen, setCreateOpen] = useState(false);
+  const [cycleCountOpen, setCycleCountOpen] = useState(false);
   const [selectedDoc, setSelectedDoc] = useState<WhDocumentClient | null>(null);
   const [selectedLines, setSelectedLines] = useState<WhDocumentLineClient[]>([]);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -322,9 +324,14 @@ export default function DocumentsTab({ search }: Props) {
           </Typography>
         </Stack>
         {perms.canCreateDocuments && (
-          <Button variant="contained" startIcon={<AddIcon />} onClick={() => setCreateOpen(true)}>
-            Новый документ
-          </Button>
+          <Stack direction="row" spacing={1}>
+            <Button variant="outlined" onClick={() => setCycleCountOpen(true)}>
+              ⚖️ Инвентаризация
+            </Button>
+            <Button variant="contained" startIcon={<AddIcon />} onClick={() => setCreateOpen(true)}>
+              Новый документ
+            </Button>
+          </Stack>
         )}
       </Stack>
 
@@ -362,6 +369,14 @@ export default function DocumentsTab({ search }: Props) {
         items={items}
         locations={locations}
         projects={projects}
+      />
+
+      <CycleCountDialog
+        open={cycleCountOpen}
+        onClose={() => setCycleCountOpen(false)}
+        onSaved={() => setRefreshTick((t) => t + 1)}
+        items={items}
+        locations={locations}
       />
 
       <Drawer

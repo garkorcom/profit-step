@@ -435,12 +435,25 @@ export function buildBalanceOps(doc: WhDocument, lines: ComputedLine[]): Balance
       }
 
       case 'count': {
-        // Count itself doesn't mutate balance — it generates adjustment docs on post.
-        // Handled upstream; postDocument for docType='count' should route to a dedicated path.
-        throw new WarehouseError(
-          'VALIDATION_ERROR',
-          'Count sessions are posted by generating adjustments, not via postDocument',
-        );
+        // Cycle count: each line stores countedQty (physical) and systemQty
+        // (snapshot at session start). Variance = counted - system. Apply that
+        // as a signed delta to balance. Lines with zero variance are no-ops
+        // and emit no ledger entry.
+        const systemQty = line.systemQty ?? 0;
+        const counted = line.countedQty ?? line.qty;
+        const variance = line.variance !== undefined ? line.variance : counted - systemQty;
+        if (variance === 0) break;
+        // variance is expressed in base units (UI sends baseUOM for counts).
+        // Sign: positive variance = found more than expected → +delta.
+        const baseSigned = variance >= 0 ? +Math.abs(variance) : -Math.abs(variance);
+        ops.push({
+          locationId: doc.locationId!,
+          itemId: line.itemId,
+          lineId: line.id,
+          deltaBaseQty: baseSigned,
+          unitCostAtPosting: line.baseUnitCostComputed,
+        });
+        break;
       }
 
       case 'reversal': {

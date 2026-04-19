@@ -26,6 +26,7 @@ import {
 import AddIcon from '@mui/icons-material/Add';
 import EditIcon from '@mui/icons-material/EditOutlined';
 import ArchiveIcon from '@mui/icons-material/ArchiveOutlined';
+import UploadIcon from '@mui/icons-material/UploadFileOutlined';
 import toast from 'react-hot-toast';
 import {
   archiveItem,
@@ -39,6 +40,7 @@ import {
   type WhLocationClient,
 } from '../../api/warehouseApi';
 import ItemFormDialog from './ItemFormDialog';
+import ItemsBulkImportDialog from './ItemsBulkImportDialog';
 import { useWarehousePermissions } from './hooks/useWarehousePermissions';
 
 interface Props {
@@ -65,6 +67,7 @@ export default function ItemsTab({ search }: Props) {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogMode, setDialogMode] = useState<'create' | 'edit'>('create');
   const [editItem, setEditItem] = useState<WhItemClient | null>(null);
+  const [bulkOpen, setBulkOpen] = useState(false);
   const [refreshTick, setRefreshTick] = useState(0);
 
   useEffect(() => {
@@ -171,9 +174,14 @@ export default function ItemsTab({ search }: Props) {
           </Typography>
         </Stack>
         {hasWriteActions && (
-          <Button variant="contained" startIcon={<AddIcon />} onClick={openCreate}>
-            Новый товар
-          </Button>
+          <Stack direction="row" spacing={1}>
+            <Button variant="outlined" startIcon={<UploadIcon />} onClick={() => setBulkOpen(true)}>
+              CSV
+            </Button>
+            <Button variant="contained" startIcon={<AddIcon />} onClick={openCreate}>
+              Новый товар
+            </Button>
+          </Stack>
         )}
       </Stack>
 
@@ -251,6 +259,13 @@ export default function ItemsTab({ search }: Props) {
         item={editItem}
         categories={categories}
         onClose={() => setDialogOpen(false)}
+        onSaved={() => setRefreshTick((t) => t + 1)}
+      />
+
+      <ItemsBulkImportDialog
+        open={bulkOpen}
+        categories={categories}
+        onClose={() => setBulkOpen(false)}
         onSaved={() => setRefreshTick((t) => t + 1)}
       />
     </Stack>

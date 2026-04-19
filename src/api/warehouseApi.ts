@@ -621,3 +621,52 @@ export interface DeadStockReport {
 export async function getDeadStockReport(thresholdDays = 90): Promise<DeadStockReport> {
   return requestJson<DeadStockReport>(`/api/warehouse/reports/dead-stock?thresholdDays=${thresholdDays}`, 'GET');
 }
+
+// ═══════════════════════════════════════════════════════════════════
+//  Bulk import
+// ═══════════════════════════════════════════════════════════════════
+
+export interface BulkCreateItemsResult {
+  created: Array<{ index: number; itemId: string; sku: string }>;
+  skipped: Array<{ index: number; sku?: string; reason: string }>;
+  errors: Array<{ index: number; sku?: string; code: string; message: string }>;
+  total: number;
+}
+
+export async function bulkCreateItems(items: CreateItemPayload[]): Promise<BulkCreateItemsResult> {
+  return postJson<BulkCreateItemsResult>('/api/warehouse/items/bulk', { items });
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  Audit log
+// ═══════════════════════════════════════════════════════════════════
+
+export interface AuditEntry {
+  id: string;
+  userId?: string;
+  action?: string;
+  endpoint?: string;
+  metadata?: Record<string, unknown>;
+  createdAt?: { seconds: number; nanoseconds: number } | string;
+}
+
+export interface AuditLogFilter {
+  action?: string;
+  userId?: string;
+  entityId?: string;
+  from?: string;
+  to?: string;
+  limit?: number;
+}
+
+export async function listAuditLog(filter: AuditLogFilter = {}): Promise<{ entries: AuditEntry[]; total: number }> {
+  const params = new URLSearchParams();
+  if (filter.action) params.set('action', filter.action);
+  if (filter.userId) params.set('userId', filter.userId);
+  if (filter.entityId) params.set('entityId', filter.entityId);
+  if (filter.from) params.set('from', filter.from);
+  if (filter.to) params.set('to', filter.to);
+  if (filter.limit) params.set('limit', String(filter.limit));
+  const qs = params.toString();
+  return requestJson(`/api/warehouse/audit-log${qs ? `?${qs}` : ''}`, 'GET');
+}

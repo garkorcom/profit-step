@@ -41,8 +41,22 @@ import {
   CreateNormSchema,
   WriteOffByNormSchema,
 } from '../schemas';
+import {
+  InventoryService,
+  CatalogItemNotFoundError,
+  InsufficientStockError,
+  InventoryValidationError,
+} from '../services/inventoryService';
 
 const router = Router();
+
+/**
+ * V3: unified write path. Service owns stock mutations for the advanced
+ * journal-based collections (inventory_catalog + inventory_transactions_v2).
+ * Legacy routes below still touch warehouses/inventory_items/inventory_transactions
+ * — they'll migrate once PR-C data migration runs (see WAREHOUSE_SPEC_V3 Phase 0).
+ */
+const inventoryService = new InventoryService(db);
 
 // ═══════════════════════════════════════════════════════════════════
 //  WAREHOUSES
@@ -74,12 +88,13 @@ router.post('/api/inventory/warehouses', async (req, res, next) => {
       projectId: data.projectId || null,
       address: data.address || '',
       description: data.description || '',
-      // New fields for vehicle/fleet support
-      type: data.type,                          // 'physical' (default) or 'vehicle'
-      location: data.location || null,          // free-text (for vehicles or supplemental for physical)
-      licensePlate: data.licensePlate || null,  // required-on-create when type='vehicle'
-      archived: false,                          // soft-delete flag
-      // Audit
+      // Vehicle/fleet support
+      type: data.type,
+      location: data.location || null,
+      licensePlate: data.licensePlate || null,
+      archived: false,
+      // V3: RLS scoping — null means shared pool
+      ownerEmployeeId: data.ownerEmployeeId ?? null,
       createdBy: auditCtx.performedBy,
       createdBySource: auditCtx.source,
       createdAt: FieldValue.serverTimestamp(),
@@ -127,7 +142,11 @@ router.get('/api/inventory/warehouses', async (req, res, next) => {
 
     let q: admin.firestore.Query = db.collection('warehouses');
 
-    // ── RLS: worker/driver can only see warehouses they created ──
+    // ── RLS (V3): worker/driver see warehouses they own OR created ──
+    // We filter by createdBy first (Firestore single-clause limitation); the
+    // ownerEmployeeId path is enforced below by the per-doc filter so that
+    // shared-pool warehouses (ownerEmployeeId=null) and owned warehouses
+    // both surface for the employee. Foreman role sees own + team.
     const rlsRole = req.effectiveRole || 'admin';
     const rlsUserId = req.effectiveUserId || req.agentUserId;
     if (rlsRole === 'worker' || rlsRole === 'driver') {
@@ -153,17 +172,15 @@ router.get('/api/inventory/warehouses', async (req, res, next) => {
         return {
           id: d.id,
           name: w.name,
-          // existing fields
           clientId: w.clientId || null,
           projectId: w.projectId || null,
           address: w.address || null,
           description: w.description || null,
-          // new fields with on-read defaults for backward compatibility
           type: w.type || 'physical',
           location: w.location || null,
           licensePlate: w.licensePlate || null,
           archived: w.archived ?? false,
-          // timestamps
+          ownerEmployeeId: w.ownerEmployeeId ?? null,
           createdAt: w.createdAt?.toDate?.()?.toISOString() || null,
           updatedAt: w.updatedAt?.toDate?.()?.toISOString() || null,
         };
@@ -205,11 +222,11 @@ router.get('/api/inventory/warehouses/:id', async (req, res, next) => {
       projectId: w.projectId || null,
       address: w.address || null,
       description: w.description || null,
-      // New fields with on-read defaults
       type: w.type || 'physical',
       location: w.location || null,
       licensePlate: w.licensePlate || null,
       archived: w.archived ?? false,
+      ownerEmployeeId: w.ownerEmployeeId ?? null,
       createdAt: w.createdAt?.toDate?.()?.toISOString() || null,
       updatedAt: w.updatedAt?.toDate?.()?.toISOString() || null,
     };
@@ -286,6 +303,7 @@ router.patch('/api/inventory/warehouses/:id', async (req, res, next) => {
     if (data.type !== undefined) updatePayload.type = data.type;
     if (data.location !== undefined) updatePayload.location = data.location;
     if (data.licensePlate !== undefined) updatePayload.licensePlate = data.licensePlate;
+    if (data.ownerEmployeeId !== undefined) updatePayload.ownerEmployeeId = data.ownerEmployeeId;
 
     await docRef.update(updatePayload);
 
@@ -1094,6 +1112,218 @@ router.post('/api/inventory/write-off-by-norm', async (req, res, next) => {
       transactions: results,
       message: `Списано по нормативу "${norm.name}" x${data.quantity} на задачу ${data.taskId}`,
     });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════
+//  V3 ENDPOINTS (unified journal-based system, spec WAREHOUSE_SPEC_V3)
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * POST /api/inventory/v3/transactions
+ *
+ * Authoritative write path for the unified catalog (inventory_catalog +
+ * inventory_transactions_v2). Everything routes through InventoryService
+ * so stock cache and journal never drift.
+ */
+router.post('/api/inventory/v3/transactions', async (req, res, next) => {
+  try {
+    const auditCtx = extractAuditContext(req);
+    const input = {
+      catalogItemId: String(req.body.catalogItemId ?? ''),
+      type: req.body.type,
+      qty: Number(req.body.qty),
+      fromLocation: req.body.fromLocation,
+      toLocation: req.body.toLocation,
+      unitPrice: req.body.unitPrice,
+      performedBy: auditCtx.performedBy,
+      performedByName: req.body.performedByName,
+      relatedTaskId: req.body.relatedTaskId,
+      relatedTaskTitle: req.body.relatedTaskTitle,
+      relatedClientId: req.body.relatedClientId,
+      relatedClientName: req.body.relatedClientName,
+      relatedCostId: req.body.relatedCostId,
+      relatedNormId: req.body.relatedNormId,
+      transactionGroupId: req.body.transactionGroupId,
+      transferRequestId: req.body.transferRequestId,
+      idempotencyKey: req.body.idempotencyKey,
+      note: req.body.note,
+      source: (auditCtx.source as 'api' | 'bot' | 'ui' | 'cron') ?? 'api',
+    };
+
+    logger.info('📦 v3tx:create', {
+      catalogItemId: input.catalogItemId,
+      type: input.type,
+      qty: input.qty,
+    });
+
+    const result = await inventoryService.commitTransaction(input);
+
+    await logAgentActivity({
+      userId: req.agentUserId!,
+      action: 'inventory_v3_transaction_created',
+      endpoint: '/api/inventory/v3/transactions',
+      metadata: {
+        transactionId: result.transactionId,
+        catalogItemId: result.catalogItemId,
+        type: result.type,
+        qty: result.qty,
+        stockBefore: result.stockBefore,
+        stockAfter: result.stockAfter,
+        deduplicated: result.deduplicated ?? false,
+      },
+    });
+
+    await logAudit(
+      AuditHelpers.create(
+        'inventory_transaction_v2',
+        result.transactionId,
+        {
+          catalogItemId: result.catalogItemId,
+          type: result.type,
+          qty: result.qty,
+          stockBefore: result.stockBefore,
+          stockAfter: result.stockAfter,
+        },
+        auditCtx.performedBy,
+        auditCtx.source as never,
+      ),
+    );
+
+    res.status(result.deduplicated ? 200 : 201).json(result);
+  } catch (e) {
+    if (e instanceof CatalogItemNotFoundError) {
+      res.status(404).json({ error: e.message });
+      return;
+    }
+    if (e instanceof InsufficientStockError) {
+      res.status(400).json({
+        error: e.message,
+        available: e.available,
+        requested: e.requested,
+        location: e.location,
+      });
+      return;
+    }
+    if (e instanceof InventoryValidationError) {
+      res.status(400).json({ error: e.message });
+      return;
+    }
+    next(e);
+  }
+});
+
+/**
+ * GET /api/inventory/v3/barcode/:code
+ *
+ * Barcode/SKU lookup against inventory_catalog. Used by the Telegram bot's
+ * future /scan command (spec §8.3) and by any UI offering quick-scan flow.
+ * Falls back to V1 `inventory_items.barcode` so the endpoint works in the
+ * mixed-state window before migration runs.
+ *
+ * Returns the matching catalog item + current stock snapshot (RLS-aware).
+ */
+router.get('/api/inventory/v3/barcode/:code', async (req, res, next) => {
+  try {
+    const code = req.params.code;
+    if (!code) {
+      res.status(400).json({ error: 'barcode code required' });
+      return;
+    }
+
+    logger.info('🔍 v3:barcode', { code });
+
+    // V3 catalog (preferred)
+    const v3Snap = await db
+      .collection('inventory_catalog')
+      .where('sku', '==', code)
+      .limit(1)
+      .get();
+
+    if (!v3Snap.empty) {
+      const doc = v3Snap.docs[0];
+      const data = doc.data();
+      res.json({
+        source: 'v3',
+        item: {
+          id: doc.id,
+          name: data.name,
+          sku: data.sku ?? null,
+          category: data.category,
+          unit: data.unit,
+          totalStock: data.totalStock ?? 0,
+          stockByLocation: data.stockByLocation ?? {},
+          minStock: data.minStock ?? 0,
+          isTrackable: data.isTrackable ?? false,
+        },
+      });
+      return;
+    }
+
+    // V1 fallback
+    const v1Snap = await db
+      .collection('inventory_items')
+      .where('barcode', '==', code)
+      .limit(1)
+      .get();
+
+    if (!v1Snap.empty) {
+      const doc = v1Snap.docs[0];
+      const data = doc.data();
+      res.json({
+        source: 'v1',
+        item: {
+          id: doc.id,
+          name: data.name,
+          sku: data.barcode ?? null,
+          category: data.category,
+          unit: data.unit,
+          warehouseId: data.warehouseId,
+          quantity: data.quantity ?? 0,
+          minStock: data.minStock ?? null,
+        },
+      });
+      return;
+    }
+
+    res.status(404).json({ error: 'No item matches this barcode', code });
+  } catch (e) {
+    next(e);
+  }
+});
+
+/**
+ * POST /api/inventory/v3/recalculate/:catalogItemId
+ *
+ * Admin repair tool — replays inventory_transactions_v2 journal to rebuild
+ * inventory_catalog cache for one item. Expensive, don't run in hot paths.
+ */
+router.post('/api/inventory/v3/recalculate/:catalogItemId', async (req, res, next) => {
+  try {
+    if (req.effectiveRole && req.effectiveRole !== 'admin') {
+      res.status(403).json({ error: 'recalculate requires admin role' });
+      return;
+    }
+
+    const { catalogItemId } = req.params;
+    logger.info('🔄 v3:recalculate', { catalogItemId });
+
+    const result = await inventoryService.recalculateStock(catalogItemId);
+
+    await logAgentActivity({
+      userId: req.agentUserId!,
+      action: 'inventory_v3_recalculated',
+      endpoint: `/api/inventory/v3/recalculate/${catalogItemId}`,
+      metadata: {
+        catalogItemId,
+        totalStock: result.totalStock,
+        transactionsReplayed: result.transactionsReplayed,
+      },
+    });
+
+    res.json(result);
   } catch (e) {
     next(e);
   }

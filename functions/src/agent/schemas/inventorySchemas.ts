@@ -26,10 +26,12 @@ export const CreateWarehouseSchema = z.object({
   address: z.string().optional(),
   description: z.string().optional(),
   idempotencyKey: z.string().optional(),
-  // New additive fields for vehicle/fleet support
+  // Vehicle/fleet support
   type: z.enum(WAREHOUSE_TYPES).default('physical'),
   location: z.string().optional(),
   licensePlate: z.string().optional(),
+  // V3: RLS scoping — who "owns" this warehouse (employee uid). Null = shared pool.
+  ownerEmployeeId: z.string().nullable().optional(),
 }).refine(
   data => data.type !== 'vehicle' || (data.licensePlate != null && data.licensePlate.length > 0),
   { message: 'licensePlate is required when type is "vehicle"', path: ['licensePlate'] },
@@ -53,6 +55,7 @@ export const UpdateWarehouseSchema = z.object({
   type: z.enum(WAREHOUSE_TYPES).optional(),
   location: z.string().optional(),
   licensePlate: z.string().optional(),
+  ownerEmployeeId: z.string().nullable().optional(),
 }).refine(
   data => Object.keys(data).length > 0,
   { message: 'At least one field required' },

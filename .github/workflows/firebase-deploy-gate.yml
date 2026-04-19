@@ -34,7 +34,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: functions
-        run: npm ci
+        run: npm ci --legacy-peer-deps
 
       - name: 🔥 Run ESLint (with anti-loop rule)
         working-directory: functions
@@ -64,11 +64,11 @@ jobs:
 
       - name: Install functions dependencies
         working-directory: functions
-        run: npm ci
+        run: npm ci --legacy-peer-deps
 
       - name: 🔥 Start Firebase Emulators (background)
         run: |
-          firebase emulators:start --only firestore,auth,storage &
+          firebase emulators:start --only firestore,auth,storage --project=profit-step-test &
           echo "Waiting for emulators to start..."
           sleep 15
           echo "✅ Emulators started"
@@ -111,7 +111,7 @@ jobs:
 
       - name: Install functions dependencies
         working-directory: functions
-        run: npm ci
+        run: npm ci --legacy-peer-deps
 
       - name: 🏗️ Build TypeScript
         working-directory: functions
@@ -160,7 +160,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: functions
-        run: npm ci
+        run: npm ci --legacy-peer-deps
 
       - name: Build functions
         working-directory: functions

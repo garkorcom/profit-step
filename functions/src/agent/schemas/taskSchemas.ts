@@ -15,6 +15,14 @@ export const CreateGTDTaskSchema = z.object({
   taskType: z.string().optional(),
   siteId: z.string().optional(),
   projectId: z.string().optional(),
+  // Client Journey Sprint 1.2 (spec CRM_OVERHAUL §6.2)
+  billable: z.boolean().optional(),
+  production: z.boolean().optional(),
+  estimatedPriceClient: z.number().optional(),
+  estimatedCostInternal: z.number().optional(),
+  unit: z.string().optional(),
+  quantity: z.number().optional(),
+  rate: z.number().optional(),
 });
 
 export const ListTasksQuerySchema = z.object({
@@ -60,6 +68,14 @@ export const UpdateTaskSchema = z.object({
     createdBy: z.string(),
     createdAt: z.any(),
   })).optional(),
+  // Client Journey Sprint 1.2 (spec CRM_OVERHAUL §6.2)
+  billable: z.boolean().optional(),
+  production: z.boolean().optional(),
+  estimatedPriceClient: z.number().optional(),
+  estimatedCostInternal: z.number().optional(),
+  unit: z.string().optional(),
+  quantity: z.number().optional(),
+  rate: z.number().optional(),
 }).refine(data => Object.keys(data).length > 0, {
   message: 'At least one field must be provided',
 });

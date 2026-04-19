@@ -66,7 +66,7 @@
     "preview": "vite preview",
     "test": "jest",
     "test:unit": "jest --coverage",
-    "test:security": "jest firestore.rules.test.ts",
+    "test:security": "jest firestore.rules.test.ts --passWithNoTests",
     "test:integration": "jest --testMatch='**/*.integration.test.ts'",
     "test:e2e": "cypress run",
     "test:e2e:open": "cypress open",

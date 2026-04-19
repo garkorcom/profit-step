@@ -80,6 +80,42 @@ export interface ClientContact {
   email?: string;
 }
 
+// ─── Client Card V2 additive types (spec CLIENT_CARD_V2_SPEC §4.1) ────
+
+export type LifecycleStage =
+  | 'lead'         // первый контакт
+  | 'prospect'     // квалифицирован
+  | 'active'       // текущий клиент в работе
+  | 'repeat'       // повторные сделки
+  | 'churned'      // отказался / не на связи
+  | 'vip';         // стратегически важный
+
+export type ClientSegment = 'A' | 'B' | 'C' | 'VIP';
+export type ChurnRisk = 'low' | 'medium' | 'high';
+export type PreferredChannel = 'phone' | 'email' | 'telegram' | 'whatsapp';
+
+export interface ClientDecisionMaker {
+  name: string;
+  role?: string;
+  phone?: string;
+  email?: string;
+  isPrimary?: boolean;
+}
+
+export interface ClientTaxInfo {
+  ein?: string;
+  taxExempt?: boolean;
+  taxRate?: number;
+}
+
+export interface ClientBillingInfo {
+  billingName?: string;
+  billingAddress?: string;
+  bankAccount?: string;
+  routingNumber?: string;
+  paymentTerms?: string; // 'net-30' / 'net-15' / 'on-receipt'
+}
+
 export interface Client {
   id: string;
   companyId: string;
@@ -104,7 +140,7 @@ export interface Client {
   sourceType?: 'contact' | 'company' | 'manual';
   sourceId?: string; // Links to the specific contact or company ID
   sourceName?: string; // Display name of the source
-  status: ClientStatus;
+  status: ClientStatus; // legacy — prefer lifecycleStage going forward
 
   // Location / Geofence
   workLocation?: {
@@ -115,7 +151,7 @@ export interface Client {
   };
 
   // Financials
-  totalRevenue: number; // LTV
+  totalRevenue: number; // LTV (legacy name — consumers now read `ltv` field)
 
   // Metadata
   tags: string[];
@@ -134,6 +170,43 @@ export interface Client {
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   customFields?: Record<string, any>;
+
+  // ── Client Card V2 additive fields ────────────────────────────────
+  // All optional — legacy clients stay valid. Populated by migration
+  // script + cron + Firestore triggers. See CLIENT_CARD_V2_SPEC.md.
+
+  /** Manual stage set by manager OR mapped from legacy `status` at migration */
+  lifecycleStage?: LifecycleStage;
+  /** Manual segment (A/B/C/VIP). Default 'B' at migration. */
+  segment?: ClientSegment;
+
+  /** Client who referred this one (for referral tracking) */
+  referralByClientId?: string | null;
+  preferredChannel?: PreferredChannel;
+  preferredLanguage?: 'ru' | 'en';
+  timezone?: string; // IANA
+
+  taxInfo?: ClientTaxInfo;
+  billingInfo?: ClientBillingInfo;
+  currency?: Currency;
+
+  decisionMakers?: ClientDecisionMaker[];
+
+  // Computed / materialized (see §2.3 of spec). Do NOT edit manually.
+  healthScore?: number;       // 0-100
+  churnRisk?: ChurnRisk;
+  ltv?: number;               // canonical LTV (sum of paid invoices)
+  totalMargin?: number;
+  avgPaymentDelayDays?: number;
+  lastContactAt?: Timestamp | null;
+  activeDealsCount?: number;
+  activeProjectsCount?: number;
+  openOverdueTasks?: number;
+  npsScore?: number | null;   // 0-10, from NPS survey
+  computedAt?: Timestamp;     // when metrics last computed
+
+  // Note: `isFavorite` is per-user and lives in `client_favorites/{userId}_{clientId}`,
+  // NOT on the client document (would require per-user client copies otherwise).
 }
 
 export interface Site {

@@ -190,8 +190,7 @@ jobs:
       - name: Check build size
         run: |
           du -sh build/
-          du -sh build/static/js/
-          du -sh build/static/css/
+          du -sh build/assets/ 2>/dev/null || true
 
   # Job 7: Test Summary
   test-summary:

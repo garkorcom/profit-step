@@ -93,7 +93,7 @@ function KPICell({ icon, label, value, tooltip }: { icon: React.ReactNode; label
 const ClientHeaderV2: React.FC<Props> = ({ client, kpi, kpiLoading, isFavorite, onToggleFavorite, onCreateDeal }) => {
   const lifecycle = (client.lifecycleStage ?? 'lead') as LifecycleStage;
   const segment = (client.segment ?? 'B') as ClientSegment;
-  const isCompany = client.type === 'company' || client.type === 'commercial';
+  const isCompany = client.type === 'company';
 
   return (
     <Paper

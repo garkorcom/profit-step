@@ -56,6 +56,12 @@ jobs:
           node-version: '22'
           cache: 'npm'
 
+      - name: Setup Java 21 (required by firebase-tools emulators)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
       - name: Install dependencies
         run: npm ci --legacy-peer-deps
 
@@ -89,6 +95,12 @@ jobs:
         with:
           node-version: '22'
           cache: 'npm'
+
+      - name: Setup Java 21 (required by firebase-tools emulators)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
 
       - name: Install dependencies
         run: npm ci --legacy-peer-deps

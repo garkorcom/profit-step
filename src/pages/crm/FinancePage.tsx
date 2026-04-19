@@ -10,7 +10,7 @@ import { InvoicesTab } from '../../components/finance/invoices/InvoicesTab';
 import { ExpensesTab } from '../../components/finance/expenses/ExpensesTab';
 import { collection, query, orderBy, getDocs, where, Timestamp, addDoc, doc, updateDoc } from 'firebase/firestore';
 import { db } from '../../firebase/firebase';
-import { startOfDay, endOfDay, subDays, format, isValid } from 'date-fns';
+import { startOfDay, endOfDay, format, isValid } from 'date-fns';
 import AddIcon from '@mui/icons-material/Add';
 import SettingsIcon from '@mui/icons-material/Settings';
 import PrintIcon from '@mui/icons-material/Print';
@@ -22,6 +22,11 @@ import { PayrollReport } from './PayrollReport';
 
 import { WorkSession } from '../../types/timeTracking.types';
 import { calculatePayrollBuckets } from '../../utils/payroll';
+import {
+    buildEmployeeDropdown,
+    defaultFinanceStartDate,
+    filterReportableSessions,
+} from '../../utils/financeFilters';
 
 const PnLView = React.lazy(() => import('../../components/finance/PnLView'));
 
@@ -78,7 +83,7 @@ const FinancePage: React.FC = () => {
     const [entries, setEntries] = useState<WorkSession[]>([]);
     const [costs, setCosts] = useState<CostEntry[]>([]);
     const [loading, setLoading] = useState(true);
-    const [startDate, setStartDate] = useState<Date>(subDays(startOfDay(new Date()), 30));
+    const [startDate, setStartDate] = useState<Date>(defaultFinanceStartDate());
     const [endDate, setEndDate] = useState<Date>(endOfDay(new Date()));
 
     // Adjustment Dialog
@@ -147,41 +152,14 @@ const FinancePage: React.FC = () => {
             const snapshot = await getDocs(q);
             const allSessions = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as WorkSession));
 
-            // Filter to only show finalized or processed sessions (or legacy sessions without status)
-            // Sessions from today/yesterday are still within edit window and won't appear
-            const getStartOfDay = (date: Date): Date => {
-                const d = new Date(date);
-                d.setHours(0, 0, 0, 0);
-                return d;
-            };
-
-            const today = getStartOfDay(new Date());
-            const dayBeforeYesterday = new Date(today);
-            dayBeforeYesterday.setDate(dayBeforeYesterday.getDate() - 2);
-            dayBeforeYesterday.setHours(23, 59, 59, 999); // End of day-before-yesterday
-
-            const finalizedSessions = allSessions.filter(session => {
-                // Always show corrections and manual adjustments
-                if (session.type === 'correction' || session.type === 'manual_adjustment') {
-                    return true;
-                }
-
-                // If explicitly finalized or processed, show it
-                if (session.finalizationStatus === 'finalized' || session.finalizationStatus === 'processed') {
-                    return true;
-                }
-
-                // For legacy data without finalizationStatus, check if from day-before-yesterday or earlier
-                if (!session.finalizationStatus || session.finalizationStatus === 'pending') {
-                    const sessionDate = new Date((session.startTime?.seconds || 0) * 1000);
-                    return sessionDate <= dayBeforeYesterday;
-                }
-
-                return false;
-            });
+            // Reportable = shift is finished OR it's an admin-issued ledger entry
+            // (correction / manual_adjustment / payment). See
+            // src/utils/financeFilters.ts — and the unit tests covering the
+            // "yesterday's session should show up immediately" regression.
+            const reportable = filterReportableSessions(allSessions);
 
             // Normalize employeeId: map Telegram IDs to user UIDs
-            const normalized = finalizedSessions.map(session => {
+            const normalized = reportable.map(session => {
                 const rawId = String(session.employeeId);
                 const mappedUid = telegramIdToUidRef.current.get(rawId);
                 if (mappedUid) {
@@ -475,31 +453,15 @@ const FinancePage: React.FC = () => {
         return Array.from(clients).sort();
     }, [entries, SYNTHETIC_CLIENTS]);
 
-    const uniqueEmployees = useMemo(() => {
-        // First pass: collect by employeeId
-        const empsById = new Map<string, string>();
-        entries.forEach(e => {
-            if (e.employeeId && e.employeeName) {
-                empsById.set(String(e.employeeId), e.employeeName);
-            }
-        });
-
-        // Second pass: deduplicate by normalized name (trim + lowercase)
-        // This catches cases where the same person has sessions with different IDs
-        // (e.g. Telegram ID not linked to user record)
-        const byNormalizedName = new Map<string, { id: string; name: string }>();
-        empsById.forEach((name, id) => {
-            // Strip invisible/whitespace characters and normalize
-            const cleanName = name.replace(/[\u200B-\u200D\uFEFF\u3164\s]+/g, ' ').trim();
-            const normalizedKey = cleanName.toLowerCase();
-            if (!byNormalizedName.has(normalizedKey)) {
-                byNormalizedName.set(normalizedKey, { id, name: cleanName });
-            }
-            // If already exists, keep the first one (which is typically the canonical UID)
-        });
-
-        return Array.from(byNormalizedName.values()).sort((a, b) => a.name.localeCompare(b.name));
-    }, [entries]);
+    const uniqueEmployees = useMemo(
+        // Use the full users list (`employees`) as the primary source so active
+        // workers without sessions in the current date range (e.g. Valerry
+        // Shulghin with only in-progress shifts) still appear in the dropdown.
+        // Fall back to session-derived identities for legacy Telegram-only
+        // workers not yet linked to a user doc. See financeFilters.ts.
+        () => buildEmployeeDropdown(entries, employees.map(e => ({ id: e.id, name: e.name }))),
+        [entries, employees]
+    );
 
     // Build a mapping from each canonical employee ID to ALL associated IDs
     // This is needed because the same person can have sessions under different IDs

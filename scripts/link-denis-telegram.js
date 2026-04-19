@@ -21,7 +21,7 @@ try {
 }
 
 const app = admin.initializeApp({
-  projectId: 'profit-step'
+  projectId: process.env.GOOGLE_CLOUD_PROJECT || 'profit-step'
 });
 
 const db = admin.firestore();

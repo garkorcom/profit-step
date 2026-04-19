@@ -160,10 +160,18 @@ const Header: React.FC = () => {
       { path: '/crm/finance?tab=3', label: 'P&L Reports', icon: <AttachMoneyIcon sx={{ mr: 0.5 }} /> },
     ];
 
+    // Server Dashboard link is env-gated because the upstream service (Infra
+    // Dashboard on :8001) is Denis's local/LAN infrastructure. Without
+    // VITE_SERVER_DASHBOARD_URL set, the menu item is hidden rather than
+    // dangling at a private IP. On the new server, set the env to the
+    // deployed infra-dashboard origin to restore the link.
+    const serverDashboardUrl = import.meta.env.VITE_SERVER_DASHBOARD_URL;
     const operationsLinks = [
       { path: '/crm/inventory', label: 'Inventory', icon: <InventoryIcon sx={{ mr: 0.5 }} /> },
       { path: '/ai-reports', label: 'AI Reports', icon: <AIIcon sx={{ mr: 0.5 }} /> },
-      { path: 'EXTERNAL:http://192.168.86.32:8001', label: 'Server Dashboard', icon: <DnsIcon sx={{ mr: 0.5 }} /> },
+      ...(serverDashboardUrl
+        ? [{ path: `EXTERNAL:${serverDashboardUrl}`, label: 'Server Dashboard', icon: <DnsIcon sx={{ mr: 0.5 }} /> }]
+        : []),
     ];
 
     const crmLinks = [

@@ -12,7 +12,7 @@ const { execSync } = require('child_process');
 const token = execSync('firebase login:ci --no-localhost 2>/dev/null || echo ""').toString().trim();
 
 admin.initializeApp({
-    projectId: 'profit-step'
+    projectId: process.env.GOOGLE_CLOUD_PROJECT || 'profit-step'
 });
 
 const db = admin.firestore();

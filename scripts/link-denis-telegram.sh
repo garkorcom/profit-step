@@ -4,7 +4,7 @@
 
 set -e
 
-PROJECT_ID="profit-step"
+PROJECT_ID="${GOOGLE_CLOUD_PROJECT:-profit-step}"
 USER_ID="mxtAppmSHNgDAVWVBNAfHKZ2e172"
 TELEGRAM_ID="5844328957"
 

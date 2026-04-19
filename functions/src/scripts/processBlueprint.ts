@@ -201,7 +201,11 @@ async function main() {
     console.log(`📤 Uploading PDF... Chat ID mapped to: ${targetChatId}`);
     let apiResponse;
     try {
-        const response = await axios.post('http://localhost:8000/api/upload-blueprint', form, {
+        const blueprintAiUrl = process.env.BLUEPRINT_AI_URL;
+        if (!blueprintAiUrl) {
+            throw new Error('BLUEPRINT_AI_URL env var not set — blueprint AI service offline');
+        }
+        const response = await axios.post(`${blueprintAiUrl}/api/upload-blueprint`, form, {
             headers: {
                 ...form.getHeaders()
             },

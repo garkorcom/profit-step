@@ -17,7 +17,7 @@ try {
     admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
 } catch (e) {
     console.log('No service-account.json, using default credentials with explicit projectId...');
-    admin.initializeApp({ projectId: 'profit-step' });
+    admin.initializeApp({ projectId: process.env.GOOGLE_CLOUD_PROJECT || 'profit-step' });
 }
 
 const db = admin.firestore();

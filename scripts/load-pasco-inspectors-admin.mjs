@@ -10,7 +10,7 @@ const require = createRequire(import.meta.url);
 const admin = require('firebase-admin');
 
 // Initialize with default credentials (uses Firebase CLI auth)
-admin.initializeApp({ projectId: 'profit-step' });
+admin.initializeApp({ projectId: process.env.GOOGLE_CLOUD_PROJECT || 'profit-step' });
 const db = admin.firestore();
 
 const TAMPA_PROJECT_ID = 'MEPjJFnapZVPgbXmyGP2';

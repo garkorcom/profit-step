@@ -6,7 +6,7 @@ const { getFirestore } = require('firebase-admin/firestore');
 
 initializeApp({
     credential: applicationDefault(),
-    projectId: 'profit-step',
+    projectId: process.env.GOOGLE_CLOUD_PROJECT || 'profit-step',
 });
 
 const db = getFirestore();

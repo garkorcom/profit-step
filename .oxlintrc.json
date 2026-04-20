@@ -58,6 +58,35 @@
       "destructuredArrayIgnorePattern": "^_"
     }]
   },
+  "overrides": [
+    {
+      // Finance module boundary — outside callers must use the barrel
+      // (`src/modules/finance`), never reach into services/hooks/components/
+      // pages internals. Protects payroll / balance calculation from
+      // accidental coupling during refactors of neighbouring modules. See
+      // docs/finance-module/ISOLATION_PLAN.md.
+      //
+      // Internal imports inside `src/modules/finance/` use relative paths
+      // (`./`, `../`) which do NOT include the `modules/finance/...`
+      // substring, so this rule transparently skips them.
+      "files": ["src/**/*.ts", "src/**/*.tsx"],
+      "rules": {
+        "eslint/no-restricted-imports": ["error", {
+          "patterns": [
+            {
+              "group": [
+                "**/modules/finance/services/**",
+                "**/modules/finance/hooks/**",
+                "**/modules/finance/components/**",
+                "**/modules/finance/pages/**"
+              ],
+              "message": "Import Finance exports from 'src/modules/finance' (barrel) instead of reaching into module internals."
+            }
+          ]
+        }]
+      }
+    }
+  ],
   "ignorePatterns": [
     "build/",
     "coverage/",

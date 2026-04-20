@@ -21,12 +21,12 @@ import { PayrollReport } from './PayrollReport';
 // ... (existing code)
 
 import { WorkSession } from '../../types/timeTracking.types';
-import { calculatePayrollBuckets } from '../../utils/payroll';
 import {
     buildEmployeeDropdown,
+    calculatePayrollBuckets,
     defaultFinanceStartDate,
     filterReportableSessions,
-} from '../../utils/financeFilters';
+} from '../../modules/finance';
 
 const PnLView = React.lazy(() => import('../../components/finance/PnLView'));
 

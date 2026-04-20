@@ -216,7 +216,7 @@ describe('🚨 CRITICAL Anti-Loop: incrementLoginCount', () => {
     for (let i = 0; i < 50; i++) {
       updatePromises.push(
         db.collection('users').doc(testUserId).update({
-          lastSeen: admin.firestore.Timestamp.fromDate(new Date(`2025-01-01T00:00:${i}Z`)),
+          lastSeen: admin.firestore.Timestamp.fromDate(new Date(`2025-01-01T00:00:${String(i).padStart(2, '0')}Z`)),
         })
       );
     }

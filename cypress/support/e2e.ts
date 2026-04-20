@@ -19,8 +19,11 @@ import './commands';
 // Alternatively you can use CommonJS syntax:
 // require('./commands')
 
-// cypress/support/e2e.ts
-import 'cypress-axe';
+// cypress-axe was imported here but the package isn't in devDependencies,
+// which makes Cypress webpack fail at "Module not found: Error: Can't
+// resolve 'cypress-axe'" and reports every spec as pending → job red.
+// Re-enable via `npm i -D cypress-axe` when accessibility tests are ready.
+// import 'cypress-axe';
 
 // Prevent TypeScript errors
 declare global {

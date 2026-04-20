@@ -56,6 +56,12 @@ jobs:
           node-version: '22'
           cache: 'npm'
 
+      - name: Setup Java 21 (required by firebase-tools emulators)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
       - name: Install dependencies
         run: npm ci --legacy-peer-deps
 
@@ -90,6 +96,12 @@ jobs:
           node-version: '22'
           cache: 'npm'
 
+      - name: Setup Java 21 (required by firebase-tools emulators)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
       - name: Install dependencies
         run: npm ci --legacy-peer-deps
 
@@ -123,6 +135,7 @@ jobs:
       - name: Run Cypress tests
         uses: cypress-io/github-action@v5
         with:
+          install: false
           start: npm start
           wait-on: 'http://localhost:3000'
           browser: chrome
@@ -190,8 +203,7 @@ jobs:
       - name: Check build size
         run: |
           du -sh build/
-          du -sh build/static/js/
-          du -sh build/static/css/
+          du -sh build/assets/ 2>/dev/null || true
 
   # Job 7: Test Summary
   test-summary:

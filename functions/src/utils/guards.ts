@@ -113,16 +113,32 @@ export function checkAnyFieldChangeGuard(
 
 /**
  * ЗАЩИТА 4: Проверка lastModifiedBy для предотвращения самообновлений
- * Проверяет, не была ли последняя модификация сделана этой же функцией
+ *
+ * Останавливает цикл только для события, в котором lastModifiedBy ИМЕННО
+ * СЕЙЧАС сменился на имя этой функции — то есть это эхо только что нашей
+ * же записи. Если `before.lastModifiedBy` уже был нашим (прошлый
+ * заход), а пользователь потом обновил другое поле не трогая metadata,
+ * `after.lastModifiedBy` останется нашим — но это НЕ self-update,
+ * это валидное обновление, и мы должны пропустить guard.
+ *
+ * Старая версия принимала только `after` и останавливала ВСЁ пока имя
+ * висело в метаданных — после первого срабатывания триггер замолкал
+ * навсегда (см. `functions/test/antiloop.incrementLoginCount.test.ts`
+ * test 2 / test 4: loginCount оставался на 1 вместо 2).
  */
-export function checkSelfUpdateGuard(after: any, functionName: string): GuardResult {
-  const lastModifiedBy = after?.lastModifiedBy;
+export function checkSelfUpdateGuard(
+  before: any,
+  after: any,
+  functionName: string
+): GuardResult {
+  const beforeModifiedBy = before?.lastModifiedBy;
+  const afterModifiedBy = after?.lastModifiedBy;
 
-  if (lastModifiedBy === functionName) {
-    console.log(`⏩ SelfUpdate Guard: Last modified by ${functionName}, skipping self-update`);
+  if (afterModifiedBy === functionName && beforeModifiedBy !== functionName) {
+    console.log(`⏩ SelfUpdate Guard: Echo of ${functionName}'s own write, skipping`);
     return {
       shouldProceed: false,
-      reason: `Self-update detected (lastModifiedBy: ${functionName})`,
+      reason: `Self-update detected (lastModifiedBy transitioned → ${functionName})`,
     };
   }
 
@@ -155,7 +171,7 @@ export async function executeFullGuard(params: {
   }
 
   // ЗАЩИТА 3: Self-update check
-  const selfUpdateCheck = checkSelfUpdateGuard(after, functionName);
+  const selfUpdateCheck = checkSelfUpdateGuard(before, after, functionName);
   if (!selfUpdateCheck.shouldProceed) {
     return selfUpdateCheck;
   }

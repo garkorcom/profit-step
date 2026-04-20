@@ -186,11 +186,15 @@ export const initializeUserActivation = functions
 
       console.log(`🔄 Initializing activation tracking for user: ${userId}`);
 
+      // merge: true — otherwise a concurrent write to the activation doc
+      // (e.g. trackUserActivation firing on a rapid title/photoURL update
+      // landed between the user create and this onCreate handler's ack)
+      // gets clobbered by a full overwrite.
       await db.collection('userActivation').doc(userId).set({
         userId,
         signupCompleted: userData.createdAt || admin.firestore.FieldValue.serverTimestamp(),
         signupMethod: userData.signupMethod || 'email',
-      });
+      }, { merge: true });
 
       console.log(`✅ Activation tracking initialized for user: ${userId}`);
     } catch (error) {

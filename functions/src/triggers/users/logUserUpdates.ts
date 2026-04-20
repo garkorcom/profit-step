@@ -60,7 +60,7 @@ export const logUserUpdates = functions
         // ЗАЩИТА 2: Self-update check
         // ========================================
 
-        const selfUpdateCheck = checkSelfUpdateGuard(after, functionName);
+        const selfUpdateCheck = checkSelfUpdateGuard(before, after, functionName);
         if (!selfUpdateCheck.shouldProceed) {
           return null;
         }

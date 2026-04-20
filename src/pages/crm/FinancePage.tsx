@@ -85,13 +85,25 @@ const FinancePage: React.FC = () => {
     // See src/modules/finance/hooks/ and docs/finance-module/ISOLATION_PLAN.md.
     const employeesDir = useEmployeesWithRates();
     const { clients: clientsList } = useActiveClientsLite();
-    const directory = employeesDir.loading
-        ? null
-        : {
-              employees: employeesDir.employees,
-              telegramIdToUid: employeesDir.telegramIdToUid,
-              uidToName: employeesDir.uidToName,
-          };
+    // Memoize so the ledger hook's useCallback/useEffect doesn't see a fresh
+    // reference on every render — otherwise it re-fetches work_sessions in
+    // an infinite loop and the ledger table is stuck on CircularProgress.
+    const directory = useMemo(
+        () =>
+            employeesDir.loading
+                ? null
+                : {
+                      employees: employeesDir.employees,
+                      telegramIdToUid: employeesDir.telegramIdToUid,
+                      uidToName: employeesDir.uidToName,
+                  },
+        [
+            employeesDir.loading,
+            employeesDir.employees,
+            employeesDir.telegramIdToUid,
+            employeesDir.uidToName,
+        ]
+    );
     const ledger = useFinanceLedger({ startDate, endDate, directory });
     const entries = ledger.entries;
     const costs = ledger.costs;

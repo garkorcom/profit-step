@@ -10,6 +10,10 @@ import { logger } from 'firebase-functions';
 import { sendMessage, getActiveSession, sendMainMenu, findPlatformUser, logBotAction } from '../telegramUtils';
 import { resolveHourlyRate } from '../rateUtils';
 import { sendAdminNotification } from './profileHandlers';
+import {
+    calculatePayrollBuckets,
+    isReportableSession,
+} from '../../../modules/finance';
 
 const db = admin.firestore();
 
@@ -230,13 +234,24 @@ export async function finalizeSession(chatId: number, userId: number, activeSess
 
     // BUG-6 fix: Calculate salary balance from work_sessions (3 buckets: earned/paid/adjustments)
     // BUG-6b fix: Query by BOTH Telegram ID and platform UID to catch
-    // payments/adjustments created from Web CRM (which uses platform UID)
+    // payments/adjustments created from Web CRM (which uses platform UID).
+    //
+    // 2026-04-20: switched from inline calculation to the shared helpers in
+    // `functions/src/modules/finance`. These mirror the web UI's
+    // `src/modules/finance/services/payroll.ts` — so the bot and the
+    // FinancePage show IDENTICAL numbers for the same worker (previously
+    // drifted, see safety matrix #23/32/33 and the Алексей screenshot).
+    //
+    // Also changed: the query used to filter `status == 'completed'` which
+    // silently dropped `auto_closed` sessions (worker walked off without
+    // pressing Finish, cron auto-closes at 48h). Now fetch ALL sessions
+    // since yearStart and filter in-memory via `isReportableSession` — one
+    // code path, zero drift.
     let balanceInfo = '';
     try {
         const yearStart = new Date(new Date().getFullYear(), 0, 1);
         const yearStartTs = admin.firestore.Timestamp.fromDate(yearStart);
 
-        // Collect all possible employeeId variants for this worker
         const idVariants: (string | number)[] = [userId, String(userId)];
         const platformUser = await findPlatformUser(userId);
         if (platformUser?.id) {
@@ -244,17 +259,16 @@ export async function finalizeSession(chatId: number, userId: number, activeSess
         }
         const uniqueIds = [...new Set(idVariants.map(String))];
 
-        // Run parallel queries for each ID variant (uses existing composite index)
         const queries = uniqueIds.map(id =>
             admin.firestore().collection('work_sessions')
                 .where('employeeId', '==', id)
-                .where('status', '==', 'completed')
                 .where('startTime', '>=', yearStartTs)
                 .get()
         );
         const snapshots = await Promise.all(queries);
 
-        // Merge & deduplicate by document ID
+        // Dedup by doc id — same worker may appear under Telegram id and UID
+        // during the migration window; their sessions are distinct docs.
         const docsMap = new Map<string, any>();
         snapshots.forEach(snap => {
             snap.docs.forEach(d => {
@@ -262,38 +276,21 @@ export async function finalizeSession(chatId: number, userId: number, activeSess
             });
         });
 
-        // Split into 3 buckets — must match timeTracking.ts:778 formula.
-        // Balance = Earned + Adjustments − Paid
-        // NOTE: business expenses (costs collection) are a separate ledger
-        // (per-project spend, not per-employee payroll). They intentionally do
-        // NOT enter the salary balance — mixing them previously produced
-        // nonsense balances for admins/owners who log their own business
-        // spend (see scripts/verify-balance-formula.ts).
-        let earned = 0;       // regular sessions (non-voided)
-        let paid = 0;         // type='payment' from work_sessions ONLY
-        let adjustments = 0;  // type='correction' or 'manual_adjustment'
+        // Use the canonical filter + bucket calc that the Web UI uses.
+        // See `functions/src/modules/finance/services/payroll.ts`.
+        const reportable = Array.from(docsMap.values()).filter(data =>
+            isReportableSession({ type: data.type, status: data.status })
+        );
+        const buckets = calculatePayrollBuckets(reportable);
 
-        docsMap.forEach((data: any) => {
-            const amount = data.sessionEarnings || 0;
-            const type = data.type || 'regular';
-            if (type === 'payment') {
-                paid += Math.abs(amount);
-            } else if (type === 'correction' || type === 'manual_adjustment') {
-                adjustments += amount;
-            } else {
-                // regular work sessions — skip voided
-                if (!data.isVoided) {
-                    earned += amount;
-                }
-            }
-        });
+        // NOTE: Legacy 'payments' collection is NOT queried here. Payments
+        // are stored as work_sessions with type='payment'. Querying both
+        // caused double-counting (BUG fix 2026-04-15).
 
-        // NOTE: Legacy 'payments' collection is NOT queried here.
-        // All payments are now stored as work_sessions with type='payment'.
-        // Querying both caused double-counting (BUG fix 2026-04-15).
-
-        const balance = earned + adjustments - paid;
-        balanceInfo = `\n💚 Баланс ЗП: $${balance.toFixed(2)}\n📊 Начислено с начала года: $${earned.toFixed(2)}\nВыплачено: $${paid.toFixed(2)}`;
+        balanceInfo =
+            `\n💚 Баланс ЗП: $${buckets.balance.toFixed(2)}` +
+            `\n📊 Начислено с начала года: $${buckets.salary.toFixed(2)}` +
+            `\nВыплачено: $${buckets.payments.toFixed(2)}`;
     } catch (e) {
         console.error('Balance calc error:', e);
     }

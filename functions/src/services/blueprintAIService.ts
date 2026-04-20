@@ -4,10 +4,11 @@ import OpenAI from 'openai';
 import { logger } from 'firebase-functions';
 import { BlueprintAgentResult, BlueprintDiscrepancy, BlueprintFileClassification } from '../types/blueprint.types';
 
-// ===== API Keys =====
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
-const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || '' || '';
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '' || '';
+// ===== API Keys (lazy readers — resolve at call time, not module load) =====
+import { GEMINI_API_KEY as _GEMINI, ANTHROPIC_API_KEY as _ANTHROPIC, OPENAI_API_KEY as _OPENAI } from '../config';
+const GEMINI_API_KEY = () => _GEMINI.value();
+const ANTHROPIC_API_KEY = () => _ANTHROPIC.value();
+const OPENAI_API_KEY = () => _OPENAI.value();
 
 // ===== Building Context (extracted before analysis) =====
 export interface BuildingContext {
@@ -288,10 +289,10 @@ function parseJsonResponse(text: string): any {
 
 // ===== Metadata Extraction (Gemini — supports PDF natively) =====
 export async function extractBlueprintMetadata(input: BlueprintInput): Promise<{ description?: string; address?: string; areaSqft?: number }> {
-    if (!GEMINI_API_KEY) return {};
+    if (!GEMINI_API_KEY()) return {};
 
     try {
-        const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+        const genAI = new GoogleGenerativeAI(GEMINI_API_KEY());
         const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
 
         const result = await model.generateContent({
@@ -318,9 +319,9 @@ export async function extractBlueprintMetadata(input: BlueprintInput): Promise<{
 
 // ===== Gemini Analysis (supports PDF natively!) =====
 export async function analyzeWithGemini(input: BlueprintInput): Promise<BlueprintAgentResult> {
-    if (!GEMINI_API_KEY) throw new Error('GEMINI_API_KEY not configured');
+    if (!GEMINI_API_KEY()) throw new Error('GEMINI_API_KEY not configured');
 
-    const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+    const genAI = new GoogleGenerativeAI(GEMINI_API_KEY());
     const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
 
     logger.info(`Gemini: sending ${input.mimeType} (${(input.buffer.length / 1024).toFixed(0)}KB)`);
@@ -350,9 +351,9 @@ export async function analyzeWithGemini(input: BlueprintInput): Promise<Blueprin
 
 // ===== Claude Analysis (supports PDF natively via document type!) =====
 export async function analyzeWithClaude(input: BlueprintInput): Promise<BlueprintAgentResult> {
-    if (!ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY not configured');
+    if (!ANTHROPIC_API_KEY()) throw new Error('ANTHROPIC_API_KEY not configured');
 
-    const anthropic = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
+    const anthropic = new Anthropic({ apiKey: ANTHROPIC_API_KEY() });
 
     logger.info(`Claude: sending ${input.mimeType} (${(input.buffer.length / 1024).toFixed(0)}KB)`);
 
@@ -394,14 +395,14 @@ export async function analyzeWithClaude(input: BlueprintInput): Promise<Blueprin
 export const OPENAI_SKIPPED = '__SKIPPED_PDF__';
 
 export async function analyzeWithOpenAI(input: BlueprintInput): Promise<BlueprintAgentResult | null> {
-    if (!OPENAI_API_KEY) throw new Error('OPENAI_API_KEY not configured');
+    if (!OPENAI_API_KEY()) throw new Error('OPENAI_API_KEY not configured');
 
     if (input.isPdf) {
         logger.info('OpenAI: PDF detected → skipping (GPT-4o images only)');
         return null; // Sentinel: caller treats null as 'skipped'
     }
 
-    const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
+    const openai = new OpenAI({ apiKey: OPENAI_API_KEY() });
 
     logger.info(`OpenAI: sending ${input.mimeType} (${(input.buffer.length / 1024).toFixed(0)}KB)`);
 
@@ -503,7 +504,7 @@ export async function performSmartAudit(
     facilityUse: string = '',
     buildingContext?: BuildingContext
 ): Promise<{ auditedQuantities: BlueprintAgentResult; auditNotes: string[] }> {
-    if (!ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY not configured for Smart Audit');
+    if (!ANTHROPIC_API_KEY()) throw new Error('ANTHROPIC_API_KEY not configured for Smart Audit');
 
     const ctx = buildingContext || DEFAULT_BUILDING_CONTEXT;
     logger.info(`🧠 Performing Smart Audit for ${projectType} (${squareFootage} sqft, ${pageCount} pages, ${ctx.buildingType}, ${ctx.unitCount} units) with ${Object.keys(rawQuantities).length} items`);
@@ -520,7 +521,7 @@ export async function performSmartAudit(
         .replace(/{RAW_DATA}/g, JSON.stringify(rawQuantities, null, 2));
 
     try {
-        const anthropic = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
+        const anthropic = new Anthropic({ apiKey: ANTHROPIC_API_KEY() });
         const msg = await anthropic.messages.create({
             model: 'claude-3-5-sonnet-20241022',
             max_tokens: 2000,
@@ -560,10 +561,10 @@ export async function performSmartAudit(
 
 // ===== Building Context Extraction (quick Gemini call) =====
 export async function extractBuildingContext(input: BlueprintInput): Promise<BuildingContext> {
-    if (!GEMINI_API_KEY) return DEFAULT_BUILDING_CONTEXT;
+    if (!GEMINI_API_KEY()) return DEFAULT_BUILDING_CONTEXT;
 
     try {
-        const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+        const genAI = new GoogleGenerativeAI(GEMINI_API_KEY());
         const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
 
         const result = await model.generateContent({
@@ -699,10 +700,10 @@ export async function performTargetedReconciliation(
     const isPdf = input.isPdf;
 
     // Arbiter rotation: Claude → OpenAI (images only) → Gemini
-    if (ANTHROPIC_API_KEY) {
+    if (ANTHROPIC_API_KEY()) {
         logger.info('V3 Arbiter: Claude');
         try {
-            const anthropic = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
+            const anthropic = new Anthropic({ apiKey: ANTHROPIC_API_KEY() });
             const fileContent = isPdf
                 ? { type: 'document' as const, source: { type: 'base64' as const, media_type: 'application/pdf' as const, data: base64Data } }
                 : { type: 'image' as const, source: { type: 'base64' as const, media_type: input.mimeType as 'image/png' | 'image/jpeg', data: base64Data } };
@@ -717,10 +718,10 @@ export async function performTargetedReconciliation(
         } catch (e) { logger.warn('Claude arbiter failed', e); }
     }
 
-    if (OPENAI_API_KEY && !isPdf) {
+    if (OPENAI_API_KEY() && !isPdf) {
         logger.info('V3 Arbiter: OpenAI');
         try {
-            const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
+            const openai = new OpenAI({ apiKey: OPENAI_API_KEY() });
             const response = await openai.chat.completions.create({
                 model: 'gpt-4o',
                 messages: [{
@@ -737,9 +738,9 @@ export async function performTargetedReconciliation(
     }
 
     // Fallback: Gemini
-    if (GEMINI_API_KEY) {
+    if (GEMINI_API_KEY()) {
         logger.info('V3 Arbiter: Gemini (fallback)');
-        const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+        const genAI = new GoogleGenerativeAI(GEMINI_API_KEY());
         const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
         const result = await model.generateContent({
             contents: [{
@@ -769,10 +770,10 @@ Return ONLY the category name, nothing else.
 Example: electrical_plan`;
 
 export async function classifyBlueprint(input: BlueprintInput): Promise<BlueprintFileClassification> {
-    if (!GEMINI_API_KEY) return 'other';
+    if (!GEMINI_API_KEY()) return 'other';
 
     try {
-        const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+        const genAI = new GoogleGenerativeAI(GEMINI_API_KEY());
         const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
 
         const result = await model.generateContent({

@@ -4,6 +4,7 @@
 import { Router } from 'express';
 
 import { db, FieldValue, logger, logAgentActivity, Fuse } from '../routeContext';
+import { TELEGRAM_BOT_TOKEN } from '../../config';
 import { scopesForRole } from '../agentMiddleware';
 import {
   UserSearchQuerySchema,
@@ -369,7 +370,7 @@ router.post('/api/bot/notify', async (req, res, next) => {
 
     const data = BotNotifySchema.parse(req.body);
 
-    const botToken = process.env.TELEGRAM_BOT_TOKEN;
+    const botToken = TELEGRAM_BOT_TOKEN.value();
     if (!botToken) {
       res.status(503).json({ error: 'Bot token not configured' });
       return;

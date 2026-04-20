@@ -3,10 +3,11 @@ import { logger } from 'firebase-functions';
 import * as admin from 'firebase-admin';
 import { GoogleGenerativeAI, Schema, SchemaType } from '@google/generative-ai';
 import { BlueprintAgentResult } from '../../types/blueprint.types';
+import { GEMINI_API_KEY as _GEMINI } from '../../config';
 
 if (admin.apps.length === 0) admin.initializeApp();
 
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
+const GEMINI_API_KEY = () => _GEMINI.value();
 
 const PLAUSIBILITY_SYSTEM_PROMPT = `You are a Master Electrician and Senior Estimator Quality Assurance AI.
 Your job is to review the aggregated quantities of an electrical takeoff against the basic facts of the project and flag any IMPOSSIBLE or HIGHLY UNLIKELY anomalies, which usually stem from AI hallucinations (e.g. overcounting).
@@ -46,7 +47,7 @@ const anomalySchema: Schema = {
  */
 export const verifyEstimatePlausibilityCallable = functions
     .region('us-central1')
-    .runWith({ timeoutSeconds: 30, memory: '256MB' })
+    .runWith({ timeoutSeconds: 30, memory: '256MB', secrets: [_GEMINI] })
     .https.onCall(async (data, context) => {
         if (!context.auth) {
             throw new functions.https.HttpsError('unauthenticated', 'Auth required');
@@ -58,14 +59,14 @@ export const verifyEstimatePlausibilityCallable = functions
             return { anomalies: [] };
         }
 
-        if (!GEMINI_API_KEY) {
+        if (!GEMINI_API_KEY()) {
             throw new functions.https.HttpsError('internal', 'GEMINI_API_KEY missing');
         }
 
         logger.info(`🔍 Plausibility Check starting for project size: ${sqFt} sqft, ${stories} stories, Type: ${projectType}`);
 
         try {
-            const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+            const genAI = new GoogleGenerativeAI(GEMINI_API_KEY());
             const model = genAI.getGenerativeModel({
                 model: 'gemini-2.5-flash',
                 systemInstruction: PLAUSIBILITY_SYSTEM_PROMPT,

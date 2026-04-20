@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+# Guardrails against committing secrets.
+#
+# Activate on your machine once:
+#   git config core.hooksPath .githooks
+#
+# This hook blocks any commit that stages:
+#   - a .env file (even a nested one)
+#   - a service-account-key.json
+#   - known high-signal secret prefixes accidentally pasted into tracked files
+
+set -e
+
+staged="$(git diff --cached --name-only --diff-filter=ACMR)"
+[[ -z "$staged" ]] && exit 0
+
+blocked=()
+while IFS= read -r f; do
+  case "$f" in
+    *.env|*.env.*|functions/.env|.env.*|*.env.backup|service-account-key.json|**/serviceAccountKey.json)
+      # allow .env.example files — those are safe
+      case "$f" in
+        *.env.example|*.env.local.example) continue ;;
+      esac
+      blocked+=("$f")
+      ;;
+  esac
+done <<< "$staged"
+
+if [[ ${#blocked[@]} -gt 0 ]]; then
+  printf '❌ Refusing to commit secret-looking files:\n'
+  for f in "${blocked[@]}"; do printf '   - %s\n' "$f"; done
+  printf '\n'
+  printf 'If this is intentional, bypass with: git commit --no-verify\n'
+  printf '(but ask yourself twice — secrets belong in Secret Manager, not git.)\n'
+  exit 1
+fi
+
+# Scan staged content for common secret patterns
+content="$(git diff --cached -U0 --diff-filter=ACMR | grep -E '^\+' | grep -vE '^\+\+\+' || true)"
+patterns=(
+  'AIza[0-9A-Za-z_-]{35}'                               # Google / Firebase API key
+  'sk-[A-Za-z0-9-]{20,}'                                # OpenAI / Anthropic
+  'sk-ant-[A-Za-z0-9_-]{20,}'                           # Anthropic
+  'xsmtpsib-[A-Za-z0-9]+-[A-Za-z0-9]+'                  # Brevo SMTP key
+  '-----BEGIN (RSA|OPENSSH|DSA|EC|PGP) PRIVATE KEY-----'
+  '[0-9]{9,11}:AAE[A-Za-z0-9_-]{30,}'                   # Telegram bot token
+)
+hit=""
+for p in "${patterns[@]}"; do
+  if echo "$content" | grep -E "$p" >/dev/null; then
+    hit="$hit\n  - pattern: $p"
+  fi
+done
+
+if [[ -n "$hit" ]]; then
+  printf '❌ Staged content looks like it contains a secret:%b\n\n' "$hit"
+  printf 'Move the secret to Google Secret Manager via ./scripts/setup-secrets.sh\n'
+  printf 'and keep only placeholders in the committed file. Bypass with --no-verify\n'
+  printf 'if this is a false positive (e.g. a changelog mentioning an old rotated key).\n'
+  exit 1
+fi
+
+exit 0

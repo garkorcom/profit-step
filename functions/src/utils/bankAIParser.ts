@@ -7,7 +7,9 @@
  */
 
 import { GoogleGenerativeAI } from '@google/generative-ai';
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
+import { GEMINI_API_KEY } from '../config';
+// Lazy — instantiate per call so the secret is resolved at runtime, not module load.
+const getGenAI = () => new GoogleGenerativeAI(GEMINI_API_KEY.value());
 
 export interface ParsedTransaction {
     date: string;           // MM/DD format
@@ -191,7 +193,7 @@ export async function parseBankStatementImage(
     imageBase64: string,
     mimeType: string = 'image/png'
 ): Promise<{ transactions: ParsedTransaction[]; statementMonth?: number; statementYear?: number }> {
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-001' });
+    const model = getGenAI().getGenerativeModel({ model: 'gemini-2.0-flash-001' });
 
     const prompt = `Analyze this bank statement image. Extract the STATEMENT PERIOD and ALL transaction lines.
 

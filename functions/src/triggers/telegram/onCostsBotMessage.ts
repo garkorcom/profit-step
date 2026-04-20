@@ -3,15 +3,14 @@ import { logger } from 'firebase-functions';
 import * as admin from 'firebase-admin';
 import axios from 'axios';
 import * as CostsAI from '../../services/costsAIService';
+import { COSTS_BOT_TOKEN, COSTS_BOT_SECRETS } from '../../config';
+
 // Initialize if not already
 if (admin.apps.length === 0) {
     admin.initializeApp();
 }
 
 const db = admin.firestore();
-
-// Configuration for Costs Bot
-const COSTS_BOT_TOKEN = process.env.COSTS_BOT_TOKEN || '';
 
 // Cost Categories
 const COST_CATEGORIES = [
@@ -78,7 +77,9 @@ interface CostSession {
 }
 
 // --- Main Function ---
-export const onCostsBotMessage = functions.https.onRequest(async (req, res) => {
+export const onCostsBotMessage = functions
+  .runWith({ secrets: [...COSTS_BOT_SECRETS] })
+  .https.onRequest(async (req, res) => {
     logger.info('💰 Costs Bot Webhook', { method: req.method });
 
     if (req.method !== 'POST') {
@@ -291,7 +292,7 @@ async function handleCallback(query: any) {
         }
 
         // Answer callback
-        await axios.post(`https://api.telegram.org/bot${COSTS_BOT_TOKEN}/answerCallbackQuery`, {
+        await axios.post(`https://api.telegram.org/bot${COSTS_BOT_TOKEN.value()}/answerCallbackQuery`, {
             callback_query_id: query.id
         });
     } catch (error) {
@@ -352,12 +353,12 @@ async function handlePhotoUpload(chatId: number, userId: number, photoFileId: st
     try {
         // Get file info
         const fileResponse = await axios.get(
-            `https://api.telegram.org/bot${COSTS_BOT_TOKEN}/getFile?file_id=${photoFileId}`
+            `https://api.telegram.org/bot${COSTS_BOT_TOKEN.value()}/getFile?file_id=${photoFileId}`
         );
         const filePath = fileResponse.data.result.file_path;
 
         // Download file
-        const fileUrl = `https://api.telegram.org/file/bot${COSTS_BOT_TOKEN}/${filePath}`;
+        const fileUrl = `https://api.telegram.org/file/bot${COSTS_BOT_TOKEN.value()}/${filePath}`;
         const imageResponse = await axios.get(fileUrl, { responseType: 'arraybuffer' });
         const imageBuffer = Buffer.from(imageResponse.data);
 
@@ -436,7 +437,7 @@ async function handleVoiceMessage(chatId: number, userId: number, voiceFileId: s
         await sendMessage(chatId, '🎙 Транскрибирую голосовое...');
 
         // Download voice file
-        const audioBuffer = await CostsAI.downloadTelegramFile(voiceFileId, COSTS_BOT_TOKEN!);
+        const audioBuffer = await CostsAI.downloadTelegramFile(voiceFileId, COSTS_BOT_TOKEN.value());
 
         // Transcribe with AI
         const transcription = await CostsAI.transcribeVoice(audioBuffer, 'audio/ogg');
@@ -447,10 +448,10 @@ async function handleVoiceMessage(chatId: number, userId: number, voiceFileId: s
         } else {
             // Transcription failed - save as voice note
             const fileResponse = await axios.get(
-                `https://api.telegram.org/bot${COSTS_BOT_TOKEN}/getFile?file_id=${voiceFileId}`
+                `https://api.telegram.org/bot${COSTS_BOT_TOKEN.value()}/getFile?file_id=${voiceFileId}`
             );
             const filePath = fileResponse.data.result.file_path;
-            const voiceUrl = `https://api.telegram.org/file/bot${COSTS_BOT_TOKEN}/${filePath}`;
+            const voiceUrl = `https://api.telegram.org/file/bot${COSTS_BOT_TOKEN.value()}/${filePath}`;
 
             await saveCostEntry(chatId, userId, session, '🎙 Голосовое (не распознано)', voiceUrl);
         }
@@ -569,7 +570,7 @@ async function showCategorySelection(chatId: number, clientName: string) {
 
 // --- Telegram API ---
 async function sendMessage(chatId: number, text: string, options: any = {}) {
-    if (!COSTS_BOT_TOKEN) {
+    if (!COSTS_BOT_TOKEN.value()) {
         logger.error("Missing COSTS_BOT_TOKEN");
         return;
     }
@@ -591,7 +592,7 @@ async function sendMessage(chatId: number, text: string, options: any = {}) {
             delete body.inline_keyboard;
         }
 
-        await axios.post(`https://api.telegram.org/bot${COSTS_BOT_TOKEN}/sendMessage`, body);
+        await axios.post(`https://api.telegram.org/bot${COSTS_BOT_TOKEN.value()}/sendMessage`, body);
     } catch (error: any) {
         logger.error('Error sending message:', error?.response?.data || error.message);
     }

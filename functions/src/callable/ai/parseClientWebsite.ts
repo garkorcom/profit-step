@@ -2,6 +2,7 @@ import * as functions from 'firebase-functions';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import axios from 'axios';
 import * as cheerio from 'cheerio';
+import { GEMINI_API_KEY } from '../../config';
 
 interface ParseClientWebsiteRequest {
     url: string;
@@ -71,6 +72,7 @@ export const parseClientWebsite = functions
     .runWith({
         memory: '256MB',
         timeoutSeconds: 60,
+        secrets: [GEMINI_API_KEY],
     })
     .https.onCall(async (data: ParseClientWebsiteRequest, context) => {
         // Verify authentication
@@ -94,7 +96,7 @@ export const parseClientWebsite = functions
         }
 
         // 2. Call Gemini API
-        const apiKey = process.env.GEMINI_API_KEY || '';
+        const apiKey = GEMINI_API_KEY.value();
 
         if (!apiKey) {
             throw new functions.https.HttpsError('failed-precondition', 'GEMINI_API_KEY not configured.');

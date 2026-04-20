@@ -10,6 +10,7 @@ import * as admin from 'firebase-admin';
 import * as functions from 'firebase-functions';
 import { z } from 'zod';
 import { Request, Response, NextFunction } from 'express';
+import { AGENT_API_KEY, OWNER_UID, OWNER_DISPLAY_NAME, NODE_ENV } from '../config';
 
 const logger = functions.logger;
 const db = admin.firestore();
@@ -64,9 +65,9 @@ export const authMiddleware = async (req: Request, res: Response, next: NextFunc
   }
 
   // Mode 1: Static API key (agent / server calls — Master Token)
-  if (token === process.env.AGENT_API_KEY) {
-    req.agentUserId = process.env.OWNER_UID;
-    req.agentUserName = process.env.OWNER_DISPLAY_NAME;
+  if (token === AGENT_API_KEY.value()) {
+    req.agentUserId = OWNER_UID;
+    req.agentUserName = OWNER_DISPLAY_NAME;
     req.agentTokenType = 'master';
 
     // ── X-Impersonate-User: allow master token to act as another user ──
@@ -235,7 +236,7 @@ export const errorHandler = (err: any, req: Request, res: Response, _next: NextF
       path: req.path,
       errors: err.errors.map((e) => ({ path: e.path, message: e.message })),
     };
-    if (process.env.NODE_ENV !== 'production') {
+    if (NODE_ENV !== 'production') {
       logPayload.body = req.body;
     }
     logger.warn('❌ Validation failed', logPayload);

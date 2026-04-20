@@ -1,12 +1,19 @@
 import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
 import OpenAI from 'openai';
-// const db = admin.firestore(); // Moved inside function
-const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY || '' || 'mock-key',
-});
+import { OPENAI_API_KEY } from '../../config';
+// Lazy — resolve secret at call time, not module load.
+let _openai: OpenAI | null = null;
+function getOpenAI(): OpenAI {
+    if (!_openai) {
+        _openai = new OpenAI({ apiKey: OPENAI_API_KEY.value() || 'mock-key' });
+    }
+    return _openai;
+}
 
-export const generateLeadSummary = functions.https.onCall(async (data, context) => {
+export const generateLeadSummary = functions
+    .runWith({ secrets: [OPENAI_API_KEY] })
+    .https.onCall(async (data, context) => {
     if (!context.auth) {
         throw new functions.https.HttpsError('unauthenticated', 'Authentication required');
     }
@@ -59,7 +66,7 @@ export const generateLeadSummary = functions.https.onCall(async (data, context) 
         `;
 
         // 4. Call AI
-        const completion = await openai.chat.completions.create({
+        const completion = await getOpenAI().chat.completions.create({
             model: "gpt-3.5-turbo",
             messages: [{ role: "user", content: prompt }],
             temperature: 0.3,

@@ -18,19 +18,20 @@ import axios from 'axios';
 import { sendMessage, editMessage, getActiveSession } from '../telegramUtils';
 import { parseVoiceTask } from '../../../services/smartDispatcherService';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { WORKER_BOT_TOKEN, GEMINI_API_KEY } from '../../../config';
 
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
 const MODELS = ['gemini-2.0-flash', 'gemini-1.5-flash-latest', 'gemini-1.5-pro-latest'];
 
 /**
  * Transcribe voice message for Inbox Tasks
  */
 async function transcribeInboxVoice(audioBuffer: Buffer, mimeType: string = 'audio/ogg'): Promise<string | null> {
-    if (!GEMINI_API_KEY) {
+    const apiKey = GEMINI_API_KEY.value();
+    if (!apiKey) {
         logger.error('GEMINI_API_KEY not configured');
         throw new Error('GEMINI_API_KEY not configured');
     }
-    const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+    const genAI = new GoogleGenerativeAI(apiKey);
     const audioBase64 = audioBuffer.toString('base64');
 
     const TRANSCRIPTION_PROMPT = `Ты помощник, который точно транскрибирует голосовые сообщения рабочего на стройке в текст без изменений. Не добавляй от себя ничего, только текст сообщения. Никакого markdown. Выведи только то что услышал на аудио.`;
@@ -71,8 +72,6 @@ async function transcribeInboxVoice(audioBuffer: Buffer, mimeType: string = 'aud
 
 const db = admin.firestore();
 const storage = admin.storage();
-
-const WORKER_BOT_TOKEN = process.env.WORKER_BOT_TOKEN || '';
 
 // ═══════════════════════════════════════════════════════════
 // TYPES
@@ -152,10 +151,10 @@ export async function handleInboxVoice(
     try {
         // 1. Download voice file from Telegram
         const fileRes = await axios.get(
-            `https://api.telegram.org/bot${WORKER_BOT_TOKEN}/getFile?file_id=${voice.file_id}`
+            `https://api.telegram.org/bot${WORKER_BOT_TOKEN.value()}/getFile?file_id=${voice.file_id}`
         );
         const filePath = fileRes.data.result.file_path;
-        const downloadUrl = `https://api.telegram.org/file/bot${WORKER_BOT_TOKEN}/${filePath}`;
+        const downloadUrl = `https://api.telegram.org/file/bot${WORKER_BOT_TOKEN.value()}/${filePath}`;
 
         const audioResponse = await axios.get(downloadUrl, { responseType: 'arraybuffer' });
         const audioBuffer = Buffer.from(audioResponse.data);
@@ -570,7 +569,7 @@ export async function createNote(params: CreateNoteParams): Promise<string> {
 async function sendMessageWithId(chatId: number, text: string): Promise<{ message_id: number } | null> {
     try {
         const response = await axios.post(
-            `https://api.telegram.org/bot${WORKER_BOT_TOKEN}/sendMessage`,
+            `https://api.telegram.org/bot${WORKER_BOT_TOKEN.value()}/sendMessage`,
             {
                 chat_id: chatId,
                 text,
@@ -590,13 +589,13 @@ async function sendMessageWithId(chatId: number, text: string): Promise<{ messag
 async function saveTelegramFile(fileId: string, storagePath: string): Promise<string> {
     // Get file path from Telegram
     const fileInfoResponse = await axios.get(
-        `https://api.telegram.org/bot${WORKER_BOT_TOKEN}/getFile?file_id=${fileId}`
+        `https://api.telegram.org/bot${WORKER_BOT_TOKEN.value()}/getFile?file_id=${fileId}`
     );
     const filePath = fileInfoResponse.data.result.file_path;
 
     // Download file
     const fileResponse = await axios.get(
-        `https://api.telegram.org/file/bot${WORKER_BOT_TOKEN}/${filePath}`,
+        `https://api.telegram.org/file/bot${WORKER_BOT_TOKEN.value()}/${filePath}`,
         { responseType: 'arraybuffer' }
     );
     const fileBuffer = Buffer.from(fileResponse.data);

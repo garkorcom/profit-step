@@ -13,13 +13,15 @@ import * as functions from 'firebase-functions';
 import { logger } from 'firebase-functions';
 import * as admin from 'firebase-admin';
 import axios from 'axios';
+import { WORKER_BOT_TOKEN, SCHEDULED_WORKER_SECRETS } from '../config';
 const db = admin.firestore();
-const WORKER_BOT_TOKEN = process.env.WORKER_BOT_TOKEN || '';
 
 /**
  * Scheduled function that runs every hour to send deadline reminders
  */
-export const sendDeadlineReminders = functions.pubsub
+export const sendDeadlineReminders = functions
+    .runWith({ secrets: [...SCHEDULED_WORKER_SECRETS] })
+    .pubsub
     .schedule('0 * * * *') // Every hour at :00
     .timeZone('America/New_York')
     .onRun(async () => {
@@ -181,13 +183,14 @@ async function findTelegramChatId(userId?: string, telegramUserId?: number): Pro
  * Send Telegram message
  */
 async function sendTelegramMessage(chatId: number, text: string): Promise<void> {
-    if (!WORKER_BOT_TOKEN) {
+    const token = WORKER_BOT_TOKEN.value();
+    if (!token) {
         logger.warn('WORKER_BOT_TOKEN not configured');
         return;
     }
 
     try {
-        await axios.post(`https://api.telegram.org/bot${WORKER_BOT_TOKEN}/sendMessage`, {
+        await axios.post(`https://api.telegram.org/bot${token}/sendMessage`, {
             chat_id: chatId,
             text,
             parse_mode: 'Markdown',

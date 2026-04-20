@@ -11,6 +11,7 @@ import {
     mergeResults,
     extractBlueprintMetadata
 } from '../../services/blueprintAIService';
+import { AI_CALLABLE_SECRETS } from '../../config';
 import { BlueprintBatchJob, BlueprintFileEntry } from '../../types/blueprint.types';
 import { generateBatchValidation, formatBatchValidationLog } from '../../utils/estimateValidation';
 
@@ -58,7 +59,7 @@ async function isCancelled(snapRef: FirebaseFirestore.DocumentReference): Promis
  */
 export const onBlueprintBatchCreated = functions
     .region('us-central1')
-    .runWith({ timeoutSeconds: 540, memory: '2GB' }) // 9 min, 2GB for multi-file
+    .runWith({ timeoutSeconds: 540, memory: '2GB', secrets: [...AI_CALLABLE_SECRETS] }) // 9 min, 2GB for multi-file
     .firestore
     .document('blueprint_batches/{batchId}')
     .onCreate(async (snap, context) => {

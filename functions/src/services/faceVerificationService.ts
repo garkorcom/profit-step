@@ -8,7 +8,7 @@
 import { logger } from 'firebase-functions';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import axios from 'axios';
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
+import { GEMINI_API_KEY } from '../config';
 const MODEL_NAME = 'gemini-2.0-flash';
 
 export interface FaceVerificationResult {
@@ -31,11 +31,12 @@ Output ONLY a valid JSON object, no markdown, no explanation:
  * Initialize Gemini client
  */
 function getGeminiClient() {
-    if (!GEMINI_API_KEY) {
+    const apiKey = GEMINI_API_KEY.value();
+    if (!apiKey) {
         logger.error('GEMINI_API_KEY not configured');
         throw new Error('GEMINI_API_KEY not configured');
     }
-    return new GoogleGenerativeAI(GEMINI_API_KEY);
+    return new GoogleGenerativeAI(apiKey);
 }
 
 /**

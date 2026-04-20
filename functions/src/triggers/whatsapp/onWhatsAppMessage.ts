@@ -1,11 +1,15 @@
 import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
 import OpenAI from 'openai';
-// Initialize OpenAI (API Key should be in environment variables)
-// Run: firebase functions:config:set openai.key="YOUR_API_KEY"
-const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY || '' || 'mock-key',
-});
+import { OPENAI_API_KEY, WHATSAPP_VERIFY_TOKEN } from '../../config';
+// Lazy — resolve secret at invocation, not module load.
+let _openai: OpenAI | null = null;
+function getOpenAI(): OpenAI {
+    if (!_openai) {
+        _openai = new OpenAI({ apiKey: OPENAI_API_KEY.value() || 'mock-key' });
+    }
+    return _openai;
+}
 
 const db = admin.firestore();
 
@@ -38,15 +42,16 @@ Your goal in the first 2-3 messages:
 - Working Hours: Mon-Fri from 9 AM to 6 PM.
 `;
 
-export const onWhatsAppMessage = functions.https.onRequest(async (req, res) => {
+export const onWhatsAppMessage = functions
+    .runWith({ secrets: [OPENAI_API_KEY] })
+    .https.onRequest(async (req, res) => {
     // 1. Validate Request (Meta Webhook Verification)
     if (req.method === 'GET') {
         const mode = req.query['hub.mode'];
         const token = req.query['hub.verify_token'];
         const challenge = req.query['hub.challenge'];
 
-        // Run: firebase functions:config:set whatsapp.verify_token="YOUR_TOKEN"
-        const verifyToken = process.env.WHATSAPP_VERIFY_TOKEN || 'profit-step-token' || 'profit-step-token';
+        const verifyToken = WHATSAPP_VERIFY_TOKEN || 'profit-step-token';
 
         if (mode === 'subscribe' && token === verifyToken) {
             res.status(200).send(challenge);
@@ -95,7 +100,7 @@ export const onWhatsAppMessage = functions.https.onRequest(async (req, res) => {
                                 .reverse(); // OpenAI expects chronological order
 
                             // 4. Call AI
-                            const completion = await openai.chat.completions.create({
+                            const completion = await getOpenAI().chat.completions.create({
                                 model: "gpt-3.5-turbo", // Or gpt-4o
                                 messages: [
                                     { role: "system", content: SYSTEM_PROMPT },

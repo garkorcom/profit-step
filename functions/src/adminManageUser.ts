@@ -16,9 +16,8 @@
 import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
 import axios from 'axios';
+import { WORKER_BOT_TOKEN } from './config';
 const db = admin.firestore();
-
-const WORKER_BOT_TOKEN = process.env.WORKER_BOT_TOKEN || '';
 
 type Action = 'resetPassword' | 'forceLogout' | 'changeEmail' | 'sendPasswordViaTelegram';
 
@@ -34,7 +33,9 @@ interface ManageUserResponse {
     message: string;
 }
 
-export const admin_manageUser = functions.https.onCall(
+export const admin_manageUser = functions
+    .runWith({ secrets: [WORKER_BOT_TOKEN] })
+    .https.onCall(
     async (data: ManageUserData, context): Promise<ManageUserResponse> => {
         // ============================================
         // 1️⃣ SECURITY: Auth Guard
@@ -176,7 +177,7 @@ export const admin_manageUser = functions.https.onCall(
                     );
                 }
 
-                if (!WORKER_BOT_TOKEN) {
+                if (!WORKER_BOT_TOKEN.value()) {
                     throw new functions.https.HttpsError(
                         'failed-precondition',
                         'WORKER_BOT_TOKEN не настроен'
@@ -189,7 +190,7 @@ export const admin_manageUser = functions.https.onCall(
                     `Пароль: \`${newPassword}\`\n\n` +
                     `Ссылка: https://profit-step.firebaseapp.com/login`;
 
-                await axios.post(`https://api.telegram.org/bot${WORKER_BOT_TOKEN}/sendMessage`, {
+                await axios.post(`https://api.telegram.org/bot${WORKER_BOT_TOKEN.value()}/sendMessage`, {
                     chat_id: telegramId,
                     text: message,
                     parse_mode: 'Markdown',

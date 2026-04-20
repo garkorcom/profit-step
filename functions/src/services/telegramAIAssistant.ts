@@ -1,6 +1,6 @@
 import { logger } from 'firebase-functions';
 import { GoogleGenerativeAI, Schema, SchemaType } from '@google/generative-ai';
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
+import { GEMINI_API_KEY } from '../config';
 const MODELS = ['gemini-2.0-flash', 'gemini-1.5-flash-latest'];
 
 interface SessionContext {
@@ -24,12 +24,13 @@ export async function generateConversationalReply(
     messageText: string,
     sessionCtx: SessionContext
 ): Promise<AIResponse | null> {
-    if (!GEMINI_API_KEY) {
+    const apiKey = GEMINI_API_KEY.value();
+    if (!apiKey) {
         logger.error('GEMINI_API_KEY not configured for AI Assistant');
         return null;
     }
 
-    const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+    const genAI = new GoogleGenerativeAI(apiKey);
 
     // Context formatting
     let contextStr = `Имя: ${userName}\n`;

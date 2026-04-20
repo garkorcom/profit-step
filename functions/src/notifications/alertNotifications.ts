@@ -8,14 +8,15 @@
  */
 import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
+import { TELEGRAM_TOKEN, ADMIN_GROUP_ID } from '../config';
 
 const db = admin.firestore();
 
 // ─── Telegram Messenger ─────────────────────────────────────────
 
 async function sendTelegramAlert(message: string): Promise<void> {
-  const token = process.env.TELEGRAM_TOKEN || '';
-  const chatId = process.env.ADMIN_GROUP_ID || '';
+  const token = TELEGRAM_TOKEN.value();
+  const chatId = ADMIN_GROUP_ID;
 
   if (!token || !chatId) {
     console.warn('⚠️ Telegram credentials missing — skipping alert');
@@ -188,6 +189,7 @@ function formatDeadlineAlerts(alerts: DeadlineAlert[]): string {
 
 export const notifyAlerts = functions
   .region('us-central1')
+  .runWith({ secrets: [TELEGRAM_TOKEN] })
   .pubsub.schedule('0 */6 * * *') // Every 6 hours
   .timeZone('America/New_York')
   .onRun(async () => {
@@ -234,6 +236,7 @@ export const notifyAlerts = functions
 
 export const triggerAlerts = functions
   .region('us-central1')
+  .runWith({ secrets: [TELEGRAM_TOKEN] })
   .https.onRequest(async (req, res) => {
     console.log('🔔 Manual alert trigger...');
 

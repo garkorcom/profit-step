@@ -11,6 +11,7 @@
 import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GEMINI_API_KEY } from '../../config';
 // Types matching frontend TaxCategory
 type TaxCategory =
     | 'zelle_income' | 'deposit' | 'check' | 'cash_income' | 'client_payment'
@@ -169,7 +170,7 @@ Return the JSON array only, no other text.`;
 }
 
 export const categorizeBankTransactions = functions
-    .runWith({ memory: '512MB', timeoutSeconds: 120 })
+    .runWith({ memory: '512MB', timeoutSeconds: 120, secrets: [GEMINI_API_KEY] })
     .https.onCall(async (data: CategorizationRequest, context): Promise<CategorizationResponse> => {
         // Auth check
         if (!context.auth) {
@@ -181,7 +182,7 @@ export const categorizeBankTransactions = functions
             throw new functions.https.HttpsError('invalid-argument', 'Year is required');
         }
 
-        const apiKey = process.env.GEMINI_API_KEY || '';
+        const apiKey = GEMINI_API_KEY.value();
         if (!apiKey) {
             throw new functions.https.HttpsError('failed-precondition',
                 'GEMINI_API_KEY not configured');

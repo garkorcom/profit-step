@@ -4,6 +4,7 @@
 import { Router } from 'express';
 
 import { db, FieldValue, Timestamp, logger, fuzzySearchClient, COST_CATEGORY_LABELS, logAgentActivity } from '../routeContext';
+import { TELEGRAM_BOT_TOKEN } from '../../config';
 import {
   ProjectStatusQuery,
   FinanceBatchSchema,
@@ -567,7 +568,7 @@ router.post('/api/finance/transactions/:id/ask-employee', async (req, res, next)
     ].filter(Boolean).join('\n');
 
     // 4. Send Telegram message
-    const botToken = process.env.TELEGRAM_BOT_TOKEN;
+    const botToken = TELEGRAM_BOT_TOKEN.value();
     if (!botToken) {
       res.status(503).json({ error: 'Telegram bot token not configured' });
       return;

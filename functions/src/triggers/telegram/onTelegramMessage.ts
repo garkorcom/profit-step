@@ -1,10 +1,15 @@
 import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
 import OpenAI from 'openai';
-// Initialize OpenAI
-const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY || '' || 'mock-key',
-});
+import { OPENAI_API_KEY, TELEGRAM_TOKEN } from '../../config';
+// Lazy — resolve secret at invocation, not module load.
+let _openai: OpenAI | null = null;
+function getOpenAI(): OpenAI {
+    if (!_openai) {
+        _openai = new OpenAI({ apiKey: OPENAI_API_KEY.value() || 'mock-key' });
+    }
+    return _openai;
+}
 
 // const db = admin.firestore(); // Moved inside function
 
@@ -69,7 +74,7 @@ export const onTelegramMessage = functions.https.onRequest(async (req, res) => {
                         console.log(`[Telegram] Linked chat ${chatId} to existing lead ${leadId}`);
 
                         // Send confirmation to user
-                        const telegramToken = process.env.TELEGRAM_TOKEN || '';
+                        const telegramToken = TELEGRAM_TOKEN.value();
                         if (telegramToken) {
                             await fetch(`https://api.telegram.org/bot${telegramToken}/sendMessage`, {
                                 method: 'POST',
@@ -137,7 +142,7 @@ export const onTelegramMessage = functions.https.onRequest(async (req, res) => {
                     .reverse();
 
                 // 3. Call AI
-                const completion = await openai.chat.completions.create({
+                const completion = await getOpenAI().chat.completions.create({
                     model: "gpt-3.5-turbo",
                     messages: [
                         { role: "system", content: SYSTEM_PROMPT },
@@ -156,7 +161,7 @@ export const onTelegramMessage = functions.https.onRequest(async (req, res) => {
                 });
 
                 // 5. Send Response via Telegram API
-                const telegramToken = process.env.TELEGRAM_TOKEN || '';
+                const telegramToken = TELEGRAM_TOKEN.value();
 
                 if (telegramToken) {
                     await fetch(`https://api.telegram.org/bot${telegramToken}/sendMessage`, {

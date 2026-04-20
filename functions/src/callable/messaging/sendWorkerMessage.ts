@@ -1,13 +1,16 @@
 import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
 import { sendMessageToWorker } from '../../utils/workerMessaging';
+import { WORKER_BOT_TOKEN } from '../../config';
 
 interface SendWorkerMessageData {
     employeeId: string;
     message: string;
 }
 
-export const sendWorkerMessage = functions.https.onCall(async (data: SendWorkerMessageData, context) => {
+export const sendWorkerMessage = functions
+    .runWith({ secrets: [WORKER_BOT_TOKEN] })
+    .https.onCall(async (data: SendWorkerMessageData, context) => {
     // 1. Auth check
     if (!context.auth) {
         throw new functions.https.HttpsError('unauthenticated', 'Обязательна авторизация');

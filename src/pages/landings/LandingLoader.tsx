@@ -4,7 +4,7 @@ import { Box, CircularProgress, Typography } from '@mui/material';
 
 // Glob all indexes inside landings/ideas
 // The record returns a function that dynamically imports the module
-const landingModules = import.meta.glob('/landings/ideas/*/build/index.tsx');
+const landingModules = import.meta.glob('../../../landings/ideas/*/build/index.tsx');
 
 export default function LandingLoader() {
   const { ideaName } = useParams<{ ideaName: string }>();
@@ -18,7 +18,7 @@ export default function LandingLoader() {
     }
 
     // Construct the expected file path based on the glob format
-    const expectedPath = `/landings/ideas/${ideaName}/build/index.tsx`;
+    const expectedPath = `../../../landings/ideas/${ideaName}/build/index.tsx`;
     
     const importFn = landingModules[expectedPath];
 

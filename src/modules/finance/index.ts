@@ -25,3 +25,23 @@ export {
     normalizeEmployeeName,
     buildEmployeeDropdown,
 } from './services/financeFilters';
+
+// Data-layer types + (stable) async readers. The functions are exported
+// for advanced callers (scripts, tests); the normal UI path uses the
+// hooks below.
+export {
+    type Employee,
+    type CostEntry,
+    type ClientLite,
+    type EmployeeDirectory,
+    fetchWorkSessions,
+    fetchCosts,
+    fetchEmployeeDirectory,
+    fetchActiveClientsLite,
+    normalizeSessionIdentities,
+} from './api/financeApi';
+
+// React hooks — the canonical consumer of the API for UI code.
+export { useFinanceLedger } from './hooks/useFinanceLedger';
+export { useEmployeesWithRates } from './hooks/useEmployeesWithRates';
+export { useActiveClientsLite } from './hooks/useActiveClientsLite';

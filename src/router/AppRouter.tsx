@@ -63,7 +63,7 @@ const InfraMapPage = React.lazy(() => import('../pages/InfraMapPage'));
 const ClientPortalPage = React.lazy(() => import('../pages/portal/ClientPortalPage'));
 const ClientDashboardPage = React.lazy(() => import('../pages/dashboard/client/[id]'));
 const LandingsPage = React.lazy(() => import('../pages/crm/LandingsPage'));
-const MyTimePage = React.lazy(() => import('../modules/worker').then(m => ({ default: m.MyTimePage })));
+const LandingLoader = React.lazy(() => import('../pages/landings/LandingLoader'));
 
 // Loading fallback component
 const PageLoader = () => (
@@ -109,6 +109,9 @@ const AppRouter: React.FC = () => {
 
         {/* Client Portal - Public Access */}
         <Route path="/portal/:slug" element={<ClientPortalPage />} />
+
+        {/* Landings Idea Hub - Public Access */}
+        <Route path="/l/:ideaName" element={<LandingLoader />} />
 
         <Route
           path="/login"
@@ -161,9 +164,6 @@ const AppRouter: React.FC = () => {
 
           {/* Клиенты (старый route - redirect) */}
           <Route path="/admin/clients" element={<Navigate to="/admin/companies" replace />} />
-
-          {/* Worker self-service — own time / payments / history */}
-          <Route path="/my-time" element={<MyTimePage />} />
 
           {/* Профиль пользователя */}
           <Route path="/profile" element={<ProfilePage />} />

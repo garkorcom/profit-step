@@ -1,0 +1,42 @@
+/* Глобальные стили инфраструктуры лендингов для соблюдения корпоративного Profit Step стандарта */
+
+:root {
+  --lp-primary-color: #2e7d32;
+  --lp-secondary-color: #ff9800;
+  --lp-bg-color: #fcfcfc;
+  --lp-text-primary: #1e1e1e;
+  --lp-text-secondary: #555555;
+  --lp-font-family: 'Inter', 'Roboto', sans-serif;
+  
+  --lp-radius-sm: 8px;
+  --lp-radius-md: 12px;
+  --lp-radius-lg: 24px;
+  
+  --lp-shadow-card: 0 4px 20px rgba(0, 0, 0, 0.08);
+}
+
+.lp-section {
+  padding: 80px 20px;
+}
+
+.lp-title {
+  font-family: var(--lp-font-family);
+  font-size: 2.5rem;
+  font-weight: 800;
+  color: var(--lp-text-primary);
+  margin-bottom: 24px;
+}
+
+.lp-subtitle {
+  font-family: var(--lp-font-family);
+  font-size: 1.25rem;
+  color: var(--lp-text-secondary);
+  margin-bottom: 40px;
+  line-height: 1.6;
+}
+
+.lp-text-gradient {
+  background: linear-gradient(90deg, var(--lp-primary-color), var(--lp-secondary-color));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}

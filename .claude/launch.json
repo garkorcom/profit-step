@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "vite-dev",
+      "runtimeExecutable": "/Users/denysharbuzov/.nvm/versions/node/v22.19.0/bin/node",
+      "runtimeArgs": ["/Users/denysharbuzov/Projects/profit-step/node_modules/.bin/vite", "--port", "3000"],
+      "port": 3000
+    }
+  ]
+}

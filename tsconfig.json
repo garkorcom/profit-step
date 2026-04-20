@@ -24,6 +24,7 @@
     "types": ["vite/client", "node"]
   },
   "include": [
-    "src"
+    "src",
+    "landings"
   ]
 }

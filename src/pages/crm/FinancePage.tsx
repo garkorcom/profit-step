@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo, useRef } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
     Container, Typography, Box, Paper, Table, TableBody, TableCell, TableContainer, TableHead,
@@ -8,9 +8,9 @@ import {
 } from '@mui/material';
 import { InvoicesTab } from '../../components/finance/invoices/InvoicesTab';
 import { ExpensesTab } from '../../components/finance/expenses/ExpensesTab';
-import { collection, query, orderBy, getDocs, where, Timestamp, addDoc, doc, updateDoc } from 'firebase/firestore';
+import { collection, addDoc, doc, updateDoc, Timestamp } from 'firebase/firestore';
 import { db } from '../../firebase/firebase';
-import { startOfDay, endOfDay, format, isValid } from 'date-fns';
+import { endOfDay, format, isValid } from 'date-fns';
 import AddIcon from '@mui/icons-material/Add';
 import SettingsIcon from '@mui/icons-material/Settings';
 import PrintIcon from '@mui/icons-material/Print';
@@ -18,41 +18,18 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import PaymentIcon from '@mui/icons-material/Payment';
 import { PayrollReport } from './PayrollReport';
 
-// ... (existing code)
-
 import { WorkSession } from '../../types/timeTracking.types';
 import {
     buildEmployeeDropdown,
     calculatePayrollBuckets,
     defaultFinanceStartDate,
-    filterReportableSessions,
+    type Employee,
+    useActiveClientsLite,
+    useEmployeesWithRates,
+    useFinanceLedger,
 } from '../../modules/finance';
 
 const PnLView = React.lazy(() => import('../../components/finance/PnLView'));
-
-interface Employee {
-    id: string;
-    name: string;
-    hourlyRate?: number;
-    photoUrl?: string; // Added for avatar if needed later
-}
-
-// Cost entry interface
-interface CostEntry {
-    id: string;
-    userId: string;
-    userName: string;
-    clientId: string;
-    clientName: string;
-    category: string;
-    categoryLabel: string;
-    amount: number;
-    originalAmount: number;
-    receiptPhotoUrl: string;
-    description?: string;
-    createdAt: Timestamp;
-    status: string;
-}
 
 const FinancePage: React.FC = () => {
     // Sync tab with ?tab=N query param so Header dropdown "Expenses / Invoices / P&L" works.
@@ -79,10 +56,7 @@ const FinancePage: React.FC = () => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [urlTabParam]);
 
-    // Ledger now consists of WorkSessions (regular, correction, manual_adjustment)
-    const [entries, setEntries] = useState<WorkSession[]>([]);
-    const [costs, setCosts] = useState<CostEntry[]>([]);
-    const [loading, setLoading] = useState(true);
+    // Date window for the ledger (YTD by default — see financeFilters.ts).
     const [startDate, setStartDate] = useState<Date>(defaultFinanceStartDate());
     const [endDate, setEndDate] = useState<Date>(endOfDay(new Date()));
 
@@ -93,8 +67,21 @@ const FinancePage: React.FC = () => {
     const [adjDesc, setAdjDesc] = useState('');
     const [adjClientId, setAdjClientId] = useState('');
 
-    // Clients list for the "Project" dropdown in the adjustment form
-    const [clientsList, setClientsList] = useState<{ id: string; name: string }[]>([]);
+    // Data layer — all Firestore reads live in the finance module's hooks.
+    // See src/modules/finance/hooks/ and docs/finance-module/ISOLATION_PLAN.md.
+    const employeesDir = useEmployeesWithRates();
+    const { clients: clientsList } = useActiveClientsLite();
+    const directory = employeesDir.loading
+        ? null
+        : {
+              employees: employeesDir.employees,
+              telegramIdToUid: employeesDir.telegramIdToUid,
+              uidToName: employeesDir.uidToName,
+          };
+    const ledger = useFinanceLedger({ startDate, endDate, directory });
+    const entries = ledger.entries;
+    const costs = ledger.costs;
+    const loading = ledger.loading || employeesDir.loading;
 
     // Void Dialog
     const [voidTarget, setVoidTarget] = useState<WorkSession | null>(null);
@@ -102,12 +89,7 @@ const FinancePage: React.FC = () => {
 
     // Rates Dialog
     const [openRatesDialog, setOpenRatesDialog] = useState(false);
-    const [employees, setEmployees] = useState<Employee[]>([]);
-
-    // Mapping: telegramId (string) -> user doc ID (UID)
-    const telegramIdToUidRef = useRef<Map<string, string>>(new Map());
-    // Mapping: user doc ID (UID) -> canonical displayName
-    const uidToNameRef = useRef<Map<string, string>>(new Map());
+    const employees = employeesDir.employees;
 
     // Payroll Report
     const [showReport, setShowReport] = useState(false);
@@ -122,168 +104,32 @@ const FinancePage: React.FC = () => {
     // Employee Payment History Dialog
     const [historyEmployee, setHistoryEmployee] = useState<{ id: string; name: string } | null>(null);
 
+    // Fallback: If users collection fetch returned empty (e.g. new tenant),
+    // derive a stub employee list from the session entries so the filter
+    // dropdown and Breakdown table still show workers.
     useEffect(() => {
-        const loadData = async () => {
-            await fetchEmployees(); // Must run first to build telegramId mapping
-            await fetchLedger();    // Uses the mapping to normalize
-            fetchCosts();
-        };
-        loadData();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [startDate, endDate]);
-
-    const fetchLedger = async () => {
-        setLoading(true);
-        try {
-            // Ensure we are querying the correct range
-            const start = startOfDay(startDate);
-            const end = endOfDay(endDate);
-
-            // Query work_sessions within the date range
-            // Note: We fetch all and filter client-side for finalizationStatus
-            // to avoid needing a composite index and to handle legacy data
-            const q = query(
-                collection(db, 'work_sessions'),
-                where('startTime', '>=', Timestamp.fromDate(start)),
-                where('startTime', '<=', Timestamp.fromDate(end)),
-                orderBy('startTime', 'desc')
-            );
-
-            const snapshot = await getDocs(q);
-            const allSessions = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as WorkSession));
-
-            // Reportable = shift is finished OR it's an admin-issued ledger entry
-            // (correction / manual_adjustment / payment). See
-            // src/utils/financeFilters.ts — and the unit tests covering the
-            // "yesterday's session should show up immediately" regression.
-            const reportable = filterReportableSessions(allSessions);
-
-            // Normalize employeeId: map Telegram IDs to user UIDs
-            const normalized = reportable.map(session => {
-                const rawId = String(session.employeeId);
-                const mappedUid = telegramIdToUidRef.current.get(rawId);
-                if (mappedUid) {
-                    return {
-                        ...session,
-                        employeeId: mappedUid,
-                        employeeName: uidToNameRef.current.get(mappedUid) || session.employeeName
-                    };
-                }
-                // Also normalize name if employeeId is already a UID
-                if (uidToNameRef.current.has(rawId)) {
-                    return {
-                        ...session,
-                        employeeName: uidToNameRef.current.get(rawId) || session.employeeName
-                    };
-                }
-                return session;
-            });
-
-            setEntries(normalized);
-        } catch (error) {
-            console.error("Error fetching ledger:", error);
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    /**
-     * Fetch employees/workers from Firestore.
-     * 
-     * UNIFIED RATE SYSTEM (2026-01-26):
-     * - Previously used separate 'employees' collection for rates
-     * - Now unified with 'users' collection to sync with Timer/Bot
-     * - Timer (useSessionManager) reads from users.hourlyRate
-     * - Bot (onWorkerBotMessage) reads from users.hourlyRate with employees fallback
-     * - FinancePage now updates users.hourlyRate directly
-     */
-    const fetchEmployees = async () => {
-        // Unified: use 'users' collection for both profiles and rates
-        try {
-            const userSnap = await getDocs(collection(db, 'users'));
-            if (!userSnap.empty) {
-                // Build telegramId -> UID and UID -> name mappings for normalization
-                const tgMap = new Map<string, string>();
-                const nameMap = new Map<string, string>();
-
-                const emps = userSnap.docs.map(d => {
-                    const data = d.data();
-                    const name = data.displayName || data.name || 'Unknown';
-                    nameMap.set(d.id, name);
-                    if (data.telegramId) {
-                        tgMap.set(String(data.telegramId), d.id);
-                    }
-                    return {
-                        id: d.id,
-                        name,
-                        hourlyRate: data.hourlyRate || 0,
-                        ...data
-                    } as Employee;
-                });
-
-                telegramIdToUidRef.current = tgMap;
-                uidToNameRef.current = nameMap;
-                setEmployees(emps);
-            }
-        } catch (e) {
-            console.error("Error fetching users collection", e);
-        }
-    };
-
-    const fetchCosts = async () => {
-        try {
-            const start = startOfDay(startDate);
-            const end = endOfDay(endDate);
-
-            const q = query(
-                collection(db, 'costs'),
-                where('createdAt', '>=', Timestamp.fromDate(start)),
-                where('createdAt', '<=', Timestamp.fromDate(end)),
-                orderBy('createdAt', 'desc')
-            );
-
-            const snapshot = await getDocs(q);
-            setCosts(snapshot.docs.map(d => ({ id: d.id, ...d.data() } as CostEntry)));
-        } catch (e) {
-            console.error("Error fetching costs:", e);
-        }
-    };
-
-    // Fallback: If users collection fetch fails, derive employees from session entries
-    useEffect(() => {
-        if (employees.length === 0 && entries.length > 0) {
+        if (!employeesDir.loading && employees.length === 0 && entries.length > 0) {
             const derived = new Map<string, Employee>();
             entries.forEach(e => {
                 if (e.employeeId && e.employeeName) {
                     derived.set(String(e.employeeId), {
                         id: String(e.employeeId),
                         name: e.employeeName,
-                        hourlyRate: e.hourlyRate || 0
+                        hourlyRate: e.hourlyRate || 0,
                     });
                 }
             });
             if (derived.size > 0) {
-                setEmployees(Array.from(derived.values()).sort((a, b) => a.name.localeCompare(b.name)));
+                employeesDir.setEmployees(() =>
+                    Array.from(derived.values()).sort((a, b) =>
+                        a.name.localeCompare(b.name)
+                    )
+                );
             }
         }
-    }, [employees.length, entries]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [employeesDir.loading, employees.length, entries]);
 
-    // Fetch clients once for the "Project" dropdown in adjustment form
-    useEffect(() => {
-        const fetchClients = async () => {
-            try {
-                const snap = await getDocs(query(collection(db, 'clients'), orderBy('name', 'asc')));
-                setClientsList(snap.docs
-                    .map(d => ({ id: d.id, name: (d.data().name || '') as string, status: (d.data().status || '') as string }))
-                    .filter(c => c.name && c.status !== 'done')
-                    .map(({ id, name }) => ({ id, name }))
-                );
-            } catch (err) {
-                console.error('fetch clients failed', err);
-            }
-        };
-        fetchClients();
-    }, []);
 
     // Pagination
     const [page, setPage] = useState(0);
@@ -331,7 +177,7 @@ const FinancePage: React.FC = () => {
                     setAdjAmount('');
                     setAdjDesc('');
                     setAdjClientId('');
-                    fetchLedger();
+                    ledger.refresh();
                 }
             });
         } catch (error) {
@@ -347,7 +193,7 @@ const FinancePage: React.FC = () => {
         try {
             // Unified: update rate in 'users' collection (same as timer reads)
             await updateDoc(doc(db, 'users', empId), { hourlyRate: rate });
-            setEmployees(prev => prev.map(e => e.id === empId ? { ...e, hourlyRate: rate } : e));
+            employeesDir.setEmployees(prev => prev.map(e => e.id === empId ? { ...e, hourlyRate: rate } : e));
         } catch (error) {
             console.error("Error updating rate:", error);
         }
@@ -386,7 +232,7 @@ const FinancePage: React.FC = () => {
                     setPaymentAmount('');
                     setPaymentNote('');
                     setPaymentDate(new Date());
-                    fetchLedger();
+                    ledger.refresh();
                 }
             });
         } catch (error) {
@@ -430,7 +276,7 @@ const FinancePage: React.FC = () => {
 
             setVoidTarget(null);
             setVoidReason('');
-            fetchLedger();
+            ledger.refresh();
             alert("Record deleted (voided) successfully.");
         } catch (error) {
             console.error("Error voiding record:", error);

@@ -14,12 +14,11 @@ import { Campaign as CampaignIcon, OpenInNew as OpenInNewIcon } from '@mui/icons
 // Glob all index files inside ideas to extract metadata
 // Using import.meta.glob with eager: true means it will import them right away.
 // Notice we cast it as Record<string, any>
-const ideaModules: Record<string, any> = import.meta.glob('../../../landings/ideas/*/build/index.tsx', { eager: true });
+const ideaModules: Record<string, any> = import.meta.glob('/landings/ideas/*/build/index.tsx', { eager: true });
 
 const LandingsPage: React.FC = () => {
   // Extract landings from modules
   const landings = Object.entries(ideaModules).map(([path, module]) => {
-    // Path looks like: ../../../landings/ideas/demo-project/build/index.tsx
     // We want to extract "demo-project"
     const match = path.match(/ideas\/([^\/]+)\/build/);
     const ideaName = match ? match[1] : 'unknown';

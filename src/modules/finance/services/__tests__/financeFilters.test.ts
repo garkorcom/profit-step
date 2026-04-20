@@ -1,5 +1,5 @@
 import { Timestamp } from 'firebase/firestore';
-import { WorkSession } from '../../types/timeTracking.types';
+import { WorkSession } from '../../../../types/timeTracking.types';
 import {
     buildEmployeeDropdown,
     defaultFinanceStartDate,

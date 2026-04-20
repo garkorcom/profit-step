@@ -31,6 +31,20 @@ import {
 
 const PnLView = React.lazy(() => import('../../components/finance/PnLView'));
 
+/**
+ * Compact-money formatter for KPI cards.
+ * $71,649.98 → "$71.6k" ;   $496 → "$496";   $1,234,567 → "$1.2M".
+ * Keeps the hero cards readable when 4-5 of them share a row.
+ */
+function fmtUsdShort(n: number): string {
+    const abs = Math.abs(n);
+    const sign = n < 0 ? '-' : '';
+    if (abs >= 1_000_000) return `${sign}$${(abs / 1_000_000).toFixed(1)}M`;
+    if (abs >= 10_000) return `${sign}$${Math.round(abs / 1000)}k`;
+    if (abs >= 1_000) return `${sign}$${(abs / 1000).toFixed(1)}k`;
+    return `${sign}$${abs.toFixed(0)}`;
+}
+
 const FinancePage: React.FC = () => {
     // Sync tab with ?tab=N query param so Header dropdown "Expenses / Invoices / P&L" works.
     const [searchParams, setSearchParams] = useSearchParams();
@@ -477,54 +491,117 @@ const FinancePage: React.FC = () => {
 
             {tabIndex === 0 && (
                 <Box>
-                    {/* Stats — all cards use the same filtered period */}
+                    {/* Period label — admins always asked "what range?" looking at the
+                        KPI cards; this spells it out instead of making them scan the
+                        date pickers below. */}
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
+                        За период&nbsp;
+                        <strong>{format(startDate, 'dd.MM.yyyy')}</strong>
+                        {' — '}
+                        <strong>{format(endDate, 'dd.MM.yyyy')}</strong>
+                    </Typography>
+
+                    {/* Stats — all cards use the same filtered period.
+                        Number format uses `fmtUsdShort` ($71.6k) so 4-5 KPI cards
+                        fit on one row without truncation. Full number is in the
+                        tooltip. Balance uses amber (warning) when positive — a
+                        positive balance means the company OWES the worker, which
+                        is a *liability* and should not read as "good" (green). */}
                     <Box sx={{ display: 'flex', gap: 3, mb: 4, flexWrap: 'wrap' }}>
                         <Box sx={{ flex: 1, minWidth: 160 }}>
-                            <Card sx={{ bgcolor: '#2196f3', color: 'white', height: '100%' }}>
-                                <CardContent>
-                                    <Tooltip title="Начислено за период (только рабочие сессии, без voided)" arrow>
-                                        <Typography variant="body2" sx={{ opacity: 0.8 }}>Salary</Typography>
-                                    </Tooltip>
-                                    <Typography variant="h4" fontWeight="bold">${stats.salary.toFixed(2)}</Typography>
-                                </CardContent>
-                            </Card>
-                        </Box>
-                        <Box sx={{ flex: 1, minWidth: 160 }}>
-                            <Card sx={{ bgcolor: '#9e9e9e', color: 'white', height: '100%' }}>
-                                <CardContent>
-                                    <Tooltip title="Выплаты за период" arrow>
-                                        <Typography variant="body2" sx={{ opacity: 0.8 }}>Payments</Typography>
-                                    </Tooltip>
-                                    <Typography variant="h4" fontWeight="bold">${stats.payments.toFixed(2)}</Typography>
-                                </CardContent>
-                            </Card>
-                        </Box>
-                        <Box sx={{ flex: 1, minWidth: 160 }}>
-                            <Tooltip title="Бизнес-расходы (материалы/инструменты/топливо и т.п.) привязанные к сотруднику через коллекцию costs. Это ОТДЕЛЬНЫЙ реестр — не вычитается из зарплатного баланса. Видны в разделе Expenses." arrow>
-                                <Card sx={{ bgcolor: '#ff9800', color: 'white', height: '100%' }}>
+                            <Tooltip title={`Начислено за период: $${stats.salary.toFixed(2)} (только рабочие сессии, без voided)`} arrow>
+                                <Card sx={{ bgcolor: '#2196f3', color: 'white', height: '100%' }}>
                                     <CardContent>
-                                        <Typography variant="body2" sx={{ opacity: 0.8 }}>Expenses ({stats.costsCount})</Typography>
-                                        <Typography variant="h4" fontWeight="bold">${stats.expenses.toFixed(2)}</Typography>
-                                        <Typography variant="caption" sx={{ opacity: 0.7 }}>business (info only)</Typography>
+                                        <Typography variant="body2" sx={{ opacity: 0.8 }}>Salary</Typography>
+                                        <Typography variant="h4" fontWeight="bold">{fmtUsdShort(stats.salary)}</Typography>
                                     </CardContent>
                                 </Card>
                             </Tooltip>
                         </Box>
                         <Box sx={{ flex: 1, minWidth: 160 }}>
-                            <Card sx={{ bgcolor: stats.balance >= 0 ? '#4caf50' : '#f44336', color: 'white', height: '100%' }}>
-                                <CardContent>
-                                    <Tooltip title={`Salary ($${stats.salary.toFixed(0)}) ${stats.adjustments !== 0 ? `+ Adj ($${stats.adjustments.toFixed(0)}) ` : ''}− Payments ($${stats.payments.toFixed(0)}). Business expenses НЕ вычитаются (отдельный реестр).`} arrow>
-                                        <Typography variant="body2" sx={{ opacity: 0.8 }}>Salary Balance</Typography>
-                                    </Tooltip>
-                                    <Typography variant="h4" fontWeight="bold">${stats.balance.toFixed(2)}</Typography>
-                                </CardContent>
-                            </Card>
+                            <Tooltip title={`Выплаты за период: $${stats.payments.toFixed(2)}`} arrow>
+                                <Card sx={{ bgcolor: '#9e9e9e', color: 'white', height: '100%' }}>
+                                    <CardContent>
+                                        <Typography variant="body2" sx={{ opacity: 0.8 }}>Payments</Typography>
+                                        <Typography variant="h4" fontWeight="bold">{fmtUsdShort(stats.payments)}</Typography>
+                                    </CardContent>
+                                </Card>
+                            </Tooltip>
+                        </Box>
+                        <Box sx={{ flex: 1, minWidth: 160 }}>
+                            <Tooltip title={`Бизнес-расходы: $${stats.expenses.toFixed(2)} (${stats.costsCount} ${stats.costsCount === 1 ? 'запись' : 'записей'}). Материалы / инструменты / топливо. Это ОТДЕЛЬНЫЙ реестр — НЕ вычитается из зарплатного баланса. Видно во вкладке Expenses.`} arrow>
+                                <Card
+                                    variant="outlined"
+                                    sx={{
+                                        height: '100%',
+                                        borderColor: '#ff9800',
+                                        bgcolor: 'rgba(255, 152, 0, 0.05)',
+                                    }}
+                                >
+                                    <CardContent>
+                                        <Typography
+                                            variant="body2"
+                                            component="span"
+                                            sx={{ color: '#e65100', display: 'flex', alignItems: 'center', gap: 0.75 }}
+                                        >
+                                            Expenses
+                                            <Chip
+                                                label={stats.costsCount}
+                                                size="small"
+                                                sx={{ height: 18, fontSize: '0.7rem' }}
+                                            />
+                                        </Typography>
+                                        <Typography variant="h4" fontWeight="bold" sx={{ color: '#e65100' }}>
+                                            {fmtUsdShort(stats.expenses)}
+                                        </Typography>
+                                        <Typography variant="caption" color="text.secondary">
+                                            отдельный реестр
+                                        </Typography>
+                                    </CardContent>
+                                </Card>
+                            </Tooltip>
+                        </Box>
+                        <Box sx={{ flex: 1, minWidth: 160 }}>
+                            {/* Balance palette:
+                                  positive  → amber = "company owes worker(s)"
+                                  zero      → grey  = settled
+                                  negative  → red   = overpaid / erroneous. */}
+                            <Tooltip title={`${stats.balance > 0 ? 'Компания должна сотрудникам: ' : stats.balance < 0 ? 'Переплата сотрудникам: ' : 'Все в расчёте'} $${stats.balance.toFixed(2)}. Формула: Salary ($${stats.salary.toFixed(0)}) ${stats.adjustments !== 0 ? `+ Adj ($${stats.adjustments.toFixed(0)}) ` : ''}− Payments ($${stats.payments.toFixed(0)}). Бизнес-расходы НЕ вычитаются.`} arrow>
+                                <Card
+                                    sx={{
+                                        height: '100%',
+                                        color: 'white',
+                                        bgcolor:
+                                            stats.balance > 0
+                                                ? '#ed6c02'
+                                                : stats.balance < 0
+                                                    ? '#d32f2f'
+                                                    : '#616161',
+                                    }}
+                                >
+                                    <CardContent>
+                                        <Typography variant="body2" sx={{ opacity: 0.9 }}>
+                                            Salary Balance
+                                        </Typography>
+                                        <Typography variant="h4" fontWeight="bold">
+                                            {fmtUsdShort(stats.balance)}
+                                        </Typography>
+                                        <Typography variant="caption" sx={{ opacity: 0.85 }}>
+                                            {stats.balance > 0
+                                                ? 'к выплате'
+                                                : stats.balance < 0
+                                                    ? 'переплата'
+                                                    : 'в расчёте'}
+                                        </Typography>
+                                    </CardContent>
+                                </Card>
+                            </Tooltip>
                         </Box>
                         <Box sx={{ flex: 1, minWidth: 160 }}>
                             <Card sx={{ height: '100%' }}>
                                 <CardContent>
                                     <Typography color="textSecondary" variant="body2">Total Hours</Typography>
-                                    <Typography variant="h4" fontWeight="bold">{stats.hours.toFixed(1)} h</Typography>
+                                    <Typography variant="h4" fontWeight="bold">{stats.hours.toFixed(1)}h</Typography>
                                 </CardContent>
                             </Card>
                         </Box>

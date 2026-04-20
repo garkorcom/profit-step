@@ -6,3 +6,5 @@
 
 export { useWorkerLedger } from './hooks/useWorkerLedger';
 export { default as MyTimePage } from './pages/MyTimePage';
+export { default as AdminWorkersListPage } from './pages/AdminWorkersListPage';
+export { default as AdminWorkerDetailPage } from './pages/AdminWorkerDetailPage';

@@ -9,8 +9,8 @@ import * as admin from 'firebase-admin';
 import { logger } from 'firebase-functions';
 import { sendMessage, findPlatformUser } from '../telegramUtils';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GEMINI_API_KEY } from '../../../config';
 const db = admin.firestore();
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
 
 // ═══════════════════════════════════════════════════════════
 // CONSTANTS
@@ -718,7 +718,8 @@ async function optimizeScheduleWithAI(tasks: any[], date: Date): Promise<any[]> 
     if (tasks.length === 0) return [];
 
     // Fallback to simple scheduling if no API key
-    if (!GEMINI_API_KEY) {
+    const apiKey = GEMINI_API_KEY.value();
+    if (!apiKey) {
         logger.warn('No GEMINI_API_KEY, using simple scheduling');
         return simpleSchedule(tasks);
     }
@@ -742,7 +743,7 @@ async function optimizeScheduleWithAI(tasks: any[], date: Date): Promise<any[]> 
         .replace('{tasksJson}', tasksJson);
 
     try {
-        const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+        const genAI = new GoogleGenerativeAI(apiKey);
         // Use gemini-2.0-pro for better reasoning and grouping
         const model = genAI.getGenerativeModel({ model: 'gemini-2.0-pro' });
 

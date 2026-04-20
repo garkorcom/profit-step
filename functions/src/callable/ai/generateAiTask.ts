@@ -1,6 +1,7 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import Anthropic from "@anthropic-ai/sdk";
+import { ANTHROPIC_API_KEY } from "../../config";
 import { z } from "zod";
 import {
     EstimateItem,
@@ -215,7 +216,7 @@ let _anthropic: Anthropic | null = null;
 function getAnthropic(): Anthropic {
     if (!_anthropic) {
         _anthropic = new Anthropic({
-            apiKey: process.env.ANTHROPIC_API_KEY,
+            apiKey: ANTHROPIC_API_KEY.value(),
         });
     }
     return _anthropic;
@@ -457,7 +458,7 @@ export const generateAiTask = onCall(
         minInstances: 0, // No warm instance — saves ~$3-5/mo; cold start adds ~2-3s
         timeoutSeconds: 30,
         memory: "512MiB",
-        secrets: ["ANTHROPIC_API_KEY"],
+        secrets: [ANTHROPIC_API_KEY],
     },
     async (request) => {
         // Auth check

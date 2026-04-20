@@ -6,6 +6,7 @@
  */
 
 import * as nodemailer from 'nodemailer';
+import * as cfg from '../config';
 
 import { getInviteEmailTemplate } from './templates/inviteTemplate';
 // Интерфейс для данных приглашения
@@ -42,16 +43,12 @@ interface InviteEmailData {
  * - PASSWORD: SMTP ключ из https://app.brevo.com/settings/keys/smtp
  */
 function createTransporter() {
-  // Configuration loaded from .env by Firebase
-  const emailUser = process.env.EMAIL_USER;
-  const emailPassword = process.env.EMAIL_PASSWORD;
-  let emailHost = process.env.EMAIL_HOST;
-  const emailPort = process.env.EMAIL_PORT;
-  const emailFrom = process.env.EMAIL_FROM;
-
-  // Устанавливаем дефолтные значения для Brevo
-  emailHost = emailHost || 'smtp-relay.brevo.com';
-  const port = parseInt(emailPort || '587', 10);
+  // Centralised config — see functions/src/config/
+  const emailUser = cfg.EMAIL_USER;
+  const emailPassword = cfg.EMAIL_PASSWORD.value();
+  const emailHost = cfg.EMAIL_HOST;
+  const port = cfg.EMAIL_PORT;
+  const emailFrom = cfg.EMAIL_FROM;
 
   if (!emailUser || !emailPassword) {
     console.warn('⚠️ EMAIL_USER или EMAIL_PASSWORD не настроены');

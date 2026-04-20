@@ -6,6 +6,7 @@
 
 import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
+import { BREVO_API_KEY } from './config';
 const db = admin.firestore();
 
 /**
@@ -14,6 +15,7 @@ const db = admin.firestore();
  */
 export const checkEmailStatuses = functions
   .region('us-central1')
+  .runWith({ secrets: [BREVO_API_KEY] })
   .pubsub.schedule('*/15 * * * *') // Каждые 15 минут
   .timeZone('America/New_York')
   .onRun(async (context) => {
@@ -78,7 +80,7 @@ export const checkEmailStatuses = functions
 export async function getBrevoEmailStatus(messageId: string): Promise<string> {
   // TODO: Implement Brevo API call
   // https://developers.brevo.com/reference/getemailactivity
-  const apiKey = process.env.BREVO_API_KEY || '';
+  const apiKey = BREVO_API_KEY.value();
 
   if (!apiKey) {
     throw new Error('Brevo API key not configured');
@@ -97,6 +99,7 @@ export async function getBrevoEmailStatus(messageId: string): Promise<string> {
  */
 export const checkInvitationStatus = functions
   .region('us-central1')
+  .runWith({ secrets: [BREVO_API_KEY] })
   .https.onCall(async (data, context) => {
     if (!context.auth) {
       throw new functions.https.HttpsError('unauthenticated', 'Authentication required');

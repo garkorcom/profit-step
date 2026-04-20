@@ -10,11 +10,13 @@
  */
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.analyzeBlueprintV3Callable = exports.extractBuildingContextCallable = exports.auditBlueprintTakeoff = exports.refineAnalysisCallable = exports.analyzePageCallable = exports.onBlueprintBatchCreated = exports.onBlueprintJobCreated = exports.onNoteCreated = exports.onReceiptUpdate = exports.onWorkSessionUpdate = exports.onWorkSessionCreate = exports.generateDailyPayroll = exports.closePayrollPeriod = exports.forceFinishAllSessions = exports.sendDeadlineReminders = exports.scheduledAutoStopStaleTimers = exports.autoCloseStaleSessions = exports.finalizeExpiredSessions = exports.onCostsBotMessage = exports.onWorkerBotMessage = exports.parseClientWebsite = exports.parseSmartInput = exports.estimateTask = exports.generateLeadSummary = exports.sendWorkerMessage = exports.sendMessage = exports.onWhatsAppMessage = exports.onLeadCreate = exports.updateCompanyMemberCount_v2 = exports.trackUserActivation_v2 = exports.logUserUpdates_v2 = exports.incrementLoginCount_v2 = exports.inviteUser = exports.adminDeleteUser = exports.onUserDelete = exports.onUserCreate = exports.admin_manageUser = exports.admin_createUserWithPassword = exports.logPaginationMetrics = exports.diagnoseBot = exports.logInvitationAccepted = exports.logInvitationSent = exports.logUserDeleted = exports.logUserCreated = exports.brevoWebhookHandler = exports.trackFirstInvite = exports.initializeUserActivation = exports.aggregateEngagementMetrics = exports.aggregateGrowthMetrics = exports.processAvatar = void 0;
-exports.triggerAlerts = exports.notifyAlerts = exports.getPlanVsFact = exports.getNpsStatus = exports.triggerNps = exports.getWarrantyTasks = exports.createWarrantyTask = exports.updatePaymentMilestone = exports.getPaymentSchedule = exports.createPaymentSchedule = exports.updateWorkAct = exports.getWorkActs = exports.createWorkAct = exports.updatePunchListItem = exports.getPunchLists = exports.createPunchList = exports.cleanupIdempotencyKeys = exports.invalidateClientCache = exports.agentApi = exports.modifyAiTask = exports.confirmAiTask = exports.generateAiTask = exports.categorizeBankTransactions = exports.uploadBankStatement = exports.onCostUpdate = exports.onCostCreated = exports.onTaskCreate = exports.onTaskUpdate = exports.moveGtdTask = exports.scheduledDayPlan = exports.generateDayPlan = exports.generateProjectDigest = exports.generatePriceEstimate = exports.syncActiveTimer = exports.onSessionChangeUpdateCost = exports.verifyTask = exports.submitForReview = exports.checkLongBreaks = exports.updateWorkSession = exports.mergeNotes = exports.splitChecklistItem = exports.verifyEstimatePlausibilityCallable = void 0;
+exports.onEstimateApprovedGenerateInvoice = exports.onProjectCreatedInitAssets = exports.onDealWonAutoCreateProject = exports.onMeetingCompletedAdvanceDeal = exports.onDealStatusChangeRecomputeMetrics = exports.onMeetingCompletedRecomputeMetrics = exports.onInvoicePaidRecomputeMetrics = exports.recomputeClientMetrics = exports.triggerAlerts = exports.notifyAlerts = exports.getPlanVsFact = exports.getNpsStatus = exports.triggerNps = exports.getWarrantyTasks = exports.createWarrantyTask = exports.updatePaymentMilestone = exports.getPaymentSchedule = exports.createPaymentSchedule = exports.updateWorkAct = exports.getWorkActs = exports.createWorkAct = exports.updatePunchListItem = exports.getPunchLists = exports.createPunchList = exports.cleanupIdempotencyKeys = exports.invalidateClientCache = exports.agentApi = exports.modifyAiTask = exports.confirmAiTask = exports.generateAiTask = exports.categorizeBankTransactions = exports.uploadBankStatement = exports.onCostUpdate = exports.onCostCreated = exports.onTaskCreate = exports.onTaskUpdate = exports.moveGtdTask = exports.scheduledDayPlan = exports.generateDayPlan = exports.generateProjectDigest = exports.generatePriceEstimate = exports.syncActiveTimer = exports.onSessionChangeUpdateCost = exports.verifyTask = exports.submitForReview = exports.checkLongBreaks = exports.updateWorkSession = exports.mergeNotes = exports.splitChecklistItem = exports.verifyEstimatePlausibilityCallable = void 0;
+exports.onWorkSessionCompletedAggregateTask = void 0;
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 const crypto = require("crypto");
 const emailService_1 = require("./email/emailService");
+const config_1 = require("./config");
 // Инициализация Firebase Admin
 admin.initializeApp();
 // Avatar processing
@@ -239,7 +241,9 @@ exports.adminDeleteUser = functions.https.onCall(async (data, context) => {
  * 3. Создает профиль в Firestore с указанной ролью
  * 4. Отправляет email с инструкциями для входа
  */
-exports.inviteUser = functions.https.onCall(async (data, context) => {
+exports.inviteUser = functions
+    .runWith({ secrets: [config_1.EMAIL_PASSWORD] })
+    .https.onCall(async (data, context) => {
     // 1. Валидация: Пользователь должен быть аутентифицирован
     if (!context.auth) {
         throw new functions.https.HttpsError('unauthenticated', 'Требуется аутентификация');
@@ -578,4 +582,24 @@ Object.defineProperty(exports, "getPlanVsFact", { enumerable: true, get: functio
 var alertNotifications_1 = require("./notifications/alertNotifications");
 Object.defineProperty(exports, "notifyAlerts", { enumerable: true, get: function () { return alertNotifications_1.notifyAlerts; } });
 Object.defineProperty(exports, "triggerAlerts", { enumerable: true, get: function () { return alertNotifications_1.triggerAlerts; } });
+// ========================================
+// CLIENT CARD V2 — scheduled metrics + triggers
+// Spec: docs/tasks/CLIENT_CARD_V2_SPEC.md §7
+// ========================================
+var recomputeClientMetrics_1 = require("./scheduled/recomputeClientMetrics");
+Object.defineProperty(exports, "recomputeClientMetrics", { enumerable: true, get: function () { return recomputeClientMetrics_1.recomputeClientMetrics; } });
+var clientMetricsTriggers_1 = require("./triggers/firestore/clientMetricsTriggers");
+Object.defineProperty(exports, "onInvoicePaidRecomputeMetrics", { enumerable: true, get: function () { return clientMetricsTriggers_1.onInvoicePaidRecomputeMetrics; } });
+Object.defineProperty(exports, "onMeetingCompletedRecomputeMetrics", { enumerable: true, get: function () { return clientMetricsTriggers_1.onMeetingCompletedRecomputeMetrics; } });
+Object.defineProperty(exports, "onDealStatusChangeRecomputeMetrics", { enumerable: true, get: function () { return clientMetricsTriggers_1.onDealStatusChangeRecomputeMetrics; } });
+// ========================================
+// CLIENT JOURNEY — automation triggers
+// Spec: docs/tasks/CLIENT_JOURNEY_SPEC.md §2.1, §2.3, §5.1
+// ========================================
+var clientJourneyTriggers_1 = require("./triggers/firestore/clientJourneyTriggers");
+Object.defineProperty(exports, "onMeetingCompletedAdvanceDeal", { enumerable: true, get: function () { return clientJourneyTriggers_1.onMeetingCompletedAdvanceDeal; } });
+Object.defineProperty(exports, "onDealWonAutoCreateProject", { enumerable: true, get: function () { return clientJourneyTriggers_1.onDealWonAutoCreateProject; } });
+Object.defineProperty(exports, "onProjectCreatedInitAssets", { enumerable: true, get: function () { return clientJourneyTriggers_1.onProjectCreatedInitAssets; } });
+Object.defineProperty(exports, "onEstimateApprovedGenerateInvoice", { enumerable: true, get: function () { return clientJourneyTriggers_1.onEstimateApprovedGenerateInvoice; } });
+Object.defineProperty(exports, "onWorkSessionCompletedAggregateTask", { enumerable: true, get: function () { return clientJourneyTriggers_1.onWorkSessionCompletedAggregateTask; } });
 //# sourceMappingURL=index.js.map

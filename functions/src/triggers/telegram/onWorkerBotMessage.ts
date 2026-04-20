@@ -19,6 +19,9 @@ import { handleText, handleCancel } from './handlers/textFallbacks';
 // Types
 import { TelegramUpdate } from './types/telegram';
 
+// Config (Secret Manager-backed — see functions/src/config/secrets.ts)
+import { WORKER_BOT_TOKEN, WORKER_PASSWORD, WORKER_BOT_SECRETS } from '../../config';
+
 // Initialize in the file if not already initialized
 if (admin.apps.length === 0) {
     admin.initializeApp();
@@ -26,18 +29,16 @@ if (admin.apps.length === 0) {
 
 const db = admin.firestore();
 
-// Configuration
-// SECURITY: Prefer environment variable, fallback to config, then hardcoded (for dev/ref)
-// Ideally: firebase functions:config:set worker_bot.token="..." worker_bot.password="..."
-const WORKER_BOT_TOKEN = process.env.WORKER_BOT_TOKEN || '';
-const WORKER_PASSWORD = process.env.WORKER_PASSWORD || '9846' || '9846';
-
 // --- Main Function ---
 
-export const onWorkerBotMessage = functions.https.onRequest(async (req, res) => {
+export const onWorkerBotMessage = functions
+  .runWith({ secrets: [...WORKER_BOT_SECRETS] })
+  .https.onRequest(async (req, res) => {
+    const workerBotToken = WORKER_BOT_TOKEN.value();
+
     // DIAGNOSTIC LOGGING
     logger.info(`📨 Telegram Webhook Request`, { method: req.method, path: req.path });
-    logger.info(`🔑 Config Check`, { tokenConfigured: !!WORKER_BOT_TOKEN });
+    logger.info(`🔑 Config Check`, { tokenConfigured: !!workerBotToken });
 
     // 1. Handle Telegram Webhook
     if (req.method === 'POST') {
@@ -107,7 +108,8 @@ async function handleMessage(message: any) {
     const isAuth = await checkAuth(userId);
 
     if (!isAuth) {
-        if (text === `/login ${WORKER_PASSWORD}` || text === WORKER_PASSWORD) {
+        const password = WORKER_PASSWORD.value();
+        if (text === `/login ${password}` || text === password) {
             await registerWorker(userId, userName);
             await sendMessage(chatId, "✅ Authorization successful! You can now use the bot.\n\nCommands:\n/start - Main Menu\n/help - Instructions");
             await sendMainMenu(chatId, userId);
@@ -422,7 +424,7 @@ async function handleMessage(message: any) {
 
         // Send a quick typing action to show it's alive (optional, but good UX)
         try {
-            await axios.post(`https://api.telegram.org/bot${WORKER_BOT_TOKEN}/sendChatAction`, {
+            await axios.post(`https://api.telegram.org/bot${WORKER_BOT_TOKEN.value()}/sendChatAction`, {
                 chat_id: chatId,
                 action: 'typing'
             });
@@ -475,7 +477,7 @@ async function handleCallbackQuery(query: any) {
         if (!isAlwaysValid) {
             logger.info(`🔇 Zombie callback rejected from user ${userId}: "${data}" (age: ${Math.floor(Date.now() / 1000) - messageDate}s)`);
             try {
-                await axios.post(`https://api.telegram.org/bot${WORKER_BOT_TOKEN}/answerCallbackQuery`, {
+                await axios.post(`https://api.telegram.org/bot${WORKER_BOT_TOKEN.value()}/answerCallbackQuery`, {
                     callback_query_id: query.id,
                     text: '⚠️ Эта кнопка устарела. Используйте /start',
                     show_alert: true
@@ -504,12 +506,12 @@ async function handleCallbackQuery(query: any) {
             await handleFinishWorkRequest(chatId, userId);
         } else if (data === 'cancel_close_session') {
             try {
-                await axios.post(`https://api.telegram.org/bot${WORKER_BOT_TOKEN}/deleteMessage`, {
+                await axios.post(`https://api.telegram.org/bot${WORKER_BOT_TOKEN.value()}/deleteMessage`, {
                     chat_id: chatId,
                     message_id: query.message.message_id
                 });
             } catch (e) {
-                 await axios.post(`https://api.telegram.org/bot${WORKER_BOT_TOKEN}/editMessageReplyMarkup`, {
+                 await axios.post(`https://api.telegram.org/bot${WORKER_BOT_TOKEN.value()}/editMessageReplyMarkup`, {
                      chat_id: chatId,
                      message_id: query.message.message_id,
                      reply_markup: { inline_keyboard: [] }
@@ -566,7 +568,7 @@ async function handleCallbackQuery(query: any) {
     } finally {
         // Answer callback to stop loading animation
         try {
-            await axios.post(`https://api.telegram.org/bot${WORKER_BOT_TOKEN}/answerCallbackQuery`, {
+            await axios.post(`https://api.telegram.org/bot${WORKER_BOT_TOKEN.value()}/answerCallbackQuery`, {
                 callback_query_id: query.id
             });
         } catch (e) {

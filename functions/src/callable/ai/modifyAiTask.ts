@@ -1,6 +1,7 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
+import { ANTHROPIC_API_KEY } from "../../config";
 
 // ============================================================
 // 1. ZOD SCHEMAS FOR MODIFICATION
@@ -58,6 +59,7 @@ export const modifyAiTask = onCall(
         memory: "512MiB",
         timeoutSeconds: 300,
         enforceAppCheck: false,
+        secrets: [ANTHROPIC_API_KEY],
     },
     async (request) => {
         // 1. Auth Check
@@ -77,7 +79,7 @@ export const modifyAiTask = onCall(
         }
 
         // 2. Initialize Anthropic
-        const apiKey = process.env.ANTHROPIC_API_KEY;
+        const apiKey = ANTHROPIC_API_KEY.value();
         if (!apiKey) {
             throw new HttpsError(
                 "internal",

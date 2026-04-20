@@ -16,9 +16,9 @@ import { sendAdminNotification } from './profileHandlers';
 import { verifyEmployeeFace } from '../../../services/faceVerificationService';
 import * as GtdHandler from './gtdHandler';
 import * as InboxHandler from './inboxHandler';
+import { WORKER_BOT_TOKEN, GEMINI_API_KEY } from '../../../config';
 
 const db = admin.firestore();
-const WORKER_BOT_TOKEN = process.env.WORKER_BOT_TOKEN || '';
 
 export async function handleSkipMedia(chatId: number, userId: number) {
     const activeSession = await getActiveSession(userId);
@@ -351,7 +351,7 @@ export async function handleMediaUpload(chatId: number, userId: number, message:
  */
 export async function transcribeAudioWithRetry(audioBase64: string, systemPrompt: string): Promise<string> {
     // Get API key from Firebase config or environment
-    const apiKey = process.env.GEMINI_API_KEY || '';
+    const apiKey = GEMINI_API_KEY.value();
 
     if (!apiKey) {
         throw new Error('GEMINI_API_KEY not configured. Set it via: firebase functions:config:set gemini.api_key="YOUR_KEY"');
@@ -433,9 +433,9 @@ export async function handleVoiceMessage(chatId: number, userId: number, message
 
     try {
         // 1. Download voice file from Telegram
-        const fileRes = await axios.get(`https://api.telegram.org/bot${WORKER_BOT_TOKEN}/getFile?file_id=${fileId}`);
+        const fileRes = await axios.get(`https://api.telegram.org/bot${WORKER_BOT_TOKEN.value()}/getFile?file_id=${fileId}`);
         const filePath = fileRes.data.result.file_path;
-        const downloadUrl = `https://api.telegram.org/file/bot${WORKER_BOT_TOKEN}/${filePath}`;
+        const downloadUrl = `https://api.telegram.org/file/bot${WORKER_BOT_TOKEN.value()}/${filePath}`;
 
         const audioResponse = await axios.get(downloadUrl, { responseType: 'arraybuffer' });
         const audioBase64 = Buffer.from(audioResponse.data).toString('base64');
@@ -693,15 +693,15 @@ ${activeTasksContext}
 }
 
 export async function saveTelegramFile(fileId: string, destinationPath: string): Promise<string | null> {
-    if (!WORKER_BOT_TOKEN) {
+    if (!WORKER_BOT_TOKEN.value()) {
         logger.error("Missing WORKER_BOT_TOKEN");
         return null;
     }
     try {
         // 1. Get File Path from Telegram
-        const fileRes = await axios.get(`https://api.telegram.org/bot${WORKER_BOT_TOKEN}/getFile?file_id=${fileId}`);
+        const fileRes = await axios.get(`https://api.telegram.org/bot${WORKER_BOT_TOKEN.value()}/getFile?file_id=${fileId}`);
         const filePath = fileRes.data.result.file_path;
-        const fileUrl = `https://api.telegram.org/file/bot${WORKER_BOT_TOKEN}/${filePath}`;
+        const fileUrl = `https://api.telegram.org/file/bot${WORKER_BOT_TOKEN.value()}/${filePath}`;
 
         // 2. Download File
         const response = await axios({

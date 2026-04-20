@@ -1,6 +1,7 @@
 import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { WORKER_BOT_TOKEN, GEMINI_API_KEY, WORKER_BOT_SECRETS } from '../config';
 // Initialize if needed (though usually initialized in index.ts)
 if (admin.apps.length === 0) {
     admin.initializeApp();
@@ -8,8 +9,10 @@ if (admin.apps.length === 0) {
 
 const db = admin.firestore();
 
-export const diagnoseBot = functions.https.onRequest(async (req: functions.https.Request, res: functions.Response) => {
-    const envToken = process.env.WORKER_BOT_TOKEN;
+export const diagnoseBot = functions
+  .runWith({ secrets: [...WORKER_BOT_SECRETS] })
+  .https.onRequest(async (req: functions.https.Request, res: functions.Response) => {
+    const envToken = WORKER_BOT_TOKEN.value();
 
     // Check Firestore Connectivity
     let firestoreStatus = 'unknown';
@@ -151,7 +154,7 @@ export const diagnoseBot = functions.https.onRequest(async (req: functions.https
 });
 
 async function checkGemini() {
-    const apiKey = process.env.GEMINI_API_KEY || '';
+    const apiKey = GEMINI_API_KEY.value();
     if (!apiKey) return { status: 'missing_key' };
 
     const models = ['gemini-2.0-flash', 'gemini-1.5-flash-latest', 'gemini-1.5-flash', 'gemini-1.5-flash-001', 'gemini-pro'];

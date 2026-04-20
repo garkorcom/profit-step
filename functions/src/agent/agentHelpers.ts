@@ -7,6 +7,7 @@
 
 import * as admin from 'firebase-admin';
 import * as functions from 'firebase-functions';
+import { OWNER_COMPANY_ID, OWNER_UID } from '../config';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const Fuse = require('fuse.js');
 
@@ -116,14 +117,13 @@ let cachedCompanyId: string | null = null;
  */
 export async function resolveOwnerCompanyId(): Promise<string> {
   // 1. Check env
-  const envCompanyId = process.env.OWNER_COMPANY_ID;
-  if (envCompanyId) return envCompanyId;
+  if (OWNER_COMPANY_ID) return OWNER_COMPANY_ID;
 
   // 2. Check cache
   if (cachedCompanyId) return cachedCompanyId;
 
   // 3. Lookup from Firestore user profile
-  const ownerUid = process.env.OWNER_UID;
+  const ownerUid = OWNER_UID;
   if (!ownerUid) throw new Error('OWNER_UID not configured');
 
   const userDoc = await db.collection('users').doc(ownerUid).get();

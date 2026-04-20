@@ -12,6 +12,7 @@ import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
 import * as crypto from 'crypto';
 import { sendInviteEmail } from './email/emailService';
+import { EMAIL_PASSWORD } from './config';
 
 // Инициализация Firebase Admin
 admin.initializeApp();
@@ -310,7 +311,9 @@ export const adminDeleteUser = functions.https.onCall(async (data, context) => {
  * 3. Создает профиль в Firestore с указанной ролью
  * 4. Отправляет email с инструкциями для входа
  */
-export const inviteUser = functions.https.onCall(async (data, context) => {
+export const inviteUser = functions
+  .runWith({ secrets: [EMAIL_PASSWORD] })
+  .https.onCall(async (data, context) => {
   // 1. Валидация: Пользователь должен быть аутентифицирован
   if (!context.auth) {
     throw new functions.https.HttpsError(

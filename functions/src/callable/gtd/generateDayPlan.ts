@@ -11,12 +11,13 @@ import * as functions from 'firebase-functions';
 import { logger } from 'firebase-functions';
 import * as admin from 'firebase-admin';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GEMINI_API_KEY as _GEMINI } from '../../config';
 if (admin.apps.length === 0) {
     admin.initializeApp();
 }
 
 const db = admin.firestore();
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
+const GEMINI_API_KEY = () => _GEMINI.value();
 
 // ═══════════════════════════════════════════════════════════
 // INTERFACES
@@ -64,6 +65,7 @@ interface WeekPlan {
 
 export const generateDayPlan = functions
     .region('us-central1')
+    .runWith({ secrets: [_GEMINI] })
     .https.onCall(async (data: GeneratePlanRequest, context) => {
         const userId = data.userId || context.auth?.uid;
 
@@ -267,7 +269,7 @@ const PLANNER_PROMPT = `Ты — умный планировщик для стр
 
 async function optimizeWithAI(tasks: LoadedTask[], date: Date): Promise<TaskSlot[]> {
     // If no AI key, use simple scheduling
-    if (!GEMINI_API_KEY) {
+    if (!GEMINI_API_KEY()) {
         logger.warn('No GEMINI_API_KEY, using simple scheduling');
         return simpleSchedule(tasks);
     }
@@ -291,7 +293,7 @@ async function optimizeWithAI(tasks: LoadedTask[], date: Date): Promise<TaskSlot
         .replace('{tasksJson}', tasksJson);
 
     try {
-        const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+        const genAI = new GoogleGenerativeAI(GEMINI_API_KEY());
         const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
 
         const result = await model.generateContent({

@@ -14,6 +14,7 @@ import {
     BuildingContext
 } from '../../services/blueprintAIService';
 import { BlueprintAgentResult, BlueprintDiscrepancy } from '../../types/blueprint.types';
+import { AI_CALLABLE_SECRETS } from '../../config';
 
 if (admin.apps.length === 0) admin.initializeApp();
 const storage = admin.storage();
@@ -27,7 +28,7 @@ const storage = admin.storage();
  */
 export const analyzePageCallable = functions
     .region('us-central1')
-    .runWith({ timeoutSeconds: 120, memory: '512MB' })
+    .runWith({ timeoutSeconds: 120, memory: '512MB', secrets: [...AI_CALLABLE_SECRETS] })
     .https.onCall(async (data, context) => {
         if (!context.auth) {
             throw new functions.https.HttpsError('unauthenticated', 'Auth required');
@@ -108,7 +109,7 @@ export const analyzePageCallable = functions
  */
 export const refineAnalysisCallable = functions
     .region('us-central1')
-    .runWith({ timeoutSeconds: 120, memory: '512MB' })
+    .runWith({ timeoutSeconds: 120, memory: '512MB', secrets: [...AI_CALLABLE_SECRETS] })
     .https.onCall(async (data, context) => {
         if (!context.auth) {
             throw new functions.https.HttpsError('unauthenticated', 'Auth required');
@@ -162,7 +163,7 @@ export const refineAnalysisCallable = functions
  */
 export const auditBlueprintTakeoff = functions
     .region('us-central1')
-    .runWith({ timeoutSeconds: 60, memory: '256MB' })
+    .runWith({ timeoutSeconds: 60, memory: '256MB', secrets: [...AI_CALLABLE_SECRETS] })
     .https.onCall(async (data, context) => {
         if (!context.auth) {
             throw new functions.https.HttpsError('unauthenticated', 'Auth required');
@@ -209,7 +210,7 @@ export const auditBlueprintTakeoff = functions
  */
 export const extractBuildingContextCallable = functions
     .region('us-central1')
-    .runWith({ timeoutSeconds: 30, memory: '256MB' })
+    .runWith({ timeoutSeconds: 30, memory: '256MB', secrets: [...AI_CALLABLE_SECRETS] })
     .https.onCall(async (data, context) => {
         if (!context.auth) {
             throw new functions.https.HttpsError('unauthenticated', 'Auth required');

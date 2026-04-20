@@ -3,10 +3,11 @@ import { logger } from 'firebase-functions';
 import * as admin from 'firebase-admin';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { BlueprintAgentV3Result } from '../../types/blueprint.types';
+import { GEMINI_API_KEY as _GEMINI } from '../../config';
 
 if (admin.apps.length === 0) admin.initializeApp();
 
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
+const GEMINI_API_KEY = () => _GEMINI.value();
 
 const TAKEOFF_PROMPT_V3 = `You are a professional Master Electrician and Estimator acting as a 2D Object Detection AI.
 Your task is to locate and output the exact bounding box coordinates of electrical devices on the provided blueprint.
@@ -68,7 +69,7 @@ function parseJsonResponse(text: string): any {
  */
 export const analyzeBlueprintV3Callable = functions
     .region('us-central1')
-    .runWith({ timeoutSeconds: 60, memory: '256MB' })
+    .runWith({ timeoutSeconds: 60, memory: '256MB', secrets: [_GEMINI] })
     .https.onCall(async (data, context) => {
         if (!context.auth) {
             throw new functions.https.HttpsError('unauthenticated', 'Auth required');
@@ -79,7 +80,7 @@ export const analyzeBlueprintV3Callable = functions
             throw new functions.https.HttpsError('invalid-argument', 'imageBase64 required');
         }
         
-        if (!GEMINI_API_KEY) {
+        if (!GEMINI_API_KEY()) {
             throw new functions.https.HttpsError('internal', 'GEMINI_API_KEY missing');
         }
 
@@ -92,7 +93,7 @@ export const analyzeBlueprintV3Callable = functions
                 finalCustomPrompt += `\n\n=== ADDITIONAL CUSTOM INSTRUCTIONS ===\n${customInstructions}`;
             }
 
-            const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+            const genAI = new GoogleGenerativeAI(GEMINI_API_KEY());
             const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
 
             const result = await model.generateContent({

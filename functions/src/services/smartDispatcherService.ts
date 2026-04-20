@@ -11,12 +11,12 @@
 import { logger } from 'firebase-functions';
 import * as admin from 'firebase-admin';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GEMINI_API_KEY } from '../config';
 if (admin.apps.length === 0) {
     admin.initializeApp();
 }
 
 const db = admin.firestore();
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
 
 // ═══════════════════════════════════════════════════════════
 // INTERFACES
@@ -274,12 +274,13 @@ async function aiMatch(
     ownerId: string,
     ownerName?: string
 ): Promise<EntityMatchResult> {
-    if (!GEMINI_API_KEY) {
+    const apiKey = GEMINI_API_KEY.value();
+    if (!apiKey) {
         logger.warn('GEMINI_API_KEY not configured');
         return { title: extractTitle(transcription), confidence: 'low' };
     }
 
-    const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+    const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
 
     // Build today's date context for AI

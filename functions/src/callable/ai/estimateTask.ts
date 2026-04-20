@@ -23,6 +23,8 @@ import {
     findTemplateMatch,
     templateToResponse,
 } from '../../utils/templateMatcher';
+import { GEMINI_API_KEY } from '../../config';
+
 const db = admin.firestore();
 
 /**
@@ -77,7 +79,7 @@ Analyze the incoming task description and the worker's role to provide accurate 
  * Call Gemini AI with retry logic across multiple models
  */
 async function callGeminiWithRetry(prompt: string): Promise<string> {
-    const apiKey = process.env.GEMINI_API_KEY || '';
+    const apiKey = GEMINI_API_KEY.value();
 
     if (!apiKey) {
         throw new functions.https.HttpsError('failed-precondition',
@@ -158,6 +160,7 @@ export const estimateTask = functions
     .runWith({
         memory: '256MB',
         timeoutSeconds: 60,
+        secrets: [GEMINI_API_KEY],
     })
     .https.onCall(async (data: AIEstimateRequest, context) => {
         // Verify authentication

@@ -12,12 +12,13 @@ import * as admin from 'firebase-admin';
 import axios from 'axios';
 import { generateDayPlan as generatePlanFunction } from '../callable/gtd/generateDayPlan';
 
+import { WORKER_BOT_TOKEN, SCHEDULED_WORKER_SECRETS, GEMINI_API_KEY } from '../config';
+
 if (admin.apps.length === 0) {
     admin.initializeApp();
 }
 
 const db = admin.firestore();
-const WORKER_BOT_TOKEN = process.env.WORKER_BOT_TOKEN || '';
 
 
 
@@ -26,6 +27,7 @@ const WORKER_BOT_TOKEN = process.env.WORKER_BOT_TOKEN || '';
 // ═══════════════════════════════════════════════════════════
 
 export const scheduledDayPlan = functions
+    .runWith({ secrets: [...SCHEDULED_WORKER_SECRETS, GEMINI_API_KEY] })
     .region('us-central1')
     .pubsub
     .schedule('0 7 * * *') // 7:00 AM every day
@@ -165,13 +167,14 @@ function formatPlanMessage(plan: DayPlan): string {
  * Send message via Telegram Bot API
  */
 async function sendTelegramMessage(chatId: string | number, text: string): Promise<void> {
-    if (!WORKER_BOT_TOKEN) {
+    const token = WORKER_BOT_TOKEN.value();
+    if (!token) {
         logger.warn('WORKER_BOT_TOKEN not configured');
         return;
     }
 
     await axios.post(
-        `https://api.telegram.org/bot${WORKER_BOT_TOKEN}/sendMessage`,
+        `https://api.telegram.org/bot${token}/sendMessage`,
         {
             chat_id: chatId,
             text,

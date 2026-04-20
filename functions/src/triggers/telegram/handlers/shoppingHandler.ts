@@ -4,7 +4,7 @@ import { logger } from 'firebase-functions';
 import * as ShoppingAI from '../../../services/shoppingAIService';
 import * as ShoppingService from '../../../services/shoppingBotService';
 import { sendMessage, showDraftConfirmation, sendMainMenu } from '../telegramUtils';
-const WORKER_BOT_TOKEN = process.env.WORKER_BOT_TOKEN || '';
+import { WORKER_BOT_TOKEN } from '../../../config';
 
 /**
  * Handle shopping quick add text (AI-powered)
@@ -135,7 +135,7 @@ export async function handleShoppingVoiceInput(
         await sendMessage(chatId, "🎤 Слушаю и анализирую...");
 
         const existingDraft = session.shoppingDraft || [];
-        const audioBuffer = await ShoppingAI.downloadTelegramFile(voiceFileId, WORKER_BOT_TOKEN);
+        const audioBuffer = await ShoppingAI.downloadTelegramFile(voiceFileId, WORKER_BOT_TOKEN.value());
         const newDraft = await ShoppingAI.parseVoiceInput(audioBuffer, 'audio/ogg', existingDraft);
 
         if (newDraft.length === 0) {
@@ -177,7 +177,7 @@ export async function handleShoppingPhotoInput(
     try {
         await sendMessage(chatId, "📷 Анализирую фото...");
 
-        const imageBuffer = await ShoppingAI.downloadTelegramFile(photoFileId, WORKER_BOT_TOKEN);
+        const imageBuffer = await ShoppingAI.downloadTelegramFile(photoFileId, WORKER_BOT_TOKEN.value());
         const parsedItems = await ShoppingAI.parseImageInput(imageBuffer);
 
         if (parsedItems.length === 0) {
@@ -223,10 +223,10 @@ export async function handleShoppingReceiptPhoto(
     try {
         // 1. Download and upload photo to Storage
         const fileResponse = await axios.get(
-            `https://api.telegram.org/bot${WORKER_BOT_TOKEN}/getFile?file_id=${photoFileId}`
+            `https://api.telegram.org/bot${WORKER_BOT_TOKEN.value()}/getFile?file_id=${photoFileId}`
         );
         const filePath = fileResponse.data.result.file_path;
-        const fileUrl = `https://api.telegram.org/file/bot${WORKER_BOT_TOKEN}/${filePath}`;
+        const fileUrl = `https://api.telegram.org/file/bot${WORKER_BOT_TOKEN.value()}/${filePath}`;
 
         const imageResponse = await axios.get(fileUrl, { responseType: 'arraybuffer' });
         const buffer = Buffer.from(imageResponse.data);
@@ -343,10 +343,10 @@ export async function handleGoodsPhoto(
     try {
         // 1. Download and upload photo to Storage
         const fileResponse = await axios.get(
-            `https://api.telegram.org/bot${WORKER_BOT_TOKEN}/getFile?file_id=${photoFileId}`
+            `https://api.telegram.org/bot${WORKER_BOT_TOKEN.value()}/getFile?file_id=${photoFileId}`
         );
         const filePath = fileResponse.data.result.file_path;
-        const fileUrl = `https://api.telegram.org/file/bot${WORKER_BOT_TOKEN}/${filePath}`;
+        const fileUrl = `https://api.telegram.org/file/bot${WORKER_BOT_TOKEN.value()}/${filePath}`;
 
         const imageResponse = await axios.get(fileUrl, { responseType: 'arraybuffer' });
         const buffer = Buffer.from(imageResponse.data);
@@ -713,7 +713,7 @@ export async function handleShoppingCallback(
 
                 keyboard.push([{ text: '❌ Отмена', callback_data: `shop:list:${currentListId}` }]);
 
-                await axios.post(`https://api.telegram.org/bot${WORKER_BOT_TOKEN}/editMessageText`, {
+                await axios.post(`https://api.telegram.org/bot${WORKER_BOT_TOKEN.value()}/editMessageText`, {
                     chat_id: chatId,
                     message_id: messageId,
                     text: '🏢 *Выберите объект:*\n\n_Смена объекта не влияет на ваш таймер работы_',
@@ -739,7 +739,7 @@ export async function handleShoppingCallback(
                 // Show the new list with smart header
                 const list = await ShoppingService.getListForDisplay(listId);
                 if (list) {
-                    await axios.post(`https://api.telegram.org/bot${WORKER_BOT_TOKEN}/deleteMessage`, {
+                    await axios.post(`https://api.telegram.org/bot${WORKER_BOT_TOKEN.value()}/deleteMessage`, {
                         chat_id: chatId,
                         message_id: messageId,
                     }).catch(() => { }); // Ignore delete errors
@@ -774,7 +774,7 @@ export async function handleShoppingCallback(
                     });
 
                     // Request goods photo (Double Proof)
-                    await axios.post(`https://api.telegram.org/bot${WORKER_BOT_TOKEN}/editMessageText`, {
+                    await axios.post(`https://api.telegram.org/bot${WORKER_BOT_TOKEN.value()}/editMessageText`, {
                         chat_id: chatId,
                         message_id: messageId,
                         text: `✅ *Сумма подтверждена: $${amount.toFixed(2)}*\n\n` +
@@ -802,7 +802,7 @@ export async function handleShoppingCallback(
                     pendingReceiptId: receiptId,
                 });
 
-                await axios.post(`https://api.telegram.org/bot${WORKER_BOT_TOKEN}/editMessageText`, {
+                await axios.post(`https://api.telegram.org/bot${WORKER_BOT_TOKEN.value()}/editMessageText`, {
                     chat_id: chatId,
                     message_id: messageId,
                     text: `💰 *Введите сумму чека:*\n\n_Только число, например: 142.50_`,
@@ -845,7 +845,7 @@ export async function handleShoppingCallback(
                 const paymentLabel = paymentSource === 'personal' ? '💳 Личные' :
                     paymentSource === 'company_card' ? '🏢 Корп. карта' : '💰 Подотчёт';
 
-                await axios.post(`https://api.telegram.org/bot${WORKER_BOT_TOKEN}/editMessageText`, {
+                await axios.post(`https://api.telegram.org/bot${WORKER_BOT_TOKEN.value()}/editMessageText`, {
                     chat_id: chatId,
                     message_id: messageId,
                     text: `✅ *Оплата: ${paymentLabel}*\n\n` +
@@ -919,7 +919,7 @@ export async function handleShoppingCallback(
                     reimbursementText = `\n\n💵 *Возврат: $${totalAmount.toFixed(2)}*\n_Добавлено к возврату сотруднику._`;
                 }
 
-                await axios.post(`https://api.telegram.org/bot${WORKER_BOT_TOKEN}/editMessageText`, {
+                await axios.post(`https://api.telegram.org/bot${WORKER_BOT_TOKEN.value()}/editMessageText`, {
                     chat_id: chatId,
                     message_id: messageId,
                     text: `✅ *Покупка оформлена!*\n\n` +
@@ -971,7 +971,7 @@ async function showShoppingList(chatId: number, listId: string, messageId?: numb
 
     if (messageId) {
         try {
-            await axios.post(`https://api.telegram.org/bot${WORKER_BOT_TOKEN}/editMessageText`, {
+            await axios.post(`https://api.telegram.org/bot${WORKER_BOT_TOKEN.value()}/editMessageText`, {
                 chat_id: chatId,
                 message_id: messageId,
                 text,
@@ -1004,7 +1004,7 @@ async function startReceiptUpload(chatId: number, userId: number, listId: string
 
     let itemList = selectedItems.map(i => `• ${i.name}`).join('\n');
 
-    await axios.post(`https://api.telegram.org/bot${WORKER_BOT_TOKEN}/editMessageText`, {
+    await axios.post(`https://api.telegram.org/bot${WORKER_BOT_TOKEN.value()}/editMessageText`, {
         chat_id: chatId,
         message_id: messageId,
         text: `📸 *Загрузка чека*\n\nВы отметили ${selectedItems.length} товаров:\n${itemList}\n\n📷 Отправьте фото чека:`,
@@ -1027,7 +1027,7 @@ async function startQuickAdd(chatId: number, userId: number, listId: string, mes
         shoppingDraft: [],
     }, { merge: true });
 
-    await axios.post(`https://api.telegram.org/bot${WORKER_BOT_TOKEN}/editMessageText`, {
+    await axios.post(`https://api.telegram.org/bot${WORKER_BOT_TOKEN.value()}/editMessageText`, {
         chat_id: chatId,
         message_id: messageId,
         text: `➕ *Добавить товары в ${clientName}*\n\nОтправь что угодно:\n\n📝 Текст — "Краска 5л, гвозди 2кг"\n🎤 Голосовое — "Запиши профиль десять штук"\n📷 Фото — сфоткай список или материалы\n\nИИ распознает и предложит подтвердить.`,

@@ -1,10 +1,8 @@
 import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
 import axios from 'axios';
+import { WORKER_BOT_TOKEN, SCHEDULED_WORKER_SECRETS } from '../config';
 const db = admin.firestore();
-
-// Config
-const WORKER_BOT_TOKEN = process.env.WORKER_BOT_TOKEN || '';
 
 /**
  * Gets the start of a day (midnight)
@@ -27,7 +25,9 @@ const getStartOfDay = (date: Date): Date => {
  * - Sessions from Monday will be finalized at Wed 1 AM
  * - This function sends reminders for Monday sessions
  */
-export const sendSessionReminders = functions.pubsub
+export const sendSessionReminders = functions
+    .runWith({ secrets: [...SCHEDULED_WORKER_SECRETS] })
+    .pubsub
     .schedule('0 18 * * *') // Every day at 6:00 PM
     .timeZone('America/New_York')
     .onRun(async (context) => {
@@ -126,12 +126,13 @@ export const sendSessionReminders = functions.pubsub
  * Sends a Telegram message to the worker
  */
 async function sendMessage(chatId: number, text: string) {
-    if (!WORKER_BOT_TOKEN) {
+    const token = WORKER_BOT_TOKEN.value();
+    if (!token) {
         console.warn('WORKER_BOT_TOKEN not configured, skipping notification');
         return;
     }
     try {
-        await axios.post(`https://api.telegram.org/bot${WORKER_BOT_TOKEN}/sendMessage`, {
+        await axios.post(`https://api.telegram.org/bot${token}/sendMessage`, {
             chat_id: chatId,
             text,
             parse_mode: 'Markdown',

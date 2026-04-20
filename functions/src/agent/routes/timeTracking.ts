@@ -5,6 +5,7 @@ import { Router } from 'express';
 import * as admin from 'firebase-admin';
 import { fromZonedTime } from 'date-fns-tz';
 import { db, Timestamp, logger, logAgentActivity } from '../routeContext';
+import { OWNER_UID } from '../../config';
 import { logAudit, AuditHelpers, extractAuditContext } from '../utils/auditLogger';
 import {
   resolveEmployeeIds,
@@ -807,7 +808,7 @@ router.get('/api/time-tracking/summary', async (req, res, next) => {
 router.post('/api/time-tracking/admin-stop', async (req, res, next) => {
   try {
     // Security: only OWNER can admin-stop
-    if (req.effectiveRole !== 'admin' && req.agentUserId !== process.env.OWNER_UID) {
+    if (req.effectiveRole !== 'admin' && req.agentUserId !== OWNER_UID) {
       res.status(403).json({ error: 'Только владелец может останавливать чужие сессии' });
       return;
     }
@@ -933,7 +934,7 @@ import { AdminStartSchema } from '../schemas/timeTrackingSchemas';
 
 router.post('/api/time-tracking/admin-start', async (req, res, next) => {
   try {
-    if (req.effectiveRole !== 'admin' && req.agentUserId !== process.env.OWNER_UID) {
+    if (req.effectiveRole !== 'admin' && req.agentUserId !== OWNER_UID) {
       res.status(403).json({ error: 'Только владелец может запускать чужие сессии' });
       return;
     }
@@ -1133,7 +1134,7 @@ export async function autoStopStaleTimers(): Promise<{
 router.post('/api/time-tracking/auto-stop-stale', async (req, res, next) => {
   try {
     // Security: only OWNER can trigger auto-stop
-    if (req.effectiveRole !== 'admin' && req.agentUserId !== process.env.OWNER_UID) {
+    if (req.effectiveRole !== 'admin' && req.agentUserId !== OWNER_UID) {
       res.status(403).json({ error: 'Только владелец может запускать авто-остановку сессий' });
       return;
     }

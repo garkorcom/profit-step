@@ -1,17 +1,22 @@
 import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
 import * as nodemailer from 'nodemailer';
-// const db = admin.firestore(); // Moved inside function
+import { TELEGRAM_TOKEN, EMAIL_PASSWORD, EMAIL_USER } from '../../config';
 
-// Initialize Nodemailer (Gmail or other SMTP)
-// Run: firebase functions:config:set email.user="your@gmail.com" email.pass="your-app-password"
-const transporter = nodemailer.createTransport({
-    service: 'gmail',
-    auth: {
-        user: process.env.EMAIL_USER || '',
-        pass: process.env.EMAIL_PASS || '',
-    },
-});
+// Lazy nodemailer — secrets only available at invocation time in GCF v2
+let _transporter: nodemailer.Transporter | null = null;
+function getTransporter(): nodemailer.Transporter {
+    if (!_transporter) {
+        _transporter = nodemailer.createTransport({
+            service: 'gmail',
+            auth: {
+                user: EMAIL_USER,
+                pass: EMAIL_PASSWORD.value(),
+            },
+        });
+    }
+    return _transporter;
+}
 
 interface SendMessageData {
     leadId: string;
@@ -23,7 +28,9 @@ interface SendMessageData {
     };
 }
 
-export const sendMessage = functions.https.onCall(async (data: SendMessageData, context) => {
+export const sendMessage = functions
+    .runWith({ secrets: [TELEGRAM_TOKEN, EMAIL_PASSWORD] })
+    .https.onCall(async (data: SendMessageData, context) => {
     // 1. Auth Check
     if (!context.auth) {
         throw new functions.https.HttpsError('unauthenticated', 'Authentication required');
@@ -78,7 +85,7 @@ export const sendMessage = functions.https.onCall(async (data: SendMessageData, 
                 const telegramChatId = lead?.telegramChatId;
 
                 if (telegramChatId) {
-                    const token = process.env.TELEGRAM_TOKEN || '';
+                    const token = TELEGRAM_TOKEN.value();
                     if (token) {
                         await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
                             method: 'POST',
@@ -115,14 +122,14 @@ export const sendMessage = functions.https.onCall(async (data: SendMessageData, 
         // --- Email ---
         if (channels.email && email) {
             try {
-                const emailUser = process.env.EMAIL_USER || '';
-                const emailPass = process.env.EMAIL_PASS || '';
+                const emailUser = EMAIL_USER;
+                const emailPass = EMAIL_PASSWORD.value();
 
                 if (!emailUser || !emailPass) {
-                    throw new Error('Missing email configuration (EMAIL_USER/EMAIL_PASS)');
+                    throw new Error('Missing email configuration (EMAIL_USER/EMAIL_PASSWORD)');
                 }
 
-                await transporter.sendMail({
+                await getTransporter().sendMail({
                     from: `"Profit Step CRM" <${emailUser}>`,
                     to: email,
                     subject: 'Message from Profit Step',

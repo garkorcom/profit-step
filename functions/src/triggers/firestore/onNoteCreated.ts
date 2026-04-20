@@ -16,6 +16,7 @@ import { logger } from 'firebase-functions';
 import * as admin from 'firebase-admin';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { sendMessage, editMessage } from '../telegram/telegramUtils';
+import { GEMINI_API_KEY as _GEMINI, WORKER_BOT_TOKEN } from '../../config';
 if (admin.apps.length === 0) {
     admin.initializeApp();
 }
@@ -23,8 +24,7 @@ if (admin.apps.length === 0) {
 const db = admin.firestore();
 const storage = admin.storage();
 
-// API Key from process.env (loaded from .env by Firebase)
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
+const GEMINI_API_KEY = () => _GEMINI.value();
 
 // Prompts are defined in RAG CONTEXT FUNCTIONS section below
 
@@ -64,6 +64,7 @@ interface ContextData {
  */
 export const onNoteCreated = functions
     .region('us-central1')
+    .runWith({ secrets: [_GEMINI, WORKER_BOT_TOKEN] })
     .firestore
     .document('notes/{noteId}')
     .onCreate(async (snap, context) => {
@@ -268,11 +269,11 @@ export const onNoteCreated = functions
  * Transcribe audio using Gemini
  */
 async function transcribeAudio(audioBuffer: Buffer, mimeType: string): Promise<string | null> {
-    if (!GEMINI_API_KEY) {
+    if (!GEMINI_API_KEY()) {
         throw new Error('GEMINI_API_KEY not configured');
     }
 
-    const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+    const genAI = new GoogleGenerativeAI(GEMINI_API_KEY());
     const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
 
     const audioBase64 = audioBuffer.toString('base64');
@@ -393,11 +394,11 @@ async function parseWithSmartDispatcher(
     ownerId: string,
     ownerName?: string
 ): Promise<AIParseResult> {
-    if (!GEMINI_API_KEY) {
+    if (!GEMINI_API_KEY()) {
         throw new Error('GEMINI_API_KEY not configured');
     }
 
-    const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+    const genAI = new GoogleGenerativeAI(GEMINI_API_KEY());
     const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
 
     // Build prompt with context

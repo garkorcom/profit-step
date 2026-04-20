@@ -9,6 +9,7 @@
 
 import * as functions from 'firebase-functions';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GEMINI_API_KEY } from '../../config';
 // ══════════════════════════════════════════════════════════════
 // TYPES
 // ══════════════════════════════════════════════════════════════
@@ -126,7 +127,7 @@ const SYSTEM_PROMPT = `Ты помощник для анализа описан�
 // ══════════════════════════════════════════════════════════════
 
 async function callGemini(prompt: string): Promise<string> {
-    const apiKey = process.env.GEMINI_API_KEY || '';
+    const apiKey = GEMINI_API_KEY.value();
 
     if (!apiKey) {
         throw new functions.https.HttpsError('failed-precondition',
@@ -191,6 +192,7 @@ export const parseSmartInput = functions
     .runWith({
         memory: '256MB',
         timeoutSeconds: 30,
+        secrets: [GEMINI_API_KEY],
     })
     .https.onCall(async (data: SmartInputRequest, context): Promise<SmartInputResponse> => {
         // Verify authentication

@@ -11,6 +11,7 @@ import {
     performTargetedReconciliation,
     extractBlueprintMetadata
 } from '../../services/blueprintAIService';
+import { AI_CALLABLE_SECRETS } from '../../config';
 
 const createLog = (message: string, type: 'info' | 'gemini' | 'claude' | 'openAi' | 'error' | 'success' = 'info') => ({
     timestamp: Date.now(),
@@ -40,7 +41,7 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
 
 export const onBlueprintJobCreated = functions
     .region('us-central1')
-    .runWith({ timeoutSeconds: 300, memory: '1GB' })
+    .runWith({ timeoutSeconds: 300, memory: '1GB', secrets: [...AI_CALLABLE_SECRETS] })
     .firestore
     .document('blueprint_jobs/{jobId}')
     .onCreate(async (snap, context) => {

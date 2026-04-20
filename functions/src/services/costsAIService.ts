@@ -7,8 +7,7 @@
 
 import { logger } from 'firebase-functions';
 import { GoogleGenerativeAI } from '@google/generative-ai';
-// Get API key
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
+import { GEMINI_API_KEY } from '../config';
 
 const MODELS = ['gemini-2.0-flash', 'gemini-1.5-flash-latest', 'gemini-1.5-pro-latest'];
 
@@ -54,11 +53,12 @@ If cannot read at all:
  * Initialize Gemini client
  */
 function getGeminiClient() {
-    if (!GEMINI_API_KEY) {
+    const apiKey = GEMINI_API_KEY.value();
+    if (!apiKey) {
         logger.error('GEMINI_API_KEY not configured');
         throw new Error('GEMINI_API_KEY not configured');
     }
-    return new GoogleGenerativeAI(GEMINI_API_KEY);
+    return new GoogleGenerativeAI(apiKey);
 }
 
 /**

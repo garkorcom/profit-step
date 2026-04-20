@@ -11,8 +11,8 @@ import { sendMessage, getActiveSession, sendMainMenu, findPlatformUser } from '.
 import { resolveHourlyRate } from '../rateUtils';
 import { calculateDailyStats } from './sessionManager';
 
+import { ADMIN_GROUP_ID } from '../../../config';
 const db = admin.firestore();
-const ADMIN_GROUP_ID = process.env.ADMIN_GROUP_ID || '';
 
 /**
  * 📊 Мой статус — show current session details + daily/weekly stats

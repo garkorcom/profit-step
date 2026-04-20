@@ -10,12 +10,13 @@ import * as functions from 'firebase-functions';
 import { logger } from 'firebase-functions';
 import * as admin from 'firebase-admin';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GEMINI_API_KEY as _GEMINI } from '../../config';
 if (admin.apps.length === 0) {
     admin.initializeApp();
 }
 
 const db = admin.firestore();
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
+const GEMINI_API_KEY = () => _GEMINI.value();
 
 const PRICE_ESTIMATE_PROMPT = `Ты — эксперт-оценщик строительных работ в США (Флорида).
 Проанализируй описание задачи и предложи ценовой диапазон.
@@ -57,6 +58,7 @@ interface PriceEstimateResult {
  */
 export const generatePriceEstimate = functions
     .region('us-central1')
+    .runWith({ secrets: [_GEMINI] })
     .https.onCall(async (data, context): Promise<PriceEstimateResult> => {
         // Auth check
         if (!context.auth) {
@@ -93,11 +95,11 @@ export const generatePriceEstimate = functions
             checklistText = checklist.map((item: string) => `- ${item}`).join('\n');
         }
 
-        if (!GEMINI_API_KEY) {
+        if (!GEMINI_API_KEY()) {
             throw new functions.https.HttpsError('internal', 'GEMINI_API_KEY not configured');
         }
 
-        const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+        const genAI = new GoogleGenerativeAI(GEMINI_API_KEY());
         const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
 
         const prompt = PRICE_ESTIMATE_PROMPT

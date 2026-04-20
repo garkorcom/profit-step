@@ -1,11 +1,11 @@
 import * as admin from 'firebase-admin';
 import axios from 'axios';
 import * as ShoppingAI from '../../services/shoppingAIService';
+import { WORKER_BOT_TOKEN } from '../../config';
 if (admin.apps.length === 0) {
     admin.initializeApp();
 }
 const db = admin.firestore();
-const WORKER_BOT_TOKEN = process.env.WORKER_BOT_TOKEN || '';
 
 /**
  * Find platform user by Telegram ID.
@@ -45,7 +45,8 @@ export async function findPlatformUser(telegramId: number): Promise<{ id: string
  * Send a message to Telegram
  */
 export async function sendMessage(chatId: number, text: string, options: any = {}) {
-    if (!WORKER_BOT_TOKEN) {
+    const token = WORKER_BOT_TOKEN.value();
+    if (!token) {
         console.error("Missing WORKER_BOT_TOKEN");
         return;
     }
@@ -70,7 +71,7 @@ export async function sendMessage(chatId: number, text: string, options: any = {
             delete body.remove_keyboard;
         }
 
-        await axios.post(`https://api.telegram.org/bot${WORKER_BOT_TOKEN}/sendMessage`, body);
+        await axios.post(`https://api.telegram.org/bot${token}/sendMessage`, body);
     } catch (error: any) {
         // Fix 10 (Deep Testing): Handle 403 "bot blocked by user" gracefully
         const status = error?.response?.status;
@@ -326,12 +327,13 @@ export async function sendMainMenu(chatId: number, userId: number = chatId) {
  * Edit an existing message (FIX #4: UX "presence effect")
  */
 export async function editMessage(chatId: number, messageId: number, text: string): Promise<boolean> {
-    if (!WORKER_BOT_TOKEN) {
+    const token = WORKER_BOT_TOKEN.value();
+    if (!token) {
         console.error("Missing WORKER_BOT_TOKEN");
         return false;
     }
     try {
-        await axios.post(`https://api.telegram.org/bot${WORKER_BOT_TOKEN}/editMessageText`, {
+        await axios.post(`https://api.telegram.org/bot${token}/editMessageText`, {
             chat_id: chatId,
             message_id: messageId,
             text: text,

@@ -16,6 +16,8 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
+      '@profit-step/shared': path.resolve(__dirname, './packages/shared/src'),
+      '@profit-step/contracts': path.resolve(__dirname, './packages/contracts/src'),
     },
   },
   // Переменные окружения с префиксом VITE_ доступны через import.meta.env

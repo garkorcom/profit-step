@@ -2,7 +2,7 @@
   "name": "functions",
   "description": "Cloud Functions for Profit Step",
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && tsc-alias",
     "serve": "npm run build && firebase emulators:start --only functions",
     "shell": "npm run build && firebase functions:shell",
     "start": "npm run shell",
@@ -57,6 +57,7 @@
     "jest": "^30.2.0",
     "supertest": "^7.2.2",
     "ts-jest": "^29.4.5",
+    "tsc-alias": "^1.8.16",
     "typescript": "^5.0.0"
   },
   "private": true

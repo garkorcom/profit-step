@@ -21,10 +21,19 @@
     "isolatedModules": true,
     "noEmit": true,
     "jsx": "react-jsx",
-    "types": ["vite/client", "node"]
+    "types": ["vite/client", "node"],
+    "baseUrl": ".",
+    "paths": {
+      "@profit-step/shared": ["packages/shared/src"],
+      "@profit-step/shared/*": ["packages/shared/src/*"],
+      "@profit-step/contracts": ["packages/contracts/src"],
+      "@profit-step/contracts/*": ["packages/contracts/src/*"]
+    }
   },
   "include": [
     "src",
-    "landings"
+    "landings",
+    "packages/shared/src",
+    "packages/contracts/src"
   ]
 }

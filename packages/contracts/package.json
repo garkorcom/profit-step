@@ -1,0 +1,11 @@
+{
+  "name": "@profit-step/contracts",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Service interface contracts between extracted modules (UserService, etc).",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  }
+}

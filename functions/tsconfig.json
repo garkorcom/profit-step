@@ -6,11 +6,25 @@
     "outDir": "lib",
     "sourceMap": true,
     "strict": true,
-    "target": "es2017"
+    "target": "es2017",
+    "baseUrl": ".",
+    "paths": {
+      "@profit-step/shared": ["../packages/shared/src"],
+      "@profit-step/shared/*": ["../packages/shared/src/*"],
+      "@profit-step/contracts": ["../packages/contracts/src"],
+      "@profit-step/contracts/*": ["../packages/contracts/src/*"]
+    },
+    "rootDirs": [
+      "src",
+      "../packages/shared/src",
+      "../packages/contracts/src"
+    ]
   },
   "compileOnSave": true,
   "include": [
-    "src"
+    "src",
+    "../packages/shared/src",
+    "../packages/contracts/src"
   ],
   "exclude": [
     "src/scripts/**",

@@ -13,6 +13,10 @@ import {
   closeSessionInTx,
   findActiveSession,
 } from '../../services/TimeTrackingService';
+import { UserFirestoreAdapter } from '../services/userFirestoreAdapter';
+import type { UserId, UserService } from '@profit-step/contracts';
+
+const userService: UserService = new UserFirestoreAdapter();
 import {
   TimeTrackingSchema,
   ActiveSessionsQuerySchema,
@@ -966,10 +970,10 @@ router.post('/api/time-tracking/admin-start', async (req, res, next) => {
       if (taskDoc.exists) resolvedProjectId = taskDoc.data()?.projectId || null;
     }
 
-    // Get hourly rate
-    const userDoc = await db.collection('users').doc(data.employeeId).get();
-    const hourlyRate = userDoc.exists ? (userDoc.data()?.hourlyRate || 0) : 0;
-    const employeeName = userDoc.exists ? (userDoc.data()?.displayName || 'Unknown') : 'Unknown';
+    // Get hourly rate — via UserService adapter (extraction pilot: first cross-module call via contract)
+    const userRecord = await userService.getUser(data.employeeId as UserId);
+    const hourlyRate = userRecord?.hourlyRate ?? 0;
+    const employeeName = userRecord?.displayName || 'Unknown';
 
     const effectiveStartTime = manualStartTime || Timestamp.now();
     const newRef = db.collection('work_sessions').doc();

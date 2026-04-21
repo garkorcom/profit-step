@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8"/>
+<title>EasyTimerCost — Expense Detail</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="styles.css"/>
+</head>
+<body>
+<script src="meta.js"></script>
+<script src="shell.js"></script>
+<script>
+const params = new URLSearchParams(location.search);
+const eid = params.get('id') || 'e1';
+const e = MOCK.expenses.find(x => x.id === eid);
+const w = workerById(e.workerId);
+const c = clientById(e.clientId);
+const session = MOCK.sessions.find(s => s.workerId === e.workerId && s.date === e.date);
+
+renderShell({
+  active: 'expenses',
+  breadcrumbs: [
+    { label: 'Dashboard', href: 'index.html' },
+    { label: 'Затраты', href: 'expenses.html' },
+    { label: `Expense ${eid}` }
+  ],
+});
+
+const statusChip = e.status === 'approved' ? 'success' : e.status === 'submitted' ? 'warning' : e.status === 'rejected' ? 'error' : '';
+
+setBody(`
+  <div class="grid-2" style="align-items:flex-start">
+    <div class="stack">
+      <div class="card">
+        <div class="card-header">
+          <h3>📎 Receipt</h3>
+          <div class="row" style="gap:8px"><button class="btn sm">Download</button><button class="btn sm">Zoom</button></div>
+        </div>
+        <div class="card-body">
+          ${e.receipt ? `
+            <div class="receipt" style="padding:0;overflow:hidden">
+              <div style="background:#fff;padding:40px 24px;font-family:'Courier New',monospace;text-align:left;color:#0f172a">
+                <div style="text-align:center;font-weight:700;font-size:16px;margin-bottom:16px">THE HOME DEPOT</div>
+                <div style="text-align:center;font-size:11px;color:#666;margin-bottom:20px">Tampa FL · Store #2421</div>
+                <div style="border-top:1px dashed #999;border-bottom:1px dashed #999;padding:12px 0;margin-bottom:12px">
+                  <div style="display:flex;justify-content:space-between;font-size:12px"><span>12/3 Romex Wire 250ft</span><span>$128.00</span></div>
+                  <div style="display:flex;justify-content:space-between;font-size:12px"><span>Wall Box 4-gang (qty 8)</span><span>$64.80</span></div>
+                  <div style="display:flex;justify-content:space-between;font-size:12px"><span>GFCI Receptacle 20A (qty 6)</span><span>$89.94</span></div>
+                  <div style="display:flex;justify-content:space-between;font-size:12px"><span>Misc hardware</span><span>$42.08</span></div>
+                </div>
+                <div style="display:flex;justify-content:space-between;font-weight:700">TOTAL</div>
+                <div style="display:flex;justify-content:space-between;font-weight:700;font-size:16px">${fmt$exact(e.amount)}</div>
+                <div style="margin-top:16px;font-size:10px;color:#666;text-align:center">04/20/2026  14:32  ****5820  VISA</div>
+              </div>
+            </div>
+          ` : '<div class="receipt">Нет чека ⚠</div>'}
+        </div>
+      </div>
+
+      <div class="ai-card">
+        <div class="ai-card-header">
+          <div class="agent-avatar sm">🤖</div>
+          <div style="flex:1">
+            <div class="strong">AI extraction + classification</div>
+            <div class="small muted">Receipt OCR + категория + client matching</div>
+          </div>
+          <div class="ai-confidence">
+            <span>96%</span>
+            <div class="bar"><div class="bar-fill" style="width:96%"></div></div>
+          </div>
+        </div>
+        <table class="table" style="margin:-4px -4px -16px">
+          <tbody>
+            <tr><td class="muted">Vendor</td><td class="strong">Home Depot <span class="chip ai" style="margin-left:4px">🤖 99%</span></td></tr>
+            <tr><td class="muted">Date</td><td>${e.date} <span class="chip ai" style="margin-left:4px">🤖 100%</span></td></tr>
+            <tr><td class="muted">Amount</td><td class="strong">${fmt$exact(e.amount)} <span class="chip ai" style="margin-left:4px">🤖 100%</span></td></tr>
+            <tr><td class="muted">Tax</td><td>$24.35 <span class="chip ai" style="margin-left:4px">🤖 auto</span></td></tr>
+            <tr><td class="muted">Категория</td><td><span class="chip primary">materials</span> <span class="chip ai" style="margin-left:4px">🤖 96%</span></td></tr>
+            <tr><td class="muted">Клиент</td><td>${c.name} <span class="chip ai" style="margin-left:4px">🤖 active session</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="ai-card">
+        <div class="ai-card-header">
+          <div class="agent-avatar sm">🤖</div>
+          <div style="flex:1">
+            <div class="strong">AI reasoning · why auto-approved</div>
+          </div>
+          <span class="chip ai">🤖 approval bot</span>
+        </div>
+        <div class="ai-reason">
+          <strong>Rule:</strong> materials &lt; $500 · billable to active session · vendor whitelisted · foreman on crew<br/>
+          <strong>Result:</strong> ✅ auto-approved, no human escalation · <strong>-$5 min</strong> foreman time saved
+        </div>
+      </div>
+    </div>
+
+    <div class="stack">
+      <div class="card">
+        <div class="card-body">
+          <div class="row spread">
+            <div>
+              <div class="muted small">EXPENSE #${eid.toUpperCase()}</div>
+              <div class="big">${fmt$exact(e.amount)}</div>
+              <div class="muted">${e.desc}</div>
+            </div>
+            <span class="chip ${statusChip}" style="font-size:13px;padding:6px 14px">${e.status}</span>
+          </div>
+          ${e.status === 'submitted' ? `
+            <div class="row" style="gap:8px;margin-top:16px">
+              <button class="btn" style="background:var(--success);color:#fff;border-color:var(--success);flex:1">✓ Approve</button>
+              <button class="btn" style="background:var(--error);color:#fff;border-color:var(--error);flex:1">✗ Reject</button>
+              <button class="btn">Запросить уточнение</button>
+            </div>
+          ` : ''}
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><h3>🔗 Связи</h3></div>
+        <div class="card-body stack">
+          <div class="row spread">
+            <span class="muted small">Работник</span>
+            <a href="worker-profile.html?id=${e.workerId}" class="row" style="gap:8px">
+              <div class="avatar sm">${w.initials}</div>
+              <div><div class="strong">${w.name}</div><div class="small muted">${w.role}</div></div>
+            </a>
+          </div>
+          <div class="row spread">
+            <span class="muted small">Клиент</span>
+            <a href="client-overview.html?id=${e.clientId}" class="strong">${c.name}</a>
+          </div>
+          ${session ? `
+          <div class="row spread">
+            <span class="muted small">Связанная смена</span>
+            <a href="session-detail.html?id=${session.id}" class="small">${session.date} ${session.start}-${session.end || 'active'}</a>
+          </div>
+          ` : ''}
+          <div class="row spread">
+            <span class="muted small">Категория</span>
+            <span class="chip primary">${e.category}</span>
+          </div>
+          <div class="row spread">
+            <span class="muted small">Billable</span>
+            <span>${e.billable ? '<span class="chip success">Да — клиенту</span>' : '<span class="chip">Нет — overhead</span>'}</span>
+          </div>
+          <div class="row spread">
+            <span class="muted small">Reimbursable</span>
+            <span>${e.reimbursable ? '<span class="chip warning">Да — работнику</span>' : '<span class="chip">Нет — company card</span>'}</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><h3>📜 Approval trail</h3></div>
+        <div class="card-body">
+          <div class="trail">
+            <div class="trail-item">
+              <div class="trail-dot ai"></div>
+              <div class="trail-content">
+                <div class="who">🤖 OCR bot <span class="muted">extracted from email</span></div>
+                <div class="what">Auto-detected vendor + amount + category · 96% confidence</div>
+                <div class="when">${e.date} · 14:32</div>
+              </div>
+            </div>
+            <div class="trail-item">
+              <div class="trail-dot ai"></div>
+              <div class="trail-content">
+                <div class="who">🤖 ${w.name.split(' ')[0]} AI <span class="muted">asked worker</span></div>
+                <div class="what">"Чек Home Depot $347.82 — для Acme?" · Андрей ответил "да" (2 сек)</div>
+                <div class="when">${e.date} · 14:34</div>
+              </div>
+            </div>
+            <div class="trail-item">
+              <div class="trail-dot success"></div>
+              <div class="trail-content">
+                <div class="who">${w.name} <span class="muted">submitted</span> <span class="chip ai" style="margin-left:4px">via 🤖</span></div>
+                <div class="what">${e.desc} — ${fmt$exact(e.amount)} · attached to session s2</div>
+                <div class="when">${e.date} · 14:35</div>
+              </div>
+            </div>
+            ${e.status === 'approved' ? `
+            <div class="trail-item">
+              <div class="trail-dot ai"></div>
+              <div class="trail-content">
+                <div class="who">🤖 Approval bot <span class="muted">auto-approved</span> <span class="chip ai" style="margin-left:4px">🤖</span></div>
+                <div class="what">Within $500 threshold · billable to Acme · foreman Михаил notified (не заблокировал)</div>
+                <div class="when">${e.date} · 16:02</div>
+              </div>
+            </div>
+            ` : ''}
+            ${e.status === 'rejected' ? `
+            <div class="trail-item">
+              <div class="trail-dot warning"></div>
+              <div class="trail-content">
+                <div class="who">Денис Х. <span class="muted">rejected</span></div>
+                <div class="what">Reason: no receipt attached (AI flagged missing receipt)</div>
+                <div class="when">${e.date} · 18:20</div>
+              </div>
+            </div>
+            ` : ''}
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+`);
+
+mountSelfDocs('expense-detail');
+</script>
+</body>
+</html>

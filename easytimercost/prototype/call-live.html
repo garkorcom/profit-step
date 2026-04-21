@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8"/>
+<title>EasyTimerCost — Live call</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="styles.css"/>
+</head>
+<body>
+<script src="meta.js"></script>
+<script src="shell.js"></script>
+<script>
+const params = new URLSearchParams(location.search);
+const cid = params.get('id') || 'c1';
+const c = clientById(cid);
+const intel = getClientIntel(cid);
+
+renderShell({
+  active: 'call-live',
+  breadcrumbs: [{ label: 'Dashboard', href: 'index.html' }, { label: 'Call brief', href: `call-brief.html?id=${cid}` }, { label: 'Live' }],
+});
+
+// Mock transcript
+const transcript = [
+  { t: '0:00', who: 'client', text: 'Hi, this is John from Acme. Got a minute?' },
+  { t: '0:02', who: 'me',     text: 'Sure John, what\'s up?' },
+  { t: '0:05', who: 'client', text: 'Wanted to check — when will Phase 2 actually finish? My boss is asking.' },
+  { t: '0:14', who: 'me',     text: 'May 15 — we\'re on schedule. Drywall is done, electrical scheduled for Apr 25.' },
+  { t: '0:22', who: 'client', text: 'Good. Also — the last invoice was higher than the estimate. What happened?' },
+  { t: '0:30', who: 'me',     text: '[AI suggest: $425 permits + $1,200 CO-3, both signed Apr 8 · net 3.1% overage]' },
+  { t: '0:40', who: 'client', text: 'Remind me, could you also do the bath reno in June?' },
+  { t: '0:50', who: 'me',     text: 'Yes — checking crew schedule now...' },
+];
+
+setBody(`
+  <!-- Live status banner -->
+  <div style="background:linear-gradient(135deg,#2e7d32,#66bb6a);color:#fff;border-radius:var(--radius);padding:14px 20px;margin-bottom:20px;display:flex;align-items:center;gap:16px;box-shadow:var(--shadow-md)">
+    <div style="font-size:28px;animation:pulse 1.5s infinite">🔴</div>
+    <div style="flex:1">
+      <div style="opacity:0.85;font-size:11px;text-transform:uppercase;letter-spacing:0.5px">● LIVE · идёт запись и транскрипция</div>
+      <div style="font-size:18px;font-weight:700">${intel.contact.name} · ${c.name}</div>
+      <div style="opacity:0.85;font-size:12px">⏱ 2:47 · ${intel.contact.phone}</div>
+    </div>
+    <button class="btn" style="background:#fff;color:var(--success);border:0;font-weight:700">🔇 Mute</button>
+    <button class="btn" style="background:rgba(255,255,255,0.2);color:#fff;border:0">⏸ Hold</button>
+    <a href="call-summary.html?id=${cid}" class="btn" style="background:var(--error);color:#fff;border:0;font-weight:700">☎ End call</a>
+  </div>
+
+  <div class="grid-2" style="align-items:flex-start;grid-template-columns:1.2fr 1fr;gap:20px">
+    <!-- LEFT: Transcription + AI notes -->
+    <div class="stack">
+      <!-- Live transcript -->
+      <div class="card">
+        <div class="card-header">
+          <h3>💬 Live transcription</h3>
+          <div class="row" style="gap:8px">
+            <span class="chip success">● recording</span>
+            <button class="btn sm">Pause</button>
+          </div>
+        </div>
+        <div class="card-body" style="padding:0">
+          <div style="padding:16px 20px;max-height:340px;overflow-y:auto;display:flex;flex-direction:column;gap:10px">
+            ${transcript.map(m => {
+              const isMe = m.who === 'me';
+              const isAI = m.text.startsWith('[AI');
+              return `
+                <div class="chat-msg ${isMe ? 'mine' : ''}">
+                  ${!isMe ? `<div class="avatar sm" style="background:var(--warning-50);color:var(--warning)">JS</div>` : ''}
+                  <div>
+                    <div class="chat-bubble" style="${isAI ? 'background:var(--ai-50);border-color:var(--ai-100);color:var(--ai-600);font-style:italic' : isMe ? '' : 'background:#fff;border-color:var(--border)'}">
+                      ${m.text}
+                    </div>
+                    <div class="chat-time">${m.t}</div>
+                  </div>
+                  ${isMe && !isAI ? `<div class="avatar sm">ДХ</div>` : ''}
+                </div>
+              `;
+            }).join('')}
+            <div class="chat-msg system">
+              <div style="width:26px"></div>
+              <div class="chat-bubble">
+                <div class="row" style="gap:6px">
+                  <div style="display:flex;gap:2px">
+                    <span style="width:4px;height:4px;border-radius:50%;background:var(--ai);animation:bounce 1.4s infinite"></span>
+                    <span style="width:4px;height:4px;border-radius:50%;background:var(--ai);animation:bounce 1.4s infinite 0.2s"></span>
+                    <span style="width:4px;height:4px;border-radius:50%;background:var(--ai);animation:bounce 1.4s infinite 0.4s"></span>
+                  </div>
+                  <span>слушаю...</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- AI notes — taken automatically -->
+      <div class="ai-card">
+        <div class="ai-card-header">
+          <div class="agent-avatar sm">🤖</div>
+          <div style="flex:1">
+            <div class="strong">AI заметки · обновляются в реальном времени</div>
+            <div class="small muted">key points автоматически · redact sensitive · summary on hang-up</div>
+          </div>
+          <span class="chip ai">🤖 live notes</span>
+        </div>
+        <div class="ai-reason">
+          <ul style="margin:0;padding-left:20px;color:var(--text);line-height:1.6;font-size:13px">
+            <li>John спросил о <strong>Phase 2 completion date</strong> — ответ: May 15 ✓</li>
+            <li>Вопрос о <strong>invoice overage</strong> — AI предоставил ready answer ($425 + $1,200 CO-3)</li>
+            <li class="strong" style="color:var(--warning)">⚡ <strong>HOT SIGNAL:</strong> спросил про bath reno — время продавать!</li>
+            <li>Ты не упомянул rate bump (+8%) — ok, это в пост-proposal</li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- Commitments made -->
+      <div class="card">
+        <div class="card-header">
+          <h3>✅ Commitments</h3>
+          <span class="chip ai">🤖 AI-tracked</span>
+        </div>
+        <div class="card-body">
+          <div class="trail">
+            <div class="trail-item">
+              <div class="trail-dot success"></div>
+              <div class="trail-content">
+                <div class="who">Ты сказал: "May 15 completion"</div>
+                <div class="what">→ AI создаст milestone в project timeline · notify если slips</div>
+                <div class="when">0:14</div>
+              </div>
+            </div>
+            <div class="trail-item">
+              <div class="trail-dot warning"></div>
+              <div class="trail-content">
+                <div class="who">Ты сказал: "checking crew schedule" (bath reno)</div>
+                <div class="what">→ AI pending: нужно подтвердить до hang-up · Роман free after June 10</div>
+                <div class="when">0:50</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT: Real-time AI Q&A + quick actions -->
+    <div class="stack">
+      <!-- Current question + answer -->
+      <div class="ai-card" style="border:2px solid var(--ai);box-shadow:0 0 0 4px var(--ai-50)">
+        <div class="ai-card-header">
+          <div class="agent-avatar">🤖</div>
+          <div style="flex:1">
+            <div class="strong">AI следит за разговором</div>
+            <div class="small muted">предугадывает следующий вопрос · показывает ответ заранее</div>
+          </div>
+        </div>
+        <div style="margin-bottom:10px">
+          <div class="chip ai" style="margin-bottom:6px">🎯 Probable next question</div>
+          <div style="font-size:16px;font-weight:600;color:var(--ai-600);margin-bottom:10px">"Can you give me a ballpark on the bath reno?"</div>
+          <div class="ai-reason">
+            <div class="strong" style="margin-bottom:4px">Быстрый ответ:</div>
+            <div>"Ballpark $28–35k depending on tile grade. Standard finish — $30k even. We can firm up after Michael does a site walk Monday."</div>
+            <div class="small muted" style="margin-top:8px">📎 Based on 4 similar bath renos 2024-2025 · average $32k · 38% margin</div>
+          </div>
+        </div>
+        <div class="row" style="gap:6px;flex-wrap:wrap">
+          <button class="chat-action-btn primary">📋 Copy answer</button>
+          <button class="chat-action-btn">Show numbers</button>
+          <button class="chat-action-btn">Alt: premium finish</button>
+        </div>
+      </div>
+
+      <!-- Quick lookup -->
+      <div class="card">
+        <div class="card-header">
+          <h3>🔍 Quick lookup</h3>
+        </div>
+        <div class="card-body">
+          <input class="filter-select" placeholder="Спроси AI во время звонка..." style="width:100%;margin-bottom:10px"/>
+          <div class="small muted" style="margin-bottom:10px">Последние запросы:</div>
+          <div class="row" style="gap:6px;flex-wrap:wrap">
+            <button class="chat-action-btn">Crew availability June</button>
+            <button class="chat-action-btn">Last bath reno margin</button>
+            <button class="chat-action-btn">Acme outstanding invoices</button>
+            <button class="chat-action-btn">CO-3 breakdown</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Quick actions during call -->
+      <div class="card">
+        <div class="card-header"><h3>⚡ Quick actions</h3></div>
+        <div class="card-body" style="display:flex;flex-direction:column;gap:8px">
+          <button class="btn" style="justify-content:flex-start;text-align:left;padding:12px">
+            <span style="font-size:18px">📧</span>
+            <div style="flex:1">
+              <div class="strong" style="font-size:13px">Send proposal draft</div>
+              <div class="small muted">AI напишет → ты проверишь → email</div>
+            </div>
+          </button>
+          <button class="btn" style="justify-content:flex-start;text-align:left;padding:12px">
+            <span style="font-size:18px">📅</span>
+            <div style="flex:1">
+              <div class="strong" style="font-size:13px">Schedule site-visit</div>
+              <div class="small muted">Михаил · Monday 08:00 · Acme</div>
+            </div>
+          </button>
+          <button class="btn" style="justify-content:flex-start;text-align:left;padding:12px">
+            <span style="font-size:18px">↔</span>
+            <div style="flex:1">
+              <div class="strong" style="font-size:13px">Transfer to Михаил</div>
+              <div class="small muted">foreman · technical questions</div>
+            </div>
+          </button>
+          <button class="btn" style="justify-content:flex-start;text-align:left;padding:12px">
+            <span style="font-size:18px">💳</span>
+            <div style="flex:1">
+              <div class="strong" style="font-size:13px">Create draft invoice</div>
+              <div class="small muted">Deposit $8k for bath reno</div>
+            </div>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <style>
+    @keyframes pulse { 0%, 100% { opacity: 1 } 50% { opacity: 0.5 } }
+    @keyframes bounce { 0%, 80%, 100% { transform: scale(0.6); opacity: 0.4 } 40% { transform: scale(1); opacity: 1 } }
+  </style>
+`);
+
+mountSelfDocs('call-live');
+</script>
+</body>
+</html>

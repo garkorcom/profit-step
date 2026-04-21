@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8"/>
+<title>EasyTimerCost — Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="styles.css"/>
+</head>
+<body>
+<script src="meta.js"></script>
+<script src="shell.js"></script>
+<script>
+renderShell({
+  active: 'dashboard',
+  title: 'Dashboard',
+  breadcrumbs: [],
+  actions: `<div class="row">${periodPill()}<button class="btn primary">+ Запустить pay run</button></div>`
+});
+
+const activeSessions = MOCK.sessions.filter(s => s.status === 'active');
+const pendingExpenses = MOCK.expenses.filter(e => e.status === 'submitted');
+const totalLabor = MOCK.workers.reduce((a, w) => a + w.earned, 0);
+const totalPaid = MOCK.workers.reduce((a, w) => a + w.paid, 0);
+const totalBalance = MOCK.workers.reduce((a, w) => a + w.balance, 0);
+const totalHours = MOCK.workers.reduce((a, w) => a + w.hours, 0);
+const totalExpenses = MOCK.expenses.filter(e => e.status === 'approved').reduce((a, e) => a + e.amount, 0);
+const totalRevenue = MOCK.clients.reduce((a, c) => a + c.revenue, 0);
+const totalMaterials = MOCK.clients.reduce((a, c) => a + c.materials, 0);
+
+setBody(`
+  <div class="kpi-grid">
+    <div class="kpi primary">
+      <div class="kpi-label">Revenue YTD</div>
+      <div class="kpi-value">${fmt$(totalRevenue)}</div>
+      <div class="kpi-sub">${MOCK.clients.length} active projects</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">Labor cost</div>
+      <div class="kpi-value">${fmt$(totalLabor)}</div>
+      <div class="kpi-sub">${totalHours.toFixed(0)} hours · ${MOCK.workers.filter(w => w.hours > 0).length} workers</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">Materials cost</div>
+      <div class="kpi-value">${fmt$(totalMaterials)}</div>
+      <div class="kpi-sub">+ expenses approved ${fmt$(totalExpenses)}</div>
+    </div>
+    <div class="kpi ${totalBalance > 0 ? 'warning' : 'success'}">
+      <div class="kpi-label">К выплате работникам</div>
+      <div class="kpi-value">${fmt$(totalBalance)}</div>
+      <div class="kpi-sub">${MOCK.workers.filter(w => w.balance > 0).length} human'а ждут</div>
+    </div>
+  </div>
+
+  <div class="grid-2" style="align-items:flex-start">
+    <div class="card">
+      <div class="card-header">
+        <h3>🕒 Активные смены (${activeSessions.length})</h3>
+        <a href="time.html" class="small">Все смены →</a>
+      </div>
+      <table class="table">
+        <thead><tr><th>Работник</th><th>Клиент</th><th class="num">Время</th><th class="num">Заработок</th></tr></thead>
+        <tbody>
+          ${activeSessions.map(s => {
+            const w = workerById(s.workerId);
+            const c = clientById(s.clientId);
+            return `
+              <tr onclick="location.href='session-detail.html?id=${s.id}'">
+                <td>
+                  <div class="row" style="gap:8px">
+                    <div class="avatar sm">${w.initials}</div>
+                    <div><div class="strong small">${w.name}</div><div class="small muted">${s.desc}</div></div>
+                  </div>
+                </td>
+                <td><span class="chip primary">${c.name}</span></td>
+                <td class="num">${s.hours.toFixed(1)}ч</td>
+                <td class="num strong">${fmt$exact(s.earnings)}</td>
+              </tr>
+            `;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <h3>💰 Pending approvals (${pendingExpenses.length})</h3>
+        <a href="expenses.html" class="small">Все →</a>
+      </div>
+      <table class="table">
+        <thead><tr><th>Работник</th><th>Клиент</th><th>Категория</th><th class="num">Сумма</th></tr></thead>
+        <tbody>
+          ${pendingExpenses.map(e => {
+            const w = workerById(e.workerId);
+            const c = clientById(e.clientId);
+            return `
+              <tr onclick="location.href='expense-detail.html?id=${e.id}'">
+                <td>
+                  <div class="row" style="gap:8px">
+                    <div class="avatar sm">${w.initials}</div>
+                    <div class="small strong">${w.name}</div>
+                  </div>
+                </td>
+                <td><span class="chip">${c.name}</span></td>
+                <td><span class="chip warning">${e.category}</span></td>
+                <td class="num strong">${fmt$exact(e.amount)}</td>
+              </tr>
+            `;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div style="margin-top:20px" class="grid-2">
+    <div class="card">
+      <div class="card-header"><h3>🏢 Топ клиентов по P&L</h3><a href="clients.html" class="small">Все →</a></div>
+      <div class="card-body">
+        ${MOCK.clients.slice(0,5).sort((a,b)=>b.margin-a.margin).map(c => {
+          const profit = c.revenue - c.labor - c.materials;
+          const pct = Math.round(c.margin * 100);
+          return `
+            <div style="padding:10px 0;border-bottom:1px solid var(--border)">
+              <div class="row spread">
+                <div>
+                  <a href="client-overview.html?id=${c.id}" class="strong">${c.name}</a>
+                  <div class="small muted">${c.project}</div>
+                </div>
+                <div style="text-align:right">
+                  <div class="strong">${fmt$(profit)}</div>
+                  <div class="small" style="color:${pct >= 30 ? 'var(--success)' : pct >= 20 ? 'var(--warning)' : 'var(--error)'}">${pct}% margin</div>
+                </div>
+              </div>
+              <div class="progress" style="margin-top:6px">
+                <div class="progress-bar ${pct >= 30 ? '' : pct >= 20 ? 'warning' : 'error'}" style="width:${Math.min(100, pct * 2)}%"></div>
+              </div>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><h3>👥 Топ работников</h3><a href="workers.html" class="small">Все →</a></div>
+      <table class="table">
+        <thead><tr><th>Работник</th><th class="num">Часов</th><th class="num">Начислено</th><th class="num">К выплате</th></tr></thead>
+        <tbody>
+          ${MOCK.workers.filter(w=>w.hours>0).sort((a,b)=>b.earned-a.earned).slice(0,5).map(w => `
+            <tr onclick="location.href='worker-profile.html?id=${w.id}'">
+              <td>
+                <div class="row" style="gap:8px">
+                  <div class="avatar sm">${w.initials}</div>
+                  <div class="small strong">${w.name}</div>
+                </div>
+              </td>
+              <td class="num">${w.hours}ч</td>
+              <td class="num">${fmt$(w.earned)}</td>
+              <td class="num strong" style="color:${w.balance > 0 ? 'var(--warning)' : 'var(--text-2)'}">${fmt$(w.balance)}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  </div>
+`);
+
+mountSelfDocs('dashboard');
+</script>
+</body>
+</html>

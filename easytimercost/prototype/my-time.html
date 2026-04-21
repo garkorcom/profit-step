@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8"/>
+<title>EasyTimerCost — Моё время</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="styles.css"/>
+</head>
+<body>
+<script src="meta.js"></script>
+<script src="shell.js"></script>
+<script>
+const w = workerById('w3');  // "Я" = Андрей Сидоров
+const myAgent = agentByOwnerId(w.id);
+
+renderShell({
+  active: 'my-time',
+  title: `Привет, ${w.name.split(' ')[0]} 👋`,
+  breadcrumbs: [{ label: 'Моё время' }],
+});
+
+const mySessions = MOCK.sessions.filter(s => s.workerId === w.id);
+const activeSession = mySessions.find(s => s.status === 'active');
+
+setBody(`
+  <div class="grid-2" style="align-items:flex-start;grid-template-columns:1fr 1fr;gap:20px">
+    <!-- LEFT: AI CHAT — primary channel -->
+    <div class="chat-panel">
+      <div class="chat-header">
+        <div class="agent-avatar">🤖</div>
+        <div style="flex:1">
+          <div class="strong">${myAgent.name}</div>
+          <div class="small muted row" style="gap:6px"><span class="status-dot"></span>онлайн · gpt-5</div>
+        </div>
+        <button class="btn sm">⚙</button>
+      </div>
+      <div class="chat-body">
+        <div class="chat-msg">
+          <div class="agent-avatar sm">🤖</div>
+          <div>
+            <div class="chat-bubble">Доброе утро, Андрей 👋 <br/>Вижу ты в 2 мин от <strong>Acme Corp</strong>. Стартуем смену как вчера — <em>Drywall installation</em>?</div>
+            <div class="chat-actions">
+              <button class="chat-action-btn primary">✅ Да, поехали</button>
+              <button class="chat-action-btn">Другая работа</button>
+              <button class="chat-action-btn">Другой клиент</button>
+            </div>
+            <div class="chat-time">07:02 · ${w.name.split(' ')[0]} AI</div>
+          </div>
+        </div>
+
+        <div class="chat-msg mine">
+          <div class="avatar sm">${w.initials}</div>
+          <div>
+            <div class="chat-bubble">да, поехали</div>
+            <div class="chat-time" style="text-align:right">07:02</div>
+          </div>
+        </div>
+
+        <div class="chat-msg system">
+          <div style="width:26px"></div>
+          <div class="chat-bubble">📸 селфи автокапчур · 📍 geo verified (0.3mi от сайта, ±12m) · смена <strong>активна</strong></div>
+        </div>
+
+        <div class="chat-msg">
+          <div class="agent-avatar sm">🤖</div>
+          <div>
+            <div class="chat-bubble">Готово. <strong>$45/ч</strong> · начало 07:05. Я буду следить за временем и geo. 🔨</div>
+            <div class="chat-time">07:05</div>
+          </div>
+        </div>
+
+        <div class="chat-msg">
+          <div class="agent-avatar sm">🤖</div>
+          <div>
+            <div class="chat-bubble">Михаил (бригадир) спрашивает — ты сегодня после Drywall поможешь Сергею с электрикой до 18:00?</div>
+            <div class="chat-actions">
+              <button class="chat-action-btn">Ок, помогу</button>
+              <button class="chat-action-btn">Не смогу</button>
+            </div>
+            <div class="chat-time">08:12 · via 🤖 Михаил AI</div>
+          </div>
+        </div>
+
+        <div class="chat-msg">
+          <div class="agent-avatar sm">🤖</div>
+          <div>
+            <div class="chat-bubble">Чек из Home Depot на $347.82 пришёл на почту. Это для Acme сегодня? OCR извлёк vendor + amount (96% confidence).</div>
+            <div class="chat-actions">
+              <button class="chat-action-btn primary">Да, для Acme</button>
+              <button class="chat-action-btn">Нет, личное</button>
+              <button class="chat-action-btn">Другой клиент</button>
+            </div>
+            <div class="chat-time">13:15 · via 🤖 OCR</div>
+          </div>
+        </div>
+
+        <div class="chat-msg">
+          <div class="agent-avatar sm">🤖</div>
+          <div>
+            <div class="chat-bubble">📍 Geo показывает ты уехал с сайта 3 мин назад. Закрываем смену? <strong>8.5ч × $45 = $382.50</strong></div>
+            <div class="chat-actions">
+              <button class="chat-action-btn primary">✅ Да, закрыть</button>
+              <button class="chat-action-btn">Ещё работаю</button>
+              <button class="chat-action-btn">Это перерыв</button>
+            </div>
+            <div class="chat-time">16:32</div>
+          </div>
+        </div>
+      </div>
+      <div class="chat-input">
+        <input placeholder="Напиши или скажи (voice →)..."/>
+        <button class="btn sm">🎤</button>
+        <button class="btn primary sm">↑</button>
+      </div>
+    </div>
+
+    <!-- RIGHT: status + timeline of what AI did -->
+    <div class="stack">
+      <!-- Live active session -->
+      <div class="active-session">
+        <div style="font-size:40px">🟢</div>
+        <div style="flex:1">
+          <div class="small" style="opacity:0.85;text-transform:uppercase;letter-spacing:0.5px">Ты на смене</div>
+          <div style="font-size:22px;font-weight:700">Drywall installation — east wing</div>
+          <div style="opacity:0.9;margin-top:4px">Acme Corp · $45/ч · <span id="live-earned">${fmt$exact(382.50)}</span></div>
+          <div style="opacity:0.85;font-size:11px;margin-top:6px">⏱ 08:30:42 · 📍 on site (0.3mi, ±12m)</div>
+        </div>
+        <button class="btn" style="background:rgba(255,255,255,0.2);color:#fff;border-color:rgba(255,255,255,0.3);font-size:14px">⏹ Закончить</button>
+      </div>
+
+      <!-- AI activity timeline -->
+      <div class="card">
+        <div class="card-header">
+          <h3 class="row" style="gap:8px"><span class="chip ai">🤖 AI</span> Что сделано автоматом сегодня</h3>
+          <div class="small muted">saved ~42 мин</div>
+        </div>
+        <div class="card-body" style="padding:14px 20px">
+          <div class="trail">
+            <div class="trail-item">
+              <div class="trail-dot ai"></div>
+              <div class="trail-content">
+                <div class="who">Стартована смена <span class="chip ai" style="margin-left:4px">🤖 auto</span></div>
+                <div class="what">Geo verified · face match 98.4% · no admin approval needed</div>
+                <div class="when">07:05 · saved ~3 мин</div>
+              </div>
+            </div>
+            <div class="trail-item">
+              <div class="trail-dot ai"></div>
+              <div class="trail-content">
+                <div class="who">Чек из Home Depot извлечён <span class="chip ai" style="margin-left:4px">🤖 OCR</span></div>
+                <div class="what">Vendor · amount $347.82 · tax $24.35 автоматически</div>
+                <div class="when">13:15 · saved ~5 мин ручного ввода</div>
+              </div>
+            </div>
+            <div class="trail-item">
+              <div class="trail-dot ai"></div>
+              <div class="trail-content">
+                <div class="who">Expense e1 утверждён <span class="chip ai" style="margin-left:4px">🤖 approval bot</span></div>
+                <div class="what">Within $500 threshold · billable to Acme · no escalation</div>
+                <div class="when">16:02 · saved foreman review</div>
+              </div>
+            </div>
+            <div class="trail-item">
+              <div class="trail-dot success"></div>
+              <div class="trail-content">
+                <div class="who">Ты подтвердил помощь Сергею <span class="chip" style="margin-left:4px">👤 you</span></div>
+                <div class="what">A2A: Михаил AI → ты (via chat)</div>
+                <div class="when">08:12</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- KPIs -->
+      <div class="kpi-grid" style="grid-template-columns:1fr 1fr">
+        <div class="kpi primary"><div class="kpi-label">Начислено YTD</div><div class="kpi-value">${fmt$(w.earned)}</div></div>
+        <div class="kpi ${w.balance > 0 ? 'warning' : 'success'}">
+          <div class="kpi-label">Мой баланс</div>
+          <div class="kpi-value">${fmt$(w.balance)}</div>
+          <div class="kpi-sub">${w.balance > 0 ? 'компания должна' : 'в расчёте'}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bottom: history tabs, simpler now -->
+  <div style="margin-top:24px">
+    <div class="tabs">
+      <a href="my-time.html" class="tab active">🕒 Мои смены</a>
+      <a href="my-expenses.html" class="tab">💰 Мои затраты</a>
+      <a class="tab">🏢 Мои клиенты</a>
+      <a class="tab">💳 Выплаты</a>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><h3>📅 Последние смены</h3><button class="btn sm">Все смены</button></div>
+      <table class="table">
+        <thead><tr><th>Дата</th><th>Клиент</th><th>Описание</th><th class="num">Часов</th><th class="num">Заработок</th><th>Начата через</th></tr></thead>
+        <tbody>
+          ${mySessions.map(s => {
+            const c = clientById(s.clientId);
+            return `
+              <tr onclick="location.href='session-detail.html?id=${s.id}'">
+                <td>${s.date}<br/><span class="small muted">${s.start} – ${s.end || 'сейчас'}</span></td>
+                <td><a href="client-overview.html?id=${c.id}">${c.name}</a><div class="small muted">${c.project}</div></td>
+                <td class="small">${s.desc}</td>
+                <td class="num">${s.hours.toFixed(1)}ч</td>
+                <td class="num strong">${fmt$exact(s.earnings)}</td>
+                <td><span class="chip ai">🤖 AI auto-start</span></td>
+              </tr>
+            `;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+  </div>
+`);
+
+mountSelfDocs('my-time');
+</script>
+</body>
+</html>

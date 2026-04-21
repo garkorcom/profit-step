@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8"/>
+<title>EasyTimerCost — Feedback Kanban</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="styles.css"/>
+<style>
+  :root { --brand: #5b6cff; --brand-2: #7c3aed; }
+  body { font-family: 'Inter', sans-serif; background: #f6f7fb; }
+  .fb-wrap { padding: 24px 32px 60px; max-width: 1600px; margin: 0 auto; }
+  .fb-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 22px; padding-bottom: 16px; border-bottom: 2px solid #e2e8f0; }
+  .fb-head h1 { font-size: 28px; font-weight: 800; letter-spacing: -0.02em; color: #0f172a; }
+  .fb-head-sub { font-size: 13px; color: #64748b; margin-top: 4px; }
+  .fb-head-actions { display: flex; gap: 10px; }
+  .fb-btn {
+    padding: 10px 18px; border-radius: 10px; font-size: 13px; font-weight: 600;
+    background: #fff; border: 1px solid #e2e8f0; cursor: pointer; color: #0f172a;
+    display: inline-flex; gap: 8px; align-items: center;
+  }
+  .fb-btn:hover { background: #f8fafc; border-color: var(--brand); }
+  .fb-btn.primary { background: linear-gradient(135deg, var(--brand), var(--brand-2)); color: #fff; border: 0; }
+  .fb-btn.primary:hover { transform: translateY(-1px); box-shadow: 0 10px 20px -5px rgba(91,108,255,.4); }
+  .fb-btn.ai { background: linear-gradient(135deg, #8b5cf6, #ec4899); color: #fff; border: 0; }
+
+  .fb-kpis { display: grid; grid-template-columns: repeat(4,1fr); gap: 12px; margin-bottom: 24px; }
+  .fb-kpi { background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 16px 20px; border-top: 4px solid; }
+  .fb-kpi.raw      { border-top-color: #64748b; }
+  .fb-kpi.triaged  { border-top-color: #eab308; }
+  .fb-kpi.scope    { border-top-color: #2563eb; }
+  .fb-kpi.done     { border-top-color: #16a34a; }
+  .fb-kpi-lbl { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; color: #64748b; }
+  .fb-kpi-val { font-size: 30px; font-weight: 800; color: #0f172a; line-height: 1; margin-top: 4px; }
+  .fb-kpi-sub { font-size: 11px; color: #94a3b8; margin-top: 4px; }
+
+  .fb-filters {
+    display: flex; gap: 8px; align-items: center;
+    margin-bottom: 16px; padding: 12px 14px; background: #fff;
+    border: 1px solid #e2e8f0; border-radius: 12px; flex-wrap: wrap;
+  }
+  .fb-filter-sel {
+    padding: 6px 10px; border: 1px solid #e2e8f0; border-radius: 8px;
+    font-size: 12px; background: #fff; cursor: pointer;
+  }
+  .fb-search {
+    padding: 6px 12px; border: 1px solid #e2e8f0; border-radius: 8px;
+    font-size: 12px; flex: 1; min-width: 200px;
+  }
+
+  .fb-kanban { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+  @media (max-width: 1000px) { .fb-kanban { grid-template-columns: 1fr 1fr; } }
+  @media (max-width: 600px)  { .fb-kanban { grid-template-columns: 1fr; } }
+
+  .fb-col {
+    background: #f1f5f9; border-radius: 14px; padding: 12px;
+    min-height: 400px;
+  }
+  .fb-col-head {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 6px 10px 12px; border-bottom: 1px solid #e2e8f0; margin-bottom: 10px;
+  }
+  .fb-col-title { font-size: 13px; font-weight: 700; display: flex; gap: 8px; align-items: center; }
+  .fb-col-count {
+    font-size: 11px; font-weight: 700; background: #fff; color: #475569;
+    padding: 2px 10px; border-radius: 999px;
+  }
+
+  .fb-card {
+    background: #fff; border: 1px solid #e2e8f0; border-radius: 10px;
+    padding: 12px 14px; margin-bottom: 8px; cursor: pointer;
+    transition: all .15s;
+  }
+  .fb-card:hover { border-color: var(--brand); transform: translateY(-1px); box-shadow: 0 4px 10px -4px rgba(91,108,255,.15); }
+  .fb-card-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; margin-bottom: 6px; }
+  .fb-card-tags { display: flex; gap: 4px; flex-wrap: wrap; }
+  .fb-chip {
+    font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 999px;
+    text-transform: uppercase; letter-spacing: .3px;
+  }
+  .fb-chip.bug { background: #fee2e2; color: #991b1b; }
+  .fb-chip.improvement { background: #ddd6fe; color: #5b21b6; }
+  .fb-chip.sev-low { background: #e0f2fe; color: #075985; }
+  .fb-chip.sev-med { background: #fef3c7; color: #92400e; }
+  .fb-chip.sev-high { background: #ffedd5; color: #9a3412; }
+  .fb-chip.sev-blocker { background: #fee2e2; color: #7f1d1d; border: 1px solid #dc2626; }
+  .fb-chip.page {
+    background: #eff2ff; color: #4338ca;
+    font-family: 'JetBrains Mono', monospace;
+    text-transform: none; letter-spacing: 0;
+  }
+  .fb-chip.ctx { background: #f3e8ff; color: #6d28d9; font-family: 'JetBrains Mono', monospace; text-transform: none; }
+  .fb-card-text { font-size: 13px; color: #0f172a; line-height: 1.5; margin-bottom: 6px; }
+  .fb-card-meta { display: flex; justify-content: space-between; font-size: 10px; color: #94a3b8; }
+  .fb-card-fix {
+    margin-top: 8px; padding: 6px 8px; background: #f0fdf4; border-left: 3px solid #16a34a;
+    border-radius: 4px; font-size: 11px; color: #14532d;
+  }
+  .fb-card-fix strong { display: block; color: #166534; margin-bottom: 2px; font-size: 10px; text-transform: uppercase; letter-spacing: .3px; }
+  .fb-card-actions {
+    display: flex; gap: 4px; margin-top: 8px; flex-wrap: wrap;
+  }
+  .fb-card-btn {
+    font-size: 10px; font-weight: 600; padding: 4px 8px; border-radius: 5px;
+    border: 1px solid #e2e8f0; background: #fff; cursor: pointer;
+  }
+  .fb-card-btn:hover { background: #f8fafc; }
+  .fb-card-btn.advance { color: #16a34a; border-color: #bbf7d0; }
+  .fb-card-btn.retreat { color: #64748b; }
+  .fb-card-btn.danger { color: #dc2626; border-color: #fecaca; }
+  .fb-card-btn.ai { color: #fff; background: linear-gradient(135deg, #8b5cf6, #6366f1); border: 0; }
+
+  .fb-empty { color: #94a3b8; font-size: 12px; text-align: center; padding: 28px 10px; font-style: italic; }
+
+  .fb-ai-banner {
+    background: linear-gradient(135deg, #1e1b4b 0%, #4c1d95 100%);
+    color: #fff; border-radius: 14px; padding: 16px 22px;
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 16px;
+  }
+  .fb-ai-banner-left { font-size: 13px; display: flex; gap: 10px; align-items: center; }
+  .fb-ai-banner-left .dot {
+    width: 10px; height: 10px; border-radius: 50%; background: #22c55e;
+    box-shadow: 0 0 8px #22c55e; animation: pulse 2s infinite;
+  }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
+
+  .fb-seed-note {
+    background: #fff7ed; border: 1px dashed #f59e0b; border-radius: 12px;
+    padding: 14px 18px; margin-bottom: 16px; font-size: 13px; color: #78350f;
+  }
+  .fb-seed-note strong { color: #451a03; }
+
+  .fb-back {
+    display: inline-flex; gap: 6px; align-items: center;
+    font-size: 12px; color: #5b6cff; text-decoration: none; margin-bottom: 8px;
+  }
+</style>
+</head>
+<body>
+<script src="meta.js"></script>
+<script src="shell.js"></script>
+
+<div class="fb-wrap">
+  <a href="_review.html" class="fb-back">← назад в review</a>
+  <div class="fb-head">
+    <div>
+      <h1>🗂 Feedback Kanban</h1>
+      <div class="fb-head-sub">Агрегатор всех 🐛 со всех страниц · AI-Triage раз в час</div>
+    </div>
+    <div class="fb-head-actions">
+      <button class="fb-btn" onclick="seedDemoFeedback()">🎲 Засеять demo</button>
+      <button class="fb-btn" onclick="clearAllFeedback()">🗑 Очистить</button>
+      <button class="fb-btn ai" onclick="runAITriage()">✨ AI-Triage all raw</button>
+    </div>
+  </div>
+
+  <div class="fb-ai-banner">
+    <div class="fb-ai-banner-left">
+      <span class="dot"></span>
+      <strong>Triage-агент</strong> · model: claude-opus-4.7 · last run: <span id="last-triage">—</span>
+    </div>
+    <div style="font-size:12px;opacity:.85">В прод: cron 1h · в прототипе: кнопка ✨ сверху</div>
+  </div>
+
+  <div class="fb-kpis" id="kpis"></div>
+  <div class="fb-filters">
+    <label style="font-size:12px;color:#64748b;font-weight:600">Фильтры:</label>
+    <select class="fb-filter-sel" id="f-page"><option value="">Все страницы</option></select>
+    <select class="fb-filter-sel" id="f-type">
+      <option value="">Все типы</option>
+      <option value="bug">🐛 Bug</option>
+      <option value="improvement">💡 Improvement</option>
+    </select>
+    <select class="fb-filter-sel" id="f-sev">
+      <option value="">Все severity</option>
+      <option value="blocker">Blocker</option>
+      <option value="high">High</option>
+      <option value="med">Medium</option>
+      <option value="low">Low</option>
+    </select>
+    <input class="fb-search" id="f-search" placeholder="Поиск по тексту..." oninput="renderKanban()"/>
+  </div>
+
+  <div class="fb-kanban" id="kanban"></div>
+</div>
+
+<script>
+// ─── init ────────────────────────────────────────────────────────────────
+initContextCapture();
+
+const STATUS_META = {
+  raw:       { label: 'Raw',       emoji: '📥', desc: 'свежие, не триажены' },
+  triaged:   { label: 'Triaged',   emoji: '🏷',  desc: 'AI классифицировал' },
+  'in-scope':{ label: 'In Scope',  emoji: '🎯', desc: 'решили фиксить' },
+  done:      { label: 'Done',      emoji: '✅', desc: 'fixed + UC passing' },
+};
+const STATUS_ORDER = ['raw','triaged','in-scope','done'];
+
+function allFeedback() {
+  return STORAGE.listFeedback().sort((a,b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+}
+
+function populatePagesFilter() {
+  const sel = document.getElementById('f-page');
+  const existing = new Set(['']);
+  allFeedback().forEach(f => existing.add(f.pageId));
+  for (const pid of existing) {
+    if (!pid) continue;
+    const opt = document.createElement('option');
+    opt.value = pid;
+    opt.textContent = PAGES[pid]?.title || pid;
+    sel.appendChild(opt);
+  }
+  sel.onchange = renderKanban;
+  document.getElementById('f-type').onchange = renderKanban;
+  document.getElementById('f-sev').onchange = renderKanban;
+}
+
+function renderKpis() {
+  const all = allFeedback();
+  const counts = { raw: 0, triaged: 0, 'in-scope': 0, done: 0 };
+  all.forEach(f => { counts[f.status || 'raw'] = (counts[f.status || 'raw'] || 0) + 1; });
+  const total = all.length;
+  const blockers = all.filter(f => f.severity === 'blocker').length;
+  const bugs = all.filter(f => f.type === 'bug').length;
+  const html = `
+    <div class="fb-kpi raw">
+      <div class="fb-kpi-lbl">📥 Raw</div>
+      <div class="fb-kpi-val">${counts.raw}</div>
+      <div class="fb-kpi-sub">ждут AI-triage</div>
+    </div>
+    <div class="fb-kpi triaged">
+      <div class="fb-kpi-lbl">🏷 Triaged</div>
+      <div class="fb-kpi-val">${counts.triaged}</div>
+      <div class="fb-kpi-sub">классифицированы</div>
+    </div>
+    <div class="fb-kpi scope">
+      <div class="fb-kpi-lbl">🎯 In scope</div>
+      <div class="fb-kpi-val">${counts['in-scope']}</div>
+      <div class="fb-kpi-sub">решили фиксить</div>
+    </div>
+    <div class="fb-kpi done">
+      <div class="fb-kpi-lbl">✅ Done</div>
+      <div class="fb-kpi-val">${counts.done}</div>
+      <div class="fb-kpi-sub">${total ? Math.round(counts.done / total * 100) : 0}% completion</div>
+    </div>
+  `;
+  document.getElementById('kpis').innerHTML = html;
+}
+
+function applyFilters(items) {
+  const fp = document.getElementById('f-page').value;
+  const ft = document.getElementById('f-type').value;
+  const fs = document.getElementById('f-sev').value;
+  const fq = (document.getElementById('f-search').value || '').toLowerCase();
+  return items.filter(f =>
+    (!fp || f.pageId === fp) &&
+    (!ft || f.type === ft) &&
+    (!fs || f.severity === fs) &&
+    (!fq || (f.text || '').toLowerCase().includes(fq))
+  );
+}
+
+function renderKanban() {
+  renderKpis();
+  const items = applyFilters(allFeedback());
+  const kanban = document.getElementById('kanban');
+  kanban.innerHTML = STATUS_ORDER.map(s => {
+    const meta = STATUS_META[s];
+    const col = items.filter(f => (f.status || 'raw') === s);
+    return `
+      <div class="fb-col">
+        <div class="fb-col-head">
+          <div class="fb-col-title">${meta.emoji} ${meta.label}</div>
+          <div class="fb-col-count">${col.length}</div>
+        </div>
+        ${col.length ? col.map(cardHTML).join('') : `<div class="fb-empty">${s === 'raw' ? 'Никто не жаловался. Либо идеально, либо страницы self-docs ещё не смотрели.' : '—'}</div>`}
+      </div>
+    `;
+  }).join('');
+}
+
+function cardHTML(f) {
+  const page = PAGES[f.pageId];
+  const pageTitle = page?.title || f.pageId;
+  const ctx = f.context;
+  const ctxSize = ctx ? ((new Blob([JSON.stringify(ctx)]).size) / 1024).toFixed(1) : null;
+  return `
+    <div class="fb-card" onclick="openFeedback('${f.id}')">
+      <div class="fb-card-head">
+        <div class="fb-card-tags">
+          <span class="fb-chip ${f.type}">${f.type === 'bug' ? '🐛' : '💡'} ${f.type}</span>
+          <span class="fb-chip sev-${f.severity}">${f.severity}</span>
+        </div>
+        ${ctxSize ? `<span class="fb-chip ctx">📎 ${ctxSize}KB</span>` : ''}
+      </div>
+      <div class="fb-card-text">${escapeHtml(f.text)}</div>
+      ${f.suggestedFix ? `<div class="fb-card-fix"><strong>🤖 AI fix предложение</strong>${escapeHtml(f.suggestedFix)}</div>` : ''}
+      <div class="fb-card-meta">
+        <span><a href="${page?.file || '#'}" onclick="event.stopPropagation()" style="color:#4338ca;text-decoration:none"><span class="fb-chip page">${pageTitle}</span></a></span>
+        <span>${f.createdBy || '—'} · ${timeAgo(f.createdAt || new Date().toISOString())}</span>
+      </div>
+      <div class="fb-card-actions" onclick="event.stopPropagation()">
+        ${(f.status || 'raw') !== 'raw' ? `<button class="fb-card-btn retreat" onclick="moveBack('${f.id}')">← back</button>` : ''}
+        ${(f.status || 'raw') !== 'done' ? `<button class="fb-card-btn advance" onclick="moveForward('${f.id}')">→ next</button>` : ''}
+        ${(f.status || 'raw') === 'raw' ? `<button class="fb-card-btn ai" onclick="triageOne('${f.id}')">✨ Triage</button>` : ''}
+        <button class="fb-card-btn danger" onclick="deleteFeedback('${f.id}')">🗑</button>
+      </div>
+    </div>
+  `;
+}
+
+function moveForward(id) {
+  const all = STORAGE.listFeedback();
+  const item = all.find(f => f.id === id);
+  if (!item) return;
+  const cur = STATUS_ORDER.indexOf(item.status || 'raw');
+  const next = STATUS_ORDER[cur + 1];
+  if (!next) return;
+  item.status = next;
+  STORAGE._write(STORAGE.keys.feedback, all);
+  renderKanban();
+}
+function moveBack(id) {
+  const all = STORAGE.listFeedback();
+  const item = all.find(f => f.id === id);
+  if (!item) return;
+  const cur = STATUS_ORDER.indexOf(item.status || 'raw');
+  const prev = STATUS_ORDER[cur - 1];
+  if (!prev) return;
+  item.status = prev;
+  STORAGE._write(STORAGE.keys.feedback, all);
+  renderKanban();
+}
+function deleteFeedback(id) {
+  if (!confirm('Удалить этот фидбек?')) return;
+  const all = STORAGE.listFeedback().filter(f => f.id !== id);
+  STORAGE._write(STORAGE.keys.feedback, all);
+  renderKanban();
+}
+function openFeedback(id) {
+  const item = STORAGE.listFeedback().find(f => f.id === id);
+  if (!item) return;
+  const ctx = item.context;
+  const details = [
+    `📄 Page: ${PAGES[item.pageId]?.title || item.pageId}`,
+    `🐛 Type: ${item.type}  ·  Severity: ${item.severity}`,
+    `👤 ${item.createdBy}  ·  ${new Date(item.createdAt).toLocaleString('ru')}`,
+    '',
+    item.text,
+    '',
+    item.suggestedFix ? `🤖 AI fix: ${item.suggestedFix}` : '',
+    ctx ? `📎 Context: ${Object.keys(ctx).length} fields, ~${(JSON.stringify(ctx).length / 1024).toFixed(1)} KB` : '',
+    ctx?.lastClicks?.length ? `   ↳ last click: ${ctx.lastClicks.at(-1).selector}` : '',
+    ctx?.consoleErrors?.length ? `   ↳ ${ctx.consoleErrors.length} errors intercepted` : '',
+  ].filter(Boolean).join('\n');
+  alert(details);
+}
+
+// ─── AI-Triage (prototype: Claude simulated) ─────────────────────────────
+
+function aiClassify(text, type, severity) {
+  const t = text.toLowerCase();
+  const suggestions = {
+    'approve': 'Проверь event listener на строке approval queue — вероятно class .btn не получает click handler если добавлен динамически',
+    'ocr':     'Fallback на Google Vision API для non-latin чеков. Threshold confidence 0.6 → trigger human review queue',
+    'кнопк':   'Event delegation на parent-container + preventDefault если form внутри',
+    'reject':  'Добавить confirmation modal + audit event с reason',
+    'split':   'UI компонент SplitWidget — див в dropdown 2-3 опций клиентов, по 50/33%/custom',
+  };
+  const match = Object.entries(suggestions).find(([k]) => t.includes(k));
+  const fix = match ? match[1] : 'Claude Opus: нужно больше контекста — открой live DOM из пакета, посмотри какой элемент кликался';
+  // re-classify severity if blocker words detected
+  const newSev = /сломан|не работает|крит|блок|падает/.test(t) && severity === 'low' ? 'med' : severity;
+  return { fix, newSev, classified: type === 'bug' ? 'bug' : (t.includes('добавь') || t.includes('улучш') ? 'improvement' : 'bug') };
+}
+
+function triageOne(id) {
+  const all = STORAGE.listFeedback();
+  const item = all.find(f => f.id === id);
+  if (!item || item.status !== 'raw') return;
+  const { fix, newSev } = aiClassify(item.text, item.type, item.severity);
+  item.status = 'triaged';
+  item.triagedBy = 'claude-opus-4.7';
+  item.triagedAt = new Date().toISOString();
+  item.severity = newSev;
+  item.suggestedFix = fix;
+  STORAGE._write(STORAGE.keys.feedback, all);
+  renderKanban();
+  document.getElementById('last-triage').textContent = 'just now';
+}
+
+function runAITriage() {
+  const raw = STORAGE.listFeedback().filter(f => (f.status || 'raw') === 'raw');
+  if (!raw.length) { alert('Нет raw фидбеков для triage'); return; }
+  raw.forEach(item => triageOne(item.id));
+  setTimeout(() => toast(`✅ AI-triage прошёл по ${raw.length} записям. Смотри Triaged колонку.`), 150);
+}
+
+// ─── Seed demo feedback для показа  ──────────────────────────────────────
+function seedDemoFeedback() {
+  const now = Date.now();
+  const samples = [
+    { pageId: 'expenses',       type: 'bug',         severity: 'high',    text: 'Approve-кнопка не реагирует на строке Михаила — возможно привязка event упала после фильтра',  createdBy: 'Денис',  createdAt: new Date(now - 3600e3).toISOString(),  status: 'raw' },
+    { pageId: 'expenses',       type: 'bug',         severity: 'blocker', text: 'OCR падает на китайских чеках — показывает confidence 0.4 и draft не создаётся',            createdBy: 'Михаил', createdAt: new Date(now - 7200e3).toISOString(),  status: 'raw' },
+    { pageId: 'mobile-worker',  type: 'improvement', severity: 'low',     text: 'Добавь быструю кнопку «перерыв» в hub — сейчас нужно 3 тапа',                                   createdBy: 'Андрей', createdAt: new Date(now - 86400e3).toISOString(), status: 'raw' },
+    { pageId: 'clients',        type: 'bug',         severity: 'med',     text: 'Margin chip показывает 47% но в расчёте labor не учтены subcontractor payouts',              createdBy: 'Денис',  createdAt: new Date(now - 172800e3).toISOString(), status: 'triaged', triagedBy: 'claude-opus-4.7', suggestedFix: 'В ClientCostRollup добавить JOIN на SubcontractorPayouts where clientId = current · миграция 1 поле' },
+    { pageId: 'time',           type: 'improvement', severity: 'med',     text: 'Хочу видеть распределение по crew — кто сколько часов',                                        createdBy: 'Денис',  createdAt: new Date(now - 259200e3).toISOString(), status: 'in-scope', triagedBy: 'claude-opus-4.7', suggestedFix: 'Новый tab Crew View: pivot по worker.crew, aggregate hours + earned' },
+    { pageId: 'a2a',            type: 'bug',         severity: 'high',    text: 'Agent network graph обрезается справа на маленьких экранах',                                  createdBy: 'Денис',  createdAt: new Date(now - 432000e3).toISOString(), status: 'done',      triagedBy: 'claude-opus-4.7', suggestedFix: 'SVG viewBox + preserveAspectRatio="xMidYMid meet" + container overflow-x:auto' },
+    { pageId: 'workers',        type: 'improvement', severity: 'low',     text: 'Добавить экспорт CSV со всеми балансами',                                                      createdBy: 'Михаил', createdAt: new Date(now - 604800e3).toISOString(), status: 'done',      triagedBy: 'claude-opus-4.7', suggestedFix: 'useCsvExport() hook — headers из колонок таблицы, rows из current filter' },
+    { pageId: 'call-live',      type: 'bug',         severity: 'high',    text: 'Live транскрипт отстаёт от реальной речи на 3-5 секунд',                                       createdBy: 'Денис',  createdAt: new Date(now - 259200e3).toISOString(), status: 'raw' },
+    { pageId: 'ai-policies',    type: 'improvement', severity: 'med',     text: 'Хочу preview правила перед сохранением — показать на 5 последних событий что бы сработало',    createdBy: 'Денис',  createdAt: new Date(now - 86400e3).toISOString(),  status: 'raw' },
+    { pageId: 'dashboard',      type: 'bug',         severity: 'low',     text: 'На ночь kpi «К выплате» показывает старое значение — кэш не инвалидируется после pay run',    createdBy: 'Денис',  createdAt: new Date(now - 345600e3).toISOString(), status: 'triaged', triagedBy: 'claude-opus-4.7', suggestedFix: 'После POST /payroll/run → emit invalidate("dashboard:balances"). TTL текущего кэша: 4h (слишком долго)' },
+  ];
+  samples.forEach(s => STORAGE.saveFeedback(s));
+  populatePagesFilter();
+  renderKanban();
+  toast(`✅ Засеял ${samples.length} demo-фидбеков. Kanban заполнен.`);
+}
+
+function toast(msg) {
+  const t = document.createElement('div');
+  t.style.cssText = 'position:fixed;top:20px;right:20px;background:#16a34a;color:#fff;padding:12px 20px;border-radius:10px;font-size:13px;font-weight:600;z-index:9999;box-shadow:0 10px 30px -5px rgba(0,0,0,.2);';
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 3000);
+}
+
+function clearAllFeedback() {
+  if (!confirm('Удалить ВСЕ записи? (только feedback, UC не трогаю)')) return;
+  STORAGE._write(STORAGE.keys.feedback, []);
+  renderKanban();
+}
+
+// ─── bootstrap ───────────────────────────────────────────────────────────
+populatePagesFilter();
+renderKanban();
+
+const lastTriage = allFeedback().filter(f => f.triagedAt).sort((a,b) => (b.triagedAt).localeCompare(a.triagedAt))[0];
+if (lastTriage) document.getElementById('last-triage').textContent = timeAgo(lastTriage.triagedAt);
+</script>
+</body>
+</html>

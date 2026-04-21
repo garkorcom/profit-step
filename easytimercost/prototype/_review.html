@@ -1,0 +1,696 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8"/>
+<title>EasyTimerCost — Overnight Review (Денис, 6:00 AM)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<style>
+  :root {
+    --bg: #f6f7fb;
+    --card: #ffffff;
+    --text: #0f172a;
+    --text-2: #475569;
+    --text-3: #94a3b8;
+    --border: #e2e8f0;
+    --brand: #5b6cff;
+    --brand-2: #8a5bff;
+    --success: #16a34a;
+    --warning: #ea580c;
+    --danger: #dc2626;
+    --info: #0284c7;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Inter', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1200px; margin: 0 auto; padding: 40px 32px 80px; }
+  .hero {
+    background: linear-gradient(135deg, #1e1b4b 0%, #312e81 50%, #4c1d95 100%);
+    color: #fff;
+    border-radius: 24px;
+    padding: 48px 40px;
+    margin-bottom: 32px;
+    position: relative;
+    overflow: hidden;
+  }
+  .hero::before {
+    content: '';
+    position: absolute;
+    top: -100px;
+    right: -100px;
+    width: 400px;
+    height: 400px;
+    background: radial-gradient(circle, rgba(139,92,246,0.3) 0%, transparent 70%);
+  }
+  .hero-badge {
+    display: inline-block;
+    background: rgba(255,255,255,0.12);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255,255,255,0.2);
+    padding: 6px 14px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    margin-bottom: 20px;
+    position: relative;
+  }
+  .hero h1 {
+    font-size: 42px;
+    font-weight: 800;
+    line-height: 1.1;
+    margin-bottom: 14px;
+    letter-spacing: -0.02em;
+    position: relative;
+  }
+  .hero p {
+    font-size: 18px;
+    opacity: 0.85;
+    max-width: 720px;
+    position: relative;
+  }
+  .hero-stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin-top: 32px;
+    position: relative;
+  }
+  .hero-stat {
+    background: rgba(255,255,255,0.08);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255,255,255,0.12);
+    padding: 16px 18px;
+    border-radius: 14px;
+  }
+  .hero-stat-val { font-size: 26px; font-weight: 700; margin-bottom: 2px; }
+  .hero-stat-lbl { font-size: 12px; opacity: 0.7; }
+
+  .section { margin-bottom: 40px; }
+  .section-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 16px;
+    padding-bottom: 10px;
+    border-bottom: 2px solid var(--border);
+  }
+  .section-head h2 {
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+  }
+  .section-head .hint {
+    font-size: 13px;
+    color: var(--text-2);
+  }
+
+  .grid { display: grid; gap: 16px; grid-template-columns: repeat(3, 1fr); }
+  @media (max-width: 900px) { .grid { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 600px) { .grid { grid-template-columns: 1fr; } }
+
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 18px;
+    text-decoration: none;
+    color: var(--text);
+    transition: all 0.15s;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .card:hover {
+    border-color: var(--brand);
+    transform: translateY(-2px);
+    box-shadow: 0 12px 24px -12px rgba(91,108,255,0.2);
+  }
+  .card-emoji {
+    font-size: 28px;
+    width: 52px;
+    height: 52px;
+    background: linear-gradient(135deg, #eff2ff 0%, #f3e8ff 100%);
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .card-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+  }
+  .card-title {
+    font-size: 15px;
+    font-weight: 700;
+    margin-bottom: 2px;
+  }
+  .card-path {
+    font-family: 'JetBrains Mono', 'SF Mono', monospace;
+    font-size: 11px;
+    color: var(--text-3);
+  }
+  .card-desc {
+    font-size: 13px;
+    color: var(--text-2);
+    line-height: 1.5;
+  }
+  .card-tags {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-top: auto;
+  }
+  .tag {
+    font-size: 10px;
+    font-weight: 600;
+    padding: 3px 8px;
+    border-radius: 999px;
+    background: #f1f5f9;
+    color: var(--text-2);
+    letter-spacing: 0.3px;
+    text-transform: uppercase;
+  }
+  .tag.new { background: #dbeafe; color: #1e40af; }
+  .tag.ai { background: #f3e8ff; color: #6d28d9; }
+  .tag.hot { background: #fee2e2; color: #991b1b; }
+  .tag.mobile { background: #dcfce7; color: #15803d; }
+
+  .hero-cta {
+    display: inline-flex;
+    gap: 10px;
+    margin-top: 24px;
+    position: relative;
+  }
+  .hero-cta a {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 22px;
+    border-radius: 12px;
+    font-weight: 600;
+    text-decoration: none;
+    font-size: 14px;
+    transition: all 0.15s;
+  }
+  .hero-cta .primary {
+    background: #fff;
+    color: #1e1b4b;
+  }
+  .hero-cta .primary:hover { transform: translateY(-1px); box-shadow: 0 10px 20px -5px rgba(0,0,0,0.3); }
+  .hero-cta .ghost {
+    background: rgba(255,255,255,0.1);
+    color: #fff;
+    border: 1px solid rgba(255,255,255,0.2);
+  }
+  .hero-cta .ghost:hover { background: rgba(255,255,255,0.16); }
+
+  .read-order {
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 24px;
+    margin-bottom: 32px;
+  }
+  .read-order h3 {
+    font-size: 14px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-2);
+    margin-bottom: 16px;
+  }
+  .read-order ol {
+    list-style: none;
+    display: grid;
+    gap: 12px;
+  }
+  .read-order li {
+    display: flex;
+    gap: 14px;
+    align-items: flex-start;
+    padding: 12px 14px;
+    background: #f8fafc;
+    border-radius: 10px;
+    border-left: 3px solid var(--brand);
+  }
+  .read-order .num {
+    width: 26px;
+    height: 26px;
+    background: var(--brand);
+    color: #fff;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+  .read-order a {
+    font-weight: 600;
+    color: var(--brand);
+    text-decoration: none;
+  }
+  .read-order a:hover { text-decoration: underline; }
+  .read-order .why {
+    color: var(--text-2);
+    font-size: 13px;
+    margin-top: 2px;
+  }
+
+  .callout {
+    display: flex;
+    gap: 14px;
+    align-items: flex-start;
+    padding: 16px 18px;
+    background: linear-gradient(135deg, #fef3c7 0%, #fed7aa 100%);
+    border-radius: 12px;
+    margin-bottom: 24px;
+    border: 1px solid #f59e0b;
+  }
+  .callout .icon { font-size: 24px; flex-shrink: 0; }
+  .callout .text { font-size: 13px; color: #78350f; }
+  .callout strong { color: #451a03; }
+
+  footer {
+    margin-top: 48px;
+    padding-top: 24px;
+    border-top: 1px solid var(--border);
+    text-align: center;
+    color: var(--text-3);
+    font-size: 12px;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <section class="hero">
+    <span class="hero-badge">🌙 Overnight Build · 2026-04-21 · 00:00–00:35</span>
+    <h1>Доброе утро, Денис.</h1>
+    <p>За ночь собрал всё что ты просил: прототип, ТЗ, 100 юз-кейсов, лендинг, мобилку и 4 новые AI-страницы. Начни с «что читать сверху», остальное — карточки ниже.</p>
+
+    <div class="hero-stats">
+      <div class="hero-stat">
+        <div class="hero-stat-val">23</div>
+        <div class="hero-stat-lbl">HTML-страниц в прототипе</div>
+      </div>
+      <div class="hero-stat">
+        <div class="hero-stat-val">3</div>
+        <div class="hero-stat-lbl">документа под утверждение</div>
+      </div>
+      <div class="hero-stat">
+        <div class="hero-stat-val">100</div>
+        <div class="hero-stat-lbl">разобранных юз-кейсов</div>
+      </div>
+      <div class="hero-stat">
+        <div class="hero-stat-val">8</div>
+        <div class="hero-stat-lbl">новых AI-экранов</div>
+      </div>
+    </div>
+
+    <div class="hero-cta">
+      <a href="../MINI_TZ.md" class="primary">📋 Открыть ТЗ на утверждение</a>
+      <a href="landing.html" class="ghost">🚀 Посмотреть лендинг</a>
+    </div>
+  </section>
+
+  <div class="callout">
+    <div class="icon">⏰</div>
+    <div class="text">
+      <strong>Итог кофе-маршрута:</strong> 15 минут на ТЗ → 5 минут на лендинг → 5 минут на мобилку → 10 минут на AI-слой → ✅ / ✗ по блокам A/B/C/D в конце <a href="../MINI_TZ.md" style="color:#78350f;font-weight:700">MINI_TZ.md</a>.
+    </div>
+  </div>
+
+  <section class="read-order">
+    <h3>📖 Порядок чтения (если хочешь по делу, не по картинкам)</h3>
+    <ol>
+      <li>
+        <span class="num">1</span>
+        <div>
+          <a href="../MINI_TZ.md">MINI_TZ.md</a>
+          <div class="why">Главный документ. Решение: какой агент-SDK берём (Claude vs Google ADK), 8-недельный MVP-скоуп, pricing, риски, чек-лист A/B/C/D для утверждения.</div>
+        </div>
+      </li>
+      <li>
+        <span class="num">✨</span>
+        <div>
+          <a href="infodebag.html">infodebag.html</a> <span style="font-size:11px;background:#dcfce7;color:#166534;padding:2px 8px;border-radius:999px;font-weight:600">новое</span>
+          <div class="why">Как устроена доработка и тест в прототипе — 5 слоёв self-docs, data-flow, data model, статус, walkthrough. То что мы обсуждали/строили только что.</div>
+        </div>
+      </li>
+      <li>
+        <span class="num">🗂</span>
+        <div>
+          <a href="_feedback.html">_feedback.html</a> <span style="font-size:11px;background:#ddd6fe;color:#5b21b6;padding:2px 8px;border-radius:999px;font-weight:600">фаза 2</span>
+          <div class="why">Kanban-агрегатор всех 🐛 со всех 23 страниц. 4 колонки raw→triaged→in-scope→done. AI-Triage кнопкой (prototype stub) классифицирует + предлагает fix.</div>
+        </div>
+      </li>
+      <li>
+        <span class="num">🗺</span>
+        <div>
+          <a href="_master_tz.html">_master_tz.html</a> <span style="font-size:11px;background:#ddd6fe;color:#5b21b6;padding:2px 8px;border-radius:999px;font-weight:600">фаза 4</span>
+          <div class="why">Master ТЗ портала — coverage map всех страниц, roadmap из spec-only UC, agents registry, APIs surface, owner breakdown.</div>
+        </div>
+      </li>
+      <li>
+        <span class="num">2</span>
+        <div>
+          <a href="../USE_CASES.md">USE_CASES.md</a>
+          <div class="why">100 юз-кейсов в 12 категориях. Для каждого: почему AI тут сломается, как мы обходим, уровень уверенности 🟢/🟡/🔴. Топ-10 рисков + MVP-приоритеты в конце.</div>
+        </div>
+      </li>
+      <li>
+        <span class="num">3</span>
+        <div>
+          <a href="landing.html">landing.html</a>
+          <div class="why">Продажная страница в стиле Linear/Vercel. Если не нравится тон/оффер — меняем ДО того как начнём строить продукт, не после.</div>
+        </div>
+      </li>
+      <li>
+        <span class="num">4</span>
+        <div>
+          <a href="a2a.html">a2a.html</a> + <a href="admin-agents.html">admin-agents.html</a>
+          <div class="why">Визуальное подтверждение архитектуры из ТЗ. Агенты видны, разговаривают между собой, конфликты эскалируются человеку. Если выглядит «слишком сложно» — упростим MVP.</div>
+        </div>
+      </li>
+      <li>
+        <span class="num">5</span>
+        <div>
+          <a href="mobile-worker.html">mobile-worker.html</a>
+          <div class="why">Как это выглядит у бригадира в руке. 4 экрана iPhone: чат / хаб / камера / EOD. Критично для адопции — если воркерам неудобно, всё остальное неважно.</div>
+        </div>
+      </li>
+    </ol>
+  </section>
+
+  <section class="section">
+    <div class="section-head">
+      <h2>🤖 AI-слой (ядро продукта)</h2>
+      <span class="hint">Это «мозг» — всё что отличает нас от QuickBooks+Buildertrend</span>
+    </div>
+    <div class="grid">
+      <a href="admin-agents.html" class="card">
+        <div class="card-row">
+          <div class="card-emoji">🧬</div>
+          <div>
+            <div class="card-title">Agent registry</div>
+            <div class="card-path">admin-agents.html</div>
+          </div>
+        </div>
+        <div class="card-desc">Реестр всех агентов в системе. Кто работает у кого, модель, authority level (L0-L3), сколько сэкономили за период, статус. Топ-savers и «нужен ревью».</div>
+        <div class="card-tags"><span class="tag ai">ai</span><span class="tag new">новое</span></div>
+      </a>
+      <a href="a2a.html" class="card">
+        <div class="card-row">
+          <div class="card-emoji">🕸️</div>
+          <div>
+            <div class="card-title">A2A orchestration</div>
+            <div class="card-path">a2a.html</div>
+          </div>
+        </div>
+        <div class="card-desc">SVG-граф связей между агентами + живой feed сообщений + очередь конфликтов для человека + 7-дневный cost breakdown по агентам.</div>
+        <div class="card-tags"><span class="tag ai">ai</span><span class="tag new">новое</span><span class="tag hot">критично</span></div>
+      </a>
+      <a href="ai-policies.html" class="card">
+        <div class="card-row">
+          <div class="card-emoji">⚖️</div>
+          <div>
+            <div class="card-title">Automation rules</div>
+            <div class="card-path">ai-policies.html</div>
+          </div>
+        </div>
+        <div class="card-desc">5 категорий правил (Time/Expense/Payroll/Compliance/Comms). IF/THEN/ELSE pseudo-code + toggle. NL → policy builder («опиши на русском, получи правило»).</div>
+        <div class="card-tags"><span class="tag ai">ai</span><span class="tag new">новое</span></div>
+      </a>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="section-head">
+      <h2>📞 Sales / Call Flow (3 страницы)</h2>
+      <span class="hint">Как AI ведёт тебя до-во время-после звонка с клиентом</span>
+    </div>
+    <div class="grid">
+      <a href="call-brief.html?id=c1" class="card">
+        <div class="card-row">
+          <div class="card-emoji">📋</div>
+          <div>
+            <div class="card-title">Call brief</div>
+            <div class="card-path">call-brief.html</div>
+          </div>
+        </div>
+        <div class="card-desc">До звонка: что известно о клиенте, история проектов, кто из субов доступен, 3 открытых вопроса, talking points. Всё из RAG.</div>
+        <div class="card-tags"><span class="tag ai">ai</span></div>
+      </a>
+      <a href="call-live.html?id=c1" class="card">
+        <div class="card-row">
+          <div class="card-emoji">🎙️</div>
+          <div>
+            <div class="card-title">Live call</div>
+            <div class="card-path">call-live.html</div>
+          </div>
+        </div>
+        <div class="card-desc">Во время звонка: транскрипт real-time, AI-coach подсказывает «спроси про permits», sentiment-метр, auto-capture commitments.</div>
+        <div class="card-tags"><span class="tag ai">ai</span><span class="tag hot">realtime</span></div>
+      </a>
+      <a href="call-summary.html?id=c1" class="card">
+        <div class="card-row">
+          <div class="card-emoji">📝</div>
+          <div>
+            <div class="card-title">Call summary</div>
+            <div class="card-path">call-summary.html</div>
+          </div>
+        </div>
+        <div class="card-desc">После: sentiment 82/100, talk ratio, 4 commitments, revenue impact (+$27k), 5 auto-tasks, обновления CRM, next cadence.</div>
+        <div class="card-tags"><span class="tag ai">ai</span><span class="tag new">новое</span></div>
+      </a>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="section-head">
+      <h2>📱 Клиентские точки входа</h2>
+      <span class="hint">Как продукт видят воркер, клиент и продавец</span>
+    </div>
+    <div class="grid">
+      <a href="mobile-worker.html" class="card">
+        <div class="card-row">
+          <div class="card-emoji">📱</div>
+          <div>
+            <div class="card-title">Mobile worker (4 phones)</div>
+            <div class="card-path">mobile-worker.html</div>
+          </div>
+        </div>
+        <div class="card-desc">4 iPhone рядом: чат с AI / quick actions / камера чека (OCR) / EOD summary. Проверка что UX для бригадира не перегружен.</div>
+        <div class="card-tags"><span class="tag mobile">mobile</span><span class="tag new">новое</span></div>
+      </a>
+      <a href="landing.html" class="card">
+        <div class="card-row">
+          <div class="card-emoji">🎯</div>
+          <div>
+            <div class="card-title">Sales landing</div>
+            <div class="card-path">landing.html</div>
+          </div>
+        </div>
+        <div class="card-desc">«Fire your dispatcher. Your AI does it for $3/day.» Hero, проблема, 6 агентов, 9 фич, ROI-калькулятор, 3 тарифа, FAQ.</div>
+        <div class="card-tags"><span class="tag new">новое</span><span class="tag hot">sales</span></div>
+      </a>
+      <a href="onboarding.html" class="card">
+        <div class="card-row">
+          <div class="card-emoji">🧭</div>
+          <div>
+            <div class="card-title">Onboarding wizard</div>
+            <div class="card-path">onboarding.html</div>
+          </div>
+        </div>
+        <div class="card-desc">5 шагов: Welcome+Role → Integrations (Gmail✓ Cal✓ QB) → Team (auto-detected 5) → AI baseline → Permissions.</div>
+        <div class="card-tags"><span class="tag new">новое</span></div>
+      </a>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="section-head">
+      <h2>💰 Базовый CRM/ERP (существующие экраны)</h2>
+      <span class="hint">Это фундамент поверх которого ложится AI-слой. Не трогал — только напоминание что есть.</span>
+    </div>
+    <div class="grid">
+      <a href="index.html" class="card">
+        <div class="card-row">
+          <div class="card-emoji">📊</div>
+          <div>
+            <div class="card-title">Dashboard</div>
+            <div class="card-path">index.html</div>
+          </div>
+        </div>
+        <div class="card-desc">KPI: Revenue YTD / Labor / Materials / К выплате. Активные смены, pending approvals, топ клиентов по P&L, топ работников.</div>
+      </a>
+      <a href="time.html" class="card">
+        <div class="card-row">
+          <div class="card-emoji">🕒</div>
+          <div>
+            <div class="card-title">Time tracking</div>
+            <div class="card-path">time.html</div>
+          </div>
+        </div>
+        <div class="card-desc">Live-табло активных смен, история, approvals.</div>
+      </a>
+      <a href="expenses.html" class="card">
+        <div class="card-row">
+          <div class="card-emoji">💸</div>
+          <div>
+            <div class="card-title">Expenses</div>
+            <div class="card-path">expenses.html</div>
+          </div>
+        </div>
+        <div class="card-desc">Поток затрат, OCR-чеки, approval queue.</div>
+      </a>
+      <a href="clients.html" class="card">
+        <div class="card-row">
+          <div class="card-emoji">🏢</div>
+          <div>
+            <div class="card-title">Clients</div>
+            <div class="card-path">clients.html</div>
+          </div>
+        </div>
+        <div class="card-desc">Список клиентов с P&L-роллапом (Revenue − Labor − Materials).</div>
+      </a>
+      <a href="client-overview.html?id=c1" class="card">
+        <div class="card-row">
+          <div class="card-emoji">🏗️</div>
+          <div>
+            <div class="card-title">Client overview</div>
+            <div class="card-path">client-overview.html</div>
+          </div>
+        </div>
+        <div class="card-desc">Карточка клиента: проекты, затраты, labor drill-down, billing drafts.</div>
+      </a>
+      <a href="workers.html" class="card">
+        <div class="card-row">
+          <div class="card-emoji">👷</div>
+          <div>
+            <div class="card-title">Workers</div>
+            <div class="card-path">workers.html</div>
+          </div>
+        </div>
+        <div class="card-desc">Список работников + балансы к выплате.</div>
+      </a>
+      <a href="worker-profile.html?id=w1" class="card">
+        <div class="card-row">
+          <div class="card-emoji">👤</div>
+          <div>
+            <div class="card-title">Worker profile</div>
+            <div class="card-path">worker-profile.html</div>
+          </div>
+        </div>
+        <div class="card-desc">Карточка работника: tabs Time / Expenses / Clients / Payouts.</div>
+      </a>
+      <a href="session-detail.html?id=s1" class="card">
+        <div class="card-row">
+          <div class="card-emoji">📍</div>
+          <div>
+            <div class="card-title">Session detail</div>
+            <div class="card-path">session-detail.html</div>
+          </div>
+        </div>
+        <div class="card-desc">Одна смена: geo-трек, селфи, заработок, связанные expenses, audit.</div>
+      </a>
+      <a href="expense-detail.html?id=e1" class="card">
+        <div class="card-row">
+          <div class="card-emoji">🧾</div>
+          <div>
+            <div class="card-title">Expense detail</div>
+            <div class="card-path">expense-detail.html</div>
+          </div>
+        </div>
+        <div class="card-desc">Чек крупно, OCR-extracted fields, linked session + client, approval trail.</div>
+      </a>
+      <a href="my-time.html" class="card">
+        <div class="card-row">
+          <div class="card-emoji">⏱️</div>
+          <div>
+            <div class="card-title">My time (worker view)</div>
+            <div class="card-path">my-time.html</div>
+          </div>
+        </div>
+        <div class="card-desc">Worker self-service: свои смены, start/stop, история.</div>
+      </a>
+      <a href="my-expenses.html" class="card">
+        <div class="card-row">
+          <div class="card-emoji">💳</div>
+          <div>
+            <div class="card-title">My expenses (worker view)</div>
+            <div class="card-path">my-expenses.html</div>
+          </div>
+        </div>
+        <div class="card-desc">Worker self-service: свои затраты + submit form.</div>
+      </a>
+      <a href="audit.html" class="card">
+        <div class="card-row">
+          <div class="card-emoji">📜</div>
+          <div>
+            <div class="card-title">Audit log</div>
+            <div class="card-path">audit.html</div>
+          </div>
+        </div>
+        <div class="card-desc">Immutable лог всех действий (человеческих и AI). Кто, когда, что, зачем.</div>
+      </a>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="section-head">
+      <h2>📄 Документы под решение</h2>
+      <span class="hint">Открывай в IDE / VS Code — markdown, не HTML</span>
+    </div>
+    <div class="grid">
+      <a href="../MINI_TZ.md" class="card">
+        <div class="card-row">
+          <div class="card-emoji">📋</div>
+          <div>
+            <div class="card-title">MINI_TZ.md</div>
+            <div class="card-path">easytimercost/MINI_TZ.md · 24k</div>
+          </div>
+        </div>
+        <div class="card-desc"><strong>Главное что утверждать.</strong> Выбор SDK (Claude recommended) · 8-недельный MVP · A2A-протокол · 3 тарифа · $30k бюджет Claude-led vs $100k нанятая команда · чек-лист A/B/C/D.</div>
+        <div class="card-tags"><span class="tag hot">решение</span></div>
+      </a>
+      <a href="../USE_CASES.md" class="card">
+        <div class="card-row">
+          <div class="card-emoji">🎯</div>
+          <div>
+            <div class="card-title">USE_CASES.md</div>
+            <div class="card-path">easytimercost/USE_CASES.md · 50k</div>
+          </div>
+        </div>
+        <div class="card-desc"><strong>100 юз-кейсов в 12 категориях.</strong> Для каждого: что ждёт юзер / почему тяжело / где сломается / как решаем / confidence 🟢🟡🔴. В конце: Top-10 рисков + MVP-скоуп + defer-to-GA.</div>
+        <div class="card-tags"><span class="tag hot">ревью</span></div>
+      </a>
+      <a href="../README.md" class="card">
+        <div class="card-row">
+          <div class="card-emoji">📖</div>
+          <div>
+            <div class="card-title">README.md</div>
+            <div class="card-path">easytimercost/README.md</div>
+          </div>
+        </div>
+        <div class="card-desc">Структура репы (docs/, modules/, packages/, prototype/) + dependency rules + 20 запланированных страниц + 6 фаз по 2-3 недели.</div>
+      </a>
+    </div>
+  </section>
+
+  <footer>
+    Собрано Claude Opus 4.7 · 2026-04-21 · <a href="../MINI_TZ.md" style="color:var(--brand)">утвердить ТЗ</a> → двигаемся в имплементацию
+  </footer>
+</div>
+</body>
+</html>

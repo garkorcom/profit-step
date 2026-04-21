@@ -6,6 +6,12 @@
       "runtimeExecutable": "/Users/denysharbuzov/.nvm/versions/node/v22.19.0/bin/node",
       "runtimeArgs": ["/Users/denysharbuzov/Projects/profit-step/node_modules/.bin/vite", "--port", "3000"],
       "port": 3000
+    },
+    {
+      "name": "easytimercost-prototype",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["-y", "http-server", "easytimercost/prototype", "-p", "5175", "-c-1", "--silent"],
+      "port": 5175
     }
   ]
 }

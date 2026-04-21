@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8"/>
+<title>EasyTimerCost — Master ТЗ</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="styles.css"/>
+<style>
+  body { font-family: 'Inter', sans-serif; background: #f6f7fb; }
+  .mtz-wrap { padding: 24px 32px 80px; max-width: 1400px; margin: 0 auto; }
+  .mtz-head { margin-bottom: 28px; padding-bottom: 16px; border-bottom: 2px solid #e2e8f0; }
+  .mtz-head h1 { font-size: 30px; font-weight: 800; letter-spacing: -0.02em; color: #0f172a; }
+  .mtz-head .sub { font-size: 13px; color: #64748b; margin-top: 4px; }
+
+  .mtz-kpis { display: grid; grid-template-columns: repeat(5,1fr); gap: 12px; margin-bottom: 24px; }
+  @media (max-width: 900px) { .mtz-kpis { grid-template-columns: 1fr 1fr; } }
+  .mtz-kpi { background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 16px 20px; }
+  .mtz-kpi-lbl { font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: #64748b; font-weight: 600; }
+  .mtz-kpi-val { font-size: 28px; font-weight: 800; color: #0f172a; margin-top: 4px; line-height: 1; }
+  .mtz-kpi-sub { font-size: 11px; color: #94a3b8; margin-top: 4px; }
+
+  .mtz-section { margin-bottom: 32px; }
+  .mtz-section h2 { font-size: 20px; font-weight: 700; margin-bottom: 10px; letter-spacing: -0.01em; display: flex; gap: 10px; align-items: center; }
+  .mtz-section .lead { font-size: 13px; color: #64748b; margin-bottom: 16px; }
+
+  /* Coverage heatmap */
+  .heatmap-table { width: 100%; background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; border-collapse: separate; border-spacing: 0; overflow: hidden; }
+  .heatmap-table th, .heatmap-table td { padding: 10px 14px; text-align: left; font-size: 13px; border-bottom: 1px solid #e2e8f0; }
+  .heatmap-table th { background: #f8fafc; font-weight: 700; font-size: 11px; text-transform: uppercase; letter-spacing: .4px; color: #64748b; }
+  .heatmap-table tbody tr:last-child td { border-bottom: 0; }
+  .heatmap-table tbody tr:hover { background: #fafbff; cursor: pointer; }
+
+  .hm-cov-cell {
+    display: inline-flex; align-items: center; gap: 8px;
+  }
+  .hm-cov-bar {
+    width: 100px; height: 8px; background: #f1f5f9; border-radius: 4px; overflow: hidden;
+  }
+  .hm-cov-bar > div { height: 100%; border-radius: 4px; }
+
+  .hm-status-pills {
+    display: inline-flex; gap: 4px;
+    font-size: 10px; font-family: 'JetBrains Mono', monospace;
+  }
+  .hm-pill { padding: 1px 5px; border-radius: 3px; }
+  .hm-pill.p { background: #dcfce7; color: #166534; }
+  .hm-pill.f { background: #fee2e2; color: #991b1b; }
+  .hm-pill.u { background: #f1f5f9; color: #475569; }
+  .hm-pill.s { background: #dbeafe; color: #1e40af; }
+
+  .hm-owner {
+    font-size: 10px; font-family: 'JetBrains Mono', monospace; padding: 2px 8px;
+    background: #f3e8ff; color: #6d28d9; border-radius: 4px;
+  }
+  .hm-sparse {
+    font-size: 10px; font-weight: 600; padding: 2px 8px; background: #fef3c7; color: #92400e; border-radius: 4px;
+  }
+
+  /* Agents & APIs tables */
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  @media (max-width: 800px) { .grid-2 { grid-template-columns: 1fr; } }
+  .mtz-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 18px 22px; }
+  .mtz-card h3 { font-size: 15px; font-weight: 700; margin-bottom: 12px; }
+  .mtz-card ul { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; }
+  .mtz-card li {
+    display: flex; gap: 10px; align-items: center; font-size: 12px;
+    padding: 6px 10px; background: #f8fafc; border-radius: 6px;
+  }
+  .mtz-card li .count { margin-left: auto; font-weight: 700; color: #4338ca; }
+  .mtz-card li .id { font-family: 'JetBrains Mono', monospace; font-weight: 600; color: #0f172a; }
+
+  .back { display: inline-flex; gap: 6px; align-items: center; font-size: 12px; color: #5b6cff; text-decoration: none; margin-bottom: 8px; }
+
+  .roadmap { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 10px; }
+  @media (max-width: 800px) { .roadmap { grid-template-columns: 1fr; } }
+  .roadmap-col { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 14px 16px; }
+  .roadmap-col.done    { border-top: 3px solid #16a34a; }
+  .roadmap-col.scope   { border-top: 3px solid #2563eb; }
+  .roadmap-col.backlog { border-top: 3px solid #64748b; }
+  .roadmap-col h3 { font-size: 13px; font-weight: 700; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; }
+  .roadmap-col .badge { font-size: 11px; background: #f1f5f9; padding: 2px 8px; border-radius: 999px; font-weight: 700; }
+  .roadmap-col ul { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 5px; }
+  .roadmap-col li { font-size: 12px; color: #475569; padding: 5px 8px; background: #f8fafc; border-radius: 5px; }
+</style>
+</head>
+<body>
+<script src="meta.js"></script>
+<script src="shell.js"></script>
+
+<div class="mtz-wrap">
+  <a href="_review.html" class="back">← назад в review</a>
+  <div class="mtz-head">
+    <h1>🗺 Master ТЗ портала</h1>
+    <div class="sub">Агрегат всех PAGES[*] · owners · coverage map · roadmap · agents · APIs</div>
+  </div>
+
+  <div class="mtz-kpis" id="kpis"></div>
+
+  <section class="mtz-section">
+    <h2>🎯 Coverage map — какие страницы покрыты UC</h2>
+    <div class="lead">Свежий прогон localStorage. Цвет = % passing UC. Серые = нет UC ещё.</div>
+    <table class="heatmap-table" id="heatmap"></table>
+  </section>
+
+  <section class="mtz-section">
+    <h2>🗺 Roadmap — что spec-only (ждёт имплементации)</h2>
+    <div class="lead">UC со статусом 🔵 spec-only — описаны, но фичи ещё нет. Это backlog новых фич.</div>
+    <div class="roadmap" id="roadmap"></div>
+  </section>
+
+  <section class="mtz-section">
+    <h2>🤖 Агенты и APIs</h2>
+    <div class="lead">Агрегат из всех PAGES[*].agents/apis — видно какие агенты самые загруженные + полный API surface.</div>
+    <div class="grid-2">
+      <div class="mtz-card">
+        <h3>🤖 Agent registry (использования)</h3>
+        <ul id="agents-list"></ul>
+      </div>
+      <div class="mtz-card">
+        <h3>🔌 API endpoints</h3>
+        <ul id="apis-list"></ul>
+      </div>
+    </div>
+  </section>
+
+  <section class="mtz-section">
+    <h2>👥 Страницы по owner'у</h2>
+    <div class="lead">Кто отвечает за что. Фидбек роутится владельцу автоматически.</div>
+    <div class="mtz-card">
+      <ul id="owners-list"></ul>
+    </div>
+  </section>
+</div>
+
+<script>
+const PAGE_IDS = Object.keys(PAGES);
+
+function ensureSeed() {
+  // init UC storage so ucStats is meaningful
+  STORAGE.initUseCases();
+}
+
+function allPagesStats() {
+  ensureSeed();
+  return PAGE_IDS.map(id => {
+    const p = PAGES[id];
+    const s = ucStats(id);
+    const hasSpec = !!(p.purpose || (p.inputs && p.inputs.length));
+    return { id, page: p, stats: s, hasSpec };
+  });
+}
+
+function renderKpis() {
+  const stats = allPagesStats();
+  const totalPages = stats.length;
+  const wiredPages = stats.filter(s => s.hasSpec || s.stats.total).length;
+  const totalUC = stats.reduce((a, s) => a + s.stats.total, 0);
+  const passingUC = stats.reduce((a, s) => a + s.stats.passing, 0);
+  const failingUC = stats.reduce((a, s) => a + s.stats.failing, 0);
+  const specOnly = stats.reduce((a, s) => a + s.stats.specOnly, 0);
+  const globalCov = totalUC ? Math.round(passingUC / totalUC * 100) : 0;
+
+  document.getElementById('kpis').innerHTML = `
+    <div class="mtz-kpi">
+      <div class="mtz-kpi-lbl">📄 Страниц</div>
+      <div class="mtz-kpi-val">${totalPages}</div>
+      <div class="mtz-kpi-sub">${wiredPages} с UC/spec</div>
+    </div>
+    <div class="mtz-kpi">
+      <div class="mtz-kpi-lbl">🎯 Use cases</div>
+      <div class="mtz-kpi-val">${totalUC}</div>
+      <div class="mtz-kpi-sub">покрыто ${globalCov}%</div>
+    </div>
+    <div class="mtz-kpi" style="border-top:4px solid #16a34a">
+      <div class="mtz-kpi-lbl">🟢 Passing</div>
+      <div class="mtz-kpi-val">${passingUC}</div>
+      <div class="mtz-kpi-sub">работает</div>
+    </div>
+    <div class="mtz-kpi" style="border-top:4px solid #dc2626">
+      <div class="mtz-kpi-lbl">🔴 Failing</div>
+      <div class="mtz-kpi-val">${failingUC}</div>
+      <div class="mtz-kpi-sub">сломано</div>
+    </div>
+    <div class="mtz-kpi" style="border-top:4px solid #0284c7">
+      <div class="mtz-kpi-lbl">🔵 Spec-only</div>
+      <div class="mtz-kpi-val">${specOnly}</div>
+      <div class="mtz-kpi-sub">в backlog</div>
+    </div>
+  `;
+}
+
+function renderHeatmap() {
+  const stats = allPagesStats()
+    .sort((a, b) => (b.stats.total || 0) - (a.stats.total || 0));
+
+  const rowsHtml = stats.map(({ id, page, stats: s, hasSpec }) => {
+    const covColor = s.coverage >= 70 ? '#16a34a' : s.coverage >= 40 ? '#eab308' : s.coverage > 0 ? '#ea580c' : '#cbd5e1';
+    const covW = s.total ? s.coverage : 0;
+    return `
+      <tr onclick="window.location.href='${page.file || '#'}'">
+        <td><strong>${page.title}</strong> <span style="font-size:10px;color:#94a3b8;font-family:'JetBrains Mono',monospace">${id}</span></td>
+        <td>${page.owner ? `<span class="hm-owner">${page.owner}</span>` : '<span style="color:#cbd5e1">—</span>'}</td>
+        <td>${hasSpec ? '✅' : '<span class="hm-sparse">sparse</span>'}</td>
+        <td>
+          <div class="hm-cov-cell">
+            <div class="hm-cov-bar"><div style="width:${covW}%;background:${covColor}"></div></div>
+            <span style="font-weight:700;font-size:11px">${s.total ? s.coverage + '%' : '—'}</span>
+          </div>
+        </td>
+        <td>
+          <span class="hm-status-pills">
+            ${s.passing  ? `<span class="hm-pill p">🟢${s.passing}</span>`  : ''}
+            ${s.failing  ? `<span class="hm-pill f">🔴${s.failing}</span>`  : ''}
+            ${s.untested ? `<span class="hm-pill u">⚪${s.untested}</span>` : ''}
+            ${s.specOnly ? `<span class="hm-pill s">🔵${s.specOnly}</span>` : ''}
+            ${!s.total ? '<span style="color:#cbd5e1">— нет UC —</span>' : ''}
+          </span>
+        </td>
+        <td style="font-size:11px;color:#64748b">${(page.agents || []).length}</td>
+        <td style="font-size:11px;color:#64748b">${(page.apis || []).length}</td>
+      </tr>
+    `;
+  }).join('');
+
+  document.getElementById('heatmap').innerHTML = `
+    <thead>
+      <tr>
+        <th>Страница</th>
+        <th>Owner</th>
+        <th>Spec</th>
+        <th>Coverage</th>
+        <th>Статусы UC</th>
+        <th>Agents</th>
+        <th>APIs</th>
+      </tr>
+    </thead>
+    <tbody>${rowsHtml}</tbody>
+  `;
+}
+
+function renderRoadmap() {
+  const all = STORAGE.listUseCases();
+  const specOnly = all.filter(uc => uc.status === 'spec-only');
+  const failing  = all.filter(uc => uc.status === 'failing');
+  const drafts   = all.filter(uc => uc.status === 'draft');
+
+  const byPage = (items) => {
+    const grouped = {};
+    items.forEach(uc => {
+      if (!grouped[uc.pageId]) grouped[uc.pageId] = [];
+      grouped[uc.pageId].push(uc);
+    });
+    return grouped;
+  };
+
+  const renderCol = (items, emptyMsg) => {
+    if (!items.length) return `<li style="color:#cbd5e1;font-style:italic;">${emptyMsg}</li>`;
+    return items.slice(0, 8).map(uc => `<li><strong>${PAGES[uc.pageId]?.title || uc.pageId}</strong> · ${escapeHtml(uc.title)}</li>`).join('');
+  };
+
+  document.getElementById('roadmap').innerHTML = `
+    <div class="roadmap-col backlog">
+      <h3>🔵 Spec-only (backlog) <span class="badge">${specOnly.length}</span></h3>
+      <ul>${renderCol(specOnly, 'нет backlog\'а')}</ul>
+    </div>
+    <div class="roadmap-col done">
+      <h3>🔴 Failing (срочно) <span class="badge">${failing.length}</span></h3>
+      <ul>${renderCol(failing, 'всё работает')}</ul>
+    </div>
+    <div class="roadmap-col scope">
+      <h3>🟣 Drafts (идеи) <span class="badge">${drafts.length}</span></h3>
+      <ul>${renderCol(drafts, 'нет draft UC')}</ul>
+    </div>
+  `;
+}
+
+function renderAgentsAndApis() {
+  const agentCount = {};
+  const apiList = [];
+  PAGE_IDS.forEach(id => {
+    const p = PAGES[id];
+    (p.agents || []).forEach(a => { agentCount[a] = (agentCount[a] || 0) + 1; });
+    (p.apis || []).forEach(api => apiList.push({ api, page: p.title }));
+  });
+
+  const agentsHtml = Object.entries(agentCount)
+    .sort((a, b) => b[1] - a[1])
+    .map(([name, count]) => `<li><span class="id">🤖 ${name}</span><span class="count">на ${count} стр</span></li>`)
+    .join('') || '<li style="color:#cbd5e1">— нет агентов —</li>';
+
+  const apisHtml = apiList
+    .sort((a, b) => a.api.localeCompare(b.api))
+    .map(({ api, page }) => `<li><span class="id">${escapeHtml(api)}</span><span style="font-size:10px;color:#94a3b8">${page}</span></li>`)
+    .join('') || '<li style="color:#cbd5e1">— нет APIs —</li>';
+
+  document.getElementById('agents-list').innerHTML = agentsHtml;
+  document.getElementById('apis-list').innerHTML = apisHtml;
+}
+
+function renderOwners() {
+  const owners = {};
+  PAGE_IDS.forEach(id => {
+    const p = PAGES[id];
+    if (!p.owner) return;
+    if (!owners[p.owner]) owners[p.owner] = [];
+    owners[p.owner].push(p);
+  });
+  const html = Object.entries(owners)
+    .sort((a, b) => b[1].length - a[1].length)
+    .map(([owner, pages]) => `
+      <li>
+        <span class="id">👤 ${owner}</span>
+        <span style="font-size:11px;color:#64748b">${pages.map(p => p.title).join(' · ')}</span>
+        <span class="count">${pages.length}</span>
+      </li>
+    `).join('');
+  document.getElementById('owners-list').innerHTML = html;
+}
+
+renderKpis();
+renderHeatmap();
+renderRoadmap();
+renderAgentsAndApis();
+renderOwners();
+</script>
+</body>
+</html>

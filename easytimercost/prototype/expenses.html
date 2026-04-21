@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8"/>
+<title>EasyTimerCost — Затраты</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="styles.css"/>
+</head>
+<body>
+<script src="meta.js"></script>
+<script src="shell.js"></script>
+<script>
+renderShell({
+  active: 'expenses',
+  title: 'Затраты',
+  breadcrumbs: [{ label: 'Dashboard', href: 'index.html' }, { label: 'Затраты' }],
+  actions: `<div class="row">${periodPill()}<button class="btn">Экспорт</button><button class="btn primary">+ Добавить затрату</button></div>`
+});
+
+const totals = {
+  approved: MOCK.expenses.filter(e => e.status === 'approved').reduce((a,e)=>a+e.amount, 0),
+  submitted: MOCK.expenses.filter(e => e.status === 'submitted').reduce((a,e)=>a+e.amount, 0),
+  rejected: MOCK.expenses.filter(e => e.status === 'rejected').reduce((a,e)=>a+e.amount, 0),
+  billable: MOCK.expenses.filter(e => e.billable && e.status === 'approved').reduce((a,e)=>a+e.amount, 0),
+  reimbursable: MOCK.expenses.filter(e => e.reimbursable && e.status === 'approved').reduce((a,e)=>a+e.amount, 0),
+};
+
+const byCategory = {};
+MOCK.expenses.filter(e => e.status === 'approved').forEach(e => {
+  byCategory[e.category] = (byCategory[e.category] || 0) + e.amount;
+});
+
+setBody(`
+  <div class="kpi-grid">
+    <div class="kpi success"><div class="kpi-label">Approved</div><div class="kpi-value">${fmt$(totals.approved)}</div><div class="kpi-sub">${MOCK.expenses.filter(e=>e.status==='approved').length} чеков</div></div>
+    <div class="kpi warning"><div class="kpi-label">Pending</div><div class="kpi-value">${fmt$(totals.submitted)}</div><div class="kpi-sub">${MOCK.expenses.filter(e=>e.status==='submitted').length} в ожидании</div></div>
+    <div class="kpi primary"><div class="kpi-label">Billable to clients</div><div class="kpi-value">${fmt$(totals.billable)}</div></div>
+    <div class="kpi"><div class="kpi-label">Reimbursable</div><div class="kpi-value">${fmt$(totals.reimbursable)}</div><div class="kpi-sub">долг работникам</div></div>
+  </div>
+
+  <div class="grid-2" style="align-items:flex-start;margin-bottom:16px">
+    <div class="card">
+      <div class="card-header"><h3>📊 По категориям</h3></div>
+      <div class="card-body">
+        ${Object.entries(byCategory).sort((a,b)=>b[1]-a[1]).map(([cat, amt]) => {
+          const pct = Math.round((amt / totals.approved) * 100);
+          return `
+            <div style="margin-bottom:10px">
+              <div class="row spread small" style="margin-bottom:4px"><span class="strong">${cat}</span><span class="muted">${fmt$(amt)} (${pct}%)</span></div>
+              <div class="progress"><div class="progress-bar" style="width:${pct}%"></div></div>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header"><h3>⏳ Очередь approval (${MOCK.expenses.filter(e=>e.status==='submitted').length})</h3></div>
+      <table class="table">
+        <thead><tr><th>Работник</th><th class="num">Сумма</th><th></th></tr></thead>
+        <tbody>
+          ${MOCK.expenses.filter(e=>e.status==='submitted').map(e => {
+            const w = workerById(e.workerId);
+            return `
+              <tr onclick="location.href='expense-detail.html?id=${e.id}'">
+                <td><div class="row" style="gap:8px"><div class="avatar sm">${w.initials}</div><div><div class="small strong">${w.name}</div><div class="small muted">${e.desc}</div></div></div></td>
+                <td class="num strong">${fmt$exact(e.amount)}</td>
+                <td><div class="row" style="gap:4px"><button class="btn sm" style="background:var(--success);color:#fff;border-color:var(--success)">✓</button><button class="btn sm" style="background:var(--error);color:#fff;border-color:var(--error)">✗</button></div></td>
+              </tr>
+            `;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="filters">
+    <select class="filter-select"><option>Все статусы</option><option>Draft</option><option>Submitted</option><option>Approved</option><option>Rejected</option><option>Paid</option></select>
+    <select class="filter-select"><option>Все категории</option><option>Materials</option><option>Fuel</option><option>Tools</option><option>Subcontractor</option></select>
+    <select class="filter-select"><option>Все клиенты</option>${MOCK.clients.map(c=>`<option>${c.name}</option>`).join('')}</select>
+    <select class="filter-select"><option>Все работники</option>${MOCK.workers.filter(w=>w.hours>0).map(w=>`<option>${w.name}</option>`).join('')}</select>
+    <input class="filter-select" placeholder="Поиск..." style="min-width:200px"/>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <h3>Все затраты (${MOCK.expenses.length})</h3>
+      <div class="row small muted">Billable: ${fmt$(totals.billable)} · Reimbursable: ${fmt$(totals.reimbursable)}</div>
+    </div>
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Дата</th>
+          <th>Работник</th>
+          <th>Клиент</th>
+          <th>Категория</th>
+          <th>Описание</th>
+          <th>Flags</th>
+          <th class="num">Сумма</th>
+          <th>Статус</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${MOCK.expenses.map(e => {
+          const w = workerById(e.workerId);
+          const c = clientById(e.clientId);
+          const statusChip = e.status === 'approved' ? 'success' : e.status === 'submitted' ? 'warning' : e.status === 'rejected' ? 'error' : '';
+          return `
+            <tr onclick="location.href='expense-detail.html?id=${e.id}'">
+              <td class="small">${e.date}</td>
+              <td><div class="row" style="gap:8px"><div class="avatar sm">${w.initials}</div><span class="small strong">${w.name}</span></div></td>
+              <td><span class="chip">${c.name}</span></td>
+              <td><span class="chip primary">${e.category}</span></td>
+              <td class="small">${e.desc}</td>
+              <td>
+                <div class="row" style="gap:4px">
+                  ${e.billable ? '<span class="chip success" title="Billable">B</span>' : ''}
+                  ${e.reimbursable ? '<span class="chip warning" title="Reimbursable">R</span>' : ''}
+                  ${e.receipt ? '<span title="Receipt attached">📎</span>' : '<span title="No receipt" style="color:var(--error)">⚠</span>'}
+                </div>
+              </td>
+              <td class="num strong">${fmt$exact(e.amount)}</td>
+              <td><span class="chip ${statusChip}">${e.status}</span></td>
+            </tr>
+          `;
+        }).join('')}
+      </tbody>
+    </table>
+  </div>
+`);
+
+mountSelfDocs('expenses');
+</script>
+</body>
+</html>

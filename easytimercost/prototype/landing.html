@@ -1,0 +1,565 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>EasyTimerCost — Fire your dispatcher. Your AI does it for $3/day.</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="styles.css"/>
+<style>
+  body { background: #fff; }
+  .land-nav { position: sticky; top: 0; z-index: 10; background: rgba(255,255,255,0.92); backdrop-filter: blur(12px); border-bottom: 1px solid var(--border); padding: 14px 32px; display: flex; align-items: center; gap: 24px }
+  .land-nav .brand { padding: 0 }
+  .land-nav .links { margin-left: auto; display: flex; gap: 24px; font-size: 14px; color: var(--text-2) }
+  .land-nav .links a { color: inherit; text-decoration: none }
+  .land-nav .links a:hover { color: var(--text) }
+  .land-cta { background: var(--ai); color: #fff; padding: 9px 18px; border-radius: 8px; font-weight: 600; font-size: 13px; text-decoration: none !important }
+  .land-cta:hover { background: var(--ai-600) }
+  .land-section { padding: 80px 32px; max-width: 1200px; margin: 0 auto }
+  .hero { padding: 80px 32px 60px; background: linear-gradient(180deg,#faf5ff 0%, #fff 100%); border-bottom: 1px solid var(--border) }
+  .hero-inner { max-width: 1200px; margin: 0 auto; display: grid; grid-template-columns: 1.15fr 1fr; gap: 60px; align-items: center }
+  .hero-eyebrow { display: inline-flex; gap: 8px; align-items: center; background: var(--ai-50); color: var(--ai-600); padding: 6px 14px; border-radius: 100px; font-size: 12px; font-weight: 600; margin-bottom: 20px }
+  .hero h1 { font-size: 56px; line-height: 1.05; font-weight: 800; letter-spacing: -0.02em; margin: 0 0 20px; color: var(--text) }
+  .hero h1 span { background: linear-gradient(135deg, var(--ai) 0%, var(--primary) 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent }
+  .hero p.lead { font-size: 19px; line-height: 1.55; color: var(--text-2); margin: 0 0 32px; max-width: 520px }
+  .hero-ctas { display: flex; gap: 12px; margin-bottom: 24px }
+  .btn-primary { background: var(--ai); color: #fff; padding: 14px 26px; border-radius: 10px; font-weight: 700; text-decoration: none; font-size: 15px; border: 0; cursor: pointer; box-shadow: 0 4px 14px rgba(124,58,237,0.25) }
+  .btn-primary:hover { background: var(--ai-600) }
+  .btn-secondary { background: #fff; color: var(--text); padding: 14px 26px; border-radius: 10px; font-weight: 600; text-decoration: none; font-size: 15px; border: 1px solid var(--border-strong) }
+  .btn-secondary:hover { background: var(--bg) }
+  .hero-microproof { display: flex; gap: 20px; color: var(--text-3); font-size: 13px; align-items: center }
+  .hero-mock { background: linear-gradient(135deg, #fff 0%, #faf5ff 100%); border: 1px solid var(--ai-100); border-radius: 20px; padding: 24px; box-shadow: 0 20px 60px rgba(124,58,237,0.12) }
+  .hero-mock-chat { display: flex; flex-direction: column; gap: 10px }
+  .hero-mock .m { display: flex; gap: 8px; align-items: flex-start }
+  .hero-mock .m .av { width: 28px; height: 28px; border-radius: 6px; flex-shrink: 0; background: linear-gradient(135deg, var(--ai), var(--primary)); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 14px }
+  .hero-mock .m .bub { background: #fff; border: 1px solid var(--border); border-radius: 12px; padding: 10px 14px; font-size: 13px; color: var(--text); box-shadow: var(--shadow-sm) }
+  .hero-mock .m.mine { justify-content: flex-end }
+  .hero-mock .m.mine .bub { background: var(--primary); color: #fff; border-color: var(--primary) }
+  .hero-mock .m.mine .av { background: #ddd; color: #444; order: 2 }
+  .hero-mock .m.ai .bub { background: var(--ai-50); border-color: var(--ai-100); color: var(--ai-600) }
+  .hero-mock .proposal { background: #fff; border: 2px dashed var(--ai); border-radius: 12px; padding: 14px; margin: 8px 0 4px }
+  .hero-mock .proposal-title { color: var(--ai-600); font-weight: 700; font-size: 13px; margin-bottom: 4px }
+  .hero-mock .proposal-btns { display: flex; gap: 6px; margin-top: 10px }
+  .hero-mock .p-btn { background: var(--success); color: #fff; border: 0; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer }
+  .hero-mock .p-btn.gray { background: #f1f5f9; color: var(--text-2) }
+
+  .problem-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; margin-top: 40px }
+  .problem-card { background: var(--bg); padding: 24px; border-radius: 16px; border: 1px solid var(--border) }
+  .problem-card .big { font-size: 36px; font-weight: 800; color: var(--error); margin-bottom: 6px }
+  .problem-card .ttl { font-weight: 700; margin-bottom: 6px; color: var(--text) }
+  .problem-card .desc { color: var(--text-2); font-size: 13px; line-height: 1.5 }
+
+  .section-header { text-align: center; margin-bottom: 48px }
+  .section-eyebrow { color: var(--ai-600); font-weight: 700; font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 10px }
+  .section-header h2 { font-size: 40px; font-weight: 800; letter-spacing: -0.02em; margin: 0 0 12px }
+  .section-header p { font-size: 17px; color: var(--text-2); max-width: 680px; margin: 0 auto }
+
+  .agents-showcase { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-top: 40px }
+  .agent-tile { background: #fff; border: 1px solid var(--border); border-radius: 18px; padding: 28px; position: relative; overflow: hidden }
+  .agent-tile::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 4px; background: linear-gradient(90deg, var(--ai), var(--primary)) }
+  .agent-tile .icon { width: 52px; height: 52px; border-radius: 14px; background: linear-gradient(135deg, var(--ai), var(--primary)); display: flex; align-items: center; justify-content: center; font-size: 26px; margin-bottom: 18px }
+  .agent-tile h3 { margin: 0 0 10px; font-size: 20px; font-weight: 700 }
+  .agent-tile p { margin: 0 0 14px; color: var(--text-2); font-size: 14px; line-height: 1.55 }
+  .agent-tile ul { margin: 0; padding-left: 18px; color: var(--text-2); font-size: 13px; line-height: 1.7 }
+  .agent-tile ul li { margin-bottom: 2px }
+
+  .features-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-top: 40px }
+  .feat { background: #fff; border: 1px solid var(--border); border-radius: 16px; padding: 24px }
+  .feat .e { font-size: 28px; margin-bottom: 14px }
+  .feat h3 { margin: 0 0 6px; font-size: 16px; font-weight: 700 }
+  .feat p { margin: 0; color: var(--text-2); font-size: 13.5px; line-height: 1.5 }
+
+  .roi-box { background: linear-gradient(135deg, #faf5ff, #fff); border: 1px solid var(--ai-100); border-radius: 24px; padding: 48px; display: grid; grid-template-columns: 1fr 1.2fr; gap: 48px; align-items: center; margin-top: 40px }
+  .roi-calc { display: flex; flex-direction: column; gap: 16px }
+  .roi-row { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--border); font-size: 14px }
+  .roi-row.total { border-bottom: 0; font-weight: 800; font-size: 20px; color: var(--success); padding-top: 14px }
+  .roi-big { text-align: center }
+  .roi-big .label { color: var(--ai-600); font-weight: 700; font-size: 14px; letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 8px }
+  .roi-big .num { font-size: 72px; font-weight: 800; line-height: 1; background: linear-gradient(135deg, var(--ai), var(--primary)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 4px }
+  .roi-big .sub { color: var(--text-2); font-size: 15px }
+
+  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; margin-top: 40px }
+  .step { position: relative; padding-left: 60px }
+  .step .num { position: absolute; left: 0; top: 0; width: 44px; height: 44px; border-radius: 12px; background: var(--ai); color: #fff; font-weight: 800; font-size: 20px; display: flex; align-items: center; justify-content: center }
+  .step h3 { margin: 0 0 8px; font-size: 18px; font-weight: 700 }
+  .step p { margin: 0; color: var(--text-2); font-size: 14px; line-height: 1.55 }
+
+  .pricing-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-top: 40px }
+  .price-card { background: #fff; border: 1px solid var(--border); border-radius: 20px; padding: 32px; position: relative }
+  .price-card.popular { border: 2px solid var(--ai); box-shadow: 0 10px 40px rgba(124,58,237,0.12); transform: translateY(-8px) }
+  .price-card .badge { position: absolute; top: -12px; left: 50%; transform: translateX(-50%); background: var(--ai); color: #fff; padding: 4px 12px; border-radius: 100px; font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase }
+  .price-card .tier { font-size: 16px; font-weight: 700; color: var(--text-2); margin-bottom: 4px }
+  .price-card .price { font-size: 48px; font-weight: 800; letter-spacing: -0.02em; margin-bottom: 4px }
+  .price-card .price sup { font-size: 22px; font-weight: 600; color: var(--text-2); vertical-align: top; margin-right: 2px }
+  .price-card .price .per { font-size: 15px; font-weight: 500; color: var(--text-2) }
+  .price-card .tagline { color: var(--text-2); font-size: 13px; margin-bottom: 20px; padding-bottom: 20px; border-bottom: 1px solid var(--border) }
+  .price-card ul { margin: 0 0 24px; padding: 0; list-style: none; font-size: 14px; color: var(--text); line-height: 1.7 }
+  .price-card ul li { padding-left: 26px; position: relative; margin-bottom: 4px }
+  .price-card ul li::before { content: '✓'; position: absolute; left: 0; top: 0; color: var(--success); font-weight: 700 }
+  .price-card .b { display: block; text-align: center; padding: 12px; border-radius: 10px; font-weight: 700; text-decoration: none; font-size: 14px }
+  .price-card .b.primary { background: var(--ai); color: #fff }
+  .price-card .b.secondary { background: #fff; color: var(--text); border: 1px solid var(--border-strong) }
+
+  .testimonial-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-top: 40px }
+  .testi { background: var(--bg); padding: 24px; border-radius: 16px }
+  .testi .quote { font-size: 15px; line-height: 1.55; color: var(--text); margin-bottom: 18px }
+  .testi .who { display: flex; gap: 12px; align-items: center }
+  .testi .who .avatar { width: 40px; height: 40px; border-radius: 50%; background: var(--ai); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px }
+  .testi .who .name { font-weight: 700; font-size: 14px }
+  .testi .who .role { color: var(--text-2); font-size: 12px }
+
+  .faq { max-width: 780px; margin: 40px auto 0 }
+  .faq-item { border: 1px solid var(--border); border-radius: 12px; padding: 20px 24px; margin-bottom: 10px; background: #fff }
+  .faq-item .q { font-weight: 700; font-size: 15px; margin-bottom: 8px }
+  .faq-item .a { color: var(--text-2); font-size: 14px; line-height: 1.55 }
+
+  .footer-cta { background: linear-gradient(135deg, var(--ai) 0%, var(--primary) 100%); color: #fff; padding: 80px 32px; text-align: center }
+  .footer-cta h2 { font-size: 44px; font-weight: 800; letter-spacing: -0.02em; margin: 0 0 14px }
+  .footer-cta p { font-size: 18px; opacity: 0.95; margin: 0 0 32px; max-width: 580px; margin-left: auto; margin-right: auto }
+  .footer-cta .btn-white { background: #fff; color: var(--ai); padding: 16px 32px; border-radius: 12px; font-weight: 700; font-size: 16px; text-decoration: none; display: inline-block }
+  .footer-cta .btn-white:hover { background: #fafafa }
+
+  .land-footer { padding: 40px 32px; text-align: center; border-top: 1px solid var(--border); color: var(--text-3); font-size: 13px }
+
+  @media (max-width: 900px) {
+    .hero-inner, .roi-box { grid-template-columns: 1fr; gap: 32px }
+    .hero h1 { font-size: 40px }
+    .problem-grid, .features-grid, .agents-showcase, .steps, .pricing-grid, .testimonial-grid { grid-template-columns: 1fr }
+    .price-card.popular { transform: none }
+    .land-section { padding: 56px 20px }
+  }
+</style>
+</head>
+<body>
+
+<!-- Nav -->
+<nav class="land-nav">
+  <div class="brand">
+    <div class="brand-logo" style="background:linear-gradient(135deg,var(--ai),var(--primary))">⏱</div>
+    <div>EasyTimerCost</div>
+  </div>
+  <div class="links">
+    <a href="#agents">Agents</a>
+    <a href="#features">Features</a>
+    <a href="#pricing">Pricing</a>
+    <a href="#faq">FAQ</a>
+    <a href="index.html">Live demo →</a>
+  </div>
+  <a href="#demo" class="land-cta">Book demo</a>
+</nav>
+
+<!-- Hero -->
+<section class="hero">
+  <div class="hero-inner">
+    <div>
+      <div class="hero-eyebrow">
+        <span style="font-size:14px">🤖</span>
+        <span>AI-first ERP · for construction SMB</span>
+      </div>
+      <h1>Fire your dispatcher.<br/><span>Your AI does it for $3/day.</span></h1>
+      <p class="lead">
+        Each worker gets a personal AI agent that starts shifts, logs receipts,
+        schedules crews, briefs you before client calls, and closes out the day —
+        while you run the business.
+      </p>
+      <div class="hero-ctas">
+        <a href="#demo" class="btn-primary">Book 20-min demo →</a>
+        <a href="index.html" class="btn-secondary">See live prototype</a>
+      </div>
+      <div class="hero-microproof">
+        <div>✓ No credit card</div>
+        <div>✓ 14-day free trial</div>
+        <div>✓ Cancel anytime</div>
+      </div>
+    </div>
+
+    <!-- Hero mock chat -->
+    <div class="hero-mock">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+        <div style="display:flex;gap:8px;align-items:center">
+          <div style="width:32px;height:32px;border-radius:8px;background:linear-gradient(135deg,var(--ai),var(--primary));display:flex;align-items:center;justify-content:center;color:#fff">🤖</div>
+          <div>
+            <div style="font-weight:700;font-size:13px">Andrei · your AI</div>
+            <div style="color:var(--text-3);font-size:11px">● online · 47 tasks handled today</div>
+          </div>
+        </div>
+        <div style="background:var(--success-50);color:var(--success);font-size:11px;font-weight:600;padding:4px 10px;border-radius:100px">Saving 4.2h/day</div>
+      </div>
+      <div class="hero-mock-chat">
+        <div class="m ai">
+          <div class="av">🤖</div>
+          <div class="bub">I noticed Mike's truck is parked at the Acme job site for 12 min. Start his shift?</div>
+        </div>
+        <div class="m mine">
+          <div class="bub">yes</div>
+          <div class="av">Д</div>
+        </div>
+        <div class="m ai">
+          <div class="av">🤖</div>
+          <div class="bub">Done. Also — Home Depot receipt arrived in your inbox. Vendor matches.</div>
+        </div>
+        <div class="proposal">
+          <div class="proposal-title">📝 Propose: log $347.82 expense to Acme · Phase 2</div>
+          <div style="color:var(--text-2);font-size:12px">Category: materials · auto-approved (under $500 threshold)</div>
+          <div class="proposal-btns">
+            <button class="p-btn">✓ Approve</button>
+            <button class="p-btn gray">Edit</button>
+            <button class="p-btn gray">Reject</button>
+          </div>
+        </div>
+        <div class="m ai">
+          <div class="av">🤖</div>
+          <div class="bub">John (Acme) is calling. Brief ready — he'll ask about Phase 2 finish date. Answer: May 15.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Problem -->
+<section class="land-section">
+  <div class="section-header">
+    <div class="section-eyebrow">The problem</div>
+    <h2>You're running a contracting business on sticky notes.</h2>
+    <p>Every SMB contractor we talk to says the same thing: "I lose money I don't see." Here's where it goes.</p>
+  </div>
+  <div class="problem-grid">
+    <div class="problem-card">
+      <div class="big">$18k</div>
+      <div class="ttl">Lost receipts / year</div>
+      <div class="desc">Workers buy materials, throw receipts in the truck. By month-end — 40% are unreadable or gone.</div>
+    </div>
+    <div class="problem-card">
+      <div class="big">80h</div>
+      <div class="ttl">Admin per month</div>
+      <div class="desc">You (the owner) spending 2 full days/week on payroll, estimates, client calls prep, crew scheduling.</div>
+    </div>
+    <div class="problem-card">
+      <div class="big">23%</div>
+      <div class="ttl">Unbilled hours</div>
+      <div class="desc">Foreman forgets to clock crew in. Worker forgets to clock out. Travel time not captured. Straight to your margin.</div>
+    </div>
+    <div class="problem-card">
+      <div class="big">3.1</div>
+      <div class="ttl">Missed upsells / mo</div>
+      <div class="desc">Client mentions bath reno on a call. You forget. Competitor picks it up. Average lost revenue: $32k each.</div>
+    </div>
+  </div>
+</section>
+
+<!-- Agents showcase -->
+<section class="land-section" id="agents" style="background:linear-gradient(180deg,#faf5ff 0%, #fff 100%);max-width:100%;padding:80px 32px">
+  <div style="max-width:1200px;margin:0 auto">
+    <div class="section-header">
+      <div class="section-eyebrow">How it works</div>
+      <h2>Every role has an AI agent.</h2>
+      <p>Your workers have one. Your foreman has one. Even your key clients get one. They talk to each other while you sleep.</p>
+    </div>
+    <div class="agents-showcase">
+      <div class="agent-tile">
+        <div class="icon">👷</div>
+        <h3>Worker Agent</h3>
+        <p>Lives in a chat app. Knows where the worker is, what site they're on, what they bought today.</p>
+        <ul>
+          <li>Auto-start shift on geo-proximity</li>
+          <li>OCR receipts from email/camera</li>
+          <li>Propose daily summary for approval</li>
+          <li>Handle PTO requests, clarifications</li>
+        </ul>
+      </div>
+      <div class="agent-tile">
+        <div class="icon">👔</div>
+        <h3>Foreman Agent</h3>
+        <p>Orchestrates crews across sites. Watches for conflicts, handoffs, overtime.</p>
+        <ul>
+          <li>Weekly crew scheduling (proposals only)</li>
+          <li>Conflict detection (double-booked)</li>
+          <li>Subcontractor tender coordination</li>
+          <li>Site-visit scheduling with travel time</li>
+        </ul>
+      </div>
+      <div class="agent-tile">
+        <div class="icon">💼</div>
+        <h3>Sales Intel Agent</h3>
+        <p>Knows every client like a 5-year account manager. Briefs you before every call.</p>
+        <ul>
+          <li>47-email summary into 4 key points</li>
+          <li>Predicted Q&A (6 questions pre-drafted)</li>
+          <li>Live call transcription + next-question suggestion</li>
+          <li>Revenue opportunities ranked by probability</li>
+        </ul>
+      </div>
+      <div class="agent-tile">
+        <div class="icon">🔍</div>
+        <h3>Approval Gatekeeper</h3>
+        <p>Watches every AI proposal. Enforces your policies. Never sleeps.</p>
+        <ul>
+          <li>Auto-approve expenses ≤ $500 threshold</li>
+          <li>Escalate high-risk decisions to human</li>
+          <li>Budget variance alerts</li>
+          <li>Policy versioning with audit log</li>
+        </ul>
+      </div>
+      <div class="agent-tile">
+        <div class="icon">📊</div>
+        <h3>Payroll Agent</h3>
+        <p>Computes period, catches anomalies, proposes the pay run. You click go.</p>
+        <ul>
+          <li>Period close with variance explanations</li>
+          <li>Mid-period variance alerts</li>
+          <li>Bank payment file generation</li>
+          <li>Tax form prep (1099s, W2s)</li>
+        </ul>
+      </div>
+      <div class="agent-tile">
+        <div class="icon">🛡</div>
+        <h3>Compliance Watchdog</h3>
+        <p>Reads every change. Flags risk before it ships.</p>
+        <ul>
+          <li>Permit expiry alerts</li>
+          <li>Insurance & bond monitoring</li>
+          <li>GDPR/CCPA data handling</li>
+          <li>10-year immutable audit log</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Features -->
+<section class="land-section" id="features">
+  <div class="section-header">
+    <div class="section-eyebrow">Everything included</div>
+    <h2>An ERP, but boring parts hidden.</h2>
+    <p>We replace QuickBooks + TSheets + Buildertrend + CallRail + your spreadsheets. You still own your data.</p>
+  </div>
+  <div class="features-grid">
+    <div class="feat"><div class="e">⏱</div><h3>Time tracking</h3><p>Geo-fenced shifts, face-match check-in, overtime policies. Worker PWA (iPhone/Android).</p></div>
+    <div class="feat"><div class="e">🧾</div><h3>Expense OCR</h3><p>Gmail watcher auto-extracts receipts. 96% accuracy. Per-field confidence so you trust it.</p></div>
+    <div class="feat"><div class="e">💰</div><h3>Payroll runs</h3><p>Period close in one click. ACH transfers. Variance catches before they become tomorrow's headache.</p></div>
+    <div class="feat"><div class="e">📞</div><h3>Sales brief</h3><p>Client calls. Your AI pulls 2 years of history into a 4-point brief. Before you pick up.</p></div>
+    <div class="feat"><div class="e">👥</div><h3>Crew scheduling</h3><p>Drag-drop week view. AI proposes, you approve. Conflicts caught in seconds.</p></div>
+    <div class="feat"><div class="e">📋</div><h3>Change orders</h3><p>CO drafts from email conversations. Signed via DocuSign. Linked to invoices automatically.</p></div>
+    <div class="feat"><div class="e">🏗</div><h3>Project P&L</h3><p>Real-time margin per project. See the bleeder before it's a wound.</p></div>
+    <div class="feat"><div class="e">🤝</div><h3>Client portal</h3><p>White-label. Shows photos, timeline, invoices. Makes you look 10x bigger.</p></div>
+    <div class="feat"><div class="e">📜</div><h3>Immutable audit</h3><p>Every decision — human or AI — logged forever. Your insurance company will love you.</p></div>
+  </div>
+</section>
+
+<!-- ROI -->
+<section class="land-section" id="roi" style="background:var(--bg);max-width:100%;padding:80px 32px">
+  <div style="max-width:1200px;margin:0 auto">
+    <div class="section-header">
+      <div class="section-eyebrow">The math</div>
+      <h2>For a 12-person crew, you save $6,400/month.</h2>
+      <p>Typical customer. Not a marketing line — this is our design-partner data.</p>
+    </div>
+    <div class="roi-box">
+      <div class="roi-big">
+        <div class="label">Net savings / month</div>
+        <div class="num">$6,400</div>
+        <div class="sub">= $76,800/year · pays for EasyTimerCost <strong>7.2×</strong> over</div>
+      </div>
+      <div class="roi-calc">
+        <div class="roi-row"><span>Captured previously-lost hours (23% unbilled → 4%)</span><span><strong>+$3,200</strong></span></div>
+        <div class="roi-row"><span>Receipt loss eliminated (40% missed → <5%)</span><span><strong>+$1,500</strong></span></div>
+        <div class="roi-row"><span>Owner admin time saved (80h → 20h)</span><span><strong>+$3,000</strong></span></div>
+        <div class="roi-row"><span>Upsell signals caught (3.1 → 1.2 missed/mo)</span><span><strong>+$5,800</strong></span></div>
+        <div class="roi-row"><span style="color:var(--error)">— EasyTimerCost subscription (12 × $89)</span><span style="color:var(--error)"><strong>−$1,068</strong></span></div>
+        <div class="roi-row"><span style="color:var(--error)">— Onboarding time (one-time, amortized)</span><span style="color:var(--error)"><strong>−$400</strong></span></div>
+        <div class="roi-row total"><span>Net monthly savings</span><span>+$6,400</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- How it works / steps -->
+<section class="land-section">
+  <div class="section-header">
+    <div class="section-eyebrow">Setup in 30 minutes</div>
+    <h2>Connect. AI learns. Execute.</h2>
+    <p>No consultants. No 6-week implementation project. Just three things.</p>
+  </div>
+  <div class="steps">
+    <div class="step">
+      <div class="num">1</div>
+      <h3>Connect your stuff</h3>
+      <p>Gmail, QuickBooks (optional), calendar. One-click OAuth. AI reads your last 90 days to learn your style.</p>
+    </div>
+    <div class="step">
+      <div class="num">2</div>
+      <h3>AI builds your baseline</h3>
+      <p>Overnight: your crew, clients, projects, vendors, historical margins — all extracted and structured.</p>
+    </div>
+    <div class="step">
+      <div class="num">3</div>
+      <h3>You approve first week</h3>
+      <p>AI proposes every action. You click ✓ or ✗. By week 2, you've taught it your rules. Time saved grows weekly.</p>
+    </div>
+  </div>
+</section>
+
+<!-- Pricing -->
+<section class="land-section" id="pricing" style="background:var(--bg);max-width:100%;padding:80px 32px">
+  <div style="max-width:1200px;margin:0 auto">
+    <div class="section-header">
+      <div class="section-eyebrow">Pricing</div>
+      <h2>Simple. Per user. Cancel anytime.</h2>
+      <p>Free trial · no credit card. If you don't save 10× by month 2, email us and we'll refund.</p>
+    </div>
+    <div class="pricing-grid">
+      <div class="price-card">
+        <div class="tier">Starter</div>
+        <div class="price"><sup>$</sup>49<span class="per">/user/mo</span></div>
+        <div class="tagline">Small crews. Basic AI. No commitment.</div>
+        <ul>
+          <li>Worker AI agent</li>
+          <li>Expense OCR (500/mo)</li>
+          <li>Time tracking w/ geo</li>
+          <li>Up to 5 users</li>
+          <li>Basic audit log</li>
+          <li>Email support</li>
+        </ul>
+        <a href="#demo" class="b secondary">Start free trial</a>
+      </div>
+      <div class="price-card popular">
+        <div class="badge">Most popular</div>
+        <div class="tier">Pro</div>
+        <div class="price"><sup>$</sup>89<span class="per">/user/mo</span></div>
+        <div class="tagline">For growing contractors with real ops.</div>
+        <ul>
+          <li>Everything in Starter</li>
+          <li>Sales Intel Agent</li>
+          <li>Live call brief + transcription</li>
+          <li>A2A orchestration</li>
+          <li>Unlimited users</li>
+          <li>Payroll runs (ACH)</li>
+          <li>Client portal</li>
+          <li>Priority support + Slack</li>
+        </ul>
+        <a href="#demo" class="b primary">Start free trial →</a>
+      </div>
+      <div class="price-card">
+        <div class="tier">Scale</div>
+        <div class="price"><sup>$</sup>179<span class="per">/user/mo</span></div>
+        <div class="tagline">Multi-location. White-label. API.</div>
+        <ul>
+          <li>Everything in Pro</li>
+          <li>Custom agents (we train)</li>
+          <li>White-label client portal</li>
+          <li>API access + webhooks</li>
+          <li>Multi-org / franchise support</li>
+          <li>Dedicated CSM</li>
+          <li>SOC 2 report</li>
+          <li>99.95% SLA</li>
+        </ul>
+        <a href="#demo" class="b secondary">Talk to sales</a>
+      </div>
+    </div>
+    <div style="text-align:center;color:var(--text-2);font-size:13px;margin-top:24px">
+      Add-on: <strong>$29/mo per extra AI agent</strong> (custom domain agents). All plans include 14-day free trial.
+    </div>
+  </div>
+</section>
+
+<!-- Testimonials -->
+<section class="land-section">
+  <div class="section-header">
+    <div class="section-eyebrow">What design partners say</div>
+    <h2>Contractors who already stopped using spreadsheets.</h2>
+  </div>
+  <div class="testimonial-grid">
+    <div class="testi">
+      <div class="quote">"The receipt thing alone saved me $1,800 last month. Workers used to just throw 'em out. Now AI grabs them from the Home Depot email."</div>
+      <div class="who">
+        <div class="avatar">RG</div>
+        <div>
+          <div class="name">Ricky G.</div>
+          <div class="role">Ricky Construction · Tampa · 14 crew</div>
+        </div>
+      </div>
+    </div>
+    <div class="testi">
+      <div class="quote">"I used to spend Sunday night prepping for Monday's client calls. Now I pick up the phone cold — AI tells me what they're going to ask."</div>
+      <div class="who">
+        <div class="avatar">MJ</div>
+        <div>
+          <div class="name">Marcus J.</div>
+          <div class="role">MJ Home Renovations · Miami · 8 crew</div>
+        </div>
+      </div>
+    </div>
+    <div class="testi">
+      <div class="quote">"My foreman was the bottleneck. Now the AI catches overtime before it happens and texts us both. We haven't blown budget in 6 weeks."</div>
+      <div class="who">
+        <div class="avatar">AP</div>
+        <div>
+          <div class="name">Alex P.</div>
+          <div class="role">Coastline Roofing · Ft. Lauderdale · 22 crew</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FAQ -->
+<section class="land-section" id="faq" style="background:var(--bg);max-width:100%;padding:80px 32px">
+  <div style="max-width:1200px;margin:0 auto">
+    <div class="section-header">
+      <div class="section-eyebrow">FAQ</div>
+      <h2>Questions contractors ask us.</h2>
+    </div>
+    <div class="faq">
+      <div class="faq-item">
+        <div class="q">Does AI actually send money / contracts / stuff without me clicking?</div>
+        <div class="a">Only for things you explicitly allow. Default is "propose → you approve." You can set thresholds (e.g. auto-approve expenses under $500). Every auto-action is logged. Turn off anything anytime.</div>
+      </div>
+      <div class="faq-item">
+        <div class="q">What if AI is wrong?</div>
+        <div class="a">Every action is reversible. Every decision has an "explain this" button — you see exactly what data it used. Our Compliance Watchdog monitors error rates per agent and pauses them if they drift. Worst case: you hit undo and it's like it never happened.</div>
+      </div>
+      <div class="faq-item">
+        <div class="q">Is my data safe?</div>
+        <div class="a">Firestore (Google Cloud) · US or EU residency option · encrypted at rest · tenant isolation enforced at DB level · SOC 2 Type II in progress (target Q3 2026). We don't train models on your data. Period.</div>
+      </div>
+      <div class="faq-item">
+        <div class="q">My crew doesn't speak English well / isn't tech-savvy</div>
+        <div class="a">Worker AI talks in WhatsApp/Telegram/SMS in their native language (Spanish, Russian, Portuguese supported day 1 — more on request). The UI is just "type yes or send a photo." No buttons to learn.</div>
+      </div>
+      <div class="faq-item">
+        <div class="q">Can I import from QuickBooks / TSheets?</div>
+        <div class="a">Yes — one-time migration included with Pro and Scale. Starter can self-import via CSV. We support QB Online, QB Desktop, TSheets, Buildertrend, ServiceTitan, and generic CSV.</div>
+      </div>
+      <div class="faq-item">
+        <div class="q">How fast do I see value?</div>
+        <div class="a">Expense OCR saves hours in week 1. Time-tracking pain gone by week 2. Sales brief is the "wow" moment — first real call where AI tells you what they'll ask (usually within 10 days). Payroll savings show up at first period close.</div>
+      </div>
+      <div class="faq-item">
+        <div class="q">What if I have 2 workers today and want to grow to 40?</div>
+        <div class="a">All plans scale linearly. Add users anytime, pro-rated. Pro plan has unlimited users. Your AI agents get smarter with scale, not slower.</div>
+      </div>
+      <div class="faq-item">
+        <div class="q">Can I cancel?</div>
+        <div class="a">Yes. Monthly plans cancel anytime, no fees. Annual plans refunded pro-rata if you cancel within 60 days. You own your data — full export (CSV + PDF) available forever.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Footer CTA -->
+<section class="footer-cta" id="demo">
+  <h2>Stop running ops on sticky notes.</h2>
+  <p>20-minute demo. We'll show you your exact numbers based on your last month of data. Book a slot below.</p>
+  <a href="mailto:denis@easytimercost.com?subject=Book%20demo" class="btn-white">Book demo · 20 min →</a>
+  <div style="margin-top:20px;opacity:0.8;font-size:13px">or email denis@easytimercost.com</div>
+</section>
+
+<footer class="land-footer">
+  EasyTimerCost · 2026 · built by contractors for contractors ·
+  <a href="index.html">Live prototype</a> ·
+  <a href="../MINI_TZ.md">Tech spec</a>
+</footer>
+
+</body>
+</html>

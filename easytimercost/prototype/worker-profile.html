@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8"/>
+<title>EasyTimerCost — Работник</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="styles.css"/>
+</head>
+<body>
+<script src="meta.js"></script>
+<script src="shell.js"></script>
+<script>
+const params = new URLSearchParams(location.search);
+const wid = params.get('id') || 'w5';
+const tab = params.get('tab') || 'time';
+const w = workerById(wid);
+
+renderShell({
+  active: 'workers',
+  breadcrumbs: [
+    { label: 'Dashboard', href: 'index.html' },
+    { label: 'Работники', href: 'workers.html' },
+    { label: w.name }
+  ],
+});
+
+const sessions = MOCK.sessions.filter(s => s.workerId === wid);
+const expenses = MOCK.expenses.filter(e => e.workerId === wid);
+
+// Client rollup
+const clientMap = {};
+sessions.forEach(s => {
+  if (!clientMap[s.clientId]) clientMap[s.clientId] = { hours: 0, earned: 0, sessions: 0 };
+  clientMap[s.clientId].hours += s.hours;
+  clientMap[s.clientId].earned += s.earnings;
+  clientMap[s.clientId].sessions += 1;
+});
+
+const tabContent = {
+  time: `
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-header"><h3>📅 История смен (${sessions.length})</h3><button class="btn sm">Экспорт</button></div>
+      <table class="table">
+        <thead><tr><th>Дата</th><th>Клиент</th><th>Описание</th><th class="num">Часов</th><th class="num">Ставка</th><th class="num">Заработок</th><th></th></tr></thead>
+        <tbody>
+          ${sessions.map(s => {
+            const c = clientById(s.clientId);
+            return `
+              <tr onclick="location.href='session-detail.html?id=${s.id}'">
+                <td>${s.date}<br/><span class="small muted">${s.start} – ${s.end || 'active'}</span></td>
+                <td><a href="client-overview.html?id=${c.id}">${c.name}</a></td>
+                <td class="small">${s.desc}</td>
+                <td class="num">${s.hours.toFixed(1)}</td>
+                <td class="num muted">$${s.rate}/ч</td>
+                <td class="num strong">${fmt$exact(s.earnings)}</td>
+                <td>${s.status === 'active' ? '<span class="chip success">активна</span>' : ''}</td>
+              </tr>
+            `;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+  `,
+  expenses: `
+    <div class="card">
+      <div class="card-header">
+        <h3>💰 Затраты (${expenses.length})</h3>
+        <button class="btn primary sm">+ Добавить затрату</button>
+      </div>
+      <table class="table">
+        <thead><tr><th>Дата</th><th>Клиент</th><th>Категория</th><th>Описание</th><th class="num">Сумма</th><th>Статус</th></tr></thead>
+        <tbody>
+          ${expenses.length === 0 ? '<tr><td colspan="6" style="text-align:center;padding:24px" class="muted">Затрат нет.</td></tr>' :
+            expenses.map(e => {
+              const c = clientById(e.clientId);
+              const statusChip = e.status === 'approved' ? 'success' : e.status === 'submitted' ? 'warning' : e.status === 'rejected' ? 'error' : '';
+              return `
+                <tr onclick="location.href='expense-detail.html?id=${e.id}'">
+                  <td>${e.date}</td>
+                  <td>${c.name}</td>
+                  <td><span class="chip">${e.category}</span></td>
+                  <td class="small">${e.desc}</td>
+                  <td class="num strong">${fmt$exact(e.amount)}</td>
+                  <td><span class="chip ${statusChip}">${e.status}</span></td>
+                </tr>
+              `;
+            }).join('')}
+        </tbody>
+      </table>
+    </div>
+  `,
+  clients: `
+    <div class="card">
+      <div class="card-header"><h3>🏢 Мои клиенты</h3></div>
+      <table class="table">
+        <thead><tr><th>Клиент</th><th class="num">Часов</th><th class="num">Заработал</th><th class="num">Сессий</th></tr></thead>
+        <tbody>
+          ${Object.entries(clientMap).map(([cid, d]) => {
+            const c = clientById(cid);
+            return `
+              <tr onclick="location.href='client-overview.html?id=${cid}'">
+                <td><a href="client-overview.html?id=${cid}" class="strong">${c.name}</a><div class="small muted">${c.project}</div></td>
+                <td class="num">${d.hours.toFixed(1)}</td>
+                <td class="num strong">${fmt$(d.earned)}</td>
+                <td class="num muted">${d.sessions}</td>
+              </tr>
+            `;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+  `,
+  payouts: `
+    <div class="card">
+      <div class="card-header">
+        <h3>💳 История выплат</h3>
+        <button class="btn primary sm">+ Зарегистрировать выплату</button>
+      </div>
+      <table class="table">
+        <thead><tr><th>Дата</th><th>Метод</th><th>Период</th><th>Тип</th><th class="num">Сумма</th></tr></thead>
+        <tbody>
+          <tr><td>2026-04-05</td><td>Bank transfer</td><td>16–31 Mar 2026</td><td><span class="chip primary">Salary</span></td><td class="num strong">${fmt$exact(w.paid * 0.35)}</td></tr>
+          <tr><td>2026-03-20</td><td>Bank transfer</td><td>1–15 Mar 2026</td><td><span class="chip primary">Salary</span></td><td class="num strong">${fmt$exact(w.paid * 0.30)}</td></tr>
+          <tr><td>2026-03-05</td><td>Cash</td><td>16–28 Feb 2026</td><td><span class="chip warning">Reimbursement</span></td><td class="num strong">${fmt$exact(347.82)}</td></tr>
+          <tr><td>2026-03-05</td><td>Bank transfer</td><td>16–28 Feb 2026</td><td><span class="chip primary">Salary</span></td><td class="num strong">${fmt$exact(w.paid * 0.35 - 347.82)}</td></tr>
+        </tbody>
+      </table>
+    </div>
+  `,
+  ai: (() => {
+    const ag = agentByOwnerId(wid);
+    const actions = ag ? ag.actions : 0;
+    const saved = ag ? ag.saved : 0;
+    return `
+      <div class="grid-2" style="align-items:flex-start">
+        <div class="stack">
+          <div class="ai-card">
+            <div class="ai-card-header">
+              <div class="agent-avatar">🤖</div>
+              <div style="flex:1">
+                <div class="strong">${ag ? ag.name : w.name + ' AI'}</div>
+                <div class="small muted">Personal agent · ${ag ? ag.ll : 'gpt-5'} · ${ag && ag.status === 'active' ? '🟢 онлайн' : '⚪ idle'}</div>
+              </div>
+              <button class="btn sm">⚙ Настроить</button>
+            </div>
+            <div class="kpi-grid" style="grid-template-columns:1fr 1fr 1fr;gap:8px;margin:0">
+              <div class="kpi"><div class="kpi-label">Actions</div><div class="kpi-value" style="font-size:22px">${actions}</div><div class="kpi-sub">за 30 дней</div></div>
+              <div class="kpi success"><div class="kpi-label">Saved</div><div class="kpi-value" style="font-size:22px">${fmt$(saved)}</div><div class="kpi-sub">labor $ equiv</div></div>
+              <div class="kpi"><div class="kpi-label">Ошибок</div><div class="kpi-value" style="font-size:22px">0</div><div class="kpi-sub">override rate 3%</div></div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header"><h3>📜 AI activity (последние)</h3></div>
+            <div class="card-body">
+              <div class="trail">
+                <div class="trail-item">
+                  <div class="trail-dot ai"></div>
+                  <div class="trail-content">
+                    <div class="who">🤖 Auto-started shift at Acme</div>
+                    <div class="what">Geo-proximity detected · worker confirmed in 3sec · saved ~3 мин</div>
+                    <div class="when">сегодня 07:05</div>
+                  </div>
+                </div>
+                <div class="trail-item">
+                  <div class="trail-dot ai"></div>
+                  <div class="trail-content">
+                    <div class="who">🤖 Extracted receipt from email</div>
+                    <div class="what">Home Depot $347.82 · OCR 96% · auto-matched to active session</div>
+                    <div class="when">сегодня 13:15</div>
+                  </div>
+                </div>
+                <div class="trail-item">
+                  <div class="trail-dot ai"></div>
+                  <div class="trail-content">
+                    <div class="who">🤖 Asked worker via chat</div>
+                    <div class="what">"Per-diem $25 полагается — добавить?" · worker: да</div>
+                    <div class="when">вчера 16:05</div>
+                  </div>
+                </div>
+                <div class="trail-item">
+                  <div class="trail-dot"></div>
+                  <div class="trail-content">
+                    <div class="who">👤 Worker override</div>
+                    <div class="what">AI предложил закрыть смену в 16:00 — worker отказал ("ещё работаю"). Smart: learned.</div>
+                    <div class="when">вчера 16:00</div>
+                  </div>
+                </div>
+                <div class="trail-item">
+                  <div class="trail-dot ai"></div>
+                  <div class="trail-content">
+                    <div class="who">🤖 A2A: handoff to Михаил AI</div>
+                    <div class="what">Expense $892.15 > $500 → foreman review requested (took 12мин)</div>
+                    <div class="when">вчера 15:30</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="stack">
+          <div class="card">
+            <div class="card-header"><h3>🎛 Permissions worker AI</h3></div>
+            <div class="card-body">
+              <div class="policy-row" style="border-bottom-color:var(--border);padding:12px 0">
+                <div>
+                  <div class="policy-name">Автоматически начинать смену</div>
+                  <div class="policy-desc">Если geo detected + usual time — proactive suggest</div>
+                </div>
+                <div class="policy-toggle on"></div>
+              </div>
+              <div class="policy-row" style="border-bottom-color:var(--border);padding:12px 0">
+                <div>
+                  <div class="policy-name">Читать личную почту для чеков</div>
+                  <div class="policy-desc">Scan inbox for receipts, extract → suggest</div>
+                </div>
+                <div class="policy-toggle on"></div>
+              </div>
+              <div class="policy-row" style="border-bottom-color:var(--border);padding:12px 0">
+                <div>
+                  <div class="policy-name">Подавать expense без confirm</div>
+                  <div class="policy-desc">Если confidence > 95% и vendor whitelisted</div>
+                </div>
+                <div class="policy-toggle"></div>
+              </div>
+              <div class="policy-row" style="border-bottom-color:0;padding:12px 0">
+                <div>
+                  <div class="policy-name">A2A с foreman / client agents</div>
+                  <div class="policy-desc">Координация смены, запросы, handoff</div>
+                </div>
+                <div class="policy-toggle on"></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="ai-card">
+            <div class="ai-card-header">
+              <div class="agent-avatar sm">🤖</div>
+              <div class="strong">ROI этого агента</div>
+            </div>
+            <div class="ai-reason">
+              💰 <strong>${fmt$(saved)}/мес</strong> сэкономлено labor time · <strong>${actions}</strong> actions за 30 дней · <strong>3%</strong> override rate (низкий = агент хорошо калиброван).<br/><br/>
+              📈 Тренд: +14% actions vs прошлый месяц (агент учится на override).
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  })()
+};
+
+setBody(`
+  <div class="card" style="margin-bottom:20px">
+    <div class="card-body">
+      <div class="row" style="gap:20px">
+        <div class="avatar lg">${w.initials}</div>
+        <div style="flex:1">
+          <div style="font-size:22px;font-weight:700">${w.name}</div>
+          <div class="row muted small" style="gap:12px;margin-top:4px">
+            <span>📧 ${w.name.toLowerCase().replace(' ','.')}@profit-step.dev</span>
+            <span>📱 +1 (305) 555-0${w.id.replace('w','1')}${w.id.replace('w','2')}</span>
+            <span>💬 @telegram_user</span>
+          </div>
+          <div class="row" style="gap:8px;margin-top:8px">
+            <span class="chip ${w.role === 'foreman' ? 'primary' : ''}">${w.role}</span>
+            <span class="chip">$${w.rate}/ч</span>
+            ${w.crew ? `<span class="chip">Бригада: ${workerById(w.crew).name}</span>` : ''}
+            <span class="chip success">Active</span>
+            ${agentByOwnerId(wid) ? `<span class="chip ai">🤖 ${agentByOwnerId(wid).name} · ${agentByOwnerId(wid).actions} actions</span>` : ''}
+          </div>
+        </div>
+        <div class="row" style="gap:8px">
+          <button class="btn">✉ Написать</button>
+          <button class="btn primary">+ Выплата</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="kpi-grid">
+    <div class="kpi primary"><div class="kpi-label">Начислено YTD</div><div class="kpi-value">${fmt$(w.earned)}</div></div>
+    <div class="kpi"><div class="kpi-label">Выплачено</div><div class="kpi-value">${fmt$(w.paid)}</div></div>
+    <div class="kpi ${w.balance > 0 ? 'warning' : 'success'}">
+      <div class="kpi-label">Баланс</div>
+      <div class="kpi-value">${fmt$(w.balance)}</div>
+      <div class="kpi-sub">${w.balance > 0 ? 'компания должна' : 'в расчёте'}</div>
+    </div>
+    <div class="kpi"><div class="kpi-label">Часов</div><div class="kpi-value">${w.hours}</div><div class="kpi-sub">${w.sessions} смен</div></div>
+  </div>
+
+  <div class="tabs">
+    <a href="?id=${wid}&tab=time"     class="tab ${tab === 'time' ? 'active' : ''}">🕒 Время</a>
+    <a href="?id=${wid}&tab=expenses" class="tab ${tab === 'expenses' ? 'active' : ''}">💰 Затраты</a>
+    <a href="?id=${wid}&tab=clients"  class="tab ${tab === 'clients' ? 'active' : ''}">🏢 Клиенты</a>
+    <a href="?id=${wid}&tab=payouts"  class="tab ${tab === 'payouts' ? 'active' : ''}">💳 Выплаты</a>
+    <a href="?id=${wid}&tab=ai"       class="tab ${tab === 'ai' ? 'active' : ''}">🤖 AI агент</a>
+  </div>
+
+  ${tabContent[tab]}
+`);
+
+mountSelfDocs('worker-profile');
+</script>
+</body>
+</html>

@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8"/>
+<title>EasyTimerCost — Call brief</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="styles.css"/>
+</head>
+<body>
+<script src="meta.js"></script>
+<script src="shell.js"></script>
+<script>
+const params = new URLSearchParams(location.search);
+const cid = params.get('id') || 'c1';
+const c = clientById(cid);
+const intel = getClientIntel(cid);
+
+renderShell({
+  active: 'call-brief',
+  breadcrumbs: [{ label: 'Dashboard', href: 'index.html' }, { label: 'Call brief' }],
+});
+
+// Status banner — "incoming call" look
+const bannerHtml = `
+  <div style="background:linear-gradient(135deg,#2e7d32,#66bb6a);color:#fff;border-radius:var(--radius);padding:16px 24px;margin-bottom:20px;display:flex;align-items:center;gap:20px;box-shadow:var(--shadow-md)">
+    <div style="font-size:38px;animation:pulse 1.5s infinite">📞</div>
+    <div style="flex:1">
+      <div style="opacity:0.85;font-size:11px;text-transform:uppercase;letter-spacing:0.5px">Входящий звонок · 0:12</div>
+      <div style="font-size:20px;font-weight:700;margin-top:2px">${intel.contact.name} · ${c.name}</div>
+      <div style="opacity:0.85;font-size:13px;margin-top:2px">${intel.contact.phone} · ${intel.contact.role}</div>
+    </div>
+    <div class="row" style="gap:8px">
+      <a href="call-live.html?id=${cid}" class="btn" style="background:#fff;color:var(--success);border:0;font-weight:700">✓ Ответить · open live</a>
+      <button class="btn" style="background:rgba(255,255,255,0.2);color:#fff;border-color:rgba(255,255,255,0.3)">✗ Отклонить</button>
+    </div>
+  </div>
+`;
+
+const healthColor = intel.health.score >= 80 ? 'success' : intel.health.score >= 60 ? 'warning' : 'error';
+
+setBody(`
+  ${bannerHtml}
+
+  <!-- AI status line -->
+  <div class="ai-card" style="margin-bottom:20px;display:flex;align-items:center;gap:16px;padding:14px 18px">
+    <div class="agent-avatar">🤖</div>
+    <div style="flex:1">
+      <div class="strong">AI брифинг собран за 1.8 сек</div>
+      <div class="small muted">Источники: 47 emails · 12 calls · 3 site-visits · 4 invoices · crew schedule · market data · win/loss log</div>
+    </div>
+    <span class="chip ai">🤖 claude · gpt-5 · search</span>
+  </div>
+
+  <!-- 4 KPI at top -->
+  <div class="kpi-grid">
+    <div class="kpi primary"><div class="kpi-label">LTV</div><div class="kpi-value">${fmt$(intel.ltv)}</div><div class="kpi-sub">lifetime revenue</div></div>
+    <div class="kpi ${healthColor}"><div class="kpi-label">Health score</div><div class="kpi-value">${intel.health.score}<span style="font-size:14px;color:var(--text-3)">/100</span></div><div class="kpi-sub">NPS ${intel.health.npsLast}/10 · pay ${intel.health.paymentReliability}</div></div>
+    <div class="kpi warning"><div class="kpi-label">Outstanding</div><div class="kpi-value">${fmt$(intel.outstanding.total)}</div><div class="kpi-sub">${intel.outstanding.count} invoices · ${intel.outstanding.oldest} oldest</div></div>
+    <div class="kpi"><div class="kpi-label">Активно сейчас</div><div class="kpi-value">${fmt$(c.revenue)}</div><div class="kpi-sub">${c.project} · ${Math.round(c.margin*100)}% margin</div></div>
+  </div>
+
+  <!-- Section 1: Snapshot + stakeholders -->
+  <div class="grid-2" style="margin-bottom:20px;align-items:flex-start">
+    <div class="card">
+      <div class="card-header"><h3>🏢 Snapshot</h3></div>
+      <div class="card-body">
+        <div class="row spread" style="margin-bottom:10px">
+          <span class="muted small">Клиент с</span>
+          <span class="strong">${intel.contact.since} · 2 года</span>
+        </div>
+        <div class="row spread" style="margin-bottom:10px">
+          <span class="muted small">Проект сейчас</span>
+          <span class="strong">${c.project}</span>
+        </div>
+        <div class="row spread" style="margin-bottom:10px">
+          <span class="muted small">Статус</span>
+          <span><span class="chip success">${c.status}</span></span>
+        </div>
+        <div class="row spread" style="margin-bottom:10px">
+          <span class="muted small">Incidents</span>
+          <span>${intel.health.incidents === 0 ? '<span class="chip success">0 · clean</span>' : '⚠ ' + intel.health.incidents}</span>
+        </div>
+        <div class="row spread">
+          <span class="muted small">Последний контакт</span>
+          <span class="strong small">${intel.recent[0].date} · ${intel.recent[0].type}</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><h3>👥 Stakeholders</h3></div>
+      <table class="table">
+        <tbody>
+          ${intel.stakeholders.map(s => {
+            const chip = s.influence === 'high' ? 'warning' : s.influence === 'med' ? 'primary' : '';
+            return `
+              <tr>
+                <td><div class="strong">${s.name}</div><div class="small muted">${s.role}</div></td>
+                <td style="text-align:right"><span class="chip ${chip}">${s.influence} influence</span></td>
+              </tr>
+            `;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Section 2: Recent interactions timeline -->
+  <div class="card" style="margin-bottom:20px">
+    <div class="card-header"><h3>📅 Последние контакты (${intel.recent.length})</h3><button class="btn sm">Полная история</button></div>
+    <div class="card-body">
+      <div class="trail">
+        ${intel.recent.map((r, i) => {
+          const icon = r.type === 'email' ? '📧' : r.type === 'call' ? '📞' : r.type === 'site-visit' ? '🏗' : '📝';
+          return `
+            <div class="trail-item">
+              <div class="trail-dot ${i === 0 ? 'success' : ''}"></div>
+              <div class="trail-content">
+                <div class="who">${icon} ${r.subj}</div>
+                <div class="what">${r.summary}</div>
+                <div class="when">${r.date}</div>
+              </div>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    </div>
+  </div>
+
+  <!-- Section 3: Predicted Q&A -->
+  <div class="ai-card" style="margin-bottom:20px">
+    <div class="ai-card-header">
+      <div class="agent-avatar">🤖</div>
+      <div style="flex:1">
+        <div class="strong">Вероятные вопросы · готовые ответы</div>
+        <div class="small muted">Основано на этапе проекта + прошлых звонках · кликни ответ чтоб скопировать</div>
+      </div>
+      <span class="chip ai">${intel.predictedQA.length} prepped</span>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:10px">
+      ${intel.predictedQA.map((qa, i) => `
+        <div class="ai-reason" style="padding:14px">
+          <div class="row spread" style="margin-bottom:6px">
+            <div class="strong" style="color:var(--ai-600)">Q${i+1}. ${qa.q}</div>
+            <button class="btn sm">📋 Copy</button>
+          </div>
+          <div style="color:var(--text);font-size:13px;line-height:1.55">${qa.a}</div>
+          <div class="small muted" style="margin-top:6px">📎 Источник: ${qa.src}</div>
+        </div>
+      `).join('')}
+    </div>
+  </div>
+
+  <!-- Section 4: Earn strategy -->
+  <div class="card" style="margin-bottom:20px">
+    <div class="card-header">
+      <h3>💰 Как заработать больше</h3>
+      <span class="chip ai">🤖 AI strategy</span>
+    </div>
+    <table class="table">
+      <thead><tr><th>Opportunity</th><th class="num">Value · profit</th><th class="num">Probability</th><th>Почему</th><th></th></tr></thead>
+      <tbody>
+        ${intel.earnStrategy.map(op => {
+          const probChip = op.prob >= 70 ? 'success' : op.prob >= 40 ? 'warning' : '';
+          return `
+            <tr>
+              <td class="strong">${op.title}</td>
+              <td class="num strong">${op.value}</td>
+              <td class="num"><span class="chip ${probChip}">${op.prob}%</span></td>
+              <td class="small muted">${op.reason}</td>
+              <td><button class="btn sm">Pitch →</button></td>
+            </tr>
+          `;
+        }).join('')}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Section 5: Persuasion playbook -->
+  <div class="grid-2" style="margin-bottom:20px;align-items:flex-start">
+    <div class="ai-card">
+      <div class="ai-card-header">
+        <div class="agent-avatar sm">🎯</div>
+        <div class="strong">Persuasion playbook</div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <div class="ai-reason">
+          <div class="strong" style="color:var(--ai-600);margin-bottom:4px">🧠 Профиль</div>
+          <div class="small">${intel.persuasion.profile}</div>
+        </div>
+        <div class="ai-reason">
+          <div class="strong" style="color:var(--success);margin-bottom:4px">✅ Нажимай на (hot buttons)</div>
+          <div class="small">${intel.persuasion.hotButtons.map(h => `<span class="chip success" style="margin-right:4px">${h}</span>`).join('')}</div>
+        </div>
+        <div class="ai-reason">
+          <div class="strong" style="color:var(--error);margin-bottom:4px">⛔ Избегай</div>
+          <div class="small">${intel.persuasion.avoid.map(h => `<span class="chip error" style="margin-right:4px">${h}</span>`).join('')}</div>
+        </div>
+        <div class="ai-reason">
+          <div class="strong" style="color:var(--ai-600);margin-bottom:4px">🎬 Decision style</div>
+          <div class="small">${intel.persuasion.decisionStyle}</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ai-card">
+      <div class="ai-card-header">
+        <div class="agent-avatar sm">⚔️</div>
+        <div class="strong">Прошлые возражения · что работало</div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        ${intel.persuasion.pastObjections.map(o => `
+          <div class="ai-reason">
+            <div class="strong" style="color:var(--warning);margin-bottom:4px">❓ ${o.obj}</div>
+            <div class="small">✅ <strong>Что сработало:</strong> ${o.win}</div>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  </div>
+
+  <!-- Section 6: Action plan -->
+  <div class="card">
+    <div class="card-header">
+      <h3>🎯 Action plan</h3>
+      <span class="chip ai">🤖 AI-assigned</span>
+    </div>
+    <div class="card-body">
+      <!-- During call -->
+      <div style="margin-bottom:16px">
+        <div class="row" style="gap:8px;margin-bottom:8px">
+          <span style="font-size:18px">🔴</span>
+          <div class="strong">Во время звонка — скажи</div>
+        </div>
+        <ul style="margin:0;padding-left:28px;color:var(--text-2);font-size:13px">
+          ${intel.actionPlan.during.map(a => `<li style="margin-bottom:4px">${a}</li>`).join('')}
+        </ul>
+      </div>
+
+      <!-- After call — auto-assign tasks -->
+      <div style="margin-top:20px;padding-top:20px;border-top:1px solid var(--border)">
+        <div class="row" style="gap:8px;margin-bottom:10px">
+          <span style="font-size:18px">📋</span>
+          <div class="strong">После звонка · auto-assigned</div>
+        </div>
+        <table class="table" style="margin:-10px -4px 0">
+          <thead><tr><th>Задача</th><th>Кому</th><th>Когда</th><th></th></tr></thead>
+          <tbody>
+            ${intel.actionPlan.after.map(t => {
+              const who = t.who === 'bookkeeper' ? { name: 'Bookkeeper', initials: 'BK' } : workerById(t.who);
+              return `
+                <tr>
+                  <td class="small">${t.task}</td>
+                  <td><div class="row" style="gap:6px"><div class="avatar sm">${who.initials}</div><span class="small strong">${who.name}</span></div></td>
+                  <td class="small">${t.due}</td>
+                  <td><button class="btn sm">✓ Create</button></td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Cadence -->
+      <div style="margin-top:20px;padding-top:20px;border-top:1px solid var(--border)">
+        <div class="row" style="gap:8px;margin-bottom:6px">
+          <span style="font-size:18px">🔄</span>
+          <div class="strong">Cadence</div>
+        </div>
+        <div class="small muted">${intel.actionPlan.cadence}</div>
+      </div>
+    </div>
+  </div>
+`);
+
+mountSelfDocs('call-brief');
+</script>
+</body>
+</html>

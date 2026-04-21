@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8"/>
+<title>EasyTimerCost — Агенты</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="styles.css"/>
+</head>
+<body>
+<script src="meta.js"></script>
+<script src="shell.js"></script>
+<script>
+renderShell({
+  active: 'agents',
+  title: 'Агенты',
+  breadcrumbs: [{ label: 'AI' }, { label: 'Агенты' }],
+  actions: `<div class="row">${periodPill()}<button class="btn primary">+ Создать агента</button></div>`
+});
+
+const totalAgents = MOCK.agents.length;
+const activeAgents = MOCK.agents.filter(a => a.status === 'active').length;
+const totalActions = MOCK.agents.reduce((s, a) => s + a.actions, 0);
+const totalSaved = MOCK.agents.reduce((s, a) => s + (a.saved || 0), 0);
+const byType = {
+  worker: MOCK.agents.filter(a => a.type === 'worker'),
+  foreman: MOCK.agents.filter(a => a.type === 'foreman'),
+  client: MOCK.agents.filter(a => a.type === 'client'),
+  system: MOCK.agents.filter(a => a.type === 'system'),
+};
+
+function renderAgentRow(a) {
+  const statusDot = a.status === 'active' ? 'success' : '';
+  const statusLabel = a.status === 'active' ? '● active' : '○ idle';
+  const owner = a.ownerId
+    ? (a.type === 'client' ? clientById(a.ownerId) : workerById(a.ownerId))
+    : null;
+  const ownerName = owner ? owner.name : 'System · no owner';
+  const ownerAv = owner && owner.initials ? owner.initials : (a.type === 'client' ? '🏢' : '⚙');
+  const authority = a.type === 'system' ? 'L3 · auto' : (a.type === 'foreman' ? 'L2 · $1k cap' : a.type === 'client' ? 'L1 · propose' : 'L2 · $500 cap');
+  const savedDisplay = a.saved > 0 ? fmt$(a.saved) : '—';
+
+  return `
+    <tr>
+      <td>
+        <div class="row" style="gap:10px">
+          <div class="agent-avatar sm">🤖</div>
+          <div>
+            <div class="strong">${a.name}</div>
+            <div class="small muted">${a.id}</div>
+          </div>
+        </div>
+      </td>
+      <td>
+        <div class="row" style="gap:8px">
+          <div class="avatar sm">${ownerAv}</div>
+          <div class="small">${ownerName}</div>
+        </div>
+      </td>
+      <td><span class="chip">${a.ll}</span></td>
+      <td><span class="chip ai">${authority}</span></td>
+      <td class="num strong">${a.actions}</td>
+      <td class="num" style="color:var(--success)">${savedDisplay}</td>
+      <td><span class="chip ${statusDot}">${statusLabel}</span></td>
+      <td>
+        <button class="btn sm">📊 Metrics</button>
+        ${a.ownerId && a.type !== 'client' ? `<a href="worker-profile.html?id=${a.ownerId}&tab=ai" class="btn sm">👤 Profile</a>` : ''}
+      </td>
+    </tr>
+  `;
+}
+
+setBody(`
+  <!-- Top KPIs -->
+  <div class="kpi-grid">
+    <div class="kpi primary"><div class="kpi-label">Всего агентов</div><div class="kpi-value">${totalAgents}</div><div class="kpi-sub">${activeAgents} active сейчас</div></div>
+    <div class="kpi"><div class="kpi-label">Actions · 30д</div><div class="kpi-value">${totalActions}</div><div class="kpi-sub">avg ${Math.round(totalActions/totalAgents)}/agent</div></div>
+    <div class="kpi success"><div class="kpi-label">💰 Saved · 30д</div><div class="kpi-value">${fmt$(totalSaved)}</div><div class="kpi-sub">= ${Math.round(totalSaved/30)} per day</div></div>
+    <div class="kpi ai-kpi" style="border-color:var(--ai-100);background:var(--ai-50)"><div class="kpi-label" style="color:var(--ai-600)">Cost · LLM</div><div class="kpi-value" style="color:var(--ai-600)">$284</div><div class="kpi-sub" style="color:var(--ai-600)">ROI ${Math.round(totalSaved/284)}× · $0.93/action</div></div>
+  </div>
+
+  <!-- Explainer -->
+  <div class="ai-card" style="margin-bottom:20px;padding:14px 18px;display:flex;gap:14px;align-items:center">
+    <div class="agent-avatar">🤖</div>
+    <div style="flex:1">
+      <div class="strong">У каждого человека и клиента — свой AI-агент</div>
+      <div class="small muted">Они работают от имени юзера, вежливо общаются между собой, спрашивают разрешения на важное. Ты — дирижёр.</div>
+    </div>
+    <a href="a2a.html" class="btn">📡 A2A orchestration →</a>
+    <a href="ai-policies.html" class="btn">⚙ Policies →</a>
+  </div>
+
+  <!-- Filters -->
+  <div class="filters">
+    <select class="filter-select"><option>Все типы</option><option>👷 Worker</option><option>👔 Foreman</option><option>🏢 Client</option><option>⚙ System</option></select>
+    <select class="filter-select"><option>Все статусы</option><option>● Active</option><option>○ Idle</option><option>⏸ Paused</option><option>⚠ Errored</option></select>
+    <select class="filter-select"><option>Все модели</option><option>Claude Opus 4.7</option><option>Claude Sonnet 4.6</option><option>GPT-5</option><option>GPT-5 mini</option><option>Gemini 2.5</option><option>Rules-based</option></select>
+    <input class="filter-select" placeholder="Поиск по имени или id..." style="min-width:260px"/>
+  </div>
+
+  <!-- Worker agents -->
+  <div class="card" style="margin-bottom:20px">
+    <div class="card-header">
+      <h3>👷 Work-crew agents (${byType.worker.length + byType.foreman.length})</h3>
+      <div class="small muted">Один агент на каждого рабочего/прораба · работает только от их имени</div>
+    </div>
+    <table class="table">
+      <thead><tr><th>Agent</th><th>Owner</th><th>Модель</th><th>Authority</th><th class="num">Actions</th><th class="num">Saved</th><th>Status</th><th></th></tr></thead>
+      <tbody>
+        ${[...byType.foreman, ...byType.worker].map(renderAgentRow).join('')}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Client agents -->
+  <div class="card" style="margin-bottom:20px">
+    <div class="card-header">
+      <h3>🏢 Client-side agents (${byType.client.length})</h3>
+      <div class="small muted">Виртуальный агент на каждого активного клиента · ведёт brief, отвечает на типовые вопросы, уведомляет клиента о событиях</div>
+    </div>
+    <table class="table">
+      <thead><tr><th>Agent</th><th>Owner</th><th>Модель</th><th>Authority</th><th class="num">Actions</th><th class="num">Saved</th><th>Status</th><th></th></tr></thead>
+      <tbody>
+        ${byType.client.map(renderAgentRow).join('')}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- System agents -->
+  <div class="card" style="margin-bottom:20px">
+    <div class="card-header">
+      <h3>⚙ System agents (${byType.system.length})</h3>
+      <div class="small muted">Фоновые системные агенты · без owner'а · работают на всех tenants</div>
+    </div>
+    <table class="table">
+      <thead><tr><th>Agent</th><th>Owner</th><th>Модель</th><th>Authority</th><th class="num">Actions</th><th class="num">Saved</th><th>Status</th><th></th></tr></thead>
+      <tbody>
+        ${byType.system.map(renderAgentRow).join('')}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Top savers chart -->
+  <div class="grid-2" style="align-items:flex-start">
+    <div class="card">
+      <div class="card-header">
+        <h3>🏆 Top savers · 30д</h3>
+      </div>
+      <div class="card-body">
+        ${[...MOCK.agents].sort((a,b)=>b.saved-a.saved).slice(0,6).map(a => {
+          const pct = Math.round((a.saved / Math.max(...MOCK.agents.map(x=>x.saved))) * 100);
+          return `
+            <div style="margin-bottom:14px">
+              <div class="row spread" style="margin-bottom:4px">
+                <div class="row" style="gap:8px"><div class="agent-avatar sm">🤖</div><span class="small strong">${a.name}</span></div>
+                <span class="small strong" style="color:var(--success)">${fmt$(a.saved)}</span>
+              </div>
+              <div style="background:var(--bg);height:8px;border-radius:4px;overflow:hidden"><div style="width:${pct}%;height:100%;background:linear-gradient(90deg,var(--ai),var(--primary))"></div></div>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <h3>⚠ Agents needing review</h3>
+      </div>
+      <div class="card-body" style="display:flex;flex-direction:column;gap:12px">
+        <div class="ai-reason" style="border-color:var(--warning-50);background:var(--warning-50)">
+          <div class="row" style="gap:10px;align-items:flex-start">
+            <div class="agent-avatar sm" style="background:var(--warning)">⚠</div>
+            <div style="flex:1">
+              <div class="strong">Павел · AI — низкая confidence (72%)</div>
+              <div class="small muted" style="margin-top:4px">За последние 5 предложений 3 были отклонены. Проверь промпт или снизь его authority.</div>
+              <div style="margin-top:8px"><button class="btn sm">Посмотреть drift</button> <button class="btn sm">⏸ Pause agent</button></div>
+            </div>
+          </div>
+        </div>
+        <div class="ai-reason" style="border-color:var(--error-50);background:var(--error-50)">
+          <div class="row" style="gap:10px;align-items:flex-start">
+            <div class="agent-avatar sm" style="background:var(--error)">!</div>
+            <div style="flex:1">
+              <div class="strong">Approval bot — 1 escalation pending</div>
+              <div class="small muted" style="margin-top:4px">Expense $892.15 (Ikea) > $500 threshold, ждёт ручного approval уже 2ч</div>
+              <div style="margin-top:8px"><a href="expenses.html" class="btn sm">→ Очередь approval</a></div>
+            </div>
+          </div>
+        </div>
+        <div class="ai-reason">
+          <div class="row" style="gap:10px;align-items:flex-start">
+            <div class="agent-avatar sm">🔄</div>
+            <div style="flex:1">
+              <div class="strong">Receipt OCR — prompt обновился</div>
+              <div class="small muted" style="margin-top:4px">v2.3 → v2.4 · fine-tune на Tampa-specific vendors (Ace, Lowe's, Rona) · <a href="audit.html">audit</a></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Live activity feed (short preview — full in a2a.html) -->
+  <div class="card" style="margin-top:20px">
+    <div class="card-header">
+      <h3>📡 Последняя активность · live</h3>
+      <a href="a2a.html" class="btn sm">Полная orchestration →</a>
+    </div>
+    <div class="card-body">
+      <div class="trail">
+        ${MOCK.agentActivity.slice(0,6).map(ev => {
+          const fromAg = agentById(ev.from);
+          const toAg = ev.to ? agentById(ev.to) : null;
+          const typeChip = {
+            proposal: '<span class="chip ai">📝 proposal</span>',
+            request:  '<span class="chip">➡ request</span>',
+            response: '<span class="chip success">⬅ response</span>',
+            approved: '<span class="chip success">✓ approved</span>',
+            handoff:  '<span class="chip warning">🤝 handoff</span>',
+            decision: '<span class="chip ai">⚖ decision</span>',
+            verify:   '<span class="chip">🔍 verify</span>',
+            notify:   '<span class="chip">📣 notify</span>',
+          }[ev.type] || `<span class="chip">${ev.type}</span>`;
+          return `
+            <div class="trail-item">
+              <div class="trail-dot ai"></div>
+              <div class="trail-content">
+                <div class="row spread">
+                  <div class="who">${fromAg ? fromAg.name : ev.from} ${toAg ? '→ ' + toAg.name : ''}</div>
+                  ${typeChip}
+                </div>
+                <div class="what">${ev.text}</div>
+                <div class="when">${ev.at}</div>
+              </div>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    </div>
+  </div>
+`);
+
+mountSelfDocs('agents');
+</script>
+</body>
+</html>

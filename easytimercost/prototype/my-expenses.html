@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8"/>
+<title>EasyTimerCost — Мои затраты</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="styles.css"/>
+</head>
+<body>
+<script src="meta.js"></script>
+<script src="shell.js"></script>
+<script>
+const w = workerById('w5');  // Сергей Ковалёв — у него есть materials expense
+const myAgent = agentByOwnerId(w.id);
+
+renderShell({
+  active: 'my-expenses',
+  title: 'Мои затраты',
+  breadcrumbs: [{ label: 'Мои затраты' }],
+  actions: `<button class="btn primary">📷 Подать новую</button>`
+});
+
+const myExpenses = MOCK.expenses.filter(e => e.workerId === w.id);
+const approved = myExpenses.filter(e => e.status === 'approved' && e.reimbursable).reduce((a,e)=>a+e.amount, 0);
+const pending = myExpenses.filter(e => e.status === 'submitted').reduce((a,e)=>a+e.amount, 0);
+
+setBody(`
+  <div class="grid-2" style="align-items:flex-start;grid-template-columns:1.1fr 1fr;gap:20px">
+    <!-- LEFT: AI chat with auto-suggestions -->
+    <div class="chat-panel">
+      <div class="chat-header">
+        <div class="agent-avatar">🤖</div>
+        <div style="flex:1">
+          <div class="strong">${myAgent.name} · про затраты</div>
+          <div class="small muted row" style="gap:6px"><span class="status-dot"></span>3 подсказки ждут</div>
+        </div>
+      </div>
+      <div class="chat-body">
+        <!-- AI proactive: new receipt from email -->
+        <div class="chat-msg">
+          <div class="agent-avatar sm">🤖</div>
+          <div style="flex:1">
+            <div class="chat-bubble">
+              <div class="strong" style="margin-bottom:4px">📧 Новый чек в твоей почте</div>
+              <div style="background:#fff;border:1px solid var(--ai-100);border-radius:8px;padding:10px;margin:6px 0">
+                <div class="row spread">
+                  <div>
+                    <div class="strong">The Home Depot</div>
+                    <div class="small muted">2026-04-20 · 14:32</div>
+                  </div>
+                  <div class="strong big" style="color:var(--ai-600)">$347.82</div>
+                </div>
+              </div>
+              <div class="small muted">Я извлёк vendor, amount, tax ($24.35) — <strong>96% confidence</strong>. Это для Acme (где ты сейчас работаешь)?</div>
+            </div>
+            <div class="chat-actions">
+              <button class="chat-action-btn primary">✅ Да, для Acme</button>
+              <button class="chat-action-btn">Другой клиент</button>
+              <button class="chat-action-btn">Личное</button>
+            </div>
+            <div class="chat-time">13:15 · via 🤖 OCR bot</div>
+          </div>
+        </div>
+
+        <!-- AI proactive: fuel prediction -->
+        <div class="chat-msg">
+          <div class="agent-avatar sm">🤖</div>
+          <div style="flex:1">
+            <div class="chat-bubble">
+              ⛽ Ты обычно заправляешься по вторникам. Хочу автоматически добавить $60 бензина на сегодня? (средний за 4 недели)
+            </div>
+            <div class="chat-actions">
+              <button class="chat-action-btn">Добавить $60</button>
+              <button class="chat-action-btn">Другая сумма</button>
+              <button class="chat-action-btn">Не сегодня</button>
+            </div>
+            <div class="chat-time">12:00</div>
+          </div>
+        </div>
+
+        <!-- AI proactive: per-diem -->
+        <div class="chat-msg">
+          <div class="agent-avatar sm">🤖</div>
+          <div style="flex:1">
+            <div class="chat-bubble">
+              🍔 По политике за сегодняшнюю смену (> 8ч на site) полагается per-diem <strong>$25</strong>. Добавить?
+            </div>
+            <div class="chat-actions">
+              <button class="chat-action-btn primary">Добавить $25</button>
+              <button class="chat-action-btn">Не сегодня</button>
+            </div>
+            <div class="chat-time">11:30</div>
+          </div>
+        </div>
+
+        <!-- User: submitted manually -->
+        <div class="chat-msg mine">
+          <div class="avatar sm">${w.initials}</div>
+          <div>
+            <div class="chat-bubble">хочу подать чек вручную</div>
+            <div class="chat-time" style="text-align:right">09:15</div>
+          </div>
+        </div>
+
+        <div class="chat-msg">
+          <div class="agent-avatar sm">🤖</div>
+          <div>
+            <div class="chat-bubble">
+              Жду фото 📸 или прикрепи из галереи. Я сам определю vendor, amount, дату и предложу категорию.
+            </div>
+            <div class="chat-time">09:15</div>
+          </div>
+        </div>
+      </div>
+      <div class="chat-input">
+        <button class="btn sm">📷</button>
+        <input placeholder="Опиши затрату или прикрепи фото..."/>
+        <button class="btn primary sm">↑</button>
+      </div>
+    </div>
+
+    <!-- RIGHT: balance + quick submit (traditional UI as fallback) -->
+    <div class="stack">
+      <div class="card" style="background:linear-gradient(135deg,#1976d2,#42a5f5);color:#fff;border:0">
+        <div class="card-body">
+          <div class="row" style="gap:32px">
+            <div>
+              <div style="opacity:0.85;font-size:12px;text-transform:uppercase;letter-spacing:0.5px">К компенсации</div>
+              <div style="font-size:30px;font-weight:800;line-height:1">${fmt$(approved)}</div>
+              <div style="opacity:0.85;font-size:11px;margin-top:4px">${myExpenses.filter(e=>e.status==='approved'&&e.reimbursable).length} утверждённых</div>
+            </div>
+            <div>
+              <div style="opacity:0.85;font-size:12px;text-transform:uppercase;letter-spacing:0.5px">В ожидании</div>
+              <div style="font-size:30px;font-weight:800;line-height:1">${fmt$(pending)}</div>
+              <div style="opacity:0.85;font-size:11px;margin-top:4px">${myExpenses.filter(e=>e.status==='submitted').length} ждут approval</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- AI saved you -->
+      <div class="ai-card">
+        <div class="ai-card-header">
+          <div class="agent-avatar sm">🤖</div>
+          <div style="flex:1">
+            <div class="strong">AI сэкономил тебе ~18 мин на прошлой неделе</div>
+            <div class="small muted">4 чека OCR · 2 авто-категории · 1 auto-submit</div>
+          </div>
+          <div class="ai-confidence">
+            <span>в среднем 96%</span>
+            <div class="bar"><div class="bar-fill" style="width:96%"></div></div>
+          </div>
+        </div>
+        <div class="ai-reason">
+          💡 <strong>Как работает:</strong> фото чека → OCR → категория по vendor → auto-подать в нужного клиента → admin approve auto если &lt; $500. Ты только подтверждаешь кнопкой.
+        </div>
+      </div>
+
+      <!-- Quick submit shortcuts -->
+      <div class="card">
+        <div class="card-header"><h3>⚡ Быстрая подача</h3></div>
+        <div class="card-body">
+          <div class="grid-3">
+            <button class="btn" style="padding:20px;flex-direction:column;gap:6px;font-size:12px">
+              <div style="font-size:24px">📷</div>
+              <div>Фото чека</div>
+              <div class="small muted">OCR auto</div>
+            </button>
+            <button class="btn" style="padding:20px;flex-direction:column;gap:6px;font-size:12px">
+              <div style="font-size:24px">⛽</div>
+              <div>Бензин</div>
+              <div class="small muted">Mileage</div>
+            </button>
+            <button class="btn" style="padding:20px;flex-direction:column;gap:6px;font-size:12px">
+              <div style="font-size:24px">🍔</div>
+              <div>Per-diem</div>
+              <div class="small muted">По policy</div>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div style="margin-top:24px">
+    <div class="tabs">
+      <a href="my-time.html" class="tab">🕒 Мои смены</a>
+      <a href="my-expenses.html" class="tab active">💰 Мои затраты</a>
+      <a class="tab">🏢 Мои клиенты</a>
+      <a class="tab">💳 Выплаты</a>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><h3>📋 Все мои затраты (${myExpenses.length})</h3></div>
+      <table class="table">
+        <thead><tr><th>Дата</th><th>Клиент</th><th>Категория</th><th>Описание</th><th class="num">Сумма</th><th>Источник</th><th>Статус</th></tr></thead>
+        <tbody>
+          ${myExpenses.length === 0 ? '<tr><td colspan="7" class="muted" style="text-align:center;padding:40px">Затрат ещё нет.</td></tr>' : myExpenses.map(e => {
+            const c = clientById(e.clientId);
+            const statusChip = e.status === 'approved' ? 'success' : e.status === 'submitted' ? 'warning' : 'error';
+            return `
+              <tr onclick="location.href='expense-detail.html?id=${e.id}'">
+                <td>${e.date}</td>
+                <td>${c.name}</td>
+                <td><span class="chip primary">${e.category}</span></td>
+                <td class="small">${e.desc}</td>
+                <td class="num strong">${fmt$exact(e.amount)}</td>
+                <td><span class="chip ai">🤖 OCR</span></td>
+                <td><span class="chip ${statusChip}">${e.status}</span></td>
+              </tr>
+            `;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+  </div>
+`);
+
+mountSelfDocs('my-expenses');
+</script>
+</body>
+</html>

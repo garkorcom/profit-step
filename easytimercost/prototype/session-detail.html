@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8"/>
+<title>EasyTimerCost — Session Detail</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="styles.css"/>
+</head>
+<body>
+<script src="meta.js"></script>
+<script src="shell.js"></script>
+<script>
+const params = new URLSearchParams(location.search);
+const sid = params.get('id') || 's1';
+const s = MOCK.sessions.find(x => x.id === sid);
+const w = workerById(s.workerId);
+const c = clientById(s.clientId);
+const linkedExpenses = MOCK.expenses.filter(e => e.workerId === s.workerId && e.clientId === s.clientId && e.date === s.date);
+
+renderShell({
+  active: 'time',
+  breadcrumbs: [
+    { label: 'Dashboard', href: 'index.html' },
+    { label: 'Время', href: 'time.html' },
+    { label: `Session ${sid}` }
+  ],
+});
+
+setBody(`
+  <div class="grid-2" style="align-items:flex-start">
+    <div class="stack">
+      ${s.status === 'active' ? `
+        <div class="active-session">
+          <div style="font-size:40px">🟢</div>
+          <div style="flex:1">
+            <div class="small" style="opacity:0.85;text-transform:uppercase;letter-spacing:0.5px">На смене</div>
+            <div style="font-size:22px;font-weight:700">${s.desc}</div>
+            <div style="opacity:0.9;margin-top:4px">Прошло ${s.hours.toFixed(1)}ч · $${s.rate}/ч · заработано ${fmt$exact(s.earnings)}</div>
+          </div>
+          <button class="btn" style="background:rgba(255,255,255,0.2);color:#fff;border-color:rgba(255,255,255,0.3);font-size:15px;padding:12px 24px">⏹ Закончить</button>
+        </div>
+      ` : ''}
+
+      <div class="card">
+        <div class="card-header"><h3>📋 Детали</h3></div>
+        <div class="card-body">
+          <div class="grid-2">
+            <div>
+              <div class="muted small">Работник</div>
+              <a href="worker-profile.html?id=${w.id}" class="row" style="gap:8px;margin-top:4px">
+                <div class="avatar sm">${w.initials}</div>
+                <div><div class="strong">${w.name}</div><div class="small muted">${w.role}</div></div>
+              </a>
+            </div>
+            <div>
+              <div class="muted small">Клиент / Проект</div>
+              <a href="client-overview.html?id=${c.id}" class="strong">${c.name}</a>
+              <div class="small muted">${c.project}</div>
+            </div>
+            <div>
+              <div class="muted small">Дата</div>
+              <div class="strong">${s.date}</div>
+            </div>
+            <div>
+              <div class="muted small">Тип смены</div>
+              <div><span class="chip primary">Regular</span></div>
+            </div>
+            <div>
+              <div class="muted small">Начало</div>
+              <div class="strong">${s.start}</div>
+              <div class="small muted">📍 Tampa, FL (verified)</div>
+            </div>
+            <div>
+              <div class="muted small">Окончание</div>
+              <div class="strong">${s.end || '— активна —'}</div>
+              ${s.end ? `<div class="small muted">📍 Tampa, FL</div>` : ''}
+            </div>
+            <div>
+              <div class="muted small">Ставка</div>
+              <div class="strong">$${s.rate}/ч</div>
+            </div>
+            <div>
+              <div class="muted small">Заработок</div>
+              <div class="big" style="color:var(--primary)">${fmt$exact(s.earnings)}</div>
+            </div>
+          </div>
+          <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border)">
+            <div class="muted small">Описание</div>
+            <div style="margin-top:4px">${s.desc}</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><h3>💰 Связанные затраты (${linkedExpenses.length})</h3><button class="btn sm">+ Добавить</button></div>
+        ${linkedExpenses.length > 0 ? `
+        <table class="table">
+          <thead><tr><th>Категория</th><th>Описание</th><th class="num">Сумма</th><th>Статус</th></tr></thead>
+          <tbody>
+            ${linkedExpenses.map(e => `
+              <tr onclick="location.href='expense-detail.html?id=${e.id}'">
+                <td><span class="chip primary">${e.category}</span></td>
+                <td class="small">${e.desc}</td>
+                <td class="num strong">${fmt$exact(e.amount)}</td>
+                <td><span class="chip ${e.status === 'approved' ? 'success' : 'warning'}">${e.status}</span></td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+        ` : '<div class="card-body muted">Нет связанных затрат.</div>'}
+      </div>
+    </div>
+
+    <div class="stack">
+      <div class="card">
+        <div class="card-header"><h3>📸 Selfie при старте</h3></div>
+        <div class="card-body">
+          <div style="background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:60px 20px;text-align:center">
+            <div style="font-size:48px">👷</div>
+            <div class="muted small" style="margin-top:8px">Face match: <strong style="color:var(--success)">98.4%</strong></div>
+            <div class="muted small">Timestamp: ${s.date} ${s.start}</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><h3>🗺️ Geo verification</h3></div>
+        <div class="card-body">
+          <div style="background:linear-gradient(135deg,#e0f2fe,#bae6fd);height:200px;border-radius:var(--radius);position:relative;border:1px solid var(--border)">
+            <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center">
+              <div style="font-size:32px">📍</div>
+              <div class="strong">Tampa, FL</div>
+              <div class="small muted">27.9506° N, 82.4572° W</div>
+            </div>
+          </div>
+          <div style="margin-top:12px">
+            <div class="row spread small"><span class="muted">Distance from client site</span><span class="strong">0.3 mi ✓</span></div>
+            <div class="row spread small" style="margin-top:4px"><span class="muted">Accuracy</span><span>±12m</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- AI decisions panel — NEW -->
+      <div class="ai-card">
+        <div class="ai-card-header">
+          <div class="agent-avatar sm">🤖</div>
+          <div style="flex:1">
+            <div class="strong">AI decisions для этой сессии</div>
+            <div class="small muted">3 проверки · 0 флагов · auto-approved</div>
+          </div>
+          <span class="chip ai">🤖 auto</span>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <div class="ai-reason">
+            <div class="row spread" style="margin-bottom:4px">
+              <span class="strong">✓ Geo verification</span>
+              <span class="ai-confidence"><span>100%</span></span>
+            </div>
+            <div class="muted small">Worker location 0.3mi from Acme site · within 100mi Tampa fence · no outlier</div>
+          </div>
+          <div class="ai-reason">
+            <div class="row spread" style="margin-bottom:4px">
+              <span class="strong">✓ Face match (start selfie)</span>
+              <span class="ai-confidence"><span>98.4%</span><div class="bar"><div class="bar-fill" style="width:98%"></div></div></span>
+            </div>
+            <div class="muted small">Compared to profile baseline · высокая уверенность · photo metadata OK</div>
+          </div>
+          <div class="ai-reason">
+            <div class="row spread" style="margin-bottom:4px">
+              <span class="strong">✓ Policy compliance</span>
+              <span class="ai-confidence"><span>pass</span></span>
+            </div>
+            <div class="muted small">hours ${s.hours.toFixed(1)}ч &lt; 10ч limit · regular rate · no overtime flag · within crew schedule</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><h3>📜 Audit trail</h3></div>
+        <div class="card-body">
+          <div class="trail">
+            <div class="trail-item">
+              <div class="trail-dot ai"></div>
+              <div class="trail-content">
+                <div class="who">🤖 ${w.name.split(' ')[0]} AI <span class="muted">предложил стартовать</span> <span class="chip ai" style="margin-left:4px">🤖</span></div>
+                <div class="what">Inferred from geo proximity + usual schedule · worker confirmed in 3 sec</div>
+                <div class="when">${s.date} 07:02</div>
+              </div>
+            </div>
+            <div class="trail-item">
+              <div class="trail-dot success"></div>
+              <div class="trail-content">
+                <div class="who">${w.name} <span class="muted">started shift</span></div>
+                <div class="what">Via Telegram bot · photo + geo auto-attached</div>
+                <div class="when">${s.date} ${s.start}</div>
+              </div>
+            </div>
+            ${s.end ? `
+            <div class="trail-item">
+              <div class="trail-dot ai"></div>
+              <div class="trail-content">
+                <div class="who">🤖 ${w.name.split(' ')[0]} AI <span class="muted">предложил закрыть</span></div>
+                <div class="what">Geo показал worker left site · 3мин буфер прошёл</div>
+                <div class="when">${s.date} 16:30</div>
+              </div>
+            </div>
+            <div class="trail-item">
+              <div class="trail-dot success"></div>
+              <div class="trail-content">
+                <div class="who">${w.name} <span class="muted">stopped shift</span></div>
+                <div class="what">Auto-calculated ${s.hours.toFixed(1)}h × $${s.rate}/ч = ${fmt$exact(s.earnings)}</div>
+                <div class="when">${s.date} ${s.end}</div>
+              </div>
+            </div>
+            <div class="trail-item">
+              <div class="trail-dot ai"></div>
+              <div class="trail-content">
+                <div class="who">🤖 Approval bot <span class="muted">auto-approved</span> <span class="chip ai" style="margin-left:4px">🤖</span></div>
+                <div class="what">All policy checks passed · no human review needed</div>
+                <div class="when">${s.date} ${s.end}</div>
+              </div>
+            </div>
+            ` : ''}
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+`);
+
+mountSelfDocs('session-detail');
+</script>
+</body>
+</html>

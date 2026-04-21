@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8"/>
+<title>EasyTimerCost — A2A orchestration</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="styles.css"/>
+</head>
+<body>
+<script src="meta.js"></script>
+<script src="shell.js"></script>
+<script>
+renderShell({
+  active: 'a2a',
+  title: 'A2A orchestration',
+  breadcrumbs: [{ label: 'AI' }, { label: 'A2A orchestration' }],
+  actions: `<div class="row">${periodPill()}<button class="btn">⚙ Settings</button><button class="btn primary">+ Manual trigger</button></div>`
+});
+
+// Network graph nodes & edges
+const nodes = [
+  { id: 'a-w3', label: 'Андрей AI',  type: 'worker',  x: 20,  y: 50, actions: 47 },
+  { id: 'a-w5', label: 'Сергей AI',  type: 'worker',  x: 20,  y: 180, actions: 51 },
+  { id: 'a-w7', label: 'Павел AI',   type: 'worker',  x: 20,  y: 310, actions: 51 },
+  { id: 'a-w2', label: 'Михаил AI',  type: 'foreman', x: 230, y: 120, actions: 128 },
+  { id: 'a-w9', label: 'Роман AI',   type: 'foreman', x: 230, y: 250, actions: 94 },
+  { id: 'a-sys-approver', label: 'Approval bot', type: 'system', x: 430, y: 60, actions: 28 },
+  { id: 'a-sys-ocr',      label: 'OCR bot',      type: 'system', x: 430, y: 180, actions: 42 },
+  { id: 'a-sys-geo',      label: 'Geo bot',      type: 'system', x: 430, y: 300, actions: 156 },
+  { id: 'a-c1', label: 'Acme AI',    type: 'client',  x: 630, y: 80,  actions: 87 },
+  { id: 'a-c3', label: 'Westfield',  type: 'client',  x: 630, y: 220, actions: 54 },
+  { id: 'a-w1', label: 'Денис AI',   type: 'admin',   x: 430, y: 400, actions: 12 },
+];
+
+const edges = [
+  { from: 'a-w3', to: 'a-w2', type: 'handoff' },
+  { from: 'a-w5', to: 'a-w2', type: 'handoff' },
+  { from: 'a-w7', to: 'a-w9', type: 'handoff' },
+  { from: 'a-w2', to: 'a-sys-approver', type: 'decision' },
+  { from: 'a-w2', to: 'a-c1', type: 'notify' },
+  { from: 'a-w9', to: 'a-c3', type: 'notify' },
+  { from: 'a-w5', to: 'a-sys-ocr', type: 'request' },
+  { from: 'a-sys-ocr', to: 'a-w5', type: 'response' },
+  { from: 'a-w3', to: 'a-sys-geo', type: 'verify' },
+  { from: 'a-w5', to: 'a-sys-geo', type: 'verify' },
+  { from: 'a-w7', to: 'a-sys-geo', type: 'verify' },
+  { from: 'a-sys-approver', to: 'a-w1', type: 'escalate' },
+  { from: 'a-c1', to: 'a-w2', type: 'request' },
+];
+
+const nodeColors = {
+  worker: 'linear-gradient(135deg,#1976d2,#42a5f5)',
+  foreman: 'linear-gradient(135deg,#ed6c02,#ffa726)',
+  system: 'linear-gradient(135deg,#64748b,#94a3b8)',
+  client: 'linear-gradient(135deg,#2e7d32,#66bb6a)',
+  admin: 'linear-gradient(135deg,#7c3aed,#a78bfa)',
+};
+
+function pathBetween(a, b) {
+  const ax = a.x + 45, ay = a.y + 25;
+  const bx = b.x + 45, by = b.y + 25;
+  const cx = (ax + bx) / 2;
+  return `M ${ax} ${ay} Q ${cx} ${ay} ${bx} ${by}`;
+}
+
+const totalMessages24h = 284;
+const avgLatency = '1.2s';
+const costPerDay = '$9.47';
+const conflicts = 2;
+
+setBody(`
+  <!-- KPIs -->
+  <div class="kpi-grid">
+    <div class="kpi primary"><div class="kpi-label">Messages · 24ч</div><div class="kpi-value">${totalMessages24h}</div><div class="kpi-sub">avg 11.8/час</div></div>
+    <div class="kpi"><div class="kpi-label">Latency avg</div><div class="kpi-value">${avgLatency}</div><div class="kpi-sub">p95: 3.4s · p99: 8.1s</div></div>
+    <div class="kpi success"><div class="kpi-label">💰 Cost · 24ч</div><div class="kpi-value">${costPerDay}</div><div class="kpi-sub">$0.033/msg avg</div></div>
+    <div class="kpi warning"><div class="kpi-label">⚠ Conflicts</div><div class="kpi-value">${conflicts}</div><div class="kpi-sub">ждут human decision</div></div>
+  </div>
+
+  <!-- Main layout: network graph + side panels -->
+  <div class="grid-2" style="grid-template-columns:1.4fr 1fr;align-items:flex-start;gap:20px">
+    <!-- Network graph -->
+    <div class="card">
+      <div class="card-header">
+        <h3>🕸 Agent network · live</h3>
+        <div class="row" style="gap:8px">
+          <span class="chip ai">● real-time</span>
+          <button class="btn sm">⏸ Pause</button>
+        </div>
+      </div>
+      <div class="card-body" style="padding:0">
+        <div style="padding:20px;background:linear-gradient(180deg,#faf5ff,#fff);border-bottom:1px solid var(--border)">
+          <svg viewBox="0 0 780 460" style="width:100%;height:460px">
+            <!-- Legend layers -->
+            <rect x="0" y="0" width="200" height="460" fill="rgba(25,118,210,0.02)" />
+            <rect x="200" y="0" width="200" height="460" fill="rgba(237,108,2,0.02)" />
+            <rect x="400" y="0" width="200" height="460" fill="rgba(100,116,139,0.03)" />
+            <rect x="600" y="0" width="180" height="460" fill="rgba(46,125,50,0.02)" />
+            <text x="100" y="440" text-anchor="middle" fill="var(--text-3)" font-size="11" font-weight="600">WORKERS</text>
+            <text x="300" y="440" text-anchor="middle" fill="var(--text-3)" font-size="11" font-weight="600">FOREMEN</text>
+            <text x="500" y="440" text-anchor="middle" fill="var(--text-3)" font-size="11" font-weight="600">SYSTEM</text>
+            <text x="690" y="440" text-anchor="middle" fill="var(--text-3)" font-size="11" font-weight="600">CLIENTS</text>
+
+            <!-- Edges -->
+            ${edges.map(e => {
+              const from = nodes.find(n => n.id === e.from);
+              const to = nodes.find(n => n.id === e.to);
+              if (!from || !to) return '';
+              const color = e.type === 'request' || e.type === 'response' ? '#64748b'
+                         : e.type === 'handoff' ? '#ed6c02'
+                         : e.type === 'decision' ? '#7c3aed'
+                         : e.type === 'notify' ? '#2e7d32'
+                         : e.type === 'verify' ? '#1976d2'
+                         : '#d32f2f';
+              return `
+                <path d="${pathBetween(from, to)}" stroke="${color}" stroke-width="2" fill="none" stroke-dasharray="${e.type === 'request' ? '4 2' : '0'}" opacity="0.55">
+                  <animate attributeName="stroke-dashoffset" from="0" to="-12" dur="1s" repeatCount="indefinite"/>
+                </path>
+              `;
+            }).join('')}
+
+            <!-- Nodes -->
+            ${nodes.map(n => `
+              <g>
+                <rect x="${n.x}" y="${n.y}" width="90" height="50" rx="10" fill="white" stroke="#e2e8f0" stroke-width="1.5" filter="drop-shadow(0 2px 4px rgba(0,0,0,0.08))"/>
+                <circle cx="${n.x + 14}" cy="${n.y + 14}" r="8" fill="${n.type === 'worker' ? '#1976d2' : n.type === 'foreman' ? '#ed6c02' : n.type === 'system' ? '#64748b' : n.type === 'client' ? '#2e7d32' : '#7c3aed'}"/>
+                <text x="${n.x + 14}" y="${n.y + 18}" text-anchor="middle" fill="white" font-size="10">🤖</text>
+                <text x="${n.x + 28}" y="${n.y + 17}" fill="var(--text)" font-size="11" font-weight="700">${n.label}</text>
+                <text x="${n.x + 28}" y="${n.y + 32}" fill="var(--text-3)" font-size="10">${n.actions} acts</text>
+                <circle cx="${n.x + 82}" cy="${n.y + 10}" r="4" fill="#22c55e">
+                  <animate attributeName="opacity" values="1;0.4;1" dur="2s" repeatCount="indefinite"/>
+                </circle>
+              </g>
+            `).join('')}
+          </svg>
+        </div>
+        <!-- Graph legend -->
+        <div style="padding:14px 20px;display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:var(--text-2)">
+          <div class="row" style="gap:6px"><span style="width:14px;height:2px;background:#64748b;display:inline-block"></span>request/response</div>
+          <div class="row" style="gap:6px"><span style="width:14px;height:2px;background:#ed6c02;display:inline-block"></span>handoff</div>
+          <div class="row" style="gap:6px"><span style="width:14px;height:2px;background:#7c3aed;display:inline-block"></span>decision</div>
+          <div class="row" style="gap:6px"><span style="width:14px;height:2px;background:#2e7d32;display:inline-block"></span>notify</div>
+          <div class="row" style="gap:6px"><span style="width:14px;height:2px;background:#1976d2;display:inline-block"></span>verify</div>
+          <div class="row" style="gap:6px"><span style="width:14px;height:2px;background:#d32f2f;display:inline-block"></span>escalate</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Live feed -->
+    <div class="card">
+      <div class="card-header">
+        <h3>📡 Live message feed</h3>
+        <span class="chip ai">● streaming</span>
+      </div>
+      <div class="card-body" style="padding:0;max-height:540px;overflow-y:auto">
+        <div style="padding:16px 20px;display:flex;flex-direction:column;gap:14px">
+          ${MOCK.agentActivity.map(ev => {
+            const fromAg = agentById(ev.from);
+            const toAg = ev.to ? agentById(ev.to) : null;
+            const typeChip = {
+              proposal: '<span class="chip ai">📝 proposal</span>',
+              request:  '<span class="chip">➡ request</span>',
+              response: '<span class="chip success">⬅ response</span>',
+              approved: '<span class="chip success">✓ approved</span>',
+              handoff:  '<span class="chip warning">🤝 handoff</span>',
+              decision: '<span class="chip ai">⚖ decision</span>',
+              verify:   '<span class="chip">🔍 verify</span>',
+              notify:   '<span class="chip">📣 notify</span>',
+            }[ev.type] || `<span class="chip">${ev.type}</span>`;
+            return `
+              <div style="border-left:3px solid var(--ai);padding:10px 14px;background:#fafaff;border-radius:8px">
+                <div class="row spread" style="margin-bottom:4px">
+                  <div class="small muted">${ev.at}</div>
+                  ${typeChip}
+                </div>
+                <div class="row" style="gap:6px;font-size:13px">
+                  <span class="strong">${fromAg ? fromAg.name : ev.from}</span>
+                  ${toAg ? `<span class="muted">→</span> <span class="strong">${toAg.name}</span>` : '<span class="muted" style="font-size:11px">(broadcast)</span>'}
+                </div>
+                <div class="small" style="margin-top:4px;color:var(--text);line-height:1.45">${ev.text}</div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bottom: conflicts queue + agent metrics -->
+  <div class="grid-2" style="margin-top:20px;align-items:flex-start;gap:20px">
+    <!-- Conflicts queue -->
+    <div class="card">
+      <div class="card-header">
+        <h3>⚠ Conflicts · требуют решения</h3>
+        <span class="chip warning">2 pending</span>
+      </div>
+      <div class="card-body" style="display:flex;flex-direction:column;gap:14px">
+        <div class="ai-card" style="border-color:var(--warning-50);margin:0">
+          <div class="ai-card-header">
+            <div class="agent-avatar sm" style="background:var(--warning)">⚠</div>
+            <div style="flex:1">
+              <div class="strong">Double-booking crew 2026-04-27</div>
+              <div class="small muted">Михаил · AI предлагает Acme bath reno site-visit · Роман · AI уже забронировал на Westfield facade inspection</div>
+            </div>
+            <span class="chip warning">HIGH</span>
+          </div>
+          <div class="ai-reason" style="margin-top:12px">
+            <div class="strong small" style="margin-bottom:6px">AI анализ:</div>
+            <div class="small">Acme · $32k opportunity (high prob 85%) · bath reno site-visit обязателен до Monday<br/>
+            Westfield · $185k active · facade inspection плановая, можно перенести на +2 дня без impact</div>
+          </div>
+          <div class="row" style="gap:8px;margin-top:12px">
+            <button class="btn primary">✓ Pick Acme · reschedule Westfield</button>
+            <button class="btn">✓ Pick Westfield · push Acme</button>
+            <button class="btn">Разбить крю</button>
+          </div>
+        </div>
+
+        <div class="ai-card" style="border-color:var(--error-50);margin:0">
+          <div class="ai-card-header">
+            <div class="agent-avatar sm" style="background:var(--error)">!</div>
+            <div style="flex:1">
+              <div class="strong">Cross-tenant data request</div>
+              <div class="small muted">Acme AI запрашивает у Approval bot: "список subcontractors использованных на прошлом проекте"</div>
+            </div>
+            <span class="chip error">CRITICAL</span>
+          </div>
+          <div class="ai-reason" style="margin-top:12px">
+            <div class="strong small" style="margin-bottom:6px">Security check:</div>
+            <div class="small">Запрос pass RLS (клиент свой subcontractor list legal to know), но содержит имена субов которые не на Acme проекте — возможная data leak. Требуется human approval.</div>
+          </div>
+          <div class="row" style="gap:8px;margin-top:12px">
+            <button class="btn primary">✓ Разрешить (только Acme-relevant)</button>
+            <button class="btn" style="background:var(--error);color:#fff;border-color:var(--error)">✗ Deny</button>
+            <button class="btn">Переслать юристу</button>
+          </div>
+        </div>
+
+        <div class="ai-reason" style="text-align:center;padding:14px;background:var(--success-50);border-color:var(--success-50)">
+          <div class="small" style="color:var(--success)">✓ За последние 24 часа автоматически разрешено 47 конфликтов</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Agent metrics -->
+    <div class="card">
+      <div class="card-header">
+        <h3>📊 Performance · per agent</h3>
+      </div>
+      <table class="table">
+        <thead><tr><th>Agent</th><th class="num">Msgs</th><th class="num">Latency</th><th class="num">Err %</th><th class="num">Cost</th></tr></thead>
+        <tbody>
+          ${[
+            { id: 'a-w3', msgs: 47, lat: '0.8s', err: 2, cost: 1.12 },
+            { id: 'a-w5', msgs: 51, lat: '1.1s', err: 3, cost: 1.34 },
+            { id: 'a-w2', msgs: 128, lat: '1.4s', err: 4, cost: 2.87 },
+            { id: 'a-sys-ocr', msgs: 42, lat: '2.1s', err: 8, cost: 0.68 },
+            { id: 'a-sys-approver', msgs: 28, lat: '0.3s', err: 0, cost: 0.02 },
+            { id: 'a-c1', msgs: 87, lat: '1.8s', err: 3, cost: 2.14 },
+          ].map(r => {
+            const ag = agentById(r.id);
+            const errChip = r.err > 5 ? 'warning' : r.err === 0 ? 'success' : '';
+            return `
+              <tr>
+                <td><div class="row" style="gap:8px"><div class="agent-avatar sm">🤖</div><span class="small strong">${ag.name}</span></div></td>
+                <td class="num">${r.msgs}</td>
+                <td class="num small">${r.lat}</td>
+                <td class="num"><span class="chip ${errChip}">${r.err}%</span></td>
+                <td class="num">$${r.cost.toFixed(2)}</td>
+              </tr>
+            `;
+          }).join('')}
+        </tbody>
+      </table>
+      <div class="card-body" style="padding-top:12px;border-top:1px solid var(--border)">
+        <div class="small muted">⚠ Receipt OCR показывает повышенный error rate (8%) — возможно drift на новых vendor templates. <a href="audit.html">Смотреть audit →</a></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Cost breakdown + alerts -->
+  <div class="card" style="margin-top:20px">
+    <div class="card-header">
+      <h3>💰 Cost breakdown · последние 7 дней</h3>
+      <div class="row" style="gap:10px">
+        <span class="small muted">Daily cap: $50 · Current: $9.47</span>
+        <button class="btn sm">⚙ Set caps</button>
+      </div>
+    </div>
+    <div class="card-body">
+      <div style="display:flex;gap:10px;align-items:flex-end;height:140px;padding:10px 0">
+        ${[4.8, 6.2, 7.9, 11.2, 8.6, 9.1, 9.47].map((v, i) => {
+          const pct = (v / 15) * 100;
+          const days = ['Пн','Вт','Ср','Чт','Пт','Сб','Вс'];
+          return `
+            <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:6px">
+              <div class="small strong">$${v.toFixed(2)}</div>
+              <div style="width:100%;height:${pct}%;background:linear-gradient(180deg,var(--ai),var(--primary));border-radius:6px 6px 0 0"></div>
+              <div class="small muted">${days[i]}</div>
+            </div>
+          `;
+        }).join('')}
+      </div>
+      <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border);display:grid;grid-template-columns:repeat(4,1fr);gap:14px">
+        <div><div class="small muted">LLM tokens</div><div class="strong">$6.82 · 72%</div></div>
+        <div><div class="small muted">OCR / vision</div><div class="strong">$1.24 · 13%</div></div>
+        <div><div class="small muted">Transcription</div><div class="strong">$0.92 · 10%</div></div>
+        <div><div class="small muted">Infra / compute</div><div class="strong">$0.49 · 5%</div></div>
+      </div>
+    </div>
+  </div>
+`);
+
+mountSelfDocs('a2a');
+</script>
+</body>
+</html>

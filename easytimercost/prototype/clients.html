@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8"/>
+<title>EasyTimerCost — Клиенты</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="styles.css"/>
+</head>
+<body>
+<script src="meta.js"></script>
+<script src="shell.js"></script>
+<script>
+renderShell({
+  active: 'clients',
+  title: 'Клиенты / Проекты',
+  breadcrumbs: [{ label: 'Dashboard', href: 'index.html' }, { label: 'Клиенты' }],
+  actions: `<div class="row">${periodPill()}<button class="btn">Экспорт P&L</button><button class="btn primary">+ Новый проект</button></div>`
+});
+
+const totals = MOCK.clients.reduce((a, c) => ({
+  revenue: a.revenue + c.revenue,
+  labor: a.labor + c.labor,
+  materials: a.materials + c.materials,
+}), { revenue: 0, labor: 0, materials: 0 });
+const totalProfit = totals.revenue - totals.labor - totals.materials;
+const avgMargin = totalProfit / totals.revenue;
+
+setBody(`
+  <div class="kpi-grid">
+    <div class="kpi primary"><div class="kpi-label">Revenue</div><div class="kpi-value">${fmt$(totals.revenue)}</div><div class="kpi-sub">${MOCK.clients.length} проектов</div></div>
+    <div class="kpi"><div class="kpi-label">Labor</div><div class="kpi-value">${fmt$(totals.labor)}</div><div class="kpi-sub">${Math.round(totals.labor/totals.revenue*100)}% of revenue</div></div>
+    <div class="kpi"><div class="kpi-label">Materials</div><div class="kpi-value">${fmt$(totals.materials)}</div><div class="kpi-sub">${Math.round(totals.materials/totals.revenue*100)}% of revenue</div></div>
+    <div class="kpi ${avgMargin > 0.3 ? 'success' : 'warning'}"><div class="kpi-label">Gross margin</div><div class="kpi-value">${Math.round(avgMargin*100)}%</div><div class="kpi-sub">${fmt$(totalProfit)} profit</div></div>
+  </div>
+
+  <div class="filters">
+    <select class="filter-select"><option>Все статусы</option><option>Active</option><option>At risk</option><option>Completed</option></select>
+    <select class="filter-select"><option>Все менеджеры</option><option>Денис Х.</option><option>Михаил П.</option></select>
+    <select class="filter-select"><option>Сортировка: Revenue</option><option>Margin %</option><option>Recently active</option></select>
+    <input class="filter-select" placeholder="Поиск клиента..." style="min-width:220px"/>
+  </div>
+
+  <div class="card">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Клиент / Проект</th>
+          <th>Статус</th>
+          <th class="num">Revenue</th>
+          <th class="num">Labor</th>
+          <th class="num">Materials</th>
+          <th class="num">Profit</th>
+          <th class="num">Margin</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        ${MOCK.clients.map(c => {
+          const profit = c.revenue - c.labor - c.materials;
+          const pct = Math.round(c.margin * 100);
+          const statusChip = c.status === 'active' ? 'primary' : c.status === 'at_risk' ? 'error' : 'success';
+          return `
+            <tr onclick="location.href='client-overview.html?id=${c.id}'">
+              <td>
+                <div class="strong">${c.name}</div>
+                <div class="small muted">${c.project}</div>
+              </td>
+              <td><span class="chip ${statusChip}">${c.status === 'at_risk' ? 'at risk' : c.status}</span></td>
+              <td class="num strong">${fmt$(c.revenue)}</td>
+              <td class="num">${fmt$(c.labor)}</td>
+              <td class="num">${fmt$(c.materials)}</td>
+              <td class="num strong">${fmt$(profit)}</td>
+              <td class="num">
+                <div class="strong" style="color:${pct >= 30 ? 'var(--success)' : pct >= 20 ? 'var(--warning)' : 'var(--error)'}">${pct}%</div>
+                <div class="progress" style="margin-top:4px;width:60px"><div class="progress-bar ${pct >= 30 ? '' : pct >= 20 ? 'warning' : 'error'}" style="width:${Math.min(100, pct * 2)}%"></div></div>
+              </td>
+              <td>${icon('chevron')}</td>
+            </tr>
+          `;
+        }).join('')}
+      </tbody>
+    </table>
+  </div>
+`);
+
+mountSelfDocs('clients');
+</script>
+</body>
+</html>

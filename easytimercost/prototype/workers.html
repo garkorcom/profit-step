@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8"/>
+<title>EasyTimerCost — Работники</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="styles.css"/>
+</head>
+<body>
+<script src="meta.js"></script>
+<script src="shell.js"></script>
+<script>
+renderShell({
+  active: 'workers',
+  title: 'Работники',
+  breadcrumbs: [{ label: 'Dashboard', href: 'index.html' }, { label: 'Работники' }],
+  actions: `<div class="row">${periodPill()}<button class="btn">Экспорт CSV</button><button class="btn primary">+ Добавить</button></div>`
+});
+
+const active = MOCK.workers.filter(w => w.hours > 0 || w.balance !== 0);
+const totals = active.reduce((a, w) => ({
+  hours: a.hours + w.hours,
+  earned: a.earned + w.earned,
+  paid: a.paid + w.paid,
+  balance: a.balance + w.balance,
+}), { hours: 0, earned: 0, paid: 0, balance: 0 });
+
+setBody(`
+  <div class="kpi-grid">
+    <div class="kpi">
+      <div class="kpi-label">Активных</div>
+      <div class="kpi-value">${active.length}</div>
+      <div class="kpi-sub">из ${MOCK.workers.length} всего</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">Часов YTD</div>
+      <div class="kpi-value">${totals.hours.toFixed(0)}</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">Начислено</div>
+      <div class="kpi-value">${fmt$(totals.earned)}</div>
+    </div>
+    <div class="kpi warning">
+      <div class="kpi-label">К выплате</div>
+      <div class="kpi-value">${fmt$(totals.balance)}</div>
+    </div>
+  </div>
+
+  <div class="filters">
+    <select class="filter-select"><option>Все роли</option><option>Foreman</option><option>Worker</option><option>Driver</option></select>
+    <select class="filter-select"><option>Все бригады</option><option>Бригада Петрова</option><option>Бригада Лебедева</option></select>
+    <select class="filter-select"><option>Все балансы</option><option>Только к выплате</option><option>В расчёте</option></select>
+    <input class="filter-select" placeholder="Поиск по имени..." style="min-width:220px"/>
+  </div>
+
+  <div class="card">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Работник</th>
+          <th>Роль</th>
+          <th class="num">Ставка</th>
+          <th class="num">Часов</th>
+          <th class="num">Начислено</th>
+          <th class="num">Выплачено</th>
+          <th class="num">К выплате</th>
+          <th class="num">Сессий</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        ${active.sort((a,b)=>b.balance-a.balance).map(w => `
+          <tr onclick="location.href='worker-profile.html?id=${w.id}'">
+            <td>
+              <div class="row" style="gap:10px">
+                <div class="avatar">${w.initials}</div>
+                <div>
+                  <div class="strong">${w.name}</div>
+                  ${w.crew ? `<div class="small muted">Бригада: ${workerById(w.crew).name}</div>` : ''}
+                </div>
+              </div>
+            </td>
+            <td><span class="chip ${w.role === 'foreman' ? 'primary' : ''}">${w.role}</span></td>
+            <td class="num">${w.rate ? `$${w.rate}/ч` : '—'}</td>
+            <td class="num">${w.hours}</td>
+            <td class="num">${fmt$(w.earned)}</td>
+            <td class="num">${fmt$(w.paid)}</td>
+            <td class="num strong" style="color:${w.balance > 0 ? 'var(--warning)' : w.balance < 0 ? 'var(--error)' : 'var(--text-2)'}">${fmt$(w.balance)}</td>
+            <td class="num muted">${w.sessions}</td>
+            <td>${icon('chevron')}</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  </div>
+`);
+
+mountSelfDocs('workers');
+</script>
+</body>
+</html>

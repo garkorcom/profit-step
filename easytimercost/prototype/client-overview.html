@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8"/>
+<title>EasyTimerCost — Client Overview</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="styles.css"/>
+</head>
+<body>
+<script src="meta.js"></script>
+<script src="shell.js"></script>
+<script>
+const params = new URLSearchParams(location.search);
+const cid = params.get('id') || 'c1';
+const tab = params.get('tab') || 'overview';
+const c = clientById(cid);
+
+renderShell({
+  active: 'clients',
+  breadcrumbs: [
+    { label: 'Dashboard', href: 'index.html' },
+    { label: 'Клиенты', href: 'clients.html' },
+    { label: c.name }
+  ],
+});
+
+const sessions = MOCK.sessions.filter(s => s.clientId === cid);
+const expenses = MOCK.expenses.filter(e => e.clientId === cid && e.billable);
+const profit = c.revenue - c.labor - c.materials;
+const pct = Math.round(c.margin * 100);
+const budget = Math.round(c.revenue * 0.75);
+const spent = c.labor + c.materials;
+const spentPct = Math.round((spent / budget) * 100);
+
+// Workers on client
+const workerMap = {};
+sessions.forEach(s => {
+  if (!workerMap[s.workerId]) workerMap[s.workerId] = { hours: 0, earned: 0, sessions: 0 };
+  workerMap[s.workerId].hours += s.hours;
+  workerMap[s.workerId].earned += s.earnings;
+  workerMap[s.workerId].sessions += 1;
+});
+
+const tabContent = {
+  overview: `
+    <div class="grid-2" style="align-items:flex-start;margin-bottom:16px">
+      <div class="card">
+        <div class="card-header"><h3>📊 Budget vs Actual</h3></div>
+        <div class="card-body">
+          <div style="margin-bottom:16px">
+            <div class="row spread" style="margin-bottom:6px"><span class="small muted">Labor</span><span class="small">${fmt$(c.labor)} / ${fmt$(budget * 0.55)}</span></div>
+            <div class="progress" style="height:8px"><div class="progress-bar ${c.labor/(budget*0.55) > 0.9 ? 'warning' : ''}" style="width:${Math.min(100, c.labor/(budget*0.55)*100)}%"></div></div>
+          </div>
+          <div style="margin-bottom:16px">
+            <div class="row spread" style="margin-bottom:6px"><span class="small muted">Materials</span><span class="small">${fmt$(c.materials)} / ${fmt$(budget * 0.35)}</span></div>
+            <div class="progress" style="height:8px"><div class="progress-bar ${c.materials/(budget*0.35) > 0.9 ? 'error' : ''}" style="width:${Math.min(100, c.materials/(budget*0.35)*100)}%"></div></div>
+          </div>
+          <div>
+            <div class="row spread" style="margin-bottom:6px"><span class="small muted">Subcontractor</span><span class="small">${fmt$(c.materials * 0.2)} / ${fmt$(budget * 0.10)}</span></div>
+            <div class="progress" style="height:8px"><div class="progress-bar" style="width:48%"></div></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><h3>📅 Timeline</h3></div>
+        <div class="card-body">
+          <div class="trail">
+            <div class="trail-item">
+              <div class="trail-dot success"></div>
+              <div class="trail-content">
+                <div class="who">Project kickoff</div>
+                <div class="what">Commercial estimate подписан, deposit получен</div>
+                <div class="when">15 янв 2026</div>
+              </div>
+            </div>
+            <div class="trail-item">
+              <div class="trail-dot success"></div>
+              <div class="trail-content">
+                <div class="who">Materials ordered</div>
+                <div class="what">Home Depot + Ferguson — 47 позиций</div>
+                <div class="when">20 фев 2026</div>
+              </div>
+            </div>
+            <div class="trail-item">
+              <div class="trail-dot"></div>
+              <div class="trail-content">
+                <div class="who">Work in progress</div>
+                <div class="what">${Math.round(c.margin * 100 + 40)}% completion</div>
+                <div class="when">сейчас</div>
+              </div>
+            </div>
+            <div class="trail-item">
+              <div class="trail-dot warning"></div>
+              <div class="trail-content">
+                <div class="who">Final inspection</div>
+                <div class="what">Планируется</div>
+                <div class="when">30 мая 2026</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  `,
+  costs: `
+    <div class="grid-2" style="align-items:flex-start">
+      <div class="card">
+        <div class="card-header"><h3>👥 Labor breakdown</h3><button class="btn sm">Export</button></div>
+        <table class="table">
+          <thead><tr><th>Работник</th><th class="num">Часов</th><th class="num">Labor cost</th><th class="num">Сессий</th></tr></thead>
+          <tbody>
+            ${Object.entries(workerMap).map(([wid, d]) => {
+              const w = workerById(wid);
+              return `
+                <tr onclick="location.href='worker-profile.html?id=${wid}'">
+                  <td><div class="row" style="gap:8px"><div class="avatar sm">${w.initials}</div><span class="strong small">${w.name}</span></div></td>
+                  <td class="num">${d.hours.toFixed(1)}</td>
+                  <td class="num strong">${fmt$exact(d.earned)}</td>
+                  <td class="num muted">${d.sessions}</td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+      <div class="card">
+        <div class="card-header"><h3>📦 Materials feed</h3><button class="btn sm">Export</button></div>
+        <table class="table">
+          <thead><tr><th>Дата</th><th>Работник</th><th>Описание</th><th class="num">$</th></tr></thead>
+          <tbody>
+            ${expenses.map(e => {
+              const w = workerById(e.workerId);
+              return `
+                <tr onclick="location.href='expense-detail.html?id=${e.id}'">
+                  <td class="small">${e.date}</td>
+                  <td class="small">${w.initials}</td>
+                  <td class="small">${e.desc}</td>
+                  <td class="num strong">${fmt$exact(e.amount)}</td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `,
+  team: `
+    <div class="card">
+      <div class="card-header"><h3>👥 Кто работал над проектом</h3></div>
+      <table class="table">
+        <thead><tr><th>Работник</th><th>Роль</th><th class="num">Часов</th><th class="num">Заработал</th><th class="num">Сессий</th><th class="num">Последняя смена</th></tr></thead>
+        <tbody>
+          ${Object.entries(workerMap).map(([wid, d]) => {
+            const w = workerById(wid);
+            return `
+              <tr onclick="location.href='worker-profile.html?id=${wid}'">
+                <td><div class="row" style="gap:10px"><div class="avatar sm">${w.initials}</div><div class="strong">${w.name}</div></div></td>
+                <td><span class="chip ${w.role === 'foreman' ? 'primary' : ''}">${w.role}</span></td>
+                <td class="num">${d.hours.toFixed(1)}</td>
+                <td class="num strong">${fmt$(d.earned)}</td>
+                <td class="num muted">${d.sessions}</td>
+                <td class="num small muted">2026-04-20</td>
+              </tr>
+            `;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+  `,
+  billing: `
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-header">
+        <h3>📄 Invoice draft</h3>
+        <div class="row" style="gap:8px"><button class="btn">Preview PDF</button><button class="btn primary">Send to client</button></div>
+      </div>
+      <div class="card-body">
+        <div class="row spread" style="margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid var(--border)">
+          <div>
+            <div class="big">${c.name}</div>
+            <div class="muted">${c.project}</div>
+          </div>
+          <div style="text-align:right">
+            <div class="muted small">Invoice #INV-2026-0047</div>
+            <div class="small">Period: Mar 1 – Apr 20, 2026</div>
+          </div>
+        </div>
+        <table class="table">
+          <thead><tr><th>Позиция</th><th class="num">Часов/Qty</th><th class="num">Ставка</th><th class="num">Сумма</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Labor</strong><br/><span class="small muted">По billable sessions</span></td><td class="num">${sessions.reduce((a,s)=>a+s.hours,0).toFixed(1)}ч</td><td class="num muted">avg $${Math.round(c.labor/sessions.reduce((a,s)=>a+s.hours,0.01))}/ч</td><td class="num strong">${fmt$exact(c.labor)}</td></tr>
+            <tr><td><strong>Materials</strong><br/><span class="small muted">${expenses.length} approved receipts</span></td><td class="num">—</td><td class="num muted">at cost</td><td class="num strong">${fmt$exact(c.materials)}</td></tr>
+            <tr><td><strong>Markup (15%)</strong></td><td class="num">—</td><td class="num muted">—</td><td class="num strong">${fmt$exact((c.labor + c.materials) * 0.15)}</td></tr>
+          </tbody>
+          <tfoot>
+            <tr style="border-top:2px solid var(--border-strong)"><td colspan="3" class="strong" style="text-align:right;padding-top:14px">TOTAL</td><td class="num strong" style="font-size:18px;padding-top:14px">${fmt$exact(c.revenue)}</td></tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+  `,
+};
+
+setBody(`
+  <div class="card" style="margin-bottom:20px">
+    <div class="card-body">
+      <div class="row" style="gap:16px">
+        <div style="width:56px;height:56px;border-radius:12px;background:var(--primary-50);display:flex;align-items:center;justify-content:center;font-size:22px">🏢</div>
+        <div style="flex:1">
+          <div class="big">${c.name}</div>
+          <div class="muted" style="margin-top:2px">${c.project}</div>
+          <div class="row" style="gap:8px;margin-top:8px">
+            <span class="chip ${c.status === 'active' ? 'primary' : c.status === 'at_risk' ? 'error' : 'success'}">${c.status}</span>
+            <span class="chip">PM: Денис Х.</span>
+            <span class="chip">Tampa, FL</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="kpi-grid">
+    <div class="kpi primary"><div class="kpi-label">Revenue</div><div class="kpi-value">${fmt$(c.revenue)}</div></div>
+    <div class="kpi"><div class="kpi-label">Total cost</div><div class="kpi-value">${fmt$(c.labor + c.materials)}</div><div class="kpi-sub">${fmt$(c.labor)} labor + ${fmt$(c.materials)} materials</div></div>
+    <div class="kpi success"><div class="kpi-label">Profit</div><div class="kpi-value">${fmt$(profit)}</div><div class="kpi-sub">${pct}% margin</div></div>
+    <div class="kpi ${spentPct > 85 ? 'warning' : ''}"><div class="kpi-label">Budget used</div><div class="kpi-value">${spentPct}%</div><div class="kpi-sub">${fmt$(spent)} of ${fmt$(budget)}</div></div>
+  </div>
+
+  <div class="tabs">
+    <a href="?id=${cid}&tab=overview" class="tab ${tab === 'overview' ? 'active' : ''}">📊 Обзор</a>
+    <a href="?id=${cid}&tab=costs"    class="tab ${tab === 'costs' ? 'active' : ''}">💰 Затраты</a>
+    <a href="?id=${cid}&tab=team"     class="tab ${tab === 'team' ? 'active' : ''}">👥 Команда</a>
+    <a href="?id=${cid}&tab=billing"  class="tab ${tab === 'billing' ? 'active' : ''}">📄 Биллинг</a>
+  </div>
+
+  ${tabContent[tab]}
+`);
+
+mountSelfDocs('client-overview');
+</script>
+</body>
+</html>

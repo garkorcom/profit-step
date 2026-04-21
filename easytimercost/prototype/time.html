@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8"/>
+<title>EasyTimerCost — Время</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="styles.css"/>
+</head>
+<body>
+<script src="meta.js"></script>
+<script src="shell.js"></script>
+<script>
+renderShell({
+  active: 'time',
+  title: 'Время',
+  breadcrumbs: [{ label: 'Dashboard', href: 'index.html' }, { label: 'Время' }],
+  actions: `<div class="row">${periodPill()}<button class="btn">Экспорт</button></div>`
+});
+
+const active = MOCK.sessions.filter(s => s.status === 'active');
+const completed = MOCK.sessions.filter(s => s.status === 'completed');
+const totalHours = MOCK.sessions.reduce((a,s)=>a+s.hours,0);
+const totalEarnings = MOCK.sessions.reduce((a,s)=>a+s.earnings,0);
+
+setBody(`
+  <div class="kpi-grid">
+    <div class="kpi success"><div class="kpi-label">Активных сейчас</div><div class="kpi-value">${active.length}</div><div class="kpi-sub">смен сегодня</div></div>
+    <div class="kpi"><div class="kpi-label">Часов (период)</div><div class="kpi-value">${totalHours.toFixed(1)}</div></div>
+    <div class="kpi primary"><div class="kpi-label">Labor cost</div><div class="kpi-value">${fmt$(totalEarnings)}</div></div>
+    <div class="kpi"><div class="kpi-label">Pending approvals</div><div class="kpi-value">0</div><div class="kpi-sub">нет разногласий</div></div>
+  </div>
+
+  ${active.length > 0 ? `
+  <div class="card" style="margin-bottom:20px">
+    <div class="card-header">
+      <h3>🟢 Сейчас на смене (${active.length})</h3>
+      <button class="btn sm">Map view</button>
+    </div>
+    <table class="table">
+      <thead><tr><th>Работник</th><th>Клиент</th><th>Описание</th><th>Старт</th><th class="num">Прошло</th><th class="num">Заработано</th><th>Geo</th></tr></thead>
+      <tbody>
+        ${active.map(s => {
+          const w = workerById(s.workerId);
+          const c = clientById(s.clientId);
+          return `
+            <tr onclick="location.href='session-detail.html?id=${s.id}'">
+              <td><div class="row" style="gap:8px"><div class="avatar sm">${w.initials}</div><div class="strong">${w.name}</div></div></td>
+              <td><span class="chip primary">${c.name}</span></td>
+              <td class="small">${s.desc}</td>
+              <td>${s.start}</td>
+              <td class="num strong">${s.hours.toFixed(1)}ч</td>
+              <td class="num strong">${fmt$exact(s.earnings)}</td>
+              <td><span class="chip success">📍 on site</span></td>
+            </tr>
+          `;
+        }).join('')}
+      </tbody>
+    </table>
+  </div>
+  ` : ''}
+
+  <div class="filters">
+    <select class="filter-select"><option>Все работники</option>${MOCK.workers.filter(w=>w.hours>0).map(w=>`<option>${w.name}</option>`).join('')}</select>
+    <select class="filter-select"><option>Все клиенты</option>${MOCK.clients.map(c=>`<option>${c.name}</option>`).join('')}</select>
+    <select class="filter-select"><option>Все типы</option><option>Regular</option><option>Overtime</option><option>Holiday</option></select>
+    <select class="filter-select"><option>Все статусы</option><option>Active</option><option>Completed</option><option>Auto-closed</option></select>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><h3>Завершённые смены (${completed.length})</h3><button class="btn sm">Экспорт CSV</button></div>
+    <table class="table">
+      <thead><tr><th>Дата</th><th>Работник</th><th>Клиент</th><th>Описание</th><th>Время</th><th class="num">Часов</th><th class="num">Заработок</th></tr></thead>
+      <tbody>
+        ${completed.map(s => {
+          const w = workerById(s.workerId);
+          const c = clientById(s.clientId);
+          return `
+            <tr onclick="location.href='session-detail.html?id=${s.id}'">
+              <td class="small">${s.date}</td>
+              <td><div class="row" style="gap:8px"><div class="avatar sm">${w.initials}</div><span class="small strong">${w.name}</span></div></td>
+              <td><a href="client-overview.html?id=${c.id}">${c.name}</a></td>
+              <td class="small">${s.desc}</td>
+              <td class="small muted">${s.start} – ${s.end}</td>
+              <td class="num">${s.hours.toFixed(1)}</td>
+              <td class="num strong">${fmt$exact(s.earnings)}</td>
+            </tr>
+          `;
+        }).join('')}
+      </tbody>
+    </table>
+  </div>
+`);
+
+mountSelfDocs('time');
+</script>
+</body>
+</html>

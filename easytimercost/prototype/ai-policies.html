@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8"/>
+<title>EasyTimerCost — AI policies</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="styles.css"/>
+</head>
+<body>
+<script src="meta.js"></script>
+<script src="shell.js"></script>
+<script>
+renderShell({
+  active: 'policies',
+  title: 'Automation rules',
+  breadcrumbs: [{ label: 'AI' }, { label: 'Automation rules' }],
+  actions: `<div class="row"><button class="btn">📜 Audit</button><button class="btn primary">+ New rule</button></div>`
+});
+
+const enabled = MOCK.aiPolicies.filter(p => p.on).length;
+const disabled = MOCK.aiPolicies.length - enabled;
+// Sum numeric saved values ("$2,400/мес" → 2400)
+const totalSaved = MOCK.aiPolicies.reduce((s, p) => {
+  const m = (p.saved || '').match(/\$([0-9,]+)/);
+  if (!m) return s;
+  return s + parseInt(m[1].replace(/,/g, ''));
+}, 0);
+
+const riskColor = r => r === 'high' ? 'error' : r === 'med' ? 'warning' : 'success';
+const riskLabel = r => r === 'high' ? '🔴 high risk' : r === 'med' ? '🟡 medium risk' : '🟢 low risk';
+
+// Expanded policies with more context
+const categories = [
+  {
+    id: 'time', name: '⏱ Time tracking', desc: 'Автоматизация смен: старт, close, overtime',
+    rules: ['auto-start-proposal', 'auto-close-on-leave', 'auto-approve-session']
+  },
+  {
+    id: 'expense', name: '🧾 Expense management', desc: 'Receipts, OCR, approvals, categorization',
+    rules: ['auto-ocr', 'auto-categorize', 'flag-over-threshold']
+  },
+  {
+    id: 'payroll', name: '💰 Payroll & payments', desc: 'Period close, variance, выплаты',
+    rules: ['auto-payout']
+  },
+  {
+    id: 'compliance', name: '🛡 Compliance & safety', desc: 'Geo, tenant isolation, audit',
+    rules: ['flag-outside-tampa']
+  },
+  {
+    id: 'communication', name: '💬 Client & worker comms', desc: 'Telegram/SMS/email автоматизация',
+    rules: ['ai-ask-employee', 'a2a-client-notify']
+  },
+];
+
+function renderRule(ruleId) {
+  const p = MOCK.aiPolicies.find(x => x.id === ruleId);
+  if (!p) return '';
+  const riskCls = p.risk === 'high' ? 'error' : p.risk === 'med' ? 'warning' : 'success';
+
+  return `
+    <div class="ai-card" style="margin:0;padding:18px">
+      <div class="row spread" style="align-items:flex-start;gap:12px">
+        <div style="flex:1">
+          <div class="row" style="gap:8px;margin-bottom:4px;align-items:center">
+            <div class="strong" style="font-size:15px">${p.name}</div>
+            <span class="chip ${riskCls}">${riskLabel(p.risk)}</span>
+            ${p.saved.includes('$') ? `<span class="chip success">💰 ${p.saved}</span>` : p.saved.includes('потенц') ? `<span class="chip">💡 ${p.saved}</span>` : `<span class="chip">${p.saved}</span>`}
+          </div>
+          <div class="small muted" style="margin-bottom:12px;line-height:1.5">${p.desc}</div>
+
+          <!-- Condition mini-editor -->
+          <div class="small" style="background:var(--bg);border-radius:8px;padding:10px 14px;font-family:monospace;font-size:12px;color:var(--text-2);line-height:1.8">
+            <div><span style="color:var(--ai-600)">IF</span> ${getCondition(p.id)}</div>
+            <div><span style="color:var(--success)">THEN</span> ${getAction(p.id)}</div>
+            <div><span style="color:var(--text-3)">ELSE</span> escalate to human approval queue</div>
+          </div>
+
+          <div class="row" style="gap:8px;margin-top:10px">
+            <button class="btn sm">✏ Edit condition</button>
+            <button class="btn sm">📊 Activity (${Math.round(p.on ? (Math.random()*80+20) : 0)} triggers · 30д)</button>
+            <button class="btn sm">🧪 Test on sample</button>
+          </div>
+        </div>
+
+        <!-- Toggle -->
+        <div style="min-width:80px;text-align:right">
+          <label style="cursor:pointer;display:inline-block">
+            <input type="checkbox" ${p.on ? 'checked' : ''} style="display:none" onchange="this.nextElementSibling.classList.toggle('on')"/>
+            <div class="policy-toggle ${p.on ? 'on' : ''}" style="display:inline-block;width:52px;height:28px;border-radius:14px;background:${p.on ? 'var(--success)' : '#cbd5e1'};position:relative;transition:all 0.2s">
+              <div style="position:absolute;top:3px;${p.on ? 'right:3px' : 'left:3px'};width:22px;height:22px;border-radius:50%;background:#fff;box-shadow:0 2px 4px rgba(0,0,0,0.2);transition:all 0.2s"></div>
+            </div>
+          </label>
+          <div class="small ${p.on ? 'strong' : 'muted'}" style="margin-top:6px;color:${p.on ? 'var(--success)' : 'var(--text-3)'}">${p.on ? 'ON' : 'off'}</div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function getCondition(id) {
+  return {
+    'auto-approve-session': 'session.hours &lt; 10 <span style="color:var(--text-3)">AND</span> geo.match = true <span style="color:var(--text-3)">AND</span> face.confidence &gt; 0.95',
+    'auto-ocr': 'email.sender <span style="color:var(--text-3)">MATCHES</span> knownVendorList <span style="color:var(--text-3)">AND</span> attachment.type = "receipt"',
+    'auto-categorize': 'expense.vendor <span style="color:var(--text-3)">OR</span> expense.desc <span style="color:var(--text-3)">MATCHES</span> categoryMLModel(confidence &gt; 0.8)',
+    'auto-start-proposal': 'worker.geo.distance(project.site) &lt; 50m <span style="color:var(--text-3)">AND</span> time &gt;= worker.schedule.start ± 15min',
+    'auto-close-on-leave': 'worker.geo.distance(project.site) &gt; 500m <span style="color:var(--text-3)">FOR</span> &gt; 30min',
+    'flag-over-threshold': 'expense.amount &gt; $500',
+    'flag-outside-tampa': 'session.geo.distance(HQ) &gt; 100mi',
+    'auto-payout': 'payout.amount &lt; $5000 <span style="color:var(--text-3)">AND</span> period.variance &lt; 5% <span style="color:var(--text-3)">AND</span> noAnomalies',
+    'ai-ask-employee': 'expense.receipt = null <span style="color:var(--text-3)">OR</span> session.notes = "" <span style="color:var(--text-3)">AND</span> worker.telegramConnected',
+    'a2a-client-notify': 'session.start OR milestone.completed OR delay.detected',
+  }[id] || 'custom condition';
+}
+
+function getAction(id) {
+  return {
+    'auto-approve-session': 'approve session <span style="color:var(--text-3)">AND</span> notify worker <span style="color:var(--text-3)">AND</span> log audit',
+    'auto-ocr': 'extract(vendor, amount, date, tax) <span style="color:var(--text-3)">AND</span> create expense draft <span style="color:var(--text-3)">AND</span> notify worker agent',
+    'auto-categorize': 'set expense.category <span style="color:var(--text-3)">AND</span> suggest billing',
+    'auto-start-proposal': 'send worker agent propose-start message <span style="color:var(--text-3)">AWAIT</span> human confirm',
+    'auto-close-on-leave': 'send worker agent propose-close message <span style="color:var(--text-3)">AWAIT</span> human confirm',
+    'flag-over-threshold': 'route to human approval queue <span style="color:var(--text-3)">AND</span> notify admin',
+    'flag-outside-tampa': 'block auto-approve <span style="color:var(--text-3)">AND</span> require human review <span style="color:var(--text-3)">AND</span> send Slack alert',
+    'auto-payout': 'submit ACH transfer <span style="color:var(--text-3)">AND</span> log audit <span style="color:var(--text-3)">AND</span> notify worker',
+    'ai-ask-employee': 'send Telegram message "please attach receipt for expense X" <span style="color:var(--text-3)">AND</span> pause approval until reply',
+    'a2a-client-notify': 'client agent sends push/email to client contact',
+  }[id] || 'custom action';
+}
+
+setBody(`
+  <!-- KPIs -->
+  <div class="kpi-grid">
+    <div class="kpi success"><div class="kpi-label">Активно</div><div class="kpi-value">${enabled}</div><div class="kpi-sub">из ${MOCK.aiPolicies.length} правил</div></div>
+    <div class="kpi"><div class="kpi-label">Saved · 30д</div><div class="kpi-value">${fmt$(totalSaved)}</div><div class="kpi-sub">= ${Math.round(totalSaved*12)}/год</div></div>
+    <div class="kpi warning"><div class="kpi-label">Off</div><div class="kpi-value">${disabled}</div><div class="kpi-sub">потенциал ещё $300+/мес</div></div>
+    <div class="kpi primary"><div class="kpi-label">Triggers · 24ч</div><div class="kpi-value">284</div><div class="kpi-sub">98% автоматически</div></div>
+  </div>
+
+  <!-- Explainer -->
+  <div class="ai-card" style="margin-bottom:20px;padding:16px 20px">
+    <div class="row" style="gap:14px;align-items:flex-start">
+      <div class="agent-avatar">⚙</div>
+      <div style="flex:1">
+        <div class="strong">Правила автоматизации · политика твоего бизнеса</div>
+        <div class="small muted" style="margin-top:4px;line-height:1.55">Эти правила определяют, что AI делает <strong>сам</strong>, а что отправляет на твой approval. Каждое правило — это IF/THEN/ELSE выражение с явным risk уровнем. Изменения требуют твоего подтверждения и логируются в audit.</div>
+        <div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap">
+          <span class="chip success">🟢 low risk — AI делает сам, ты видишь в фиде</span>
+          <span class="chip warning">🟡 medium — AI предлагает, ты одобряешь</span>
+          <span class="chip error">🔴 high — только с твоим явным OK</span>
+        </div>
+      </div>
+      <button class="btn">📥 Import template</button>
+    </div>
+  </div>
+
+  <!-- Categories -->
+  ${categories.map(cat => `
+    <div class="card" style="margin-bottom:20px">
+      <div class="card-header">
+        <div>
+          <h3>${cat.name}</h3>
+          <div class="small muted" style="margin-top:2px">${cat.desc}</div>
+        </div>
+        <div class="small muted">${cat.rules.length} правил</div>
+      </div>
+      <div class="card-body" style="display:flex;flex-direction:column;gap:12px">
+        ${cat.rules.map(renderRule).join('')}
+      </div>
+    </div>
+  `).join('')}
+
+  <!-- Custom rule builder preview -->
+  <div class="card" style="margin-bottom:20px">
+    <div class="card-header">
+      <h3>✨ Custom rule builder</h3>
+      <span class="chip ai">🤖 AI assisted</span>
+    </div>
+    <div class="card-body">
+      <div class="small muted" style="margin-bottom:14px">Опиши словами что должен делать AI — мы соберём rule автоматически:</div>
+      <div style="background:var(--ai-50);border:2px dashed var(--ai-100);border-radius:var(--radius);padding:16px">
+        <input class="filter-select" placeholder="Например: 'Если Павел работает в субботу, спросить меня прежде чем auto-approve'" style="width:100%;margin-bottom:12px;font-size:14px"/>
+
+        <div class="small muted" style="margin-bottom:6px">Примеры:</div>
+        <div class="row" style="gap:6px;flex-wrap:wrap">
+          <button class="chat-action-btn">💡 "Автоматически delay invoice если клиент ещё не подписал CO"</button>
+          <button class="chat-action-btn">💡 "Напомнить Михаилу про site-visit за 2ч до встречи"</button>
+          <button class="chat-action-btn">💡 "Если материалы > $1000 — требовать 2 approvers"</button>
+        </div>
+      </div>
+
+      <div style="margin-top:14px;padding:14px;background:var(--bg);border-radius:var(--radius);font-family:monospace;font-size:12px;color:var(--text-2);line-height:1.8">
+        <div class="small muted" style="font-family:Inter,sans-serif;margin-bottom:6px">AI интерпретация (пример):</div>
+        <div><span style="color:var(--ai-600)">WHEN</span> session.worker = "w7" <span style="color:var(--text-3)">AND</span> session.start.dayOfWeek = "Saturday"</div>
+        <div><span style="color:var(--success)">DO</span> pause auto-approval <span style="color:var(--text-3)">AND</span> notify admin via Telegram <span style="color:var(--text-3)">AND</span> await response &lt; 2h</div>
+        <div><span style="color:var(--text-3)">RISK</span> medium <span style="color:var(--text-3)">·</span> expected triggers: ~2/month</div>
+      </div>
+
+      <div class="row" style="gap:8px;margin-top:14px">
+        <button class="btn primary">✓ Создать rule</button>
+        <button class="btn">🧪 Test on past 30 days</button>
+        <button class="btn">Отменить</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Policy history + version control -->
+  <div class="card">
+    <div class="card-header">
+      <h3>📜 Policy changelog</h3>
+      <a href="audit.html" class="btn sm">Full audit →</a>
+    </div>
+    <div class="card-body">
+      <div class="trail">
+        <div class="trail-item">
+          <div class="trail-dot ai"></div>
+          <div class="trail-content">
+            <div class="who">Денис Х. · включил auto-ocr</div>
+            <div class="what">Threshold: confidence > 0.85 (было 0.95) · reason: меньше false negatives на Tampa vendors</div>
+            <div class="when">2026-04-18 10:24</div>
+          </div>
+        </div>
+        <div class="trail-item">
+          <div class="trail-dot success"></div>
+          <div class="trail-content">
+            <div class="who">AI suggested · ты одобрил · flag-outside-tampa</div>
+            <div class="what">Добавлено после случая в Orlando (session в 95mi, margin -12%, stealth expense $340)</div>
+            <div class="when">2026-04-15 16:08</div>
+          </div>
+        </div>
+        <div class="trail-item">
+          <div class="trail-dot warning"></div>
+          <div class="trail-content">
+            <div class="who">Денис Х. · выключил auto-payout</div>
+            <div class="what">Reason: один spurious payout в $4,200 после AI ошибки в period calc · retry после QA</div>
+            <div class="when">2026-04-12 09:15</div>
+          </div>
+        </div>
+        <div class="trail-item">
+          <div class="trail-dot"></div>
+          <div class="trail-content">
+            <div class="who">AI-assisted · изменена auto-approve-session</div>
+            <div class="what">Threshold hours: 12 → 10 · reason: два случая когда работник забыл выйти · face.conf 0.9 → 0.95</div>
+            <div class="when">2026-04-08 14:30</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+`);
+
+mountSelfDocs('policies');
+</script>
+</body>
+</html>

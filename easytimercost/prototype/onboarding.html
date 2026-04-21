@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>EasyTimerCost — Setup your AI team</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="styles.css"/>
+<style>
+  body { background: linear-gradient(180deg,#faf5ff,#fff 50%); }
+  .ob-wrap { max-width: 900px; margin: 0 auto; padding: 32px 24px }
+  .ob-head { display: flex; align-items: center; gap: 12px; margin-bottom: 32px }
+  .ob-logo { width: 40px; height: 40px; border-radius: 10px; background: linear-gradient(135deg,var(--ai),var(--primary)); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700 }
+  .ob-steps { display: flex; gap: 8px; margin-bottom: 40px; padding: 0 4px }
+  .ob-step { flex: 1; height: 4px; border-radius: 2px; background: var(--border) }
+  .ob-step.done { background: var(--success) }
+  .ob-step.active { background: linear-gradient(90deg,var(--ai),var(--primary)) }
+  .ob-card { background: #fff; border: 1px solid var(--border); border-radius: 20px; padding: 40px; box-shadow: 0 10px 40px rgba(0,0,0,0.04); margin-bottom: 24px }
+  .ob-eyebrow { color: var(--ai-600); font-weight: 700; font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 8px }
+  .ob-card h2 { font-size: 30px; font-weight: 800; letter-spacing: -0.01em; margin: 0 0 10px }
+  .ob-card .sub { color: var(--text-2); font-size: 15px; margin-bottom: 28px; line-height: 1.55 }
+  .role-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; margin-bottom: 24px }
+  .role-card { border: 2px solid var(--border); border-radius: 14px; padding: 20px; cursor: pointer; background: #fff; text-align: left; transition: all 0.2s }
+  .role-card:hover { border-color: var(--ai-100); background: var(--ai-50) }
+  .role-card.selected { border-color: var(--ai); background: var(--ai-50); box-shadow: 0 0 0 4px var(--ai-50) }
+  .role-card .rc-icon { font-size: 28px; margin-bottom: 12px }
+  .role-card h4 { margin: 0 0 6px; font-size: 16px; font-weight: 700 }
+  .role-card p { margin: 0; color: var(--text-2); font-size: 13px; line-height: 1.5 }
+  .integ-list { display: flex; flex-direction: column; gap: 12px }
+  .integ { display: flex; gap: 16px; align-items: center; padding: 16px; border: 1px solid var(--border); border-radius: 12px; background: #fff }
+  .integ.connected { border-color: var(--success); background: var(--success-50) }
+  .integ-icon { width: 44px; height: 44px; border-radius: 10px; background: var(--bg); display: flex; align-items: center; justify-content: center; font-size: 22px; flex-shrink: 0 }
+  .integ-body { flex: 1 }
+  .integ-body .strong { display: block; font-weight: 700; font-size: 15px }
+  .integ-body .desc { color: var(--text-2); font-size: 13px; margin-top: 2px }
+  .integ .pill { padding: 6px 14px; border-radius: 8px; font-weight: 600; font-size: 13px; border: 1px solid var(--border-strong); background: #fff; color: var(--text); cursor: pointer }
+  .integ .pill.primary { background: var(--ai); color: #fff; border-color: var(--ai) }
+  .integ .pill.done { background: var(--success); color: #fff; border-color: var(--success) }
+  .ob-actions { display: flex; justify-content: space-between; gap: 10px; margin-top: 28px; padding-top: 24px; border-top: 1px solid var(--border) }
+  .btn-lg { padding: 14px 28px; font-size: 15px; font-weight: 700; border-radius: 12px; border: 0; cursor: pointer }
+  .btn-primary-lg { background: var(--ai); color: #fff; box-shadow: 0 4px 14px rgba(124,58,237,0.25) }
+  .btn-secondary-lg { background: #fff; color: var(--text); border: 1px solid var(--border-strong) }
+  .team-row { display: flex; gap: 10px; margin-bottom: 10px }
+  .team-row input { flex: 1; padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px; font-size: 14px; font-family: inherit; outline: none }
+  .team-row input:focus { border-color: var(--ai); box-shadow: 0 0 0 3px var(--ai-50) }
+  .team-row select { padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px; font-size: 14px; background: #fff; font-family: inherit; cursor: pointer }
+  .team-row .rmv { background: transparent; border: 0; padding: 0 8px; color: var(--text-3); font-size: 20px; cursor: pointer }
+  .add-row { color: var(--ai-600); cursor: pointer; font-size: 14px; margin-top: 6px; background: transparent; border: 0; padding: 8px; font-weight: 600 }
+  .baseline-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 20px }
+  .baseline-card { background: var(--bg); border-radius: 12px; padding: 18px; text-align: center }
+  .baseline-card .big { font-size: 36px; font-weight: 800; background: linear-gradient(135deg,var(--ai),var(--primary)); -webkit-background-clip: text; -webkit-text-fill-color: transparent }
+  .baseline-card .lbl { color: var(--text-2); font-size: 13px; margin-top: 4px }
+  .policy-preview { background: var(--bg); border-radius: 12px; padding: 16px; display: flex; gap: 12px; align-items: flex-start; margin-bottom: 10px }
+  .policy-preview .info { flex: 1 }
+  .policy-preview .info .strong { display: block; margin-bottom: 2px }
+  .policy-preview .info .desc { color: var(--text-2); font-size: 13px }
+  .policy-preview .tog { min-width: 52px; height: 28px; border-radius: 14px; background: var(--success); position: relative; cursor: pointer }
+  .policy-preview .tog.off { background: #cbd5e1 }
+  .policy-preview .tog > div { position: absolute; top: 3px; right: 3px; width: 22px; height: 22px; border-radius: 50%; background: #fff; box-shadow: 0 2px 4px rgba(0,0,0,0.2); transition: all 0.2s }
+  .policy-preview .tog.off > div { right: auto; left: 3px }
+</style>
+</head>
+<body>
+
+<div class="ob-wrap">
+  <div class="ob-head">
+    <div class="ob-logo">ET</div>
+    <div>
+      <div style="font-weight:700;font-size:16px">EasyTimerCost</div>
+      <div style="color:var(--text-3);font-size:12px">Setup in ~7 minutes</div>
+    </div>
+    <div style="margin-left:auto" class="small muted">Step 3 of 5</div>
+  </div>
+
+  <div class="ob-steps">
+    <div class="ob-step done"></div>
+    <div class="ob-step done"></div>
+    <div class="ob-step active"></div>
+    <div class="ob-step"></div>
+    <div class="ob-step"></div>
+  </div>
+
+  <!-- ============== STEP 1: Welcome + Role ============== -->
+  <div class="ob-card" id="step-1" style="display:none">
+    <div class="ob-eyebrow">Step 1 · Welcome</div>
+    <h2>Let's meet your AI team 👋</h2>
+    <p class="sub">You'll have your own AI agents running in 7 minutes. First — who are you in the business? This decides which agents you get.</p>
+
+    <div class="role-grid">
+      <button class="role-card selected">
+        <div class="rc-icon">👑</div>
+        <h4>Owner / GC</h4>
+        <p>You see everything. You get the master agent, sales brief, payroll agent, and policies.</p>
+      </button>
+      <button class="role-card">
+        <div class="rc-icon">👔</div>
+        <h4>Foreman / PM</h4>
+        <p>You lead crews. You get crew agent, scheduling, conflict detection, site-visit planning.</p>
+      </button>
+      <button class="role-card">
+        <div class="rc-icon">👷</div>
+        <h4>Crew member</h4>
+        <p>You work on site. You get a personal chat agent on your phone — nothing to learn.</p>
+      </button>
+      <button class="role-card">
+        <div class="rc-icon">🏢</div>
+        <h4>Client (invited)</h4>
+        <p>You have project with us. You get portal access + your own AI for asking questions anytime.</p>
+      </button>
+    </div>
+
+    <div class="ob-actions">
+      <button class="btn-lg btn-secondary-lg" style="visibility:hidden">← Back</button>
+      <button class="btn-lg btn-primary-lg">Continue →</button>
+    </div>
+  </div>
+
+  <!-- ============== STEP 2: Integrations ============== -->
+  <div class="ob-card" id="step-2" style="display:none">
+    <div class="ob-eyebrow">Step 2 · Connect</div>
+    <h2>Plug in your existing tools</h2>
+    <p class="sub">We read-only. Nothing is written back until you approve. Revoke anytime from Google/Microsoft settings.</p>
+
+    <div class="integ-list">
+      <div class="integ connected">
+        <div class="integ-icon">📧</div>
+        <div class="integ-body">
+          <span class="strong">Gmail · denis@acmegc.com</span>
+          <div class="desc">90 days scanned · 4,200 emails · 128 vendors · 47 client threads identified</div>
+        </div>
+        <button class="pill done">✓ Connected</button>
+      </div>
+      <div class="integ connected">
+        <div class="integ-icon">📅</div>
+        <div class="integ-body">
+          <span class="strong">Google Calendar</span>
+          <div class="desc">Last 60 days analyzed · 87 crew events · 23 client calls · 12 site-visits</div>
+        </div>
+        <button class="pill done">✓ Connected</button>
+      </div>
+      <div class="integ">
+        <div class="integ-icon">💰</div>
+        <div class="integ-body">
+          <span class="strong">QuickBooks Online</span>
+          <div class="desc">Import customers, invoices, payments, vendors · highly recommended</div>
+        </div>
+        <button class="pill primary">+ Connect</button>
+      </div>
+      <div class="integ">
+        <div class="integ-icon">📞</div>
+        <div class="integ-body">
+          <span class="strong">Twilio (phone/SMS)</span>
+          <div class="desc">Incoming client calls → auto brief · outbound → transcription + follow-up tasks</div>
+        </div>
+        <button class="pill primary">+ Connect</button>
+      </div>
+      <div class="integ connected">
+        <div class="integ-icon">💬</div>
+        <div class="integ-body">
+          <span class="strong">Telegram Bot</span>
+          <div class="desc">Worker chat agents · receipt uploads · quick questions · @easytimercost_bot activated</div>
+        </div>
+        <button class="pill done">✓ Connected</button>
+      </div>
+      <div class="integ">
+        <div class="integ-icon">🗺</div>
+        <div class="integ-body">
+          <span class="strong">Maps / location (optional)</span>
+          <div class="desc">Geo-fencing for auto-start shifts · workers opt-in individually</div>
+        </div>
+        <button class="pill">Skip</button>
+      </div>
+    </div>
+
+    <div class="ob-actions">
+      <button class="btn-lg btn-secondary-lg">← Back</button>
+      <button class="btn-lg btn-primary-lg">Continue · 3 connected →</button>
+    </div>
+  </div>
+
+  <!-- ============== STEP 3 (ACTIVE): Invite team ============== -->
+  <div class="ob-card" id="step-3">
+    <div class="ob-eyebrow">Step 3 · Your team</div>
+    <h2>Add your crew</h2>
+    <p class="sub">Each person gets their own AI agent. Workers chat via Telegram — no app install needed. You can add/remove people anytime.</p>
+
+    <div style="background:var(--ai-50);border:1px solid var(--ai-100);border-radius:12px;padding:14px 16px;margin-bottom:20px;display:flex;gap:12px;align-items:center">
+      <div style="font-size:22px">🤖</div>
+      <div style="flex:1">
+        <div class="strong">AI detected 9 potential crew members from your email</div>
+        <div class="small muted">Добавили предварительно · проверь имена и телефоны · исправь при необходимости</div>
+      </div>
+      <button class="pill primary">+ Import all 9</button>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <div class="team-row">
+        <input value="Михаил Петров" style="flex:1.2"/>
+        <select><option>Foreman</option><option>Worker</option><option>Driver</option><option>Admin</option></select>
+        <input placeholder="+1 (305) 555-0102" value="+1 (305) 555-0102"/>
+        <button class="rmv">×</button>
+      </div>
+      <div class="team-row">
+        <input value="Андрей Сидоров" style="flex:1.2"/>
+        <select><option>Worker</option><option>Foreman</option><option>Driver</option><option>Admin</option></select>
+        <input placeholder="+1 (305) 555-0103" value="+1 (305) 555-0103"/>
+        <button class="rmv">×</button>
+      </div>
+      <div class="team-row">
+        <input value="Игорь Васильев" style="flex:1.2"/>
+        <select><option>Worker</option><option>Foreman</option><option>Driver</option><option>Admin</option></select>
+        <input placeholder="+1 (305) 555-0104" value="+1 (305) 555-0104"/>
+        <button class="rmv">×</button>
+      </div>
+      <div class="team-row">
+        <input value="Сергей Ковалёв" style="flex:1.2"/>
+        <select><option>Worker</option><option>Foreman</option><option>Driver</option><option>Admin</option></select>
+        <input placeholder="+1 (305) 555-0105" value="+1 (305) 555-0105"/>
+        <button class="rmv">×</button>
+      </div>
+      <div class="team-row">
+        <input value="Виктор Нестеров" style="flex:1.2"/>
+        <select><option>Driver</option><option>Worker</option><option>Foreman</option><option>Admin</option></select>
+        <input placeholder="+1 (305) 555-0106" value="+1 (305) 555-0106"/>
+        <button class="rmv">×</button>
+      </div>
+      <div class="team-row">
+        <input placeholder="Name" style="flex:1.2"/>
+        <select><option>Worker</option><option>Foreman</option><option>Driver</option><option>Admin</option></select>
+        <input placeholder="Phone"/>
+        <button class="rmv">×</button>
+      </div>
+    </div>
+    <button class="add-row">+ Add another person</button>
+
+    <div style="background:var(--bg);border-radius:10px;padding:14px 16px;margin-top:20px;display:flex;gap:12px;align-items:flex-start">
+      <input type="checkbox" checked style="margin-top:2px;width:16px;height:16px"/>
+      <div>
+        <div class="strong">Send Telegram invites now</div>
+        <div class="small muted" style="margin-top:2px">Each person gets "start @easytimercost_bot" link. Their AI agent greets them and walks them through first day.</div>
+      </div>
+    </div>
+
+    <div class="ob-actions">
+      <button class="btn-lg btn-secondary-lg">← Back</button>
+      <button class="btn-lg btn-primary-lg">Continue · 5 team members →</button>
+    </div>
+  </div>
+
+  <!-- ============== STEP 4: Baseline review ============== -->
+  <div class="ob-card" id="step-4" style="display:none">
+    <div class="ob-eyebrow">Step 4 · AI learned overnight</div>
+    <h2>Here's what we figured out 🤖</h2>
+    <p class="sub">While you slept, your AI agents scanned your Gmail + calendar + QB data. Review the baseline — fix anything wrong, then we go live.</p>
+
+    <div class="baseline-grid">
+      <div class="baseline-card"><div class="big">5</div><div class="lbl">crew members</div></div>
+      <div class="baseline-card"><div class="big">12</div><div class="lbl">active clients</div></div>
+      <div class="baseline-card"><div class="big">7</div><div class="lbl">projects in-flight</div></div>
+      <div class="baseline-card"><div class="big">24</div><div class="lbl">vendors known</div></div>
+      <div class="baseline-card"><div class="big">$420k</div><div class="lbl">pipeline estimated</div></div>
+      <div class="baseline-card"><div class="big">38%</div><div class="lbl">avg margin (last 90d)</div></div>
+    </div>
+
+    <div style="margin-top:24px;padding:20px;background:var(--ai-50);border-radius:12px">
+      <div class="strong" style="margin-bottom:10px">🎯 Opportunities spotted</div>
+      <ul style="margin:0;padding-left:20px;color:var(--text);line-height:1.8;font-size:14px">
+        <li>Acme Corp mentioned "bath reno" 4 times in last 30 days · <span style="color:var(--success)">suggest follow-up</span></li>
+        <li>3 invoices overdue > 15 days ($18,400 total) · <span style="color:var(--warning)">gentle reminder drafted</span></li>
+        <li>Rate not adjusted since 2024 · inflation suggests <strong>+8%</strong> opportunity · <span style="color:var(--success)">rate-bump draft ready</span></li>
+        <li>Павел Морозов overtime 23% higher than peers · <span style="color:var(--warning)">review crew balance</span></li>
+      </ul>
+    </div>
+
+    <div class="ob-actions">
+      <button class="btn-lg btn-secondary-lg">← Back</button>
+      <button class="btn-lg btn-primary-lg">Looks good · continue →</button>
+    </div>
+  </div>
+
+  <!-- ============== STEP 5: Policies ============== -->
+  <div class="ob-card" id="step-5" style="display:none">
+    <div class="ob-eyebrow">Step 5 · Permissions</div>
+    <h2>What can AI do without asking?</h2>
+    <p class="sub">Safe defaults below — change anything later. Rule: AI <strong>proposes</strong> the expensive stuff, <strong>does</strong> the boring stuff.</p>
+
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <div class="policy-preview">
+        <div class="info">
+          <span class="strong">🧾 OCR receipts from email</span>
+          <div class="desc">Auto-extract vendor/amount/date from Home Depot, Lowe's, Ikea etc. emails</div>
+        </div>
+        <div class="tog"><div></div></div>
+      </div>
+      <div class="policy-preview">
+        <div class="info">
+          <span class="strong">💰 Auto-approve expenses ≤ $500</span>
+          <div class="desc">AI matches vendor + OCR confidence > 90% · logs audit · you see in daily digest</div>
+        </div>
+        <div class="tog"><div></div></div>
+      </div>
+      <div class="policy-preview">
+        <div class="info">
+          <span class="strong">⏱ Auto-close shift when worker leaves site > 30min</span>
+          <div class="desc">Worker gets Telegram proposal first · auto-close only if they don't respond in 15min</div>
+        </div>
+        <div class="tog"><div></div></div>
+      </div>
+      <div class="policy-preview">
+        <div class="info">
+          <span class="strong">📞 Generate call brief when client phones</span>
+          <div class="desc">Twilio trigger → 2-second brief on your screen before you pick up</div>
+        </div>
+        <div class="tog"><div></div></div>
+      </div>
+      <div class="policy-preview">
+        <div class="info">
+          <span class="strong">💸 Auto-send payroll (off by default)</span>
+          <div class="desc">AI prepares ACH batch · waits for your click · recommended for first 30 days</div>
+        </div>
+        <div class="tog off"><div></div></div>
+      </div>
+      <div class="policy-preview">
+        <div class="info">
+          <span class="strong">🏢 Client notifications (off by default)</span>
+          <div class="desc">Client agent pushes updates · you may want to review their tone first</div>
+        </div>
+        <div class="tog off"><div></div></div>
+      </div>
+    </div>
+
+    <div style="margin-top:20px;padding:14px 18px;background:var(--success-50);border:1px solid var(--success);border-radius:12px;display:flex;gap:12px;align-items:center">
+      <div style="font-size:24px">✅</div>
+      <div style="flex:1">
+        <div class="strong" style="color:var(--success)">You can change these anytime at /policies</div>
+        <div class="small" style="color:var(--success)">Every AI action is logged. Every policy change needs your confirmation.</div>
+      </div>
+    </div>
+
+    <div class="ob-actions">
+      <button class="btn-lg btn-secondary-lg">← Back</button>
+      <a href="index.html" class="btn-lg btn-primary-lg" style="text-decoration:none">🚀 Launch · go to dashboard</a>
+    </div>
+  </div>
+
+  <div style="text-align:center;margin-top:32px;color:var(--text-3);font-size:13px">
+    <a href="index.html" style="color:var(--text-3)">Skip setup for now</a> · need help? <a href="#">book a 1:1 call</a>
+  </div>
+
+  <!-- Dev navigator -->
+  <div style="position:fixed;bottom:20px;right:20px;background:#fff;padding:10px 14px;border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow-md);display:flex;gap:6px;align-items:center;font-size:12px">
+    <span class="muted">Preview:</span>
+    <button onclick="showStep(1)" class="btn sm">1</button>
+    <button onclick="showStep(2)" class="btn sm">2</button>
+    <button onclick="showStep(3)" class="btn sm">3</button>
+    <button onclick="showStep(4)" class="btn sm">4</button>
+    <button onclick="showStep(5)" class="btn sm">5</button>
+  </div>
+</div>
+
+<script>
+function showStep(n) {
+  for (let i = 1; i <= 5; i++) {
+    document.getElementById('step-' + i).style.display = i === n ? 'block' : 'none';
+  }
+  const steps = document.querySelectorAll('.ob-step');
+  steps.forEach((s, i) => {
+    s.classList.remove('done', 'active');
+    if (i < n - 1) s.classList.add('done');
+    if (i === n - 1) s.classList.add('active');
+  });
+  document.querySelector('.ob-head .muted').textContent = `Step ${n} of 5`;
+}
+</script>
+
+</body>
+</html>

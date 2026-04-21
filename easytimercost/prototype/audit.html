@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8"/>
+<title>EasyTimerCost — Audit log</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="styles.css"/>
+</head>
+<body>
+<script src="meta.js"></script>
+<script src="shell.js"></script>
+<script>
+renderShell({
+  active: 'audit',
+  title: 'Audit log',
+  breadcrumbs: [{ label: 'Audit log' }],
+  actions: `<div class="row">${periodPill()}<button class="btn">Экспорт</button></div>`
+});
+
+// actorType: 'human' = worker/admin ran it · 'agent' = AI bot autonomous · 'ai-assisted' = human confirmed AI suggestion
+const entries = [
+  { at: '2026-04-20 16:02', actor: 'a-sys-approver', actorType: 'agent',       action: 'approve', entity: 'Expense #e1', desc: 'Auto-approved materials $347.82 — within $500 threshold', color: 'success' },
+  { at: '2026-04-20 14:35', actor: 'w5',              actorType: 'ai-assisted', action: 'submit',  entity: 'Expense #e1', desc: 'Submitted Home Depot receipt (via AI: OCR + auto-match session)', color: 'primary' },
+  { at: '2026-04-20 14:32', actor: 'a-sys-ocr',       actorType: 'agent',       action: 'extract', entity: 'Expense #e1', desc: 'OCR extracted vendor + amount from email · confidence 96%', color: 'primary' },
+  { at: '2026-04-20 07:15', actor: 'w3',              actorType: 'ai-assisted', action: 'create',  entity: 'Session #s1', desc: 'Started shift for Acme — AI proposed, worker confirmed in 3sec', color: 'primary' },
+  { at: '2026-04-20 07:02', actor: 'a-w3',            actorType: 'agent',       action: 'propose', entity: 'Session',     desc: 'Proposed session start (geo-proximity inferred)', color: 'primary' },
+  { at: '2026-04-19 18:20', actor: 'w1',              actorType: 'human',       action: 'reject',  entity: 'Expense #e6', desc: 'Manual reject · Reason: no receipt attached (AI flagged)', color: 'warning' },
+  { at: '2026-04-19 17:30', actor: 'a-sys-approver',  actorType: 'agent',       action: 'approve', entity: 'Session #s5', desc: 'Auto-approved session · 9.5h @ $44/ч · policy OK', color: 'success' },
+  { at: '2026-04-19 09:42', actor: 'w1',              actorType: 'human',       action: 'update',  entity: 'Worker w3',   desc: 'Changed hourly rate: $42/ч → $45/ч · Reason: promotion', color: 'warning' },
+  { at: '2026-04-18 20:15', actor: 'w1',              actorType: 'human',       action: 'lock',    entity: 'PayPeriod 2026-04-01 – 2026-04-15', desc: 'Period locked after pay run', color: 'success' },
+  { at: '2026-04-18 20:14', actor: 'a-sys-payroll',   actorType: 'agent',       action: 'pay',     entity: 'Payout #p142', desc: 'Bank transfer $18,230 to 7 workers · ACH scheduled', color: 'success' },
+  { at: '2026-04-17 10:05', actor: 'w2',              actorType: 'ai-assisted', action: 'approve', entity: 'Expense #e8', desc: 'Approved permits $425 — AI flagged for review (> $500 proj budget)', color: 'success' },
+  { at: '2026-04-16 14:22', actor: 'w1',              actorType: 'human',       action: 'create',  entity: 'Project Tampa Office', desc: 'Budget $220k · PM: Денис Х.', color: 'primary' },
+];
+
+const agentActions = entries.filter(e => e.actorType === 'agent').length;
+const assistedActions = entries.filter(e => e.actorType === 'ai-assisted').length;
+const humanActions = entries.filter(e => e.actorType === 'human').length;
+
+setBody(`
+  <div class="kpi-grid">
+    <div class="kpi"><div class="kpi-label">Всего events</div><div class="kpi-value">${entries.length}</div><div class="kpi-sub">за период</div></div>
+    <div class="kpi primary"><div class="kpi-label">🤖 Autonomous</div><div class="kpi-value">${agentActions}</div><div class="kpi-sub">AI сам решил</div></div>
+    <div class="kpi warning"><div class="kpi-label">🤝 AI-assisted</div><div class="kpi-value">${assistedActions}</div><div class="kpi-sub">AI предложил — человек подтвердил</div></div>
+    <div class="kpi success"><div class="kpi-label">👤 Human-only</div><div class="kpi-value">${humanActions}</div><div class="kpi-sub">без AI участия</div></div>
+  </div>
+
+  <div class="filters">
+    <select class="filter-select"><option>Все actor types</option><option>👤 Human</option><option>🤖 Agent</option><option>🤝 AI-assisted</option></select>
+    <select class="filter-select"><option>Все actions</option><option>Create</option><option>Update</option><option>Approve</option><option>Reject</option><option>Pay</option><option>Lock</option><option>Propose</option><option>Extract</option></select>
+    <select class="filter-select"><option>Все entity types</option><option>Session</option><option>Expense</option><option>Worker</option><option>Payout</option><option>Client</option></select>
+    <select class="filter-select"><option>Все actors</option>${MOCK.workers.filter(w=>w.hours>0||w.role==='admin').map(w=>`<option>${w.name}</option>`).join('')}${MOCK.agents.map(a=>`<option>🤖 ${a.name}</option>`).join('')}</select>
+    <input class="filter-select" placeholder="Поиск по entity ID..." style="min-width:220px"/>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <h3>📜 Immutable log (${entries.length})</h3>
+      <div class="small muted">append-only · retention 10 лет · actor type tracked</div>
+    </div>
+    <table class="table">
+      <thead><tr><th>Время</th><th>Actor</th><th>Type</th><th>Action</th><th>Entity</th><th>Детали</th><th></th></tr></thead>
+      <tbody>
+        ${entries.map(e => {
+          let actorBlock = '';
+          if (e.actorType === 'agent') {
+            const ag = agentById(e.actor);
+            actorBlock = `<div class="row" style="gap:8px"><div class="agent-avatar sm">🤖</div><span class="small strong">${ag ? ag.name : e.actor}</span></div>`;
+          } else {
+            const w = workerById(e.actor);
+            actorBlock = `<div class="row" style="gap:8px"><div class="avatar sm">${w.initials}</div><span class="small strong">${w.name}</span></div>`;
+          }
+          const typeChip = e.actorType === 'agent' ? '<span class="chip ai">🤖 autonomous</span>'
+                         : e.actorType === 'ai-assisted' ? '<span class="chip warning">🤝 AI-assisted</span>'
+                         : '<span class="chip">👤 human</span>';
+          return `
+            <tr>
+              <td class="small muted" style="white-space:nowrap">${e.at}</td>
+              <td>${actorBlock}</td>
+              <td>${typeChip}</td>
+              <td><span class="chip ${e.color}">${e.action}</span></td>
+              <td class="small"><code style="background:var(--bg);padding:2px 6px;border-radius:3px">${e.entity}</code></td>
+              <td class="small">${e.desc}</td>
+              <td><button class="btn sm">Diff</button></td>
+            </tr>
+          `;
+        }).join('')}
+      </tbody>
+    </table>
+  </div>
+`);
+
+mountSelfDocs('audit');
+</script>
+</body>
+</html>

@@ -1,395 +1,635 @@
-# План extraction 4 модулей
+# План extraction 4 модулей (v2)
 
 > **Статус:** PLAN (не начат)
-> **Дата:** 2026-04-20
-> **Audit (состояние):** [`MODULE_EXTRACTABILITY_AUDIT.md`](./MODULE_EXTRACTABILITY_AUDIT.md)
-> **Итоговый результат:** 4 независимых service/package, shared contracts, monorepo остаётся thin shell.
+> **Версия:** 2 (2026-04-20 — переработан с v1: добавлены data strategy, метрики, testing/observability, versioning, cost, rejected alternatives, FAQ)
+> **Audit:** [`MODULE_EXTRACTABILITY_AUDIT.md`](./MODULE_EXTRACTABILITY_AUDIT.md)
+> **Итоговый результат:** 4 независимых service/package, versioned contracts, monorepo остаётся thin gateway + shared libs.
 
 ---
 
-## 0. Общая структура: Phase 0 → 1 → 2 → 3 → 4
+## 0. TL;DR
 
-```
-┌─────────────────────────────────────────────┐
-│  Phase 0 — Pre-work (shared + interfaces)   │ ← 2-3 недели. Внутри monorepo.
-│  Блокирует все последующие phase'ы.          │
-└─────────────────────────────────────────────┘
-              ↓
-┌──────────────┐
-│  Phase 1     │ ← MONEY (пилот). Тестируем pattern extraction.
-│  2 недели    │
-└──────────────┘
-              ↓
-┌──────────────┐ ┌──────────────┐
-│  Phase 2     │ │  Phase 3     │ ← CLIENT и USER можно параллельно
-│  CLIENT 2-3w │ │  USER 2w     │    после Phase 1 (если есть два исполнителя)
-└──────────────┘ └──────────────┘
-              ↓
-┌──────────────┐
-│  Phase 4     │ ← TIME TRACKING (последний, самый связанный)
-│  3+ недели   │
-└──────────────┘
-
-Итого: 9-12 недель чистой работы, или 2-3 квартала при 30% занятости команды.
-```
-
-**Важно:** на всех фазах монорепо **продолжает работать** в проде. Extraction — поэтапный, с feature flags. Никакого big-bang rewrite.
-
----
-
-## 1. Phase 0 — Pre-work (внутри monorepo)
-
-> **Без этого phase'а остальные не имеют смысла.** Сейчас модули читают `db.collection('users')` напрямую друг у друга — при extraction это сразу сломается.
-
-### 1.1 Задачи
-
-#### Task 0.1 — Shared package setup
-- **Что:** создать `packages/shared/` (или `@profit-step/common` если npm workspaces)
-- **Содержимое:**
-  ```
-  packages/shared/
-  ├── src/
-  │   ├── types/
-  │   │   ├── auth.ts          (AuthContext, Role, Scope — только types)
-  │   │   ├── money.ts         (Decimal, Currency, Money helpers)
-  │   │   ├── identity.ts      (UserId, ClientId, ProjectId — branded types)
-  │   │   └── timestamps.ts    (FirestoreTimestamp, ISODate helpers)
-  │   ├── utils/
-  │   │   ├── phone.ts         ← переезд из src/utils/phone.ts + functions/src/agent/utils/phone.ts
-  │   │   ├── ids.ts           (slug, generateId)
-  │   │   └── dates.ts         (timezone helpers, period math)
-  │   └── index.ts
-  ├── package.json
-  └── tsconfig.json
-  ```
-- **Конфигурация:** npm workspaces в корневом `package.json` → `"workspaces": ["packages/*", "functions", "sdk/python"]`
-- **Acceptance:** `import { normalizePhone } from '@profit-step/shared/utils'` работает в `src/` и `functions/src/`
-- **Effort:** S (0.5 дня)
-
-#### Task 0.2 — Contract interfaces
-- **Что:** создать `packages/contracts/` с read-only interfaces для 4 модулей
-- **Содержимое:**
-  ```typescript
-  // packages/contracts/src/UserService.ts
-  export interface UserService {
-    getUser(id: UserId): Promise<User | null>;
-    getHourlyRate(id: UserId): Promise<number | null>;
-    getEffectiveTeamMemberIds(foremanId: UserId): Promise<UserId[]>;
-  }
-
-  // packages/contracts/src/ClientService.ts
-  export interface ClientService {
-    getClient(id: ClientId): Promise<Client | null>;
-    searchClients(query: string, limit?: number): Promise<Client[]>;
-    listByCompany(companyId: string): Promise<Client[]>;
-  }
-
-  // packages/contracts/src/TimeSessionService.ts
-  export interface TimeSessionService {
-    getActiveSessionFor(userId: UserId): Promise<WorkSession | null>;
-    getSessionsInPeriod(userId: UserId, from: Date, to: Date): Promise<WorkSession[]>;
-  }
-
-  // packages/contracts/src/FinanceService.ts
-  export interface FinanceService {
-    createCost(cost: CreateCostInput): Promise<Cost>;
-    getBalance(employeeId: UserId, period: Period): Promise<Balance>;
-  }
-  ```
-- **Acceptance:** каждый interface типизирован, есть Zod-схема для input/output validation в shared
-- **Effort:** M (1-2 дня)
-
-#### Task 0.3 — Firestore adapters (internal implementations)
-- **Что:** в каждом модуле создать `<module>/adapters/firestoreAdapter.ts` который реализует контракт и читает из Firestore
-- **Пример для USER:**
-  ```typescript
-  // functions/src/agent/services/userFirestoreAdapter.ts
-  import type { UserService } from '@profit-step/contracts';
-  export class UserFirestoreAdapter implements UserService {
-    async getUser(id: UserId): Promise<User | null> { ... }
-    async getHourlyRate(id: UserId): Promise<number | null> { ... }
-    // ...
-  }
-  ```
-- **Acceptance:** каждый из 4 Firestore adapters проходит contract test (см. 0.4)
-- **Effort:** M (2 дня — по 4 часа на модуль)
-
-#### Task 0.4 — Contract tests
-- **Что:** для каждого interface написать test suite которому должен удовлетворять любой implementation
-- **Пример:** `packages/contracts/tests/UserService.contract.ts` — abstract test suite который запускается с Firestore adapter (сейчас) И с HTTP adapter (после extract)
-- **Acceptance:** Firestore adapters проходят все contract tests. После extract HTTP adapters должны проходить те же tests.
-- **Effort:** M (1-2 дня)
-
-#### Task 0.5 — Replace direct cross-reads с контрактами
-- **Что:** пройти по coduase и заменить `db.collection('users').doc(...).get()` в **чужих** модулях на `userService.getUser(...)`
-- **Scope (главное — TIME TRACKING):**
-  - `functions/src/agent/routes/timeTracking.ts` — 15 cross-reads → заменить на `userService.*`, `clientService.*`, `taskService.*`
-  - `functions/src/agent/routes/finance.ts` — ~4 cross-reads на users/clients → заменить
-  - `functions/src/agent/routes/clients.ts` — 2 cross-reads на users → заменить
-- **Acceptance:** `grep -rn "db.collection('users')" functions/src/agent/routes/` возвращает только `users.ts` (owner) — остальные через adapter
-- **Effort:** L (3-5 дней — это ключевая часть)
-
-### 1.2 Deliverables Phase 0
-- [ ] `packages/shared/` с phone/money/types — package published локально через workspaces
-- [ ] `packages/contracts/` с 4 интерфейсами + contract tests
-- [ ] 4 Firestore adapters реализующих contracts
-- [ ] Все cross-module direct Firestore reads заменены на adapter calls
-- [ ] `grep "db.collection\('(users|clients|work_sessions|costs)'\)" functions/src/agent/routes/` — только owner routes
-
-### 1.3 Effort Phase 0
-- **Total:** 2-3 недели (8-15 дней работы)
-- **Risk:** LOW — всё внутри monorepo, никаких deploy, никаких breaking changes для пользователей
-- **Rollback:** просто не мержить PR если что-то не работает
-
----
-
-## 2. Phase 1 — MONEY extract (пилот)
-
-> **Цель:** перевезти Finance в отдельный service/package. Проверить что pattern работает. Использовать как шаблон для Phase 2-4.
-
-### 2.1 Задачи
-
-#### Task 1.1 — MONEY как отдельный package внутри monorepo
-- **Что:** переместить `functions/src/agent/routes/{finance,costs}.ts` + services + schemas в `packages/money/`
-- **Структура:**
-  ```
-  packages/money/
-  ├── src/
-  │   ├── api/
-  │   │   ├── financeRoutes.ts     ← был routes/finance.ts
-  │   │   └── costsRoutes.ts       ← был routes/costs.ts
-  │   ├── services/
-  │   │   ├── payrollCalculator.ts ← был src/modules/finance/services/payroll.ts
-  │   │   └── ledger.ts
-  │   ├── adapters/
-  │   │   └── firestoreAdapter.ts  ← был financeApi.ts
-  │   ├── schemas/
-  │   └── index.ts (barrel)
-  └── package.json
-  ```
-- **Что использует:** `@profit-step/shared`, `@profit-step/contracts` (UserService — через DI)
-- **Acceptance:** MONEY не импортирует ничего из `functions/src/agent/routes/users.ts` или `clients.ts` напрямую
-- **Effort:** M (2-3 дня)
-
-#### Task 1.2 — Standalone deployable
-- **Что:** `packages/money/` может деплоиться как отдельная Cloud Function (через runtime config), либо как Cloud Run service
-- **Конфигурация:**
-  ```typescript
-  // packages/money/src/standalone.ts
-  import express from 'express';
-  import { financeRoutes, costsRoutes } from './api';
-  const app = express();
-  app.use(financeRoutes);
-  app.use(costsRoutes);
-  export const moneyApi = functions.onRequest(app);
-  ```
-- **Deploy:** `firebase deploy --only functions:moneyApi`
-- **Acceptance:** `/api/money/*` endpoints работают из отдельной функции
-- **Effort:** M (1-2 дня — включая Secret Manager bindings + auth middleware)
-
-#### Task 1.3 — Feature flag routing
-- **Что:** на `agentApi` (главный gateway) добавить toggle:
-  ```typescript
-  if (process.env.USE_EXTERNAL_MONEY === 'true') {
-    app.use('/api/finance', proxy('https://moneyApi.cloudfunctions.net/api/finance'));
-    app.use('/api/costs', proxy('https://moneyApi.cloudfunctions.net/api/costs'));
-  } else {
-    app.use(financeRoutes);
-    app.use(costsRoutes);
-  }
-  ```
-- **Зачем:** можно переключать туда-обратно без deploy фронта
-- **Acceptance:** toggle через admin/env change — оба варианта работают, UI ничего не замечает
-- **Effort:** S (0.5 дня)
-
-#### Task 1.4 — Migration testing
-- **Что:** прогнать все smoke-tests (50 use cases из `public/bot-docs/use-cases.md`) в двух режимах (monolith vs external)
-- **Acceptance:** response bodies идентичны в обоих режимах (кроме timing)
-- **Effort:** S (0.5 дня автоматизации + 0.5 дня дебаг если что-то разойдётся)
-
-### 2.2 Deliverables Phase 1
-- [ ] `packages/money/` — independent package, depends только на shared + contracts
-- [ ] `moneyApi` Cloud Function задеплоена
-- [ ] Feature flag `USE_EXTERNAL_MONEY` работает в обе стороны
-- [ ] Все use cases smoke-tests pass в режиме `USE_EXTERNAL_MONEY=true`
-- [ ] Documentation: `packages/money/README.md` описывает deploy / config / rollback
-
-### 2.3 Acceptance критерий Phase 1
-- MONEY можно **полностью отключить** от main `agentApi` и он всё ещё работает
-- Payroll считается одинаково в обоих режимах (diff = 0 за тестовый период)
-- Никаких `db.collection('users')` внутри `packages/money/src/` (только через UserService interface)
-
-### 2.4 Rollback Phase 1
-- Set `USE_EXTERNAL_MONEY=false` в env
-- Redeploy `agentApi` — финансы снова внутри monolith
-- `moneyApi` можно оставить depoyed — ждать проблем и recook
-
----
-
-## 3. Phase 2 — CLIENT extract
-
-Тот же паттерн что Phase 1, scope: `clients.ts` + `deals.ts` + 18+ frontend components.
-
-### 3.1 Отличие от Phase 1
-- **Frontend тоже надо модуляризовать.** Создаём `src/modules/client/` по образцу `src/modules/finance/`.
-- `ClientCacheService` — отдельный класс, интерфейсом через shared
-- `ClientSearchService` с Fuse.js — тоже отдельный класс
-- Phone utils уже в shared после Phase 0
-
-### 3.2 Scope
-- Backend: `packages/client/` с 2 routes + services
-- Frontend: `src/modules/client/` + migration 5 pages + 18+ components
-- Standalone deploy: `clientApi` Cloud Function + feature flag
-
-### 3.3 Effort
-- **Total:** 2-3 недели
-
-### 3.4 Special considerations
-- `deals` pipeline пересекается с MONEY (deal → invoice). После extraction — через FinanceService interface.
-- Client portal `/portal/*` — может остаться в monorepo (public auth, сложно выносить) ИЛИ extract отдельно как client-portal service
-
----
-
-## 4. Phase 3 — USER extract
-
-> Можно параллельно с Phase 2 если есть 2-й разработчик.
-
-### 4.1 Scope
-- Backend: `packages/user/` с users + teams + companies routes
-- Frontend: admin pages (у тебя их всего 4)
-- Auth gateway: **отдельный critical component** — `packages/auth-gateway/` либо внутри user
-
-### 4.2 Телеграм linking
-- Надо вынести webhook handler в отдельный `telegram-gateway` service
-- Это — separate mini-project, часть USER extraction
-- Effort: +1 неделя поверх базового USER extract
-
-### 4.3 Effort
-- **Total:** 2 недели USER + 1 неделя telegram gateway = 3 недели
-
-### 4.4 Риск
-- Auth breakage = все сервисы упадут. Тестировать обязательно с feature flag на каждое окружение.
-
----
-
-## 5. Phase 4 — TIME TRACKING extract
-
-> Последним. 2/5 по extractability — самый связанный.
-
-### 5.1 Pre-requisite
-Phase 0 Task 0.5 **обязательно** должен быть сделан. Если в `timeTracking.ts` остались direct `db.collection('users')` reads — TIME TRACKING нельзя extract'нуть.
-
-### 5.2 Scope
-- Backend: `packages/time-tracking/` с routes + TimeTrackingService + scheduled
-- Frontend: `src/modules/time-tracking/` + migration TimeTrackingPage + 5 components + 41 usage `useActiveSession`
-- State sync: `activeSessionId` в users → нужен event-driven update (Pub/Sub или webhook)
-
-### 5.3 Special considerations
-- Telegram bot handlers (`onWorkerBotMessage`) напрямую работают с work_sessions — после extract они должны идти через TimeSessionService API
-- Это затрагивает handlers в `functions/src/triggers/telegram/handlers/sessionManager.ts` — пересмотреть
-
-### 5.4 Effort
-- **Total:** 3-4 недели (самый большой phase)
-
----
-
-## 6. Post-extraction: что остаётся в monorepo
-
-После Phase 1-4 главный репозиторий содержит:
-
-```
-profit-step/
-├── packages/
-│   ├── shared/         ← Phase 0
-│   ├── contracts/      ← Phase 0
-│   ├── money/          ← Phase 1
-│   ├── client/         ← Phase 2
-│   ├── user/           ← Phase 3
-│   ├── auth-gateway/   ← Phase 3
-│   ├── telegram-gateway/ ← Phase 3
-│   └── time-tracking/  ← Phase 4
-├── functions/
-│   └── src/
-│       ├── agentApi.ts         (thin gateway / router)
-│       ├── triggers/           (Firebase-specific, не module-able)
-│       └── scheduled/          (crons, если не перенесены в модули)
-├── src/ (frontend)
-│   └── pages/                  (composes modules)
-└── sdk/
-    └── python/
-```
-
-Получается:
-- **`packages/` — бизнес-логика** (4 модуля + shared + contracts)
-- **`functions/` — Firebase-specific** (thin gateway, triggers, scheduled jobs)
-- **`src/` — frontend UI** (composes packages через hooks/SDK)
-- **`sdk/` — внешние интеграции**
-
-Каждый `packages/<module>/` можно вытащить в отдельный git-репо финальным шагом (после stabilization 3-6 месяцев).
-
----
-
-## 7. Risks & Mitigations
-
-| Risk | Probability | Impact | Mitigation |
+| Phase | Scope | Effort (1 FTE) | Rollback |
 |---|---|---|---|
-| Contract interfaces подрезают важные use cases (не покрывают edge case) | High | Medium | Итерировать interface через usage в Phase 0; добавлять методы по мере необходимости |
-| После extract latency растёт (network hops) | Medium | Medium | Batch reads, caching layer (Redis?), monitor p95 |
-| Auth breakage в Phase 3 | Medium | **High** | Feature flag per-environment, canary deploy (1% → 10% → 100%), rollback < 1 min |
-| Telegram bot требует TIME TRACKING data напрямую | High | High | Phase 4 должен закончиться до любых новых bot features; или добавить events Pub/Sub |
-| Команда теряет контекст за долгий проект | Medium | Medium | Каждую фазу завершать рабочим деплоем, docs/runbook, pair programming на Phase 1 |
+| 0 — Pre-work | shared package + contracts + заменить 15 cross-reads | 2-3 нед | Не мержить PR |
+| 1 — MONEY pilot | extract finance + costs в отдельный service | 2 нед | Feature flag flip, 1 мин |
+| 2 — CLIENT | extract clients + deals + 18 components | 2-3 нед | Feature flag flip |
+| 3 — USER | extract users + teams + telegram gateway | 3 нед | Feature flag flip ⚠ auth-critical |
+| 4 — TIME TRACKING | extract последним (2/5 extractability) | 3-4 нед | Feature flag flip + event backfill |
+| **Total** | **12-15 недель FTE**, или ~9 мес при 30% двух инженеров |
+
+**Критично:** Phase 0 **обязательно** до любого extraction. Без shared interfaces модули нельзя extract без breaking cross-module reads.
 
 ---
 
-## 8. Когда НЕ начинать
+## 1. Решение стартовать — 4 блока prerequisites
 
-- Есть production-critical bugs в backlog (сейчас: bot session flow, warehouse V3 Phase 1)
-- CRM overhaul spec всё ещё DRAFT — бизнес-модель модулей может поменяться
-- Команда < 2 инженеров постоянно
-- Нет второго продукта / команды которая реально хочет использовать один из extracted модулей
+### 1.1 Business drivers (хотя бы один обязателен)
+- [ ] **Second product / white-label:** есть конкретный клиент/партнёр который хочет использовать модуль CRM (например только MONEY для учёта у другой компании)?
+- [ ] **Multi-tenancy separation:** нужно изолировать данные клиентов сильнее чем Firestore RLS позволяет?
+- [ ] **Team scaling:** ≥ 3 инженеров, нужна параллельная работа над модулями без merge conflicts?
+- [ ] **Performance/cost:** узкое место в одном модуле требует отдельного scaling profile (GPU для AI?, больше memory для finance batch?)
 
-**Зелёный свет условия:**
-- MVP фичи стабильны 1-2 месяца без критичных багов
-- Решение о втором продукте / white-label / partnership
-- Команда ≥ 3 инженеров (один на extraction full-time, остальные на feature work)
+Если все 4 = ❌ → extraction **не имеет смысла**, делать модуляризацию в `src/modules/*` без packages.
+
+### 1.2 Technical prerequisites
+- [ ] Production stable: 2+ недели без P0 bugs
+- [ ] Pipeline follow-ups закрыты ([`PIPELINE_FOLLOWUPS_TZ.md`](./PIPELINE_FOLLOWUPS_TZ.md) — 5 pending items)
+- [ ] CRM Overhaul Spec стабилизирован (сейчас DRAFT) — boundary модулей может поменяться
+- [ ] CI/CD зелёный ≥ 95% времени (сейчас Anti-Loop tests broken — нужно починить)
+
+### 1.3 Team prerequisites
+- [ ] Driver: full-time инженер на 12+ недель (или 30% двух на 9 мес)
+- [ ] Код-ревьюер который видел Firebase/TS monorepo before
+- [ ] DevOps: кто разбирается в Cloud Functions deploy + Secret Manager (сейчас — Денис сам)
+
+### 1.4 Infrastructure prerequisites
+- [ ] Workload Identity Federation настроен (см. `GitHub Actions deploy TZ`)
+- [ ] Branch protection на `main`
+- [ ] Observability baseline: logs aggregation, error tracking (Sentry?) — не ноль
+
+**Если хоть одно из §1.1-1.4 не выполнено → отложить extraction, зафиксировать план, вернуться через квартал.**
 
 ---
 
-## 9. Timeline summary
+## 2. Phase 0 — Pre-work (inside monorepo)
 
-| Phase | Сценарий 1 (full-time 1 инженер) | Сценарий 2 (30% от двух) |
+### 2.1 Task graph (DAG — порядок важен)
+
+```
+0.1 shared package setup  ──┐
+                            ├─→ 0.3 adapters (can run parallel per module)
+0.2 contract interfaces  ───┤
+                            │
+                            ├─→ 0.4 contract tests
+                            │
+                            └─→ 0.5 replace cross-reads ← BLOCKING for all later phases
+```
+
+### 2.2 Task 0.1 — Shared package (0.5 дня)
+
+**Что:** `packages/shared/`, монорепо workspaces.
+
+```
+packages/shared/
+├── src/
+│   ├── types/auth.ts          (AuthContext, Role, Scope — только types)
+│   ├── types/money.ts         (Decimal, Currency, Money)
+│   ├── types/identity.ts      (UserId/ClientId/ProjectId — branded types)
+│   ├── types/timestamps.ts    (FirestoreTimestamp, ISODate helpers)
+│   ├── utils/phone.ts         ← merge src/utils/phone.ts + functions/src/agent/utils/phone.ts
+│   ├── utils/ids.ts
+│   ├── utils/dates.ts         (timezone, period math)
+│   └── index.ts (barrel)
+├── package.json
+└── tsconfig.json
+```
+
+**Success metric:**
+```bash
+grep -rn "normalizePhone" src/ functions/src/
+# должно показать что оба места импортируют из @profit-step/shared
+```
+
+**Зачем branded types:** `type UserId = string & {__brand: 'UserId'}` — TypeScript не даёт случайно передать `ClientId` туда где ждут `UserId`. Сейчас везде `string` — типовых багов много.
+
+### 2.3 Task 0.2 — Contract interfaces (1-2 дня)
+
+`packages/contracts/` с 4 interface files + Zod schemas.
+
+**Пример UserService:**
+
+```typescript
+// packages/contracts/src/UserService.ts
+export interface UserService {
+  getUser(id: UserId): Promise<User | null>;
+  getHourlyRate(id: UserId): Promise<Money | null>;
+  getEffectiveTeamMemberIds(foremanId: UserId): Promise<UserId[]>;
+  resolveFromTelegramId(telegramId: string): Promise<User | null>;
+}
+
+// Zod schemas for input validation at the boundary
+export const UserIdSchema = z.string().min(1).brand<'UserId'>();
+export const UserSchema = z.object({ id: UserIdSchema, ... });
+```
+
+**Критерий готовности interface:**
+- Покрывает **все** текущие cross-reads по данным этого модуля (grep + audit)
+- Не содержит implementation deals (Firestore-specific types, FieldValue, etc.)
+- Все методы идемпотентны или явно помечены мутирующими
+- Version 1.0.0 в package.json — после extract нельзя breaking-change без мажора
+
+### 2.4 Task 0.3 — Firestore adapters (2 дня, параллельно per module)
+
+```typescript
+// functions/src/agent/services/userFirestoreAdapter.ts
+import type { UserService } from '@profit-step/contracts';
+import * as admin from 'firebase-admin';
+
+export class UserFirestoreAdapter implements UserService {
+  private db = admin.firestore();
+
+  async getUser(id: UserId): Promise<User | null> {
+    const doc = await this.db.collection('users').doc(id).get();
+    return doc.exists ? toUser(doc) : null;
+  }
+  // ...
+}
+
+// DI point в agentApi.ts
+const userService: UserService = new UserFirestoreAdapter();
+```
+
+**Важно:** adapter **не экспортирует Firestore internals** — только domain types. `toUser(doc)` конвертирует Firestore doc → clean domain object.
+
+### 2.5 Task 0.4 — Contract tests (1-2 дня)
+
+```typescript
+// packages/contracts/tests/UserService.contract.ts
+export function userServiceContractTests(makeService: () => UserService) {
+  describe('UserService contract', () => {
+    it('getUser returns null for non-existent', async () => {
+      const svc = makeService();
+      expect(await svc.getUser('does-not-exist' as UserId)).toBeNull();
+    });
+    // ... 20+ tests covering every method + edge cases
+  });
+}
+
+// functions/test/userFirestoreAdapter.test.ts
+import { userServiceContractTests } from '@profit-step/contracts/tests';
+userServiceContractTests(() => new UserFirestoreAdapter());
+
+// Позже в Phase 3 после extract:
+// packages/user-sdk/tests/httpAdapter.test.ts
+// userServiceContractTests(() => new UserHttpAdapter('http://user-service'));
+```
+
+**Один test suite — обе implementations.** Когда extract-нём USER, HTTP adapter должен пройти те же тесты.
+
+### 2.6 Task 0.5 — Replace cross-module reads (3-5 дней)
+
+**Это главная работа Phase 0.** Конкретный grep:
+
+```bash
+# До Phase 0:
+grep -rn "db.collection('users')" functions/src/agent/routes/timeTracking.ts | wc -l
+# 8
+
+# После Phase 0:
+# 0 (все заменены на userService.getUser())
+```
+
+**Scope (priority order):**
+1. `timeTracking.ts` — 8 reads users + 3 reads clients + 4 reads gtd_tasks = **15 замен** (основной блок)
+2. `finance.ts` + `costs.ts` — 4 reads users + 2 reads clients
+3. `clients.ts` — 2 reads users
+
+**Acceptance:**
+- `grep -rn "db.collection('\\(users\\|clients\\|work_sessions\\|costs\\)')" functions/src/agent/routes/` — возвращает **только owner routes**
+- Все существующие integration tests проходят
+
+### 2.7 Phase 0 success metrics
+
+| Метрика | До | После |
 |---|---|---|
-| Phase 0 | 3 недели | 9 недель |
-| Phase 1 (MONEY) | 2 недели | 6 недель |
-| Phase 2 (CLIENT) + Phase 3 (USER) параллельно | 3 недели | 9 недель |
-| Phase 4 (TIME TRACKING) | 4 недели | 12 недель |
-| **Total** | **12 недель = 3 мес** | **36 недель = 9 мес** |
-
-Между phase'ами можно делать паузы по 1-2 недели на stability / feature work. В реальности timeline расползётся на 20-30% из-за интеграционных сюрпризов.
+| Direct cross-module Firestore reads | 15 | 0 |
+| Shared utils duplication (phone normalize) | 2 места | 1 место (shared) |
+| Branded types coverage | 0% | 100% для UserId/ClientId/ProjectId |
+| Contract interfaces | 0 | 4 |
+| Contract tests per interface | 0 | ≥10 tests |
 
 ---
 
-## 10. Next steps (для принятия решения)
+## 3. Data strategy (КРИТИЧНО — не было в v1)
 
-### Перед стартом
-1. [ ] Business decision: **зачем** extract? (white-label? partnership? multi-tenant? perf?)
-2. [ ] Team decision: кто driver? Full-time или part-time?
-3. [ ] Dependency decision: ждём ли pipeline follow-ups (warehouse V3 Phase 1, bot-session-flow) до старта?
-4. [ ] Infra decision: Cloud Functions остаётся как runtime, или переезд на Cloud Run / Kubernetes?
+### 3.1 Firestore ownership boundaries
 
-### Первые 2 дня (если решили стартовать)
-1. Создать `packages/shared/` с минимальным содержимым (`types/auth.ts`, `utils/phone.ts`) — Task 0.1
-2. Настроить npm workspaces
-3. Написать и смерджить первый contract interface (`UserService`) — Task 0.2
-4. Создать Firestore adapter для UserService — Task 0.3
-5. Заменить **один** direct Firestore read в `timeTracking.ts` на UserService call — pilot для Task 0.5
+После Phase 0, у каждого модуля — **эксклюзивная запись** в свои коллекции. Чтение между модулями — только через contracts.
 
-Если за 2 дня не получилось даже это — extraction не готов технически, нужен другой подход (возможно просто модуляризовать в `src/modules/` без отдельных packages).
+| Collection | Owner | Readers (через contract) |
+|---|---|---|
+| `users`, `employees`, `teams`, `companies` | USER | все остальные (ReadOnly) |
+| `clients`, `deals`, `contacts` | CLIENT | MONEY (fuzzy), TIME (display) |
+| `work_sessions`, `time_entries`, `breaks` | TIME | MONEY (payroll calc) |
+| `costs`, `invoices`, `payments`, `salaries`, `advances` | MONEY | USER (admin view?) |
+| `projects` | ⚠ shared — решить в Phase 0 | — |
+| `gtd_tasks` | ⚠ shared — решить в Phase 0 | — |
+| `activity_log`, `notifications` | cross-cutting — вынести в events service Phase 5? | — |
+
+### 3.2 IAM enforcement
+
+**После extraction физически запретить cross-read:**
+
+Каждый extracted service получает свой service account:
+- `money-service@profit-step.iam.gserviceaccount.com`
+- `client-service@...`
+- `user-service@...`
+- `time-tracking-service@...`
+
+IAM binding даёт service account доступ **только к своим коллекциям** через Firestore custom rules:
+
+```javascript
+// firestore.rules
+service cloud.firestore {
+  match /databases/{db}/documents {
+    match /costs/{doc} {
+      allow read, write: if request.auth.uid == 'money-service-SA-uid';
+    }
+    match /users/{doc} {
+      allow read: if true;  // все могут читать (для contracts)
+      allow write: if request.auth.uid == 'user-service-SA-uid';
+    }
+  }
+}
+```
+
+Это **hard boundary** — даже если кто-то случайно напишет cross-module `db.collection('costs')` в USER service, Firestore откажет.
+
+### 3.3 Data migration (не сейчас, Phase 5+)
+
+На текущем этапе extraction **данные остаются в одной Firestore БД**. Это облегчает rollback.
+
+В будущем (Phase 5, если понадобится — **не в этом плане**):
+- Каждый модуль → отдельный Firestore project или Postgres schema
+- Миграция через dual-write: новый service пишет в обе БД месяц, проверяем diff, cutover
 
 ---
 
-## 11. References
+## 4. Phase 1 — MONEY extract (пилот)
 
-- Audit: [`MODULE_EXTRACTABILITY_AUDIT.md`](./MODULE_EXTRACTABILITY_AUDIT.md) (блокеры + scores)
+### 4.1 Task breakdown
+
+| # | Task | Effort | Дёлай после |
+|---|---|---|---|
+| 1.1 | Создать `packages/money/` структуру (move finance.ts + costs.ts + services) | 1 день | Phase 0 |
+| 1.2 | Добавить `{ secrets: [...] }` bindings для money service | 2ч | 1.1 |
+| 1.3 | Standalone Cloud Function `moneyApi` | 1 день | 1.1-1.2 |
+| 1.4 | Feature flag `USE_EXTERNAL_MONEY` на agentApi | 0.5 дня | 1.3 |
+| 1.5 | Canary deploy: 0% → 1% → 10% → 100% | 2-3 дня (с паузами) | 1.4 |
+| 1.6 | Cleanup: удалить `routes/finance.ts` + `costs.ts` из agentApi после 100% stable | 0.5 дня | 1.5 через неделю |
+| 1.7 | Update docs + SDK | 1 день | 1.6 |
+
+**Total: 2 недели** (с canary pauses на monitoring).
+
+### 4.2 Success metrics
+
+| Метрика | Acceptance |
+|---|---|
+| `packages/money/` direct Firestore reads на чужие коллекции | **0** |
+| Payroll calculation diff между monolith и external | **0.00** (до цента) за 7 тестовых дней |
+| p95 latency `/api/finance/context` | ≤ 1.2× от monolith baseline |
+| Cost impact | + $5-15/мес (Cloud Function idle time) |
+| 50 use cases smoke test (в режиме USE_EXTERNAL_MONEY=true) | 100% pass |
+
+### 4.3 Canary rollout
+
+```bash
+# Week 1
+firebase functions:config:set money.external=false
+# Deploy money service, нет трафика
+
+# Day 1: 1% трафика
+# agentApi.ts:
+if (process.env.USE_EXTERNAL_MONEY === 'true' && Math.random() < 0.01) {
+  return proxy(moneyServiceUrl);
+}
+
+# Day 2: monitoring → если diff = 0, p95 ok → 10%
+# Day 3: 10% stable → 50%
+# Day 4: 50% stable → 100%
+```
+
+### 4.4 Rollback
+
+- Env var: `USE_EXTERNAL_MONEY=false`
+- Redeploy `agentApi` (1 мин)
+- Финансы снова в monolith
+- Money service остаётся deployed — можно пробовать ещё раз
+
+---
+
+## 5. Phase 2 — CLIENT extract
+
+Тот же паттерн. Отличия:
+- **Frontend scope большой** — 5 pages + 18+ components в `src/pages/` и `src/components/crm/`
+- **Phone utils уже в shared после Phase 0** — проще
+- **getCachedClients()** — нужен refactor в `ClientCacheService` (синглтон в runtime)
+- **Fuzzy search (Fuse.js)** — отдельный `ClientSearchService` с lazy-init
+
+### 5.1 Success metrics (отличия от Phase 1)
+
+| Метрика | Acceptance |
+|---|---|
+| `packages/client/` direct reads на users | 0 |
+| Client search latency (p95) | ≤ 500ms |
+| Frontend bundle size `src/modules/client/` chunk | ≤ 300kb gzipped |
+
+**Effort:** 2-3 недели.
+
+---
+
+## 6. Phase 3 — USER extract (⚠ auth-critical)
+
+### 6.1 Risk: auth breakage = всё упадёт
+
+USER владеет `users` коллекцией + RBAC logic + Telegram linking. Breakage = **все остальные сервисы не могут аутентифицировать запросы**.
+
+### 6.2 Mitigations
+- **Auth gateway** — отдельный сервис `packages/auth-gateway/` который проверяет token и возвращает `AuthContext`
+- **Dual deploy на 1+ месяц:** старый monolith agentApi продолжает работать, new user-service работает параллельно. Агенты переключаются по feature flag по одному.
+- **Canary строже:** 0.1% → 1% → 10% → 50% → 100%, каждый шаг минимум 2 дня stable
+
+### 6.3 Telegram gateway = отдельный мини-проект
+
+Webhook `POST /telegram-webhook` принимает updates, resolve Telegram ID → User ID через auth-gateway, forward в target service (worker-bot в main).
+
+**Effort:** +1 неделя поверх USER.
+
+### 6.4 Success metrics
+
+| Метрика | Acceptance |
+|---|---|
+| Auth failure rate (401/403) | не выше baseline + 0.1% |
+| Telegram webhook processing latency | ≤ 2× baseline |
+| Cross-tenant test suite | pass |
+
+**Effort:** 2 нед USER + 1 нед telegram-gateway = **3 недели**.
+
+---
+
+## 7. Phase 4 — TIME TRACKING extract (последний)
+
+### 7.1 Зависимости (strict pre-requisite)
+
+- Phase 0 Task 0.5 ЗАКРЫТ (все cross-reads через contracts)
+- Phase 3 USER extract ЗАВЕРШЁН (TIME вызывает UserService уже через HTTP)
+- Phase 1 MONEY extract ЗАВЕРШЁН (payroll pipeline с новой стороны тестирован)
+
+### 7.2 Специфика
+
+- **41 usage `useActiveSession` в frontend** → каждый нужно проверить
+- **Bot handlers** `sessionManager.ts` напрямую работают с `work_sessions` → либо остаются в monorepo и вызывают TimeSessionService, либо выносятся в time-tracking-bot-handler
+- **State sync: `activeSessionId` в users** → нужен event-driven update (Pub/Sub event `session.started` / `session.stopped`, подписчик в USER service обновляет поле)
+
+### 7.3 Event bus introduction
+
+Для sync state между services — Google Cloud Pub/Sub:
+```
+TIME TRACKING publishes  → topic: session-events
+USER service subscribes  → updates users.activeSessionId
+MONEY subscribes         → debit hourly rate incrementally
+```
+
+### 7.4 Success metrics
+
+| Метрика | Acceptance |
+|---|---|
+| Active session state consistency (TIME ↔ USER) | 100% после event propagation (lag ≤ 2s p99) |
+| Worker bot session start flow latency | ≤ 1.5× baseline |
+| Payroll calculation accuracy | 100% (diff = $0.00) |
+
+**Effort:** 3-4 недели (самый большой phase).
+
+---
+
+## 8. Cross-phase concerns
+
+### 8.1 Testing strategy
+
+| Level | Coverage target | Tools |
+|---|---|---|
+| Unit (per service) | ≥ 80% lines | jest (existing) |
+| Contract (shared) | 100% contract methods | `userServiceContractTests` style |
+| Integration (service + Firestore emulator) | critical paths only | jest + `firebase-functions-test` |
+| E2E (service + real Firestore staging) | 20 scenarios per phase | Cypress + staging env |
+| Chaos (random service shutdown) | 5 scenarios | manual + monitoring |
+
+### 8.2 Observability
+
+Каждый service должен иметь:
+- **Structured logs** (JSON, `severity`, `traceId`, `userId`)
+- **Metrics** (requests/sec, p50/p95/p99 latency, error rate) — Google Cloud Monitoring
+- **Distributed tracing** (OpenTelemetry) — `traceId` проходит через весь flow `agentApi → money-service → Firestore`
+- **Health endpoint** `/api/health` возвращает `{ status, deps: { firestore, userService } }`
+
+**До Phase 0** нужен minimum: structured logs в каждой Cloud Function (сейчас — частично есть через `logger.info/error`).
+
+### 8.3 Versioning contracts
+
+Semver для `packages/contracts`:
+- **Major (X.0.0)** — breaking change: переименование метода, удаление поля, изменение типа
+- **Minor (0.X.0)** — добавление нового метода (backward-compatible)
+- **Patch (0.0.X)** — clarification, docs
+
+**Правило:** каждый extracted service объявляет в своём manifest:
+```json
+{
+  "consumes": {
+    "@profit-step/contracts": "^1.2.0"
+  }
+}
+```
+
+При major-bump контракта нужен migration period (dual-implementation) минимум 1 релиз.
+
+### 8.4 Cost impact
+
+| Item | Было | Станет | Delta |
+|---|---|---|---|
+| Cloud Functions invocations | 1× agentApi | 1× agentApi + 4× module services | + $10-30/мес cold starts |
+| Cloud Function memory | 512MB agentApi | 512MB × 5 services | + $20-50/мес if minInstances=1 |
+| Network egress (service-to-service) | 0 | few GB/мес | + $1-5/мес |
+| Secret Manager accesses | ~10/hour | ~50/hour (each service its own secrets) | + $1/мес |
+| Logging volume | 1× | 5× | + $2-10/мес |
+| **Estimated total delta** | | | **+ $35-100/мес** |
+
+Не катастрофа, но не нулевое. На annually ~ $500-1200.
+
+### 8.5 Deploy pipeline changes
+
+После extract каждый service — отдельный GitHub Action workflow с target:
+```yaml
+# .github/workflows/deploy-money.yml
+on:
+  push:
+    branches: [main]
+    paths: ['packages/money/**', 'packages/shared/**', 'packages/contracts/**']
+jobs:
+  deploy:
+    steps:
+      - run: firebase deploy --only functions:moneyApi
+```
+
+Любой PR который трогает `packages/shared/` или `packages/contracts/` автоматически триггерит deploy **всех** 4 services (broad blast radius — смотреть осторожно).
+
+---
+
+## 9. Rejected alternatives (почему именно этот подход)
+
+### 9.1 «Сразу микросервисы на Kubernetes»
+- ❌ В 10 раз дороже — нужен GKE cluster, monitoring stack, Helm charts
+- ❌ Overkill для 4 модулей
+- ❌ Команда не имеет k8s опыта
+- ✅ Правильно для 50+ сервисов, не для нашего случая
+
+### 9.2 «Event-sourcing с CQRS»
+- ❌ Слишком много cognitive load
+- ❌ Data migration в 100× раз сложнее
+- ❌ Firestore не поддерживает natively (нужен Kafka/Pulsar)
+- ✅ Паттерн для финансовых систем с аудитом каждого события, но payroll не настолько критичен
+
+### 9.3 «Просто модуляризация в `src/modules/*` без packages»
+- ⚠ Меньше overhead чем extraction
+- ⚠ Но нельзя extract в отдельный git-репо позже
+- ⚠ Нет hard IAM boundary — любой модуль может нарушить
+- **Это путь если §1.1 (business drivers) не сработает** — fallback plan
+
+### 9.4 «Один big-bang rewrite»
+- ❌ 3-6 месяцев без features — бизнес этого не переживёт
+- ❌ Rollback = impossible
+- ❌ Все баги всплывают одновременно
+
+---
+
+## 10. Intermediate stop conditions
+
+Что если остановимся на каждой фазе?
+
+| После | Состояние | Работает ли прод? | Useful? |
+|---|---|---|---|
+| Phase 0 | Shared package + contracts, direct reads заменены | ✅ Да (без изменений) | ✅ Codebase чище, меньше coupling — выигрыш даже без extraction |
+| Phase 1 (MONEY) | 1 из 4 модулей extract-нут | ✅ Да (feature flag) | ✅ Валидирован подход, pattern есть |
+| Phase 2 (CLIENT) | 2 из 4 extract | ✅ Да | ⚠ Полумера — 2 ещё в monolith |
+| Phase 3 (USER) | 3 из 4 | ✅ Да | ✅ Важные — USER + auth — уже отдельно |
+| Phase 4 (TIME TRACKING) | Все 4 extract | ✅ Да | ✅ Полное разделение, монорепо thin |
+
+**Safe stop после Phase 0 и Phase 1.** После Phase 2-3 нежелательно останавливаться — инфраструктура 2 service'ов дублируется для сопровождения.
+
+---
+
+## 11. Risks & mitigations (детально)
+
+| # | Risk | Probability | Impact | Mitigation |
+|---|---|---|---|---|
+| R1 | Contract interface упускает важный use case → нужна major bump (ломает всё) | High | Medium | Усиленное code review на Phase 0, список known use cases из audit |
+| R2 | Service-to-service latency убивает UX | Medium | High | Batch reads (1 round trip для N users), aggressive caching в adapters, monitor p95 |
+| R3 | Auth breakage (Phase 3) кладёт весь прод | Low | **Critical** | Dual-deploy ≥ 1 мес, canary 0.1% start, rollback < 1 min |
+| R4 | Event bus (Phase 4) даёт eventual consistency → UX баги | Medium | Medium | Synchronous critical reads (session active) через HTTP, async для аналитики |
+| R5 | Cost runaway (Pub/Sub dead-letter loops) | Low | High | Max retries=3 + dead-letter topic + alert при 10+/мин failed events |
+| R6 | Team loses motivation за 3 месяца без user features | High | High | Phase 0 + Phase 1 deliverable за 5 недель — это первый concrete win |
+| R7 | Business roadmap меняется, модуль X теряет смысл extract | Medium | Medium | Pause между phase'ами для re-evaluation |
+| R8 | Secret Manager стоит дороже ожидаемого | Low | Low | Secret caching в service (5-min TTL) — уже есть в Firebase runtime |
+
+---
+
+## 12. Timeline — три реалистичных сценария
+
+### Сценарий A — Full-time driver (12 недель)
+```
+W1-W3: Phase 0
+W4-W5: Phase 1 (MONEY)
+W6: Stability window / feature work
+W7-W9: Phase 2 (CLIENT) + Phase 3 USER параллельно (нужен 2-й инженер)
+W10: Stability window
+W11-W14: Phase 4 (TIME TRACKING)
+```
+
+### Сценарий B — 30% от 2 инженеров (9 месяцев)
+```
+Месяц 1-2: Phase 0
+Месяц 3-4: Phase 1
+Месяц 5: Stability + review
+Месяц 6-7: Phase 2 + Phase 3
+Месяц 8-9: Phase 4
+```
+
+### Сценарий C — "Только Phase 0" (3-4 недели)
+Если §1.1 business driver не сработал — stop после Phase 0. Получаем:
+- Cleaner codebase
+- Contracts готовы для будущего
+- 15 cross-reads устранено
+- Zero deploy risk
+
+Это **не потерянное время** даже если extraction в итоге не произошла.
+
+---
+
+## 13. 2-day pilot test (перед commitment)
+
+**Цель:** за 2 дня валидировать что подход работает **для твоего codebase**.
+
+### Day 1 (4-6h)
+1. Создать `packages/shared/` с одним утилом (`normalizePhone`)
+2. Настроить `npm workspaces` в корневом `package.json`
+3. Заменить 2 использования phone в `src/` и `functions/src/` на import из shared
+4. `npm --prefix functions run build` + `npm --prefix . run build` — оба проходят
+5. Commit + PR (feature-branch `claude/extraction-pilot`)
+
+### Day 2 (4-6h)
+6. Создать `packages/contracts/src/UserService.ts` interface
+7. Создать `UserFirestoreAdapter` в functions
+8. Заменить **один** cross-read в `timeTracking.ts` на `userService.getUser()`
+9. Все тесты зелёные
+10. PR merge → включить в main
+
+### Go / no-go критерии
+- ✅ Если всё вышеперечисленное укладывается в 2 дня без major surprise → extraction **технически выполнима**, можно планировать полный Phase 0
+- ❌ Если блокируешься на workspaces/module resolution/build — текущая архитектура сопротивляется extraction, делать fallback «модуляризация без packages»
+
+---
+
+## 14. FAQ
+
+### Q: Почему 4 модуля а не 2 или 10?
+**A:** Из audit — эти 4 имеют чёткие domain boundaries и разные ownership'ы в реальной жизни (HR управляет USER, бухгалтер — MONEY, sales — CLIENT, operations — TIME TRACKING). Проекты, задачи, файлы — cross-cutting, не модули сами по себе.
+
+### Q: Что если нам нужен только MONEY extract (для white-label бухгалтерии)?
+**A:** Делай Phase 0 + Phase 1. Останавливайся. §10 подтверждает — после Phase 1 система stable.
+
+### Q: Можем мы пропустить Phase 0?
+**A:** Нет. Без interfaces cross-module reads упадут при extraction. Phase 0 — обязательный fundament.
+
+### Q: Что с Firestore rules после extraction?
+**A:** Rules остаются в монорепо (shared firestore.rules). Extraction service accounts добавляются туда. См. §3.2.
+
+### Q: Может ли monolith продолжать работать во время extraction?
+**A:** Да. Feature flags на каждый extracted модуль → можно держать оба варианта live сколь угодно долго.
+
+### Q: Что если найдём баг в extracted service месяц спустя?
+**A:** `USE_EXTERNAL_<MODULE>=false`, redeploy agentApi, откат в monolith. 1 минута. См. rollback section каждой phase.
+
+### Q: Нужно ли переписывать SDK Python?
+**A:** Только когда base URL меняется. Если `moneyApi` на той же cloudfunctions.net subdomain — SDK ничего не знает.
+
+### Q: Как долго держать dual-deploy?
+**A:** Минимум 1 месяц на каждую phase после 100% rollout, чтобы поймать edge cases на end-of-month/payroll cycle.
+
+---
+
+## 15. Next steps
+
+### Вариант A — Start immediately
+1. Merge этот план (done)
+2. Run 2-day pilot (§13)
+3. Если pilot green — создать tickets для Phase 0 tasks 0.1-0.5
+4. Assign driver
+
+### Вариант B — Close pipeline follow-ups first
+1. Закрыть [`PIPELINE_FOLLOWUPS_TZ.md`](./PIPELINE_FOLLOWUPS_TZ.md) pending items (~2 недели)
+2. После — pilot (§13) + Phase 0
+
+### Вариант C — Shelve until business driver appears
+1. Зафиксировать план (done)
+2. Вернуться когда один из §1.1 driver сработает
+3. План актуализировать (pipeline продолжает двигаться, audit нужно обновить)
+
+---
+
+## 16. References
+
+- Audit: [`MODULE_EXTRACTABILITY_AUDIT.md`](./MODULE_EXTRACTABILITY_AUDIT.md)
 - Precedent (Finance modularized): [`src/modules/finance/`](../../src/modules/finance/), PR [#48](https://github.com/garkorcom/profit-step/pull/48), PR [#49](https://github.com/garkorcom/profit-step/pull/49)
-- Parent: [`MASTER_PLAN_2026-04-19.md`](./MASTER_PLAN_2026-04-19.md)
+- Pipeline debt: [`PIPELINE_FOLLOWUPS_TZ.md`](./PIPELINE_FOLLOWUPS_TZ.md)
+- Master plan: [`MASTER_PLAN_2026-04-19.md`](./MASTER_PLAN_2026-04-19.md)
+- Secret Manager setup (dependency): [`../ONBOARDING.md`](../ONBOARDING.md)

@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <title>{{PAGE_TITLE}}</title>
+  <style>
+    body { font-family: -apple-system, 'Inter', sans-serif; background:#f6f7fb; margin:0; padding:0; }
+    .app { display: grid; grid-template-columns: 220px 1fr; min-height:100vh; }
+    .sidebar { background:#fff; border-right:1px solid #e2e8f0; padding:20px; }
+    .sidebar h1 { font-size:14px; font-weight:700; margin:0 0 20px; }
+    .nav a { display:block; padding:8px 10px; text-decoration:none; color:#475569; border-radius:6px; font-size:13px; margin:2px 0; }
+    .nav a:hover, .nav a.active { background:#eff2ff; color:#4338ca; }
+    .main { display:flex; flex-direction:column; }
+    .topbar { background:#fff; border-bottom:1px solid #e2e8f0; padding:12px 24px; display:flex; align-items:center; gap:16px; position:sticky; top:0; z-index:10; }
+    .topbar input { flex:1; max-width:420px; padding:8px 12px; border:1px solid #e2e8f0; border-radius:6px; font-size:13px; }
+    .content { padding:24px; }
+    .page-header { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:20px; padding-bottom:12px; border-bottom:1px solid #e2e8f0; }
+    .page-header h1 { font-size:24px; font-weight:800; margin:0; }
+    .kpi-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:20px; }
+    .kpi { background:#fff; border:1px solid #e2e8f0; border-radius:12px; padding:16px 20px; }
+    .kpi-label { font-size:11px; text-transform:uppercase; color:#64748b; font-weight:600; }
+    .kpi-value { font-size:28px; font-weight:800; color:#0f172a; line-height:1; margin-top:4px; }
+    .card { background:#fff; border:1px solid #e2e8f0; border-radius:12px; padding:16px 20px; margin-bottom:14px; }
+  </style>
+</head>
+<body>
+
+<script src="../self-docs.js"></script>
+
+<div class="app">
+  <aside class="sidebar">
+    <h1>My App</h1>
+    <nav class="nav">
+      <a href="#" class="active">{{PAGE_TITLE}}</a>
+      <a href="#">Other page</a>
+    </nav>
+  </aside>
+
+  <div class="main">
+    <header class="topbar">
+      <input placeholder="Search..."/>
+      <!-- UC-counter chip will be injected here by SelfDocs.mount() -->
+    </header>
+
+    <div class="content" id="page-content">
+      <div class="page-header">
+        <h1>{{PAGE_TITLE}}</h1>
+      </div>
+
+      <!-- Your page content -->
+      <div class="kpi-grid">
+        <div class="kpi"><div class="kpi-label">Metric 1</div><div class="kpi-value">42</div></div>
+        <div class="kpi"><div class="kpi-label">Metric 2</div><div class="kpi-value">$12k</div></div>
+        <div class="kpi"><div class="kpi-label">Metric 3</div><div class="kpi-value">7</div></div>
+        <div class="kpi"><div class="kpi-label">Metric 4</div><div class="kpi-value">95%</div></div>
+      </div>
+
+      <div class="card">
+        <h3>Main content here</h3>
+        <p>Your page's actual UI — tables, forms, charts, whatever.</p>
+      </div>
+
+      <!-- UC-footer + TZ-footer will be auto-appended below by SelfDocs.mount() -->
+    </div>
+  </div>
+</div>
+
+<script>
+  // ─── REGISTER & MOUNT SELF-DOCS ─────────────────────────────────────────
+  SelfDocs.config({
+    locale: 'en',               // or 'ru'
+    currentUser: 'you',
+  });
+
+  SelfDocs.registerPage('{{PAGE_ID}}', {
+    title:   '{{PAGE_TITLE}}',
+    owner:   'admin',            // agent id or human role
+    purpose: 'One-sentence description of what this page is for.',
+
+    inputs: [
+      // { name: 'users[]', from: 'UserService', required: true },
+    ],
+    outputs: [
+      // { name: 'update-user', to: 'UserService.update', trigger: 'row click' },
+    ],
+
+    features:   [
+      // 'KPI cards', 'Filterable table', ...
+    ],
+    advantages: [
+      // 'One-click approval', 'Auto-sync', ...
+    ],
+    benefits:   [
+      // 'Saves 30 min/day', '99% accuracy', ...
+    ],
+
+    agents: [
+      // 'data-aggregator', 'auth-guard'
+    ],
+    apis: [
+      // 'GET /api/users', 'POST /api/users/:id/update'
+    ],
+
+    devNotes: {
+      rules: [
+        // 'Do not remove the X — it guarantees idempotency',
+      ],
+      access: {
+        roles:       ['admin'],
+        envVars:     [],
+        permissions: [],
+      },
+      gotchas:   [
+        // { author: 'alice', date: '2025-01-15', note: 'Careful: Y breaks Z' },
+      ],
+      changelog: [
+        { author: 'seed', date: new Date().toISOString().slice(0,10), change: 'Initial scaffold' },
+      ],
+    },
+  });
+
+  SelfDocs.mount('{{PAGE_ID}}');
+</script>
+</body>
+</html>

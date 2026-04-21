@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8"/>
+<title>Minimal example — self-docs in 20 lines</title>
+<style>
+  body { font-family:-apple-system,sans-serif; background:#f6f7fb; margin:0; padding:40px; max-width:900px; margin:0 auto; }
+  .topbar { background:#fff; padding:12px 20px; border-radius:10px; margin-bottom:20px; display:flex; gap:12px; align-items:center; }
+  h1 { font-size:24px; margin:0 0 20px; }
+  .content { background:#fff; padding:30px; border-radius:12px; }
+</style>
+</head>
+<body>
+
+<script src="../self-docs.js"></script>
+
+<div class="topbar">
+  <strong>My minimal app</strong>
+  <!-- UC-counter injects here -->
+</div>
+
+<h1>Hello self-docs</h1>
+
+<div id="page-content">
+  <div class="content">
+    <p>This page is registered with SelfDocs. Click the 🐛/? button at bottom-right.</p>
+    <p>Hit <code>Cmd+Shift+D</code> to toggle dev-mode (full debug drawer).</p>
+  </div>
+  <!-- UC + TZ footers inject here -->
+</div>
+
+<script>
+  SelfDocs.config({ locale: 'en', currentUser: 'demo' });
+
+  SelfDocs.registerPage('home', {
+    title: 'Home',
+    owner: 'product-owner',
+    purpose: 'Landing page. First impression for new visitors.',
+    inputs:  [{ name: 'user.session', from: 'AuthService', required: false }],
+    outputs: [{ name: 'sign-up',      to:   'UserService.create', trigger: 'CTA click' }],
+    features:   ['Hero section', 'Feature grid', 'Testimonials'],
+    advantages: ['Loads in <1s', 'SEO-optimized', 'A/B test ready'],
+    benefits:   ['30% higher conversion', 'Ranks for 50+ keywords'],
+    agents:     ['analytics-tracker'],
+    apis:       ['POST /api/signup'],
+    devNotes: {
+      rules: ['Do not remove canonical tag — SEO depends on it'],
+      access: { roles: ['public'], envVars: [], permissions: [] },
+      gotchas: [],
+      changelog: [{ author: 'demo', date: '2026-04-21', change: 'Initial' }],
+    },
+  });
+
+  SelfDocs.mount('home');
+</script>
+
+</body>
+</html>

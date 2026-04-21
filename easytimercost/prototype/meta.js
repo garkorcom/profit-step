@@ -28,6 +28,24 @@ const PAGES = {
     benefits:   ['Экономия 15 мин/день', 'Меньше забытых approvals', 'Понятнее где деньги'],
     agents:     ['kpi-aggregator', 'alert-monitor'],
     apis:       ['GET /api/dashboard/summary', 'POST /api/payroll/run'],
+    devNotes: {
+      rules: [
+        'Dashboard — главная точка входа. Любое breaking change требует review + heads-up в Slack',
+        'KPI кэшируются 5 мин — после любого pay-run invalidate явно',
+        'Не добавляй сюда больше 4 KPI карточек — переполнение = потеря фокуса',
+      ],
+      access: {
+        roles: ['admin', 'foreman', 'owner'],
+        envVars: [],
+        permissions: ['dashboard.read'],
+      },
+      gotchas: [
+        { author: 'Денис', date: '2026-04-18', note: 'Balance "К выплате" показывал старое значение по ночам — cache invalidation баг, см. _feedback записи' },
+      ],
+      changelog: [
+        { author: 'seed', date: '2026-04-20', change: 'Initial self-docs wiring' },
+      ],
+    },
   },
 
   'expenses': {
@@ -53,6 +71,25 @@ const PAGES = {
     benefits:   ['Approvals за 30 сек вместо 5 мин', '99% чеков категоризированы (auto)', 'Zero забытых reimbursements'],
     agents:     ['receipt-ocr-agent', 'approval-bot', 'category-classifier'],
     apis:       ['GET /api/expenses', 'POST /api/expenses/:id/approve', 'POST /api/expenses/:id/reject'],
+    devNotes: {
+      rules: [
+        'Approve > $500 требует второго подтверждения — не убирай без согласования с finance',
+        'expense.amount — PII в некоторых штатах, не логировать в console прода',
+        'reject без reason запрещён — валидация на клиенте + сервере',
+      ],
+      access: {
+        roles: ['admin', 'finance-admin-agent'],
+        envVars: ['OCR_API_KEY', 'APPROVAL_THRESHOLD'],
+        permissions: ['expenses.read', 'expenses.approve', 'expenses.reject'],
+      },
+      gotchas: [
+        { author: 'Денис', date: '2026-04-01', note: 'OCR падает на CJK-чеках — fallback на Google Vision планируется' },
+        { author: 'Михаил', date: '2026-04-15', note: 'Receipt-бот не работает с PDF — просит конвертнуть в JPG (известное ограничение)' },
+      ],
+      changelog: [
+        { author: 'seed', date: '2026-04-20', change: 'Initial self-docs wiring: UC-footer + ТЗ-footer + debug-bar' },
+      ],
+    },
   },
 
   'mobile-worker': {
@@ -76,6 +113,25 @@ const PAGES = {
     benefits:   ['85% смен без ошибок timestamp', '95% чеков submitted в день', '10× быстрее чем форма'],
     agents:     ['worker-agent', 'receipt-ocr-agent', 'location-tracker'],
     apis:       ['POST /api/shifts/start', 'POST /api/expenses/submit'],
+    devNotes: {
+      rules: [
+        'Voice-commands — в фазе 3, сейчас stub. Не активировать в проде',
+        'PWA — test на реальных iOS/Android, эмулятор не показывает glitches camera',
+        'Geo: fallback на IP locate если GPS denied, но показывать warning',
+      ],
+      access: {
+        roles: ['worker', 'foreman'],
+        envVars: ['TWILIO_TOKEN', 'WHISPER_API_KEY'],
+        permissions: ['shifts.start', 'expenses.submit', 'camera', 'geo'],
+      },
+      gotchas: [
+        { author: 'Андрей', date: '2026-04-19', note: 'Чат-UI в Safari iOS — sticky input скачет при keyboard open. Фикс: visualViewport API' },
+        { author: 'Денис', date: '2026-04-17', note: 'Selfie check: face-mismatch блокирует смену. Запись в audit обязательна' },
+      ],
+      changelog: [
+        { author: 'seed', date: '2026-04-20', change: 'Initial self-docs wiring' },
+      ],
+    },
   },
 
   'time': {
@@ -135,6 +191,25 @@ const PAGES = {
     benefits: ['Нет забытых выплат', 'Payroll за 5 мин вместо часа', 'Зеро disputes'],
     agents: ['payroll-aggregator', 'balance-validator'],
     apis: ['GET /api/workers', 'POST /api/payroll/run', 'POST /api/workers'],
+    devNotes: {
+      rules: [
+        'Balance formula: earned − paid − expenses (unified 2026-04-16, не меняй без проверки)',
+        'Pay-run идемпотентна через processedEvents — дубль-клик OK',
+        'Historical balances не перепересчитывать при правке rate — только на будущие сессии',
+      ],
+      access: {
+        roles: ['admin', 'hr-agent'],
+        envVars: [],
+        permissions: ['workers.read', 'workers.write', 'payroll.run'],
+      },
+      gotchas: [
+        { author: 'Денис', date: '2026-04-16', note: 'Negative balance (paid > earned) = overpayment. Нет алерта — см. feedback' },
+        { author: 'Михаил', date: '2026-04-10', note: 'При удалении worker — soft-delete, hard-delete ломает historical payouts' },
+      ],
+      changelog: [
+        { author: 'seed', date: '2026-04-20', change: 'Initial self-docs wiring' },
+      ],
+    },
   },
 
   'audit': {

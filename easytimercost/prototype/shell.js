@@ -325,6 +325,7 @@ function mountSelfDocs(pageId) {
     console.warn('[self-docs] No PAGES entry for', pageId);
     return;
   }
+  hydrateDevNotes();
   initContextCapture();
   injectSelfDocsStyles();
   mountUCCounter(pageId);
@@ -335,12 +336,35 @@ function mountSelfDocs(pageId) {
 
 // ─── CONTEXT CAPTURE (click trail + errors + source fetch) ────────────────
 
+function isDevMode() {
+  if (new URLSearchParams(location.search).has('dev')) {
+    localStorage.setItem('etc:devMode', '1');
+    return true;
+  }
+  return localStorage.getItem('etc:devMode') === '1';
+}
+
+function toggleDevMode() {
+  const on = !isDevMode();
+  if (on) localStorage.setItem('etc:devMode', '1');
+  else    localStorage.removeItem('etc:devMode');
+  location.reload();
+}
+
 function initContextCapture() {
   if (window.__ctxCapture) return;
   window.__ctxCapture = true;
   window.__lastClicks = [];
   window.__consoleErrors = [];
   window.__sourceCache = null;
+
+  // Cmd+Shift+D / Ctrl+Shift+D to toggle dev mode
+  document.addEventListener('keydown', (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'D' || e.key === 'd')) {
+      e.preventDefault();
+      toggleDevMode();
+    }
+  });
 
   // Click trail — ring buffer of last 10 user clicks
   document.addEventListener('click', (e) => {
@@ -529,8 +553,12 @@ function injectSelfDocsStyles() {
     .tz-sparse strong { display:block; margin-bottom:4px; color:#78350f; }
 
     /* Debug bar — floating button */
-    .dbg-fab { position:fixed; bottom:24px; right:24px; width:52px; height:52px; border-radius:50%; background:linear-gradient(135deg,#1e1b4b,#5b21b6); color:#fff; border:0; cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:20px; box-shadow:0 10px 25px -5px rgba(91,33,182,.5); transition:all .2s; z-index:9998; }
-    .dbg-fab:hover { transform:translateY(-2px) scale(1.05); box-shadow:0 15px 30px -5px rgba(91,33,182,.6); }
+    .dbg-fab { position:fixed; bottom:24px; right:24px; width:52px; height:52px; border-radius:50%; border:0; cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:20px; transition:all .2s; z-index:9998; }
+    .dbg-fab.dev { background:linear-gradient(135deg,#1e1b4b,#5b21b6); color:#fff; box-shadow:0 10px 25px -5px rgba(91,33,182,.5); }
+    .dbg-fab.dev:hover { transform:translateY(-2px) scale(1.05); box-shadow:0 15px 30px -5px rgba(91,33,182,.6); }
+    .dbg-fab.subtle { background:rgba(100,116,139,.1); color:#94a3b8; width:32px; height:32px; bottom:16px; right:16px; font-size:14px; font-weight:600; opacity:.5; }
+    .dbg-fab.subtle:hover { opacity:1; background:#1e1b4b; color:#fff; transform:scale(1.1); }
+    .dbg-fab-soft { font-family:'JetBrains Mono',monospace; font-weight:700; }
     .dbg-fab .dbg-badge { position:absolute; top:-4px; right:-4px; background:#dc2626; color:#fff; font-size:10px; font-weight:700; min-width:18px; height:18px; border-radius:9px; display:flex; align-items:center; justify-content:center; padding:0 5px; }
 
     /* Debug drawer */
@@ -584,6 +612,28 @@ function injectSelfDocsStyles() {
     .dbg-err-msg { font-size:11px; color:#fee2e2; font-family:'JetBrains Mono',monospace; }
     .dbg-err-src { font-size:10px; color:#991b1b; font-family:'JetBrains Mono',monospace; margin-top:3px; }
     .dbg-ctx-badge { display:inline-block; margin-left:6px; padding:1px 6px; background:#4c1d95; color:#e9d5ff; border-radius:4px; font-size:9px; font-weight:700; letter-spacing:.3px; }
+
+    /* Dev Notes tab */
+    .dev-section { margin-bottom:16px; }
+    .dev-section-head { display:flex; justify-content:space-between; align-items:center; padding:8px 12px; background:#1e293b; border-radius:6px; font-size:12px; font-weight:700; color:#c4b5fd; margin-bottom:6px; }
+    .dev-count { font-size:10px; background:#4c1d95; color:#fff; padding:1px 8px; border-radius:999px; }
+    .dev-list { list-style:none; padding:0; margin:0; display:flex; flex-direction:column; gap:4px; }
+    .dev-list li { padding:8px 12px; background:#0f172a; border-left:3px solid #ea580c; border-radius:4px; font-size:11px; color:#fed7aa; line-height:1.5; }
+    .dev-access { display:flex; flex-direction:column; gap:6px; padding:10px 12px; background:#0f172a; border-radius:6px; font-size:11px; color:#cbd5e1; }
+    .dev-access strong { color:#94a3b8; font-weight:600; margin-right:4px; }
+    .dev-access em { color:#64748b; font-style:italic; }
+    .dev-chip { display:inline-block; padding:2px 8px; margin:1px 3px 1px 0; background:#1e293b; color:#cbd5e1; border-radius:4px; font-family:'JetBrains Mono',monospace; font-size:10px; }
+    .dev-chip.perm { background:#7c2d12; color:#fed7aa; }
+    .dev-chip.env { background:#450a0a; color:#fca5a5; }
+    .dev-gotcha { padding:10px 12px; background:#0f172a; border-left:3px solid #eab308; border-radius:4px; margin-bottom:4px; }
+    .dev-change { padding:10px 12px; background:#0f172a; border-left:3px solid #16a34a; border-radius:4px; margin-bottom:4px; }
+    .dev-gotcha-meta { font-size:10px; color:#64748b; font-family:'JetBrains Mono',monospace; margin-bottom:4px; }
+    .dev-gotcha-text { font-size:12px; color:#e2e8f0; line-height:1.5; }
+    .dev-empty { padding:10px 12px; background:#0f172a; border-radius:4px; font-size:11px; color:#64748b; font-style:italic; text-align:center; }
+    .dev-add-form { margin-top:8px; padding:10px; background:#0f172a; border-radius:6px; }
+    .dev-add-form textarea, .dev-add-form input { width:100%; padding:8px 10px; background:#1e293b; border:1px solid #334155; color:#e2e8f0; border-radius:6px; font-size:11px; font-family:inherit; box-sizing:border-box; }
+    .dev-add-form textarea { resize:vertical; }
+    .dev-add-btn { padding:8px 14px; background:linear-gradient(135deg,#8b5cf6,#6366f1); color:#fff; border:0; border-radius:6px; font-size:11px; font-weight:700; cursor:pointer; flex:1; }
   `;
   const style = document.createElement('style');
   style.id = 'self-docs-styles';
@@ -922,10 +972,15 @@ function mountDebugBar(pageId) {
   if (document.querySelector('.dbg-drawer')) document.querySelector('.dbg-drawer').remove();
 
   const fbCount = STORAGE.listFeedback(pageId).length;
+  const dev = isDevMode();
   const fab = document.createElement('button');
-  fab.className = 'dbg-fab';
-  fab.title = 'Оставить фидбек по этой странице';
-  fab.innerHTML = `🐛 ${fbCount ? `<span class="dbg-badge">${fbCount}</span>` : ''}`;
+  fab.className = 'dbg-fab' + (dev ? ' dev' : ' subtle');
+  fab.title = dev
+    ? 'Debug · Cmd+Shift+D для выкл · ?dev=1 persists'
+    : 'Нужна разработка / баг? — клик. Cmd+Shift+D для dev-mode.';
+  fab.innerHTML = dev
+    ? `🐛 ${fbCount ? `<span class="dbg-badge">${fbCount}</span>` : ''}`
+    : `<span class="dbg-fab-soft">?</span>${fbCount ? `<span class="dbg-badge">${fbCount}</span>` : ''}`;
   fab.onclick = () => toggleDebugDrawer(pageId);
   document.body.appendChild(fab);
 
@@ -941,6 +996,7 @@ function mountDebugBar(pageId) {
         <button class="dbg-tab active" onclick="switchDbgTab(event,'submit')">📝 Оставить</button>
         <button class="dbg-tab" onclick="switchDbgTab(event,'list')">📋 История (${fbCount})</button>
         <button class="dbg-tab" onclick="switchDbgTab(event,'code')">🔬 Код</button>
+        <button class="dbg-tab" onclick="switchDbgTab(event,'dev')">📚 Dev Notes</button>
       </div>
 
       <div id="dbg-tab-submit">
@@ -1016,6 +1072,10 @@ function mountDebugBar(pageId) {
           <strong style="color:#c4b5fd">🤖 При submit фидбека</strong> — весь этот context автоматом прикладывается. AI-Triage получает ready-to-patch пакет: жалоба + код + клики + ошибки.
         </div>
       </div>
+
+      <div id="dbg-tab-dev" style="display:none">
+        <div id="dev-notes-content"></div>
+      </div>
     </div>
   `;
   document.body.appendChild(drawer);
@@ -1037,13 +1097,120 @@ function switchDbgTab(e, tab) {
   document.getElementById('dbg-tab-submit').style.display = tab === 'submit' ? 'block' : 'none';
   document.getElementById('dbg-tab-list').style.display   = tab === 'list'   ? 'block' : 'none';
   document.getElementById('dbg-tab-code').style.display   = tab === 'code'   ? 'block' : 'none';
+  document.getElementById('dbg-tab-dev').style.display    = tab === 'dev'    ? 'block' : 'none';
   if (tab === 'code') loadCodeTab();
   if (tab === 'list') {
-    const fab = document.querySelector('.dbg-fab');
-    const m = fab?.textContent.match(/(\d+)/);
     const pageId = window.__currentDbgPageId;
     if (pageId) renderDbgFeed(pageId);
   }
+  if (tab === 'dev') {
+    const pageId = window.__currentDbgPageId;
+    if (pageId) renderDevNotes(pageId);
+  }
+}
+
+function renderDevNotes(pageId) {
+  const wrap = document.getElementById('dev-notes-content');
+  if (!wrap) return;
+  const page = PAGES[pageId];
+  const dn = page?.devNotes;
+  if (!dn) {
+    wrap.innerHTML = `
+      <div class="dbg-empty" style="padding:30px 12px">
+        <div style="font-size:28px;margin-bottom:8px">📚</div>
+        <strong style="color:#fbbf24;display:block;margin-bottom:8px">Dev Notes не заведены</strong>
+        <span style="color:#94a3b8;font-size:11px;display:block;line-height:1.6">Добавь в meta.js:<br><br>
+          <code style="color:#c4b5fd">PAGES['${pageId}'].devNotes = { rules:[], access:{roles,envVars,permissions}, gotchas:[], changelog:[] }</code>
+        </span>
+      </div>
+    `;
+    return;
+  }
+  const { rules = [], access = {}, gotchas = [], changelog = [] } = dn;
+  wrap.innerHTML = `
+    <div class="dev-section">
+      <div class="dev-section-head">
+        <span>⚠️ Rules & Constraints</span>
+        <span class="dev-count">${rules.length}</span>
+      </div>
+      ${rules.length ? `<ul class="dev-list">${rules.map(r => `<li>${escapeHtml(r)}</li>`).join('')}</ul>` : '<div class="dev-empty">— нет правил —</div>'}
+    </div>
+
+    <div class="dev-section">
+      <div class="dev-section-head">
+        <span>🔐 Access & Permissions</span>
+      </div>
+      <div class="dev-access">
+        <div><strong>Roles:</strong> ${(access.roles || []).map(r => `<span class="dev-chip">${escapeHtml(r)}</span>`).join('') || '<em>—</em>'}</div>
+        <div><strong>Permissions:</strong> ${(access.permissions || []).map(p => `<span class="dev-chip perm">${escapeHtml(p)}</span>`).join('') || '<em>—</em>'}</div>
+        <div><strong>Env vars:</strong> ${(access.envVars || []).map(v => `<span class="dev-chip env">${escapeHtml(v)}</span>`).join('') || '<em>—</em>'}</div>
+      </div>
+    </div>
+
+    <div class="dev-section">
+      <div class="dev-section-head">
+        <span>📝 Gotchas (next-dev-read-this)</span>
+        <span class="dev-count">${gotchas.length}</span>
+      </div>
+      ${gotchas.length ? gotchas.map(g => `
+        <div class="dev-gotcha">
+          <div class="dev-gotcha-meta">${escapeHtml(g.author)} · ${escapeHtml(g.date)}</div>
+          <div class="dev-gotcha-text">${escapeHtml(g.note)}</div>
+        </div>
+      `).join('') : '<div class="dev-empty">— нет заметок —</div>'}
+      <form class="dev-add-form" onsubmit="addGotcha(event, '${pageId}')">
+        <textarea name="note" placeholder="Оставь заметку следующему разработчику/агенту: подводные камни, неочевидные решения, TODO..." rows="3"></textarea>
+        <div style="display:flex;gap:6px;margin-top:6px">
+          <input name="author" placeholder="Автор" value="${STORAGE.currentUser()}" style="flex:0 0 120px"/>
+          <button type="submit" class="dev-add-btn">+ Добавить gotcha</button>
+        </div>
+      </form>
+    </div>
+
+    <div class="dev-section">
+      <div class="dev-section-head">
+        <span>📜 Changelog</span>
+        <span class="dev-count">${changelog.length}</span>
+      </div>
+      ${changelog.length ? changelog.slice().reverse().map(c => `
+        <div class="dev-change">
+          <div class="dev-gotcha-meta">${escapeHtml(c.author)} · ${escapeHtml(c.date)}</div>
+          <div class="dev-gotcha-text">${escapeHtml(c.change)}</div>
+        </div>
+      `).join('') : '<div class="dev-empty">— нет записей —</div>'}
+    </div>
+  `;
+}
+
+function addGotcha(e, pageId) {
+  e.preventDefault();
+  const f = e.target;
+  const note = f.note.value.trim();
+  const author = f.author.value.trim() || STORAGE.currentUser();
+  if (!note) return;
+  if (!PAGES[pageId].devNotes) PAGES[pageId].devNotes = { rules: [], access: {}, gotchas: [], changelog: [] };
+  PAGES[pageId].devNotes.gotchas.push({
+    author, date: new Date().toISOString().slice(0, 10), note,
+  });
+  // NOTE: this is in-memory only. In prod would POST to backend and persist.
+  // We'll also save to localStorage for session persistence:
+  const key = 'etc:devNotes:' + pageId;
+  localStorage.setItem(key, JSON.stringify(PAGES[pageId].devNotes));
+  f.reset();
+  renderDevNotes(pageId);
+}
+
+// Merge persisted devNotes into PAGES on load
+function hydrateDevNotes() {
+  Object.keys(PAGES).forEach(id => {
+    const raw = localStorage.getItem('etc:devNotes:' + id);
+    if (raw) {
+      try {
+        const stored = JSON.parse(raw);
+        PAGES[id].devNotes = stored;
+      } catch {}
+    }
+  });
 }
 
 function switchCodeSubtab(e, sub) {

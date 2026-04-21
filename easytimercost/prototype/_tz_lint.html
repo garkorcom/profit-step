@@ -338,10 +338,44 @@ function checkOwnerOverload() {
 // Runner + Renderer
 // ══════════════════════════════════════════════════════════════════════════
 
+function checkMissingDevNotes() {
+  const issues = [];
+  Object.values(PAGES).forEach(p => {
+    const dn = p.devNotes;
+    if (!dn) {
+      issues.push({
+        sev: 'warn',
+        title: `«${p.title}» — нет Dev Notes`,
+        meta: `PAGES['${p.id}'].devNotes = null`,
+        fix: 'Добавь хотя бы rules (2-3 констрейнта) и access (роли/permissions). Иначе следующий разработчик/агент не знает подводных камней.',
+      });
+      return;
+    }
+    if (!dn.rules || dn.rules.length === 0) {
+      issues.push({
+        sev: 'info',
+        title: `«${p.title}» — devNotes есть, но rules пустой`,
+        meta: `devNotes.rules.length = 0`,
+        fix: 'Опиши 2-3 constraint\'а: что нельзя трогать, что идемпотентно, какие инварианты',
+      });
+    }
+    if (!dn.access || !dn.access.roles || dn.access.roles.length === 0) {
+      issues.push({
+        sev: 'warn',
+        title: `«${p.title}» — access.roles не заполнен`,
+        meta: `devNotes.access.roles = []`,
+        fix: 'Укажи кто может эту страницу видеть/использовать — иначе RLS-bug риск',
+      });
+    }
+  });
+  return { id: 'missing-dev-notes', title: '11. Missing Dev Notes', desc: 'Страницы без devNotes = tribal knowledge теряется. Следующий разработчик не знает что нельзя трогать.', severity: 'warn', ok: !issues.length, issues };
+}
+
 const ALL_CHECKS = [
   checkMissingOwners, checkSparseSpec, checkFabContradictions,
   checkOrphanAgents, checkDanglingIOs, checkUcDrift,
   checkDuplicateUCs, checkStaleUCs, checkFailingBlockers, checkOwnerOverload,
+  checkMissingDevNotes,
 ];
 
 const SEV_META = {

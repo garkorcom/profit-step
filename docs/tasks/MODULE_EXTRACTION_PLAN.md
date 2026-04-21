@@ -555,27 +555,57 @@ W11-W14: Phase 4 (TIME TRACKING)
 
 ---
 
-## 13. 2-day pilot test (перед commitment)
+## 13. 2-day pilot test — ЗАВЕРШЁН (2026-04-20, PR #56 deployed to prod)
 
-**Цель:** за 2 дня валидировать что подход работает **для твоего codebase**.
+**Результат: 🟢 GREEN — переход к полному Phase 0 одобрен.**
 
-### Day 1 (4-6h)
-1. Создать `packages/shared/` с одним утилом (`normalizePhone`)
-2. Настроить `npm workspaces` в корневом `package.json`
-3. Заменить 2 использования phone в `src/` и `functions/src/` на import из shared
-4. `npm --prefix functions run build` + `npm --prefix . run build` — оба проходят
-5. Commit + PR (feature-branch `claude/extraction-pilot`)
+### Что сделано за ~4 часа
+- `packages/shared/` с phone util + barrel export
+- `packages/contracts/` с `UserService` interface + branded `UserId`
+- `UserFirestoreAdapter` в `functions/src/agent/services/`
+- 1 из 8 `db.collection('users')` в `timeTracking.ts` (line 970, start action) заменён на `userService.getUser()`
+- Re-export shims в `src/utils/phone.ts` + `functions/src/agent/utils/phone.ts` сохраняют backwards compat
+- Path aliases в root `tsconfig.json` + `vite.config.ts` + `functions/tsconfig.json`
+- `tsc-alias` для runtime resolution (см. §13.5)
+- **Deploy:** `firebase deploy --only functions:agentApi` ✅, `/api/time-tracking/active-all` returns 200 OK с реальными сессиями
 
-### Day 2 (4-6h)
-6. Создать `packages/contracts/src/UserService.ts` interface
-7. Создать `UserFirestoreAdapter` в functions
-8. Заменить **один** cross-read в `timeTracking.ts` на `userService.getUser()`
-9. Все тесты зелёные
-10. PR merge → включить в main
+### Verification
+- Functions build: `tsc && tsc-alias` — passes
+- Vite build: passes, bundle size не изменился
+- Runtime: `normalizePhone('+1 (555) 123-4567') → '+15551234567'` ✅
+- Runtime: `UserFirestoreAdapter` instantiates, все 3 метода — functions
+- Existing imports `from '../utils/phone'` работают без изменений (re-export shim)
 
-### Go / no-go критерии
-- ✅ Если всё вышеперечисленное укладывается в 2 дня без major surprise → extraction **технически выполнима**, можно планировать полный Phase 0
-- ❌ Если блокируешься на workspaces/module resolution/build — текущая архитектура сопротивляется extraction, делать fallback «модуляризация без packages»
+### 13.5 Ключевой learning: tsc-alias vs npm workspaces
+
+**Проблема pilot:** TypeScript `paths` в `tsconfig.json` работают **только compile-time**. Скомпилированный `.js` содержит `require("@profit-step/shared")`, который Node.js runtime не резолвит — нет такого модуля в `node_modules/`.
+
+**Решение pilot:** `tsc-alias` как post-build step. Переписывает `require("@profit-step/shared")` → `require("../../../../packages/shared/src")` в `.js` файлах. Работает, но добавляет tool в critical path build'а.
+
+**Правильное долгосрочное решение для Phase 0: npm workspaces.** Root `package.json`:
+```json
+{ "workspaces": ["packages/*"] }
+```
+- `npm install` создаёт symlink `node_modules/@profit-step/shared` → `packages/shared`
+- Node резолвит `require('@profit-step/shared')` без post-build magic
+- Индустриальный стандарт (Lerna/Turborepo/Nx построены на workspaces)
+
+**Но:** Firebase Functions deploy packages только `functions/` папку — hoisted deps в root `node_modules` НЕ попадают в upload. Требуется `predeploy` hook, копирующий `packages/*` в `functions/node_modules/@profit-step/`, ИЛИ переключение на Firebase-совместимый bundling (esbuild).
+
+**Итог для Phase 0:**
+1. Root `workspaces: ["packages/*"]` — для dev + Vite + тестов
+2. Либо `predeploy` копирование для Firebase, либо оставить `tsc-alias` ТОЛЬКО для functions build
+3. Это решение — отдельная follow-up задача, см. §15
+
+### Go / no-go критерии — ✅ MET
+- ✅ Все 4 build проходят
+- ✅ Re-export backwards compat работает
+- ✅ Adapter call identical к direct read
+- ✅ Deploy + smoke успешны
+- ✅ Total effort ~4 часа (well under 2-day budget)
+
+### ❌ Если бы упал — fallback
+Переключение на «модуляризацию в `src/modules/*` без packages» — см. §9.3.
 
 ---
 
@@ -609,20 +639,28 @@ W11-W14: Phase 4 (TIME TRACKING)
 
 ## 15. Next steps
 
-### Вариант A — Start immediately
-1. Merge этот план (done)
-2. Run 2-day pilot (§13)
-3. Если pilot green — создать tickets для Phase 0 tasks 0.1-0.5
-4. Assign driver
+**Статус 2026-04-20:** Pilot ✅ shipped (PR #56). План валидирован. Далее ↓
 
-### Вариант B — Close pipeline follow-ups first
-1. Закрыть [`PIPELINE_FOLLOWUPS_TZ.md`](./PIPELINE_FOLLOWUPS_TZ.md) pending items (~2 недели)
-2. После — pilot (§13) + Phase 0
+### Immediate (this week)
+1. **Workspaces migration** (~1-2 дня):
+   - Добавить `"workspaces": ["packages/*"]` в root `package.json`
+   - Решить Firebase deploy packaging (либо `predeploy` copy, либо keep tsc-alias как safety net для functions)
+   - Test vite + functions build + deploy
+   - Remove tsc-alias из critical path если возможно
+2. **Phase 0.2 expand contracts**: дописать `TimeTrackingService`, `ClientService`, `MoneyService` interfaces (по §2.3 template)
+3. **Phase 0.3 expand adapters**: создать `TimeTrackingFirestoreAdapter`, `ClientFirestoreAdapter`, `MoneyFirestoreAdapter`
 
-### Вариант C — Shelve until business driver appears
-1. Зафиксировать план (done)
-2. Вернуться когда один из §1.1 driver сработает
-3. План актуализировать (pipeline продолжает двигаться, audit нужно обновить)
+### Phase 0 execution (2-3 недели по §12)
+4. Заменить оставшиеся 7 cross-reads в `timeTracking.ts` через adapter
+5. Audit + replace cross-reads в остальных модулях (CLIENT/MONEY)
+6. Contract tests (Pact or simple integration)
+7. Branded types rollout (`UserId`, `ClientId`, `ProjectId`, `Money`)
+
+### Phase 1+ (см. §4-7)
+8. MONEY extract (pilot для standalone service) — §4
+9. CLIENT extract — §5
+10. USER extract (⚠ auth-critical) — §6
+11. TIME TRACKING extract (последний) — §7
 
 ---
 

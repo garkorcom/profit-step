@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8"/>
+<title>EasyTimerCost — TZ Lint (Consistency)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="styles.css"/>
+<style>
+  body { font-family: 'Inter', sans-serif; background: #f6f7fb; }
+  .wrap { padding: 24px 32px 80px; max-width: 1300px; margin: 0 auto; }
+  .head { margin-bottom: 22px; padding-bottom: 16px; border-bottom: 2px solid #e2e8f0; display: flex; justify-content: space-between; align-items: baseline; }
+  .head h1 { font-size: 28px; font-weight: 800; letter-spacing: -0.02em; color: #0f172a; }
+  .head .sub { font-size: 13px; color: #64748b; margin-top: 4px; }
+  .run-btn {
+    padding: 10px 20px; border-radius: 10px; font-size: 13px; font-weight: 700;
+    background: linear-gradient(135deg, #8b5cf6, #6366f1); color: #fff; border: 0; cursor: pointer;
+  }
+
+  .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 24px; }
+  .kpi { background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 16px 20px; border-top: 4px solid; }
+  .kpi.crit  { border-top-color: #dc2626; }
+  .kpi.err   { border-top-color: #ea580c; }
+  .kpi.warn  { border-top-color: #eab308; }
+  .kpi.info  { border-top-color: #2563eb; }
+  .kpi-lbl { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; color: #64748b; }
+  .kpi-val { font-size: 32px; font-weight: 800; line-height: 1; margin-top: 4px; }
+  .kpi-sub { font-size: 11px; color: #94a3b8; margin-top: 4px; }
+
+  .check-card {
+    background: #fff; border: 1px solid #e2e8f0; border-radius: 14px;
+    padding: 18px 22px; margin-bottom: 12px;
+  }
+  .check-head {
+    display: flex; gap: 12px; align-items: center; margin-bottom: 8px;
+    justify-content: space-between;
+  }
+  .check-title { display: flex; gap: 10px; align-items: center; font-size: 15px; font-weight: 700; color: #0f172a; }
+  .check-count {
+    font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: 999px;
+  }
+  .check-count.ok { background: #dcfce7; color: #15803d; }
+  .check-count.issues { background: #fee2e2; color: #991b1b; }
+
+  .check-desc { font-size: 12px; color: #64748b; margin-bottom: 10px; }
+
+  .issue-list { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+  .issue {
+    display: flex; gap: 10px; align-items: flex-start;
+    padding: 10px 14px; background: #fef2f2; border-left: 3px solid #dc2626;
+    border-radius: 6px; font-size: 12px;
+  }
+  .issue.warn { background: #fffbeb; border-left-color: #eab308; }
+  .issue.info { background: #eff6ff; border-left-color: #2563eb; }
+  .issue-icon { flex-shrink: 0; font-size: 14px; margin-top: 1px; }
+  .issue-body { flex: 1; }
+  .issue-body strong { display: block; margin-bottom: 2px; color: #0f172a; }
+  .issue-body .meta { font-size: 11px; color: #64748b; margin-top: 3px; font-family: 'JetBrains Mono', monospace; }
+  .issue-body .fix {
+    margin-top: 6px; padding: 6px 10px; background: #f0fdf4; border-radius: 4px;
+    font-size: 11px; color: #14532d; border-left: 2px solid #16a34a;
+  }
+  .issue-body .fix strong { color: #166534; font-size: 10px; text-transform: uppercase; letter-spacing: .3px; }
+
+  .check-ok { padding: 12px 16px; background: #f0fdf4; border-radius: 8px; font-size: 12px; color: #15803d; }
+
+  .back { display: inline-flex; gap: 6px; align-items: center; font-size: 12px; color: #5b6cff; text-decoration: none; margin-bottom: 8px; }
+
+  .sev {
+    display: inline-block; padding: 2px 8px; border-radius: 999px;
+    font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .3px;
+  }
+  .sev.crit { background: #fee2e2; color: #7f1d1d; }
+  .sev.err  { background: #ffedd5; color: #9a3412; }
+  .sev.warn { background: #fef3c7; color: #92400e; }
+  .sev.info { background: #dbeafe; color: #1e40af; }
+
+  .last-run { font-size: 11px; color: #94a3b8; font-style: italic; text-align: right; margin-top: 12px; }
+
+  .banner {
+    background: linear-gradient(135deg, #1e1b4b 0%, #4c1d95 100%);
+    color: #fff; border-radius: 14px; padding: 16px 22px;
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 20px; font-size: 13px;
+  }
+  .banner strong { font-weight: 700; }
+</style>
+</head>
+<body>
+<script src="meta.js"></script>
+<script src="shell.js"></script>
+
+<div class="wrap">
+  <a href="_review.html" class="back">← назад в review</a>
+  <div class="head">
+    <div>
+      <h1>🔍 TZ Lint · целостность спецификаций</h1>
+      <div class="sub">10 автоматических проверок по всем PAGES[*] и UseCase[*]. Ловим противоречия до того как они попадут в прод.</div>
+    </div>
+    <button class="run-btn" onclick="runAllChecks()">🔄 Прогнать заново</button>
+  </div>
+
+  <div class="banner">
+    <div>🤖 <strong>TZ-lint агент</strong> · проверяет 10 типов противоречий · last run: <span id="last-run">—</span></div>
+    <div style="opacity:.8;font-size:12px">В прод: триггер на каждое изменение PAGES/UseCase · в прототипе: кнопка сверху</div>
+  </div>
+
+  <div class="kpis" id="kpis"></div>
+
+  <div id="checks"></div>
+</div>
+
+<script>
+
+// ══════════════════════════════════════════════════════════════════════════
+// INTEGRITY CHECKS — 10 types
+// Each returns { id, title, desc, severity, ok, issues[] }
+// ══════════════════════════════════════════════════════════════════════════
+
+const SEV_ORDER = { crit: 0, err: 1, warn: 2, info: 3 };
+
+function checkMissingOwners() {
+  const issues = [];
+  Object.values(PAGES).forEach(p => {
+    if (!p.owner) {
+      issues.push({
+        sev: 'err',
+        title: `Страница «${p.title}» без owner'а`,
+        meta: `PAGES['${p.id}'].owner = null`,
+        fix: 'Назначить owner (agent или human role) — иначе фидбек не будет рутироваться',
+      });
+    }
+  });
+  return { id: 'missing-owners', title: '1. Missing owners', desc: 'Каждая страница должна иметь owner\'а — кому уходит feedback/task при триаже.', severity: 'err', ok: !issues.length, issues };
+}
+
+function checkSparseSpec() {
+  const issues = [];
+  Object.values(PAGES).forEach(p => {
+    const hasAny = (p.features?.length || 0) + (p.advantages?.length || 0) + (p.benefits?.length || 0);
+    if (!hasAny && p.id !== 'landing') {
+      issues.push({
+        sev: 'warn',
+        title: `«${p.title}» — нет ХПВ`,
+        meta: `features:${(p.features||[]).length} advantages:${(p.advantages||[]).length} benefits:${(p.benefits||[]).length}`,
+        fix: 'Описать хотя бы 3 строчки каждого: что страница делает / чем лучше / какую выгоду приносит',
+      });
+    }
+  });
+  return { id: 'sparse-spec', title: '2. Sparse ХПВ', desc: 'Страницы без features/advantages/benefits — непонятно зачем они существуют.', severity: 'warn', ok: !issues.length, issues };
+}
+
+function checkFabContradictions() {
+  const issues = [];
+  Object.values(PAGES).forEach(p => {
+    const feats = p.features || [];
+    const bens  = p.benefits || [];
+    // Simple heuristic: "one-click" in features but "30 sec" or longer in benefits
+    feats.forEach(f => {
+      const f_low = f.toLowerCase();
+      if (f_low.includes('один') && f_low.includes('клик')) {
+        bens.forEach(b => {
+          const m = b.match(/(\d+)\s*(сек|мин)/i);
+          if (m && ((m[2].startsWith('мин') && +m[1] > 1) || (m[2].startsWith('сек') && +m[1] > 10))) {
+            issues.push({
+              sev: 'warn',
+              title: `«${p.title}»: feature «one-click» противоречит benefit «${m[0]}»`,
+              meta: `feature: «${f}»\nbenefit: «${b}»`,
+              fix: 'Если one-click — benefit должен быть < 5 секунд. Либо feature переформулировать.',
+            });
+          }
+        });
+      }
+    });
+  });
+  return { id: 'fab-contradict', title: '3. Feature ↔ Benefit contradictions', desc: 'Простой эвристический анализ: feature говорит «one-click» а benefit «30 сек» — противоречие.', severity: 'warn', ok: !issues.length, issues };
+}
+
+function checkOrphanAgents() {
+  const issues = [];
+  const usedBy = {};
+  Object.values(PAGES).forEach(p => {
+    (p.agents || []).forEach(a => {
+      if (!usedBy[a]) usedBy[a] = [];
+      usedBy[a].push(p.id);
+    });
+  });
+  // Flag agents used on only 1 page — might be orphan
+  // Flag agents with no registered definition (we don't have AGENTS registry yet, so only single-use warn)
+  Object.entries(usedBy).forEach(([a, pages]) => {
+    if (pages.length === 1 && !['audit-writer','compliance-reporter','session-watcher','pl-rollup-agent','payroll-aggregator','balance-validator','a2a-bus','cost-tracker','agent-registrar','kpi-aggregator','alert-monitor','location-tracker','margin-alerter','geo-validator','approval-bot','category-classifier','receipt-ocr-agent','worker-agent'].includes(a)) {
+      issues.push({
+        sev: 'info',
+        title: `Agent «${a}» упомянут только на 1 странице`,
+        meta: `pages: ${pages.join(', ')}`,
+        fix: 'Проверь — это реально специфичный агент или забыли добавить его в другие PAGES где он тоже работает?',
+      });
+    }
+  });
+  return { id: 'orphan-agents', title: '4. Orphan agents', desc: 'Агент упомянут всего 1 раз — либо очень специфичный (ok), либо забыт на других страницах.', severity: 'info', ok: !issues.length, issues };
+}
+
+function checkDanglingIOs() {
+  const issues = [];
+  // Collect all outputs and inputs
+  const outputs = [];
+  const inputs = [];
+  Object.values(PAGES).forEach(p => {
+    (p.outputs || []).forEach(o => outputs.push({ page: p.id, pageTitle: p.title, ...o }));
+    (p.inputs || []).forEach(i => inputs.push({ page: p.id, pageTitle: p.title, ...i }));
+  });
+  // Input 'from' should exist as output 'to' on some page, or be an external service
+  const outputsTo = new Set(outputs.map(o => extractService(o.to)));
+  inputs.forEach(i => {
+    const service = extractService(i.from);
+    if (!service) return;
+    const isKnownService = /Service|Ledger|Registry|CostRollup|Bus|Tracker/.test(service);
+    if (!isKnownService && !outputsTo.has(service)) {
+      issues.push({
+        sev: 'warn',
+        title: `Input «${i.name}» на «${i.pageTitle}» ссылается на «${i.from}»`,
+        meta: `extracted: ${service || '—'}`,
+        fix: 'Либо это external (добавь suffix Service/API), либо найди страницу-producer этих данных',
+      });
+    }
+  });
+  return { id: 'dangling-io', title: '5. Dangling inputs', desc: 'Input ожидает данные от источника которого не существует (ни output другой страницы, ни известный Service).', severity: 'warn', ok: !issues.length, issues };
+}
+function extractService(str) {
+  const m = (str || '').match(/^([A-Za-z][\w-]+)/);
+  return m ? m[1] : '';
+}
+
+function checkUcDrift() {
+  const issues = [];
+  const ucs = STORAGE.listUseCases();
+  ucs.forEach(uc => {
+    const p = PAGES[uc.pageId];
+    if (!p) {
+      issues.push({
+        sev: 'crit',
+        title: `UC «${uc.title}» ссылается на несуществующую страницу`,
+        meta: `pageId: «${uc.pageId}»`,
+        fix: 'Либо удалить UC, либо создать страницу с таким id',
+      });
+      return;
+    }
+    // UC passing but feature is spec-only (inconsistent)
+    if (uc.status === 'passing' && !(p.features || []).length && !(p.purpose)) {
+      issues.push({
+        sev: 'warn',
+        title: `UC «${uc.title}» passing — но страница «${p.title}» без purpose/features`,
+        meta: `uc.status = passing · PAGES[${p.id}].features.length = 0`,
+        fix: 'Описать что страница делает (features) — иначе UC тестирует что-то, но неясно что',
+      });
+    }
+  });
+  return { id: 'uc-drift', title: '6. UC ↔ PAGES drift', desc: 'UC ссылается на несуществующую страницу или UC passing при пустом spec.', severity: 'crit', ok: !issues.length, issues };
+}
+
+function checkDuplicateUCs() {
+  const issues = [];
+  const ucs = STORAGE.listUseCases();
+  const seen = {};
+  ucs.forEach(uc => {
+    const key = (uc.title || '').toLowerCase().trim();
+    if (!seen[key]) seen[key] = [];
+    seen[key].push(uc);
+  });
+  Object.entries(seen).forEach(([title, group]) => {
+    if (group.length > 1) {
+      issues.push({
+        sev: 'warn',
+        title: `Дубликаты UC: «${title}»`,
+        meta: `${group.length} UC на страницах: ${group.map(u => u.pageId).join(', ')}`,
+        fix: 'Либо переиспользовать через globalRef, либо уникализировать названия',
+      });
+    }
+  });
+  return { id: 'duplicate-uc', title: '7. Duplicate UseCases', desc: 'Одинаковые title на разных страницах — возможно дубликат или нужно обобщить.', severity: 'warn', ok: !issues.length, issues };
+}
+
+function checkStaleUCs() {
+  const issues = [];
+  const weekMs = 7 * 24 * 3600 * 1000;
+  const now = Date.now();
+  STORAGE.listUseCases().forEach(uc => {
+    if ((uc.status === 'passing' || uc.status === 'failing') && uc.lastRun) {
+      const age = now - new Date(uc.lastRun).getTime();
+      if (age > weekMs) {
+        issues.push({
+          sev: 'info',
+          title: `UC «${uc.title}» не прогонялся ${Math.floor(age / weekMs)} нед.`,
+          meta: `pageId: ${uc.pageId} · last: ${uc.lastRun}`,
+          fix: 'Прогнать через AI-runner, иначе статус может не соответствовать реальности',
+        });
+      }
+    }
+  });
+  return { id: 'stale-uc', title: '8. Stale UC runs', desc: 'UC не прогонялся > 7 дней — статус может быть устаревшим (UC drift).', severity: 'info', ok: !issues.length, issues };
+}
+
+function checkFailingBlockers() {
+  const issues = [];
+  STORAGE.listUseCases().forEach(uc => {
+    if (uc.status === 'failing') {
+      issues.push({
+        sev: 'crit',
+        title: `🔴 Failing: «${uc.title}»`,
+        meta: `page: ${PAGES[uc.pageId]?.title || uc.pageId} · reason: ${uc.failureReason || 'не указана'}`,
+        fix: uc.failureReason ? 'Фикс исходя из reason — либо патчить код, либо обновить expected' : 'Указать failureReason чтобы было понятно что чинить',
+      });
+    }
+  });
+  return { id: 'failing', title: '9. Currently failing UCs', desc: 'UC в состоянии failing — прямое указание что сломано.', severity: 'crit', ok: !issues.length, issues };
+}
+
+function checkOwnerOverload() {
+  const issues = [];
+  const counts = {};
+  Object.values(PAGES).forEach(p => {
+    if (p.owner) counts[p.owner] = (counts[p.owner] || 0) + 1;
+  });
+  Object.entries(counts).forEach(([owner, n]) => {
+    if (n > 5) {
+      issues.push({
+        sev: 'info',
+        title: `Owner «${owner}» отвечает за ${n} страниц`,
+        meta: `pages: ${Object.values(PAGES).filter(p => p.owner === owner).map(p => p.title).join(', ')}`,
+        fix: 'Много — возможно стоит разбить на sub-owners (напр. по bounded context). Bus factor снижается.',
+      });
+    }
+  });
+  return { id: 'owner-overload', title: '10. Owner overload', desc: 'Один owner отвечает за слишком много страниц — риск bus factor.', severity: 'info', ok: !issues.length, issues };
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// Runner + Renderer
+// ══════════════════════════════════════════════════════════════════════════
+
+const ALL_CHECKS = [
+  checkMissingOwners, checkSparseSpec, checkFabContradictions,
+  checkOrphanAgents, checkDanglingIOs, checkUcDrift,
+  checkDuplicateUCs, checkStaleUCs, checkFailingBlockers, checkOwnerOverload,
+];
+
+const SEV_META = {
+  crit: { emoji: '🔴', lbl: 'Critical' },
+  err:  { emoji: '🟠', lbl: 'Error' },
+  warn: { emoji: '🟡', lbl: 'Warning' },
+  info: { emoji: '🔵', lbl: 'Info' },
+};
+
+function runAllChecks() {
+  STORAGE.initUseCases();
+  const results = ALL_CHECKS.map(fn => fn());
+  renderKpis(results);
+  renderChecks(results);
+  document.getElementById('last-run').textContent = new Date().toLocaleTimeString('ru');
+}
+
+function renderKpis(results) {
+  const counts = { crit: 0, err: 0, warn: 0, info: 0 };
+  results.forEach(r => {
+    r.issues.forEach(i => counts[i.sev]++);
+  });
+  const total = counts.crit + counts.err + counts.warn + counts.info;
+  const passed = results.filter(r => r.ok).length;
+  document.getElementById('kpis').innerHTML = `
+    <div class="kpi crit">
+      <div class="kpi-lbl">🔴 Critical</div>
+      <div class="kpi-val" style="color:#dc2626">${counts.crit}</div>
+      <div class="kpi-sub">блокеры</div>
+    </div>
+    <div class="kpi err">
+      <div class="kpi-lbl">🟠 Error</div>
+      <div class="kpi-val" style="color:#ea580c">${counts.err}</div>
+      <div class="kpi-sub">нужно править</div>
+    </div>
+    <div class="kpi warn">
+      <div class="kpi-lbl">🟡 Warning</div>
+      <div class="kpi-val" style="color:#eab308">${counts.warn}</div>
+      <div class="kpi-sub">обратить внимание</div>
+    </div>
+    <div class="kpi info">
+      <div class="kpi-lbl">🔵 Info</div>
+      <div class="kpi-val" style="color:#2563eb">${counts.info}</div>
+      <div class="kpi-sub">${passed}/${results.length} проверок OK</div>
+    </div>
+  `;
+}
+
+function renderChecks(results) {
+  const sorted = results.slice().sort((a, b) => {
+    if (a.ok !== b.ok) return a.ok ? 1 : -1;
+    return SEV_ORDER[a.severity] - SEV_ORDER[b.severity];
+  });
+
+  document.getElementById('checks').innerHTML = sorted.map(r => {
+    const issuesSorted = r.issues.slice().sort((a, b) => SEV_ORDER[a.sev] - SEV_ORDER[b.sev]);
+    return `
+      <div class="check-card">
+        <div class="check-head">
+          <div class="check-title">${SEV_META[r.severity].emoji} ${r.title}</div>
+          <span class="check-count ${r.ok ? 'ok' : 'issues'}">${r.ok ? '✓ OK' : `⚠ ${r.issues.length} issue${r.issues.length === 1 ? '' : 's'}`}</span>
+        </div>
+        <div class="check-desc">${r.desc}</div>
+        ${r.ok ? `<div class="check-ok">✓ Проверено, противоречий нет</div>` : ''}
+        ${!r.ok ? `
+          <div class="issue-list">
+            ${issuesSorted.map(i => `
+              <div class="issue ${i.sev === 'warn' ? 'warn' : (i.sev === 'info' ? 'info' : '')}">
+                <span class="issue-icon">${SEV_META[i.sev].emoji}</span>
+                <div class="issue-body">
+                  <span class="sev ${i.sev}">${SEV_META[i.sev].lbl}</span>
+                  <strong>${i.title}</strong>
+                  ${i.meta ? `<div class="meta">${escapeHtml(i.meta)}</div>` : ''}
+                  ${i.fix ? `<div class="fix"><strong>🛠 FIX</strong>${escapeHtml(i.fix)}</div>` : ''}
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        ` : ''}
+      </div>
+    `;
+  }).join('');
+}
+
+runAllChecks();
+</script>
+</body>
+</html>

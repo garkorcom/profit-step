@@ -499,12 +499,19 @@ Breakeven per customer (10 users Pro = $890 MRR): ~4 месяца на acquisiti
 
 Это неотъемлемое наследие из profit-step CLAUDE.md §2.1 — infinite loop = $10k billing bomb.
 
-### Phases (обновлённые после Next 2026)
+### Phases (обновлённые — Base-first, AI-second · 2026-04-21)
 
-- **Phase 1 MVP (weeks 1-6):** кастомный стек, hybrid AI, multi-channel chat
-- **Phase 2 (months 2-3):** Workspace Marketplace listing + pilot Agent Studio для одной страницы (`ai-policies.html`)
-- **Phase 3 (months 4-6):** domain moat depth (permits, sub rates, labor law RAG)
-- **Phase 4 (months 7-12):** selective deeper Google adoption если готово
+**🔴 Phase 0 · Foundation БЕЗ AI (weeks 1-4):** работающий time tracking + payroll + admin UI, 100% deterministic, zero AI. Port from profit-step ~1,800 lines production-grade code. См. [`TIME_TRACKING_IMPORT.md`](TIME_TRACKING_IMPORT.md).
+
+**⏸ Phase 0.5 · Stabilization (weeks 5-6):** 2 недели real usage + bugfixes. Gate criteria: 10+ workers daily, 95%+ completion, <5 bugs/week.
+
+**🟠 Phase 1 · AI Augmentation (weeks 7-12):** incremental AI layer over working base. Each feature с fallback на manual flow. Order: OCR → chat NLU → auto-approve → face match → orchestrator.
+
+**🟡 Phase 2 · Multi-channel + Market (months 4-5):** WhatsApp Business API, Workspace Marketplace listing, Nano Banana 2 marketing.
+
+**💎 Phase 3 · Moat (months 6-8):** permits DB, sub rates benchmark, labor law RAG, material costs.
+
+**Phase 4 · Scale (months 9-12):** Agent Studio selective adoption if mature, enterprise tier.
 
 ### Abstraction layer (code skeleton)
 

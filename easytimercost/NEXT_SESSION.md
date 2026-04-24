@@ -4,56 +4,117 @@
 
 ---
 
-## 🚀 Phase 1 MVP · Week 1 — первое что делаем
+## 🚀 Phase 0 · Week 1 — BASE БЕЗ AI (первое что делаем)
 
-**Цель:** Proof-of-Concept мультиканальности и ядра кастомного оркестратора. Следуем [`PATH.md`](PATH.md).
+**ВАЖНО:** Решение от 2026-04-21: **сначала база, потом AI**. Строим работающий time tracking **без единой AI-фичи**. AI incrementally добавляем в Phase 1 после 2 недель stabilization.
 
-### День 1-2 · Инициализация Контрактов (A2A Protocol)
+**Источник:** [`TIME_TRACKING_IMPORT.md`](TIME_TRACKING_IMPORT.md) — детальный план импорта из profit-step.
 
-Описать TypeScript-типы для standard message envelope:
-```typescript
-// functions/src/a2a/types.ts
-interface A2AMessage {
-  protocol: 'google-a2a/v1';
-  trace_id: string;
-  from: { agent_id: string; authority: 'L0'|'L1'|'L2'|'L3'|'L4'; tenant: string };
-  to: { agent_id: string; delegation_type: 'request-response'|'fire-forget'|'streaming'|'parallel'|'saga' };
-  task: { action: string; params: any; timeout_ms: number; context_refs?: string[] };
-  observability: { cost_budget_usd: number; audit_required: boolean };
-}
-```
-Deliverable: `functions/src/a2a/types.ts` + unit tests в `functions/test/a2a.test.ts`.
+**Стратегия:** портируем ~1,800 lines production-ready time tracking из profit-step, адаптируем под multi-tenant. Никаких AI роутеров / A2A / Channel Router — это Phase 1+.
 
-### День 3-4 · Channel Router Base (WhatsApp + Telegram)
+### Day 1 · Firebase project + data layer
 
-Поднять webhook (Cloud Function) для приёма входящих сообщений + унификация формата.
+Setup:
+- Create Firebase project `easytimercost-dev`
+- Install emulator suite
+- Initialize `functions/` folder
+
+Port from profit-step:
+- `src/types/timeTracking.types.ts` → `functions/src/types/timeTracking.ts`
+- `src/types/payroll.types.ts` → `functions/src/types/payroll.ts`
+- **Add `tenantId` field everywhere** (multi-tenant isolation — новое для нас)
 
 Deliverables:
-- `functions/src/channels/webhook.ts` — entry point для WhatsApp Business API + Telegram Bot API
-- `functions/src/channels/router.ts` — нормализация в `IncomingMessage` abstraction
-- Integration test: отправляем WA/TG → один и тот же `IncomingMessage` форма
+- Working Firebase project + emulator running locally
+- TypeScript types ported + tests pass
 
-### День 5 · AI Router Base (Маршрутизатор интентов)
+### Day 2 · Firestore collections + rules
 
-Написать логику через **Gemini 3 Flash** для intent classification:
-- Text "начал смену" → `intent: 'start_shift'`
-- Photo receipt → `intent: 'expense_submit'`
-- Complex dispute → escalate к **Claude Opus 4.7**
+Schema (multi-tenant):
+```
+tenants/{tenantId}/work_sessions/{sessionId}
+tenants/{tenantId}/workers/{workerId}
+tenants/{tenantId}/clients/{clientId}
+tenants/{tenantId}/payroll_periods/{periodId}
+tenants/{tenantId}/audit_events/{eventId}
+```
 
-Deliverable: `functions/src/ai/router.ts` с routing rules из [`PATH.md`](PATH.md) §2.
+Deliverables:
+- `firestore.rules` с multi-tenant RLS (see TIME_TRACKING_IMPORT.md §6)
+- Firestore indexes for common queries (sessions by date, by worker, by client)
+- Seed script с test tenant + 3 workers + 3 clients для local dev
 
-### День 6-7 · Use Case PoC (L1 Suggestor pattern)
+### Day 3 · Core backend services (port from profit-step)
 
-**Сценарий:** «Worker пишет "я на объекте Acme" в WhatsApp → создаём `pending_session` → ждём confirm, не меняя P&L».
+Port as-is:
+- `functions/src/services/TimeTrackingService.ts` (241 lines) — session close logic, duration calc, break deduction, cross-platform ID
+- `functions/src/services/payroll.ts` — bucket formula (salary/payments/adjustments/balance)
 
-Implementation:
-1. WA webhook → Channel Router → AI Router классифицирует intent
-2. Intent `start_shift` → `worker-agent` (L1 authority)
-3. Agent предлагает: "Создаю pending session at Acme. Confirm? [Yes] [No]"
-4. User taps Yes → `session-watcher` (L2) создаёт session + writes to Firestore
-5. **Critical:** NO direct money mutation — только session.status='pending_approval'
+Deliverables:
+- Both services working in emulator
+- Unit tests passing (port from `functions/test/payroll.unit.test.ts`)
 
-Deliverable: end-to-end PoC работающий в Firebase emulator.
+### Day 4 · CRUD API endpoints (no AI)
+
+Port + simplify from `functions/src/agent/routes/timeTracking.ts` (remove AI parts):
+- `POST /api/sessions/start`
+- `POST /api/sessions/stop`
+- `POST /api/sessions/pause` / `resume`
+- `GET /api/sessions/active`
+- `GET /api/sessions` (list + filters)
+- `PUT /api/sessions/:id` (admin edit with audit)
+- `POST /api/sessions/:id/admin-stop`
+
+Deliverables:
+- All endpoints working in emulator
+- Integration tests: full session lifecycle end-to-end
+
+### Day 5 · Scheduled jobs (port from profit-step as-is)
+
+Port:
+- `generateDailyPayroll` (4 AM cron)
+- `finalizeExpiredSessions` (1 AM cron, 48h immutable)
+- `autoStopStaleTimers` (every 30 min, 12h max)
+- `checkLongBreaks` (every 1 hour, 1h max break)
+
+Deliverables:
+- All scheduled functions deployed + tested with fake-timer
+- Idempotency guards (payroll_runs collection) working
+
+### Day 6 · Basic Telegram bot (keyboard only, NO NLU)
+
+Setup:
+- `node-telegram-bot-api` + Firebase Admin SDK
+- Webhook endpoint (Cloud Function)
+
+Flows (deterministic, no AI):
+- `/start` — register worker (link telegram_id ↔ firebase_uid)
+- Main menu inline keyboard: [🏁 Start] [⏸ Pause] [🏁 Stop] [💰 Balance] [📋 Shifts]
+- Start shift: client picker → optional photo → optional location → confirm
+- Stop shift: confirm dialog
+- No text parsing. No AI anywhere.
+
+Deliverables:
+- Bot working in Telegram (test with real bot)
+- 5-step session lifecycle covered
+
+### Day 7 · Smoke test + next steps
+
+Actions:
+- Deploy to Firebase dev project
+- Run end-to-end smoke:
+  - Create test tenant
+  - Create test worker (self as telegram user)
+  - Start shift via bot → 5 min wait → stop shift
+  - Verify session in Firestore
+  - Run generateDailyPayroll → check payroll ledger
+- Document bugs found
+- Plan Week 2 (Worker PWA + Admin UI)
+
+Deliverables:
+- Working Phase 0 Week 1 foundation
+- Smoke test report
+- Updated NEXT_SESSION.md with Week 2 plan
 
 ---
 

@@ -9,6 +9,23 @@
 
 ## 1. Core Philosophy
 
+### 1.1 · Base-first, AI-second (CRITICAL PRINCIPLE)
+
+**Сначала базовая система работает без AI. AI — добавляется incrementally после stabilization.**
+
+Мы избегаем классической ошибки AI-first startup'ов: строить AI до того как базовая бизнес-логика стабильна → и потерять и то, и другое, когда AI галлюцинирует в неотлаженной системе.
+
+**Правило:** каждая AI-фича — это **optional augmentation** поверх работающего manual flow, никогда не единственный путь.
+
+- Receipt OCR fails → user fills form manually (как и раньше)
+- Chat NLU не понимает → показываем inline keyboard (как и раньше)
+- Auto-approve bot paused → человек approv'ит вручную (как и раньше)
+- Agent orchestrator down → manual workflow продолжается
+
+**Consequence:** **система никогда не останавливается из-за AI.** AI только ускоряет то что уже работает.
+
+### 1.2 · Hybrid adoption (AI когда настанет время)
+
 Мы строим **гибридную систему**. Берём у гигантов модели и дистрибуцию (Workspace Marketplace), но оставляем за собой:
 
 - **Оркестрацию** — собственный A2A-compatible orchestrator на Firebase
@@ -234,32 +251,65 @@ Worker сам выбирает при onboarding, система route'ит пр
 
 ## 9. Development Phases
 
-### Phase 1 · MVP (Weeks 1-6)
-Построен на нашем стеке. Proof-of-concept всех слоев.
+### Phase 0 · Foundation · BASE WITHOUT AI (Weeks 1-4) 🔴 **FIRST**
 
-- Multi-channel chat (WhatsApp + Telegram + SMS)
-- Hybrid AI routing (Claude + Gemini Pro + Gemini Flash)
-- Custom orchestrator (Firebase Cloud Functions + Pub/Sub)
-- 6 core domain agents
-- Time tracking + Expenses + basic Workers/Clients
-- Workspace API integration (Calendar, Sheets) — но НЕ Agent Studio
+**Цель:** полностью рабочее time tracking без единой AI-фичи. Real workers используют каждый день, manual flow тестирован и stable.
 
-### Phase 2 · Market + Pilot Google (Months 2-3)
-- Workspace Marketplace listing (primary growth channel)
-- Nano Banana 2 для marketing + personalized onboarding
+- **Week 1:** Data + Backend (port WorkSession types, TimeTrackingService, CRUD API, scheduled jobs) — copy from profit-step as-is
+- **Week 2:** Worker UI (web start/stop shift, Telegram bot keyboard-only, photo/location as files без AI processing)
+- **Week 3:** Admin UI (dashboard, sessions table, workers CRUD, clients CRUD, payroll periods)
+- **Week 4:** Testing + Deploy (unit + integration + smoke + deploy prod)
+
+**Порт 80% кода из profit-step time tracking** — уже production-grade, протестировано. Не изобретаем велосипед.
+
+**Deliverable:** working time tracking system used by 5+ real workers daily. **Zero AI**.
+
+### Phase 0.5 · Stabilization (Weeks 5-6) ⏸ **MANDATORY**
+
+**Правило:** не переходим к AI пока база не стабильна.
+
+- Collect real user feedback
+- Fix bugs
+- Iterate UX
+- Monitor costs/performance
+
+**Gate criteria to proceed to Phase 1:**
+- ✅ 10+ active workers using daily
+- ✅ <5 bug reports / week
+- ✅ 95%+ shift completion rate
+- ✅ Admin comfortable with manual workflow (works without AI)
+
+**If criteria not met:** iterate Phase 0 more, DO NOT add AI to broken foundation.
+
+### Phase 1 · AI Augmentation (Weeks 7-12) 🟠 **incremental**
+
+**Принцип:** каждая AI-фича — optional layer над working manual flow. Никогда не единственный путь.
+
+- **Week 7:** Receipt OCR (Gemini Pro) — fallback to manual entry
+- **Week 8:** Telegram chat NLU (Gemini Flash) — fallback to keyboard
+- **Week 9:** Auto-approve small expenses (Gemini Flash L2 authority)
+- **Week 10:** Selfie face match (Gemini Pro) — fallback to admin review
+- **Week 11-12:** Agent orchestration layer (from a2a.html prototype to production)
+
+### Phase 2 · Multi-channel + Market (Months 4-5) 🟡
+
+- **WhatsApp Business API** integration (primary channel US Hispanic labor)
+- **Workspace Marketplace listing** (6x CAC improvement via distribution)
+- **Nano Banana 2** для marketing + personalized onboarding videos
 - **Experimental pilot:** Agent Studio для `ai-policies.html` (low-code rules UI)
-- Если pilot успешен → migrate этот one page на Agent Studio, остальное остаётся своим
 
-### Phase 3 · Depth + Moat (Months 4-6)
-- Permits database (начать с 10 states, extend)
-- Subcontractor rate benchmarking (at 20+ customers)
-- Labor law RAG (per-state compliance)
-- Material cost tracking (supplier API integrations)
-- BigQuery + Agentspace для «ask your P&L» (после 50+ customers)
+### Phase 3 · Depth + Moat (Months 6-8) 💎 **defensibility**
 
-### Phase 4 · Scale + Optionality (Months 7-12)
-- Если Agent Studio созрел и A2A spec stable → selective deeper adoption
-- AI Protection platform (Google managed security) — evaluate
+- **Permits database** (10 states → 50 states)
+- **Subcontractor rate benchmarking** (at 20+ customers)
+- **Labor law RAG** (per-state compliance)
+- **Material cost tracking** (supplier API integrations)
+- **BigQuery + Agentspace** для «ask your P&L» (после 50+ customers)
+
+### Phase 4 · Scale + Optionality (Months 9-12)
+
+- Agent Studio deeper adoption если созрел
+- AI Protection platform (Google managed security)
 - Agent Marketplace publish (secondary revenue)
 - Enterprise tier (SOC2, HIPAA, larger customers)
 

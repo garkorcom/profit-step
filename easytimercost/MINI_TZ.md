@@ -450,3 +450,95 @@ Breakeven per customer (10 users Pro = $890 MRR): ~4 месяца на acquisiti
 ---
 
 *Статус документа: ожидает approve от Дениса. Следующий ход — мой после ответов на §12.*
+
+---
+
+# 📌 UPDATE · 2026-04-21 · Post Google Cloud Next 2026
+
+**Ключевое архитектурное решение принято.** Полная версия — в [`PATH.md`](PATH.md) (architectural constitution).
+
+## 14. Выбор оркестратора: Custom (Hybrid) vs Google ADK
+
+Принято решение строить **кастомный оркестратор** на базе Firebase + Cloud Functions с гибридным роутингом моделей. Мы используем конверт сообщений `google-a2a/v1` для совместимости на будущее, но логика передачи (RPC, Saga, Fire-and-forget, Streaming, Parallel-dispatch) реализуется нами.
+
+### Почему НЕ полный Google Agent Studio migration
+
+1. **Agent Studio — black box на день 1 после анонса** — не знаем что работает vs vaporware. Early adopter risk высок.
+2. **Vendor lock-in долгосрочный** — раз переехал на Google ADK, обратно невозможно без переписи. Google может менять правила/цены/authority model.
+3. **Self-hosted orchestration уже доказан концептуально** — наш `a2a.html` prototype показывает что мы знаем чего хотим. Реализация на Claude Agent SDK + Firebase = 2-3 недели. Agent Studio integration — 1 неделя setup + unknown maintenance.
+
+### Что взято из Google (selective adoption)
+
+| Компонент | Решение |
+|---|---|
+| **AI models** | Gemini 3 Pro (multimodal), Gemini 3 Flash (cheap classification), Nano Banana 2 (image gen) + Claude Opus 4.7 (reasoning) — **hybrid routing** |
+| **Distribution** | Workspace Marketplace как primary growth channel (6x CAC improvement) |
+| **Message format** | `google-a2a/v1` envelope — для portability в будущем |
+| **Authority model** | L0-L4 иерархия (copied from Google) |
+| **Image generation** | Nano Banana 2 для brand avatars + marketing videos |
+| **Security patterns** | Вдохновляемся Google AI Protection, реализуем в Firestore Security Rules + own audit |
+
+### Что осталось custom
+
+| Компонент | Решение |
+|---|---|
+| **Orchestration runtime** | Firebase Cloud Functions + Pub/Sub |
+| **Data store** | Firestore (не Vertex AI Data Store) |
+| **Agent registry** | Наш `admin-agents.html` |
+| **Mission Control** | Наш `a2a.html` |
+| **Secrets** | Firebase Secret Manager (defineSecret pattern из profit-step) |
+| **Orchestrator dispatch** | Наш TypeScript code с 5 delegation patterns |
+
+### Критичное правило безопасности
+
+**AI никогда не трогает деньги напрямую.**
+- AI **предлагает** (Suggestor pattern L1) → human confirms
+- База строго считает через Firestore transactions
+- Idempotency guard на всех триггерах (processedEvents collection)
+- Protection against recursive writes (триггер не пишет в документ, который его вызвал)
+
+Это неотъемлемое наследие из profit-step CLAUDE.md §2.1 — infinite loop = $10k billing bomb.
+
+### Phases (обновлённые после Next 2026)
+
+- **Phase 1 MVP (weeks 1-6):** кастомный стек, hybrid AI, multi-channel chat
+- **Phase 2 (months 2-3):** Workspace Marketplace listing + pilot Agent Studio для одной страницы (`ai-policies.html`)
+- **Phase 3 (months 4-6):** domain moat depth (permits, sub rates, labor law RAG)
+- **Phase 4 (months 7-12):** selective deeper Google adoption если готово
+
+### Abstraction layer (code skeleton)
+
+```typescript
+// functions/src/ai/router.ts
+async function routeAITask(task: AITask): Promise<AIResponse> {
+  const model = pickModel(task.type);       // routing rules в PATH.md §2
+  const provider = providers[model.provider];
+  return await provider.call(model.id, task);
+}
+
+// Swap provider одной config-строкой — никакого hardcoded vendor lock-in в business logic
+```
+
+### Exit conditions — когда пересматриваем
+
+- Google ADK ships killer feature, самим делать >4 недель → evaluate selective migration
+- Anthropic pricing +50% / breaking change → shift reasoning tier на Gemini 3 Pro
+- 3+ customers require BAA (healthcare construction) → full Google Cloud migration
+- Agent Studio становится open standard (конкуренты использ) → adopt to not be outlier
+
+### Quarterly review
+
+Раз в 3 месяца — проверка PATH.md соответствия реальности. Commit `docs(PATH): quarterly review Q1/2026`.
+
+---
+
+## 15. Related architecture docs
+
+- **[PATH.md](PATH.md)** — full architectural constitution (11 разделов)
+- **[NEXT_SESSION.md](NEXT_SESSION.md)** — current implementation queue
+- **[starter-kit/](starter-kit/)** — portable self-docs для любого нового проекта
+- **[USE_CASES.md](USE_CASES.md)** — 100 validated use cases
+
+---
+
+*Update автор: Denis + Claude + внешний AI review (2026-04-21 morning post-Next 2026).*

@@ -1,10 +1,63 @@
 # Next Session · Resume plan
 
-Сессия приостановлена 2026-04-21. Открой этот файл первым — вся нужная инфа тут.
+Сессия приостановлена 2026-04-21 (утро после Google Cloud Next 2026). Открой этот файл первым.
 
 ---
 
-## Где мы остановились
+## 🚀 Phase 1 MVP · Week 1 — первое что делаем
+
+**Цель:** Proof-of-Concept мультиканальности и ядра кастомного оркестратора. Следуем [`PATH.md`](PATH.md).
+
+### День 1-2 · Инициализация Контрактов (A2A Protocol)
+
+Описать TypeScript-типы для standard message envelope:
+```typescript
+// functions/src/a2a/types.ts
+interface A2AMessage {
+  protocol: 'google-a2a/v1';
+  trace_id: string;
+  from: { agent_id: string; authority: 'L0'|'L1'|'L2'|'L3'|'L4'; tenant: string };
+  to: { agent_id: string; delegation_type: 'request-response'|'fire-forget'|'streaming'|'parallel'|'saga' };
+  task: { action: string; params: any; timeout_ms: number; context_refs?: string[] };
+  observability: { cost_budget_usd: number; audit_required: boolean };
+}
+```
+Deliverable: `functions/src/a2a/types.ts` + unit tests в `functions/test/a2a.test.ts`.
+
+### День 3-4 · Channel Router Base (WhatsApp + Telegram)
+
+Поднять webhook (Cloud Function) для приёма входящих сообщений + унификация формата.
+
+Deliverables:
+- `functions/src/channels/webhook.ts` — entry point для WhatsApp Business API + Telegram Bot API
+- `functions/src/channels/router.ts` — нормализация в `IncomingMessage` abstraction
+- Integration test: отправляем WA/TG → один и тот же `IncomingMessage` форма
+
+### День 5 · AI Router Base (Маршрутизатор интентов)
+
+Написать логику через **Gemini 3 Flash** для intent classification:
+- Text "начал смену" → `intent: 'start_shift'`
+- Photo receipt → `intent: 'expense_submit'`
+- Complex dispute → escalate к **Claude Opus 4.7**
+
+Deliverable: `functions/src/ai/router.ts` с routing rules из [`PATH.md`](PATH.md) §2.
+
+### День 6-7 · Use Case PoC (L1 Suggestor pattern)
+
+**Сценарий:** «Worker пишет "я на объекте Acme" в WhatsApp → создаём `pending_session` → ждём confirm, не меняя P&L».
+
+Implementation:
+1. WA webhook → Channel Router → AI Router классифицирует intent
+2. Intent `start_shift` → `worker-agent` (L1 authority)
+3. Agent предлагает: "Создаю pending session at Acme. Confirm? [Yes] [No]"
+4. User taps Yes → `session-watcher` (L2) создаёт session + writes to Firestore
+5. **Critical:** NO direct money mutation — только session.status='pending_approval'
+
+Deliverable: end-to-end PoC работающий в Firebase emulator.
+
+---
+
+## Где мы остановились (prior commits)
 
 ✅ **Закоммичено + запушено** (branch `claude/suspicious-brattain-f027a1`):
 
@@ -14,8 +67,12 @@
 | `4f9b72a` | TZ Lint page (10 consistency checks) |
 | `f818dea` | Dev Notes + dev-mode toggle + subtle FAB |
 | `8bf0344` | Starter-kit: portable self-docs.js + README + MIGRATION + React adapter |
+| `b17932a` | NEXT_SESSION.md (first version) |
+| *TBD*     | PATH.md (architectural constitution) + MINI_TZ v2 + this Week 1 plan |
 
 **PR URL:** https://github.com/garkorcom/profit-step/pull/new/claude/suspicious-brattain-f027a1
+
+**Архитектурная конституция:** [`PATH.md`](PATH.md) — читать ПЕРВЫМ на следующей сессии, потом этот файл.
 
 ---
 

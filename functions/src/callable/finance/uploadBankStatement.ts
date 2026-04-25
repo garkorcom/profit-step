@@ -191,6 +191,14 @@ export const uploadBankStatement = functions
                     date: parsed.timestamp,
                     rawDescription: tx.rawDescription,
                     vendor: tx.vendor,
+                    // Mirror to fields the Reconciliation hub expects so newly
+                    // uploaded statements appear as drafts the user can
+                    // manually reconcile (without any auto-approve).
+                    cleanMerchant: tx.vendor,
+                    paymentType: 'cash',
+                    categoryId: 'other',
+                    confidence: 'low',
+                    status: 'draft',
                     city: tx.city || null,
                     state: tx.state || null,
                     amount: tx.amount,

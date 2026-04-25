@@ -457,6 +457,77 @@ router.post('/api/finance/transactions/approve', async (req, res, next) => {
   }
 });
 
+// ─── POST /api/finance/transactions/bulk-update ─────────────────────
+// Allows mass-editing draft transactions (e.g. assigning a category or
+// payment type to many rows at once from the Reconciliation hub) and
+// persisting that change. Without this, the UI would silently keep
+// edits in local state only and lose them on reload.
+router.post('/api/finance/transactions/bulk-update', async (req, res, next) => {
+  try {
+    const { ids, patch } = req.body as { ids?: unknown; patch?: Record<string, unknown> };
+
+    if (!Array.isArray(ids) || ids.length === 0 || !ids.every(x => typeof x === 'string')) {
+      res.status(400).json({ success: false, error: 'ids must be a non-empty string[]' });
+      return;
+    }
+    if (!patch || typeof patch !== 'object') {
+      res.status(400).json({ success: false, error: 'patch must be an object' });
+      return;
+    }
+
+    const ALLOWED_FIELDS = ['categoryId', 'paymentType', 'projectId', 'employeeId', 'employeeName'] as const;
+    const cleanPatch: Record<string, unknown> = {};
+    for (const key of ALLOWED_FIELDS) {
+      if (key in patch) cleanPatch[key] = patch[key];
+    }
+    if (Object.keys(cleanPatch).length === 0) {
+      res.status(400).json({ success: false, error: `patch must include at least one of: ${ALLOWED_FIELDS.join(', ')}` });
+      return;
+    }
+    cleanPatch.updatedAt = FieldValue.serverTimestamp();
+
+    logger.info(`🔧 finance:bulk-update. ids=${ids.length} fields=[${Object.keys(cleanPatch).filter(k => k !== 'updatedAt').join(',')}]`);
+
+    let updated = 0;
+    let skipped = 0;
+    const skippedReasons: Record<string, number> = {};
+
+    // Pre-fetch + write in chunks so we stay under the 500-op batch limit
+    // and don't blow memory on huge selections.
+    const CHUNK_SIZE = 400;
+    for (let i = 0; i < (ids as string[]).length; i += CHUNK_SIZE) {
+      const chunk = (ids as string[]).slice(i, i + CHUNK_SIZE);
+      const refs = chunk.map(id => db.collection('bank_transactions').doc(id));
+      const docs = await db.getAll(...refs);
+
+      const batch = db.batch();
+      let batchOps = 0;
+      for (const doc of docs) {
+        if (!doc.exists) {
+          skipped++; skippedReasons.not_found = (skippedReasons.not_found || 0) + 1;
+          continue;
+        }
+        const status = doc.data()?.status;
+        if (status !== 'draft') {
+          // Refuse to silently mutate approved/ignored rows — they are tied
+          // to costs/ ledger and should go through approve/undo flows.
+          skipped++; skippedReasons.not_draft = (skippedReasons.not_draft || 0) + 1;
+          continue;
+        }
+        batch.update(doc.ref, cleanPatch);
+        batchOps++;
+        updated++;
+      }
+      if (batchOps > 0) await batch.commit();
+    }
+
+    logger.info(`🔧 finance:bulk-update done. updated=${updated} skipped=${skipped}`);
+    res.status(200).json({ success: true, updated, skipped, skippedReasons });
+  } catch (e) {
+    next(e);
+  }
+});
+
 // ─── POST /api/finance/transactions/undo ─────────────────────────
 
 router.post('/api/finance/transactions/undo', async (req, res, next) => {

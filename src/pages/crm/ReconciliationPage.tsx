@@ -113,6 +113,7 @@ const ReconciliationPage: React.FC = () => {
     filterMonth: filters.filterMonth,
     quickFilter: filters.quickFilter,
     searchQuery: filters.searchQuery,
+    companyId: userProfile?.companyId ?? null,
   });
 
   // ─── Selection handlers ──────────────────────────────────

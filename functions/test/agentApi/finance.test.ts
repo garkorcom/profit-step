@@ -259,6 +259,50 @@ describe('POST /api/finance/transactions/approve', () => {
   });
 });
 
+describe('POST /api/finance/transactions/bulk-update', () => {
+  it('updates allowed fields on draft transactions and skips non-drafts', async () => {
+    // Seed: 2 drafts, 1 approved, 1 ignored
+    await db.collection('bank_transactions').doc('bulk-d1').set({ status: 'draft', categoryId: 'other', paymentType: 'cash' });
+    await db.collection('bank_transactions').doc('bulk-d2').set({ status: 'draft', categoryId: 'other', paymentType: 'cash' });
+    await db.collection('bank_transactions').doc('bulk-a').set({ status: 'approved', categoryId: 'materials' });
+    await db.collection('bank_transactions').doc('bulk-i').set({ status: 'ignored' });
+
+    const res = await request(app).post('/api/finance/transactions/bulk-update').set(authHeaders())
+      .send({
+        ids: ['bulk-d1', 'bulk-d2', 'bulk-a', 'bulk-i', 'bulk-missing'],
+        patch: { categoryId: 'fuel', paymentType: 'company' },
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.updated).toBe(2); // only the 2 drafts
+    expect(res.body.skipped).toBe(3); // approved + ignored + missing
+    expect(res.body.skippedReasons.not_draft).toBe(2);
+    expect(res.body.skippedReasons.not_found).toBe(1);
+
+    // Drafts updated
+    const d1 = await db.collection('bank_transactions').doc('bulk-d1').get();
+    expect(d1.data()?.categoryId).toBe('fuel');
+    expect(d1.data()?.paymentType).toBe('company');
+
+    // Approved untouched
+    const a = await db.collection('bank_transactions').doc('bulk-a').get();
+    expect(a.data()?.categoryId).toBe('materials');
+  });
+
+  it('rejects empty ids', async () => {
+    const res = await request(app).post('/api/finance/transactions/bulk-update').set(authHeaders())
+      .send({ ids: [], patch: { categoryId: 'fuel' } });
+    expect(res.status).toBe(400);
+  });
+
+  it('rejects patch with no allowed fields', async () => {
+    const res = await request(app).post('/api/finance/transactions/bulk-update').set(authHeaders())
+      .send({ ids: ['x'], patch: { status: 'approved', amount: 9999 } });
+    expect(res.status).toBe(400);
+  });
+});
+
 describe('POST /api/finance/transactions/undo', () => {
   it('reverts approved transactions to draft and deletes costs', async () => {
     // Seed approved tx with costId

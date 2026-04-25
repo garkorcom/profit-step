@@ -183,7 +183,7 @@ router.post('/api/finance/transactions/batch', async (req, res, next) => {
         const merchant = (txData.cleanMerchant || '').trim().toLowerCase();
         const rule = autoRules.get(merchant);
         if (!rule) continue;
-        if (opsCount >= 450) break; // safety: batch limit
+        if (opsCount >= 440) break; // safety: batch limit (3 ops/tx with audit)
 
         // Auto-approve: update the bank_transaction
         autoApproveBatch.update(doc.ref, {
@@ -192,13 +192,16 @@ router.post('/api/finance/transactions/batch', async (req, res, next) => {
           categoryId: rule.categoryId,
           projectId: rule.projectId,
           autoApproved: true,
+          autoApproveSource: 'rule',
           updatedAt: FieldValue.serverTimestamp(),
         });
         opsCount++;
 
         // Create cost if company + projectId
+        let generatedCostId: string | null = null;
         if (rule.paymentType === 'company' && rule.projectId) {
           const costRef = db.collection('costs').doc();
+          generatedCostId = costRef.id;
           const isRefund = txData.amount > 0;
           const effectiveAmount = isRefund ? -Math.abs(txData.amount) : Math.abs(txData.amount);
           autoApproveBatch.set(costRef, {
@@ -219,6 +222,26 @@ router.post('/api/finance/transactions/batch', async (req, res, next) => {
           });
           opsCount++;
         }
+
+        // Audit log — every auto-approve event is recorded for traceability.
+        const auditRef = db.collection('reconciliation_audits').doc();
+        autoApproveBatch.set(auditRef, {
+          txId: doc.id,
+          reason: 'rule-match',
+          ruleId: merchant,
+          vendor: txData.cleanMerchant || '',
+          rawDescription: txData.rawDescription || '',
+          amount: typeof txData.amount === 'number' ? txData.amount : 0,
+          costId: generatedCostId,
+          paymentType: rule.paymentType,
+          categoryId: rule.categoryId,
+          projectId: rule.projectId,
+          txDate: txData.date || null,
+          approvedBy: req.agentUserId || 'system',
+          approvedAt: FieldValue.serverTimestamp(),
+        });
+        opsCount++;
+
         autoApprovedCount++;
       }
       if (autoApprovedCount > 0) {
@@ -262,12 +285,12 @@ router.post('/api/finance/transactions/batch', async (req, res, next) => {
         const txData = txDoc.data();
         const desc = (txData.rawDescription || '').toUpperCase();
         // Check if any Tampa-area city appears in the raw description
-        let isTampa = false;
+        let matchedCity: string | null = null;
         for (const city of TAMPA_CITIES) {
-          if (desc.includes(city.toUpperCase())) { isTampa = true; break; }
+          if (desc.includes(city.toUpperCase())) { matchedCity = city; break; }
         }
-        if (!isTampa) continue;
-        if (tampaOps >= 400) break;
+        if (!matchedCity) continue;
+        if (tampaOps >= 390) break; // safety: 3 ops/tx with audit
 
         tampaBatch.update(txDoc.ref, {
           status: 'approved',
@@ -298,6 +321,26 @@ router.post('/api/finance/transactions/batch', async (req, res, next) => {
           source: 'bank_statement',
           date: txData.date || FieldValue.serverTimestamp(),
           createdAt: FieldValue.serverTimestamp(),
+        });
+        tampaOps++;
+
+        // Audit log — every Tampa-geo auto-approve event is recorded.
+        const auditRef = db.collection('reconciliation_audits').doc();
+        tampaBatch.set(auditRef, {
+          txId: txDoc.id,
+          reason: 'tampa-geo',
+          matchedCity,
+          vendor: txData.cleanMerchant || '',
+          rawDescription: txData.rawDescription || '',
+          amount: typeof txData.amount === 'number' ? txData.amount : 0,
+          costId: costRef.id,
+          paymentType: 'company',
+          categoryId: txData.categoryId || 'other',
+          projectId: tampaProjectId,
+          projectName: tampaProjectName,
+          txDate: txData.date || null,
+          approvedBy: req.agentUserId || 'system',
+          approvedAt: FieldValue.serverTimestamp(),
         });
         tampaOps++;
         tampaAutoCount++;

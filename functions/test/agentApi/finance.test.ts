@@ -79,6 +79,71 @@ describe('POST /api/finance/transactions/batch', () => {
     // count should be 0 since it was skipped
     expect(res.body.count).toBe(0);
   });
+
+  describe('audit log on auto-approve', () => {
+    it('writes a reconciliation_audits doc when a finance_rule auto-approves a tx', async () => {
+      const cid = await seedClient();
+      const pid = await seedProject(cid);
+
+      // Seed an auto-approve rule
+      await db.collection('finance_rules').doc('home depot').set({
+        merchantName: 'home depot',
+        autoApprove: true,
+        defaultPaymentType: 'company',
+        defaultCategoryId: 'materials',
+        defaultProjectId: pid,
+      });
+
+      const res = await request(app).post('/api/finance/transactions/batch').set(authHeaders())
+        .send({
+          transactions: [{
+            id: 'tx-rule-1', date: '2026-03-15', rawDescription: 'HOME DEPOT 123',
+            cleanMerchant: 'Home Depot', amount: -75,
+            paymentType: 'cash', categoryId: 'other',
+            projectId: null, confidence: 'low',
+          }],
+        });
+      expect(res.status).toBe(200);
+      expect(res.body.autoApproved).toBe(1);
+
+      const audits = await db.collection('reconciliation_audits').get();
+      expect(audits.size).toBe(1);
+      const a = audits.docs[0].data();
+      expect(a.reason).toBe('rule-match');
+      expect(a.ruleId).toBe('home depot');
+      expect(a.txId).toBe('tx-rule-1');
+      expect(a.amount).toBe(-75);
+      expect(a.costId).toBeTruthy();
+      expect(a.approvedAt).toBeDefined();
+    });
+
+    it('writes a reconciliation_audits doc when Tampa-geo auto-approves a tx', async () => {
+      const cid = await seedClient();
+      // Project name with "tampa" triggers the geo branch
+      await seedProject(cid, { name: 'Tampa Project' });
+
+      const res = await request(app).post('/api/finance/transactions/batch').set(authHeaders())
+        .send({
+          transactions: [{
+            id: 'tx-tampa-1', date: '2026-03-15', rawDescription: 'STARBUCKS TAMPA FL',
+            cleanMerchant: 'Starbucks', amount: -8.5,
+            paymentType: 'cash', categoryId: 'food',
+            projectId: null, confidence: 'low',
+          }],
+        });
+      expect(res.status).toBe(200);
+      expect(res.body.tampaAutoApproved).toBe(1);
+
+      const audits = await db.collection('reconciliation_audits').get();
+      expect(audits.size).toBe(1);
+      const a = audits.docs[0].data();
+      expect(a.reason).toBe('tampa-geo');
+      expect(a.matchedCity).toBe('tampa');
+      expect(a.txId).toBe('tx-tampa-1');
+      expect(a.projectName).toBe('Tampa Project');
+      expect(a.costId).toBeTruthy();
+    });
+  });
 });
 
 describe('POST /api/finance/transactions/approve', () => {

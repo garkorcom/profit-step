@@ -347,6 +347,12 @@ router.post('/api/finance/transactions/approve', async (req, res, next) => {
            const costRef = db.collection('costs').doc();
            generatedCostId = costRef.id;
 
+           // Sign convention (locked in by finance.test.ts > "refund detection sign convention"):
+           //   input amount < 0  →  cost.amount = +|amount|   (expense)
+           //   input amount > 0  →  cost.amount = -|amount|   (refund, reduces spend)
+           // Assumes upstream parser normalized statements to "negative = expense".
+           // Statements that store DEBIT-prefixed expenses as positive numbers are
+           // mis-recorded as refunds — known prod quirk, not yet resolved.
            const isRefund = t.amount > 0;
            const effectiveAmount = isRefund ? -Math.abs(t.amount) : Math.abs(t.amount);
 

@@ -113,6 +113,85 @@ describe('POST /api/finance/transactions/approve', () => {
     expect(rule.exists).toBe(true);
     expect(rule.data()?.defaultCategoryId).toBe('materials');
   });
+
+  /**
+   * Refund-detection sign convention (locks in current behavior).
+   *
+   * The route uses `isRefund = amount > 0` to decide the sign of the
+   * resulting `costs.amount` field:
+   *   - input amount  <  0  →  cost.amount = +|amount|   (expense, adds to spend)
+   *   - input amount  >  0  →  cost.amount = -|amount|   (refund, reduces spend)
+   * `originalAmount` is always stored as +|amount| (unsigned).
+   *
+   * This convention is correct ONLY when the upstream parser normalizes
+   * statements to "negative = expense / positive = credit" (e.g. Chase
+   * style). Bank exports that prefix expenses with `DEBIT:` and store
+   * amounts as positive numbers (seen in prod 2026-04-25 sample) end up
+   * recorded as refunds — a known quirk that has not been resolved.
+   *
+   * These tests document current behavior so any future change is a
+   * deliberate decision, not a silent regression in payroll-sensitive
+   * data.
+   */
+  describe('refund detection sign convention', () => {
+    it('treats negative input amount as expense (cost.amount > 0)', async () => {
+      const cid = await seedClient();
+      const pid = await seedProject(cid);
+
+      await db.collection('bank_transactions').doc('tx-sign-neg').set({
+        status: 'draft', date: '2026-03-15',
+      });
+
+      const res = await request(app).post('/api/finance/transactions/approve').set(authHeaders())
+        .send({
+          transactions: [{
+            id: 'tx-sign-neg', date: '2026-03-15', rawDescription: 'WITHDRAWAL: ZELLE TO VENDOR',
+            cleanMerchant: 'Vendor', amount: -250,
+            paymentType: 'company', categoryId: 'materials',
+            projectId: pid, confidence: 'high',
+          }],
+        });
+      expect(res.status).toBe(200);
+
+      const txAfter = await db.collection('bank_transactions').doc('tx-sign-neg').get();
+      const costId = txAfter.data()?.costId;
+      expect(costId).toBeTruthy();
+
+      const cost = await db.collection('costs').doc(costId).get();
+      expect(cost.exists).toBe(true);
+      expect(cost.data()?.amount).toBe(250);
+      expect(cost.data()?.originalAmount).toBe(250);
+    });
+
+    it('treats positive input amount as refund (cost.amount < 0)', async () => {
+      const cid = await seedClient();
+      const pid = await seedProject(cid);
+
+      await db.collection('bank_transactions').doc('tx-sign-pos').set({
+        status: 'draft', date: '2026-03-15',
+      });
+
+      const res = await request(app).post('/api/finance/transactions/approve').set(authHeaders())
+        .send({
+          transactions: [{
+            id: 'tx-sign-pos', date: '2026-03-15', rawDescription: 'DEBIT: PARKING REFUND',
+            cleanMerchant: 'Parking', amount: 50,
+            paymentType: 'company', categoryId: 'parking',
+            projectId: pid, confidence: 'high',
+          }],
+        });
+      expect(res.status).toBe(200);
+
+      const txAfter = await db.collection('bank_transactions').doc('tx-sign-pos').get();
+      const costId = txAfter.data()?.costId;
+      expect(costId).toBeTruthy();
+
+      const cost = await db.collection('costs').doc(costId).get();
+      expect(cost.exists).toBe(true);
+      expect(cost.data()?.amount).toBe(-50);
+      expect(cost.data()?.originalAmount).toBe(50);
+    });
+  });
 });
 
 describe('POST /api/finance/transactions/undo', () => {

@@ -3,13 +3,15 @@
  *
  * Extracted from ReconciliationPage.tsx to reduce file size.
  */
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import {
   type EnrichedTx,
   type QuickFilter,
   COST_CATEGORY_LABELS,
   renderDate,
 } from '../components/reconciliation/types';
+import { db } from '../firebase/firebase';
+import { collection, query, where, getDocs, Timestamp } from 'firebase/firestore';
 
 interface ExportDeps {
   filteredTransactions: EnrichedTx[];
@@ -20,8 +22,40 @@ interface ExportDeps {
   searchQuery: string;
 }
 
+const csvEscape = (value: unknown): string => {
+  if (value === null || value === undefined) return '""';
+  const s = typeof value === 'string' ? value : String(value);
+  return `"${s.replace(/"/g, '""')}"`;
+};
+
+const tsToDate = (raw: unknown): Date | null => {
+  if (!raw) return null;
+  if (raw instanceof Timestamp) return raw.toDate();
+  if (raw instanceof Date) return raw;
+  if (typeof raw === 'string') {
+    const d = new Date(raw);
+    return isNaN(d.getTime()) ? null : d;
+  }
+  const r = raw as { seconds?: number; toDate?: () => Date };
+  if (typeof r.toDate === 'function') return r.toDate();
+  if (typeof r.seconds === 'number') return new Date(r.seconds * 1000);
+  return null;
+};
+
+const monthKeyFromDate = (d: Date): string => {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  return `${y}-${m}`;
+};
+
+const isoDate = (d: Date | null): string => (d ? d.toISOString().slice(0, 10) : '');
+const isoDateTime = (d: Date | null): string =>
+  d ? `${d.toISOString().slice(0, 10)} ${d.toISOString().slice(11, 16)}` : '';
+
 export function useReconciliationExport(deps: ExportDeps) {
   const { filteredTransactions, projects, view, filterMonth, quickFilter, searchQuery } = deps;
+  const [zipExporting, setZipExporting] = useState(false);
+  const [zipError, setZipError] = useState<string | null>(null);
 
   // ─── CSV Export ─────────────────────────────────────────
   const handleExportCSV = useCallback(() => {
@@ -90,5 +124,165 @@ export function useReconciliationExport(deps: ExportDeps) {
     pdf.save(`reconciliation-${now.toISOString().slice(0, 10)}.pdf`);
   }, [filteredTransactions, view, filterMonth, quickFilter, searchQuery, projects]);
 
-  return { handleExportCSV, handleExportPDF };
+  // ─── ZIP-by-month Export ────────────────────────────────
+  // Loads ALL bank_transactions + costs visible to the current user (RLS-scoped)
+  // for the given year, groups by month, packages CSVs into one ZIP.
+  const handleExportByMonthZip = useCallback(async (year: number = new Date().getFullYear()) => {
+    setZipExporting(true);
+    setZipError(null);
+    try {
+      const { default: JSZip } = await import('jszip');
+
+      // ─── 1. Load ALL bank_transactions (RLS-scoped), filter by year client-side ──
+      // `date` field is a string ('YYYY-MM-DD') in some docs and Timestamp in others —
+      // safer to load all and filter in memory than to do mixed-type Firestore queries.
+      const txSnap = await getDocs(collection(db, 'bank_transactions'));
+      const allTxDocs = txSnap.docs.map(d => ({ id: d.id, ...(d.data() as Record<string, unknown>) }));
+      const txDocs = allTxDocs.filter(t => {
+        const d = tsToDate(t.date) || tsToDate(t.createdAt);
+        return d?.getFullYear() === year;
+      });
+
+      // ─── 2. Load costs for the year (filter by createdAt Timestamp) ───────
+      const yearStart = Timestamp.fromDate(new Date(year, 0, 1, 0, 0, 0));
+      const yearEnd = Timestamp.fromDate(new Date(year + 1, 0, 1, 0, 0, 0));
+      const costsQuery = query(
+        collection(db, 'costs'),
+        where('createdAt', '>=', yearStart),
+        where('createdAt', '<', yearEnd),
+      );
+      const costsSnap = await getDocs(costsQuery);
+      const costDocs = costsSnap.docs.map(d => ({ id: d.id, ...(d.data() as Record<string, unknown>) }));
+
+      // ─── 3. Group bank_transactions by month ────────────────────
+      const txByMonth = new Map<string, typeof txDocs>();
+      for (const t of txDocs) {
+        const d = tsToDate(t.date) || tsToDate(t.createdAt);
+        const mk = d ? monthKeyFromDate(d) : `${year}-00-unknown`;
+        if (!txByMonth.has(mk)) txByMonth.set(mk, []);
+        txByMonth.get(mk)!.push(t);
+      }
+
+      // ─── 4. Group costs by month ────────────────────────────────
+      const costsByMonth = new Map<string, typeof costDocs>();
+      for (const c of costDocs) {
+        const d = tsToDate(c.createdAt) || tsToDate(c.date);
+        const mk = d ? monthKeyFromDate(d) : `${year}-00-unknown`;
+        if (!costsByMonth.has(mk)) costsByMonth.set(mk, []);
+        costsByMonth.get(mk)!.push(c);
+      }
+
+      // ─── 5. Build CSVs ──────────────────────────────────────────
+      const BOM = '﻿';
+      const projectName = (id: unknown): string => projects.find(p => p.id === id)?.name || (typeof id === 'string' ? id : '');
+
+      const txHeaders = [
+        'id', 'date', 'year', 'month', 'vendor', 'rawDescription', 'city', 'state',
+        'amount', 'category', 'categoryId', 'paymentType', 'projectId', 'projectName',
+        'employeeId', 'statementId', 'status', 'isTransfer', 'isDeductible',
+        'autoApprovedReason', 'verifiedBy', 'notes',
+      ];
+      const txRow = (t: Record<string, unknown>): string[] => [
+        String(t.id ?? ''),
+        isoDate(tsToDate(t.date)),
+        String(t.year ?? ''),
+        String(t.month ?? ''),
+        String(t.vendor ?? ''),
+        String(t.rawDescription ?? ''),
+        String(t.city ?? ''),
+        String(t.state ?? ''),
+        String(t.amount ?? ''),
+        String(t.category ?? ''),
+        String(t.categoryId ?? ''),
+        String(t.paymentType ?? ''),
+        String(t.projectId ?? ''),
+        projectName(t.projectId),
+        String(t.employeeId ?? ''),
+        String(t.statementId ?? ''),
+        String(t.status ?? ''),
+        String(t.isTransfer ?? ''),
+        String(t.isDeductible ?? ''),
+        String(t.autoApprovedReason ?? ''),
+        String(t.verifiedBy ?? ''),
+        String(t.notes ?? ''),
+      ];
+
+      const costHeaders = [
+        'id', 'createdAt', 'userId', 'userName', 'clientId', 'clientName',
+        'category', 'categoryLabel', 'amount', 'originalAmount',
+        'description', 'status', 'receiptPhotoUrl', 'voiceNoteUrl', 'projectId',
+      ];
+      const costRow = (c: Record<string, unknown>): string[] => [
+        String(c.id ?? ''),
+        isoDateTime(tsToDate(c.createdAt)),
+        String(c.userId ?? ''),
+        String(c.userName ?? ''),
+        String(c.clientId ?? ''),
+        String(c.clientName ?? ''),
+        String(c.category ?? ''),
+        String(c.categoryLabel ?? ''),
+        String(c.amount ?? ''),
+        String(c.originalAmount ?? ''),
+        String(c.description ?? ''),
+        String(c.status ?? ''),
+        String(c.receiptPhotoUrl ?? ''),
+        String(c.voiceNoteUrl ?? ''),
+        String(c.projectId ?? ''),
+      ];
+
+      const buildCsv = (headers: string[], rows: string[][]): string =>
+        BOM + [headers.map(csvEscape).join(','), ...rows.map(r => r.map(csvEscape).join(','))].join('\n');
+
+      // ─── 6. Assemble ZIP ────────────────────────────────────────
+      const zip = new JSZip();
+      const txFolder = zip.folder('bank_transactions');
+      const costsFolder = zip.folder('costs');
+
+      const allMonthKeys = new Set<string>([...txByMonth.keys(), ...costsByMonth.keys()]);
+      const sortedMonths = Array.from(allMonthKeys).sort();
+
+      for (const mk of sortedMonths) {
+        const txs = txByMonth.get(mk) || [];
+        const cs = costsByMonth.get(mk) || [];
+        if (txs.length > 0) {
+          txFolder?.file(`${mk}.csv`, buildCsv(txHeaders, txs.map(txRow)));
+        }
+        if (cs.length > 0) {
+          costsFolder?.file(`${mk}.csv`, buildCsv(costHeaders, cs.map(costRow)));
+        }
+      }
+
+      // Manifest
+      const manifest = {
+        exportedAt: new Date().toISOString(),
+        year,
+        bank_transactions: {
+          total: txDocs.length,
+          byMonth: Object.fromEntries(Array.from(txByMonth.entries()).map(([k, v]) => [k, v.length])),
+        },
+        costs: {
+          total: costDocs.length,
+          byMonth: Object.fromEntries(Array.from(costsByMonth.entries()).map(([k, v]) => [k, v.length])),
+        },
+        note: 'Scope: only data visible to the exporting user under RLS. All statuses included.',
+      };
+      zip.file('manifest.json', JSON.stringify(manifest, null, 2));
+
+      // ─── 7. Trigger download ────────────────────────────────────
+      const blob = await zip.generateAsync({ type: 'blob' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `garkorfin${year}.zip`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error('ZIP export failed:', e);
+      setZipError(e instanceof Error ? e.message : 'Unknown error');
+    } finally {
+      setZipExporting(false);
+    }
+  }, [projects]);
+
+  return { handleExportCSV, handleExportPDF, handleExportByMonthZip, zipExporting, zipError };
 }

@@ -184,6 +184,7 @@ const COLLECTIONS = [
   'clients', 'gtd_tasks', 'costs', 'work_sessions', 'projects',
   'estimates', 'sites', 'users', 'contacts', 'activityLog',
   'bank_transactions', 'finance_rules', 'estimate_blackboard',
+  'reconciliation_audits',
   '_cache', '_idempotency', '_rate_limits',
 ];
 

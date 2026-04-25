@@ -3,7 +3,7 @@
  *
  * Extracted from ReconciliationPage.tsx to reduce file size.
  */
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { doc, updateDoc, serverTimestamp, Timestamp } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 import { db } from '../firebase/firebase';
@@ -64,6 +64,11 @@ export function useTransactionMutations(deps: MutationsDeps) {
 
   const [submitting, setSubmitting] = useState(false);
   const [approvedIds, setApprovedIds] = useState<Set<string>>(new Set());
+
+  // Synchronous in-flight guard. State updates are async, so a rapid double-click
+  // can fire two API calls before approvedIds propagates. A ref is mutated
+  // synchronously, so the second click sees the lock and returns early.
+  const pendingApprovalsRef = useRef<Set<string>>(new Set());
 
   // ─── Local field update (no Firestore write) ─────────────
   const handleUpdate = (id: string, field: keyof ReconcileTx, value: unknown) => {
@@ -132,8 +137,13 @@ export function useTransactionMutations(deps: MutationsDeps) {
 
   // ─── Approve single (with optimistic green flash) ────────
   const handleApproveSingle = async (id: string) => {
+    // Idempotency guard: drop the call if an approval for this id is already
+    // in flight. Without this, a rapid double-click creates two API requests
+    // and the backend produces two `costs` rows for the same transaction.
+    if (pendingApprovalsRef.current.has(id)) return;
     const tx = enrichedTransactions.find(t => t.id === id);
     if (!tx) return;
+    pendingApprovalsRef.current.add(id);
     // Optimistic: mark row green immediately
     setApprovedIds(prev => new Set(prev).add(id));
     try {
@@ -148,10 +158,12 @@ export function useTransactionMutations(deps: MutationsDeps) {
       setTimeout(() => {
         setTransactions(prev => prev.filter(t => t.id !== id));
         setApprovedIds(prev => { const next = new Set(prev); next.delete(id); return next; });
+        pendingApprovalsRef.current.delete(id);
       }, 800);
     } catch (e) {
       // Revert on error
       setApprovedIds(prev => { const next = new Set(prev); next.delete(id); return next; });
+      pendingApprovalsRef.current.delete(id);
       setErrorMsg("Ошибка: " + (e as Error).message);
     }
   };

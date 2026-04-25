@@ -169,15 +169,19 @@ export function useTransactionMutations(deps: MutationsDeps) {
   };
 
   // ─── Ignore single ──────────────────────────────────────
+  // Capture the row before the optimistic remove so we can restore it
+  // immediately on failure — without that, the row vanishes for the
+  // duration of fetchData() and reappears, which on slow networks
+  // looks like the action was committed when in fact it failed.
   const handleIgnore = async (id: string) => {
-    // Optimistic: remove from list
+    const removed = transactions.find(t => t.id === id);
     setTransactions(prev => prev.filter(t => t.id !== id));
     try {
       const txRef = doc(db, 'bank_transactions', id);
       await updateDoc(txRef, { status: 'ignored', updatedAt: serverTimestamp() });
     } catch (e) {
+      if (removed) setTransactions(prev => [removed, ...prev]);
       setErrorMsg('Ошибка скрытия: ' + (e as Error).message);
-      await fetchData(); // reload on error
     }
   };
 
@@ -185,6 +189,7 @@ export function useTransactionMutations(deps: MutationsDeps) {
   const handleBulkIgnore = async () => {
     if (!window.confirm(`Скрыть ${selectedIds.size} транзакций?`)) return;
     const ids = Array.from(selectedIds);
+    const removed = transactions.filter(t => selectedIds.has(t.id));
     setTransactions(prev => prev.filter(t => !selectedIds.has(t.id)));
     setSelectedIds(new Set());
     try {
@@ -193,6 +198,9 @@ export function useTransactionMutations(deps: MutationsDeps) {
         return updateDoc(txRef, { status: 'ignored', updatedAt: serverTimestamp() });
       }));
     } catch (e) {
+      // Best-effort restore. Some writes may have succeeded; fetchData
+      // brings the source of truth back in sync.
+      setTransactions(prev => [...removed, ...prev]);
       setErrorMsg('Ошибка скрытия: ' + (e as Error).message);
       await fetchData();
     }
@@ -200,13 +208,14 @@ export function useTransactionMutations(deps: MutationsDeps) {
 
   // ─── Restore (from ignored back to draft) ────────────────
   const handleRestore = async (id: string) => {
+    const removed = transactions.find(t => t.id === id);
     setTransactions(prev => prev.filter(t => t.id !== id));
     try {
       const txRef = doc(db, 'bank_transactions', id);
       await updateDoc(txRef, { status: 'draft', updatedAt: serverTimestamp() });
     } catch (e) {
+      if (removed) setTransactions(prev => [removed, ...prev]);
       setErrorMsg('Ошибка восстановления: ' + (e as Error).message);
-      await fetchData();
     }
   };
 
@@ -355,11 +364,35 @@ export function useTransactionMutations(deps: MutationsDeps) {
   }, [askDialogTxId, askMessage, setTransactions, setErrorMsg]);
 
   // ─── Bulk field update (category / paymentType) ──────────
-  const handleBulkUpdate = (field: 'categoryId' | 'paymentType', value: string) => {
+  // Persists to /api/finance/transactions/bulk-update so the change
+  // survives a page reload. Optimistic local update first; on API
+  // failure, errorMsg is shown and fetchData() reloads the truth.
+  const handleBulkUpdate = useCallback(async (field: 'categoryId' | 'paymentType', value: string) => {
+    if (selectedIds.size === 0) return;
+    const ids = Array.from(selectedIds);
+
+    // Optimistic local update
     setTransactions(prev => prev.map(t =>
       selectedIds.has(t.id) ? { ...t, [field]: value } : t
     ));
-  };
+
+    try {
+      const token = await getAuthToken();
+      const resp = await fetch(`${getApiUrl()}/api/finance/transactions/bulk-update`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ ids, patch: { [field]: value } }),
+      });
+      if (!resp.ok) throw new Error(`API ${resp.status}: ${await resp.text()}`);
+      const data = await resp.json() as { updated: number; skipped: number };
+      if (data.skipped > 0) {
+        setErrorMsg(`Обновлено ${data.updated}, пропущено ${data.skipped} (не draft или не найдено)`);
+      }
+    } catch (e) {
+      setErrorMsg('Не удалось сохранить bulk-обновление: ' + (e as Error).message);
+      await fetchData(); // revert by reloading the truth
+    }
+  }, [selectedIds, setTransactions, setErrorMsg, fetchData]);
 
   return {
     submitting,

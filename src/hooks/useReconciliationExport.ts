@@ -20,6 +20,9 @@ interface ExportDeps {
   filterMonth: string;
   quickFilter: QuickFilter;
   searchQuery: string;
+  /** When provided, ZIP export scopes bank_transactions to this company.
+   *  Skip for legacy users whose docs don't have companyId. */
+  companyId?: string | null;
 }
 
 const csvEscape = (value: unknown): string => {
@@ -53,7 +56,7 @@ const isoDateTime = (d: Date | null): string =>
   d ? `${d.toISOString().slice(0, 10)} ${d.toISOString().slice(11, 16)}` : '';
 
 export function useReconciliationExport(deps: ExportDeps) {
-  const { filteredTransactions, projects, view, filterMonth, quickFilter, searchQuery } = deps;
+  const { filteredTransactions, projects, view, filterMonth, quickFilter, searchQuery, companyId } = deps;
   const [zipExporting, setZipExporting] = useState(false);
   const [zipError, setZipError] = useState<string | null>(null);
 
@@ -133,11 +136,16 @@ export function useReconciliationExport(deps: ExportDeps) {
     try {
       const { default: JSZip } = await import('jszip');
 
-      // ─── 1. Load ALL bank_transactions (RLS-scoped), filter by year client-side ──
+      // ─── 1. Load bank_transactions for the current company (RLS-scoped) ──
       // `date` field is a string ('YYYY-MM-DD') in some docs and Timestamp in others —
-      // safer to load all and filter in memory than to do mixed-type Firestore queries.
-      const txSnap = await getDocs(collection(db, 'bank_transactions'));
-      const allTxDocs = txSnap.docs.map(d => ({ id: d.id, ...(d.data() as Record<string, unknown>) }));
+      // we filter by year in memory rather than at the server, but DO scope by
+      // companyId at the server when we know it, to avoid pulling other tenants'
+      // docs through the RLS allowlist on big accounts.
+      const txQuery = companyId
+        ? query(collection(db, 'bank_transactions'), where('companyId', '==', companyId))
+        : query(collection(db, 'bank_transactions'));
+      const txSnap = await getDocs(txQuery);
+      const allTxDocs: Array<Record<string, unknown> & { id: string }> = txSnap.docs.map(d => ({ id: d.id, ...d.data() }));
       const txDocs = allTxDocs.filter(t => {
         const d = tsToDate(t.date) || tsToDate(t.createdAt);
         return d?.getFullYear() === year;
@@ -152,7 +160,7 @@ export function useReconciliationExport(deps: ExportDeps) {
         where('createdAt', '<', yearEnd),
       );
       const costsSnap = await getDocs(costsQuery);
-      const costDocs = costsSnap.docs.map(d => ({ id: d.id, ...(d.data() as Record<string, unknown>) }));
+      const costDocs: Array<Record<string, unknown> & { id: string }> = costsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
 
       // ─── 3. Group bank_transactions by month ────────────────────
       const txByMonth = new Map<string, typeof txDocs>();
@@ -282,7 +290,7 @@ export function useReconciliationExport(deps: ExportDeps) {
     } finally {
       setZipExporting(false);
     }
-  }, [projects]);
+  }, [projects, companyId]);
 
   return { handleExportCSV, handleExportPDF, handleExportByMonthZip, zipExporting, zipError };
 }

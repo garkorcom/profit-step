@@ -9,6 +9,7 @@ import {
 import SettingsIcon from '@mui/icons-material/Settings';
 import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdf';
 import FileDownloadIcon from '@mui/icons-material/FileDownload';
+import Inventory2Icon from '@mui/icons-material/Inventory2';
 import AutoApproveRulesDialog from '../../components/crm/AutoApproveRulesDialog';
 import TransactionNoteDrawer from '../../components/crm/TransactionNoteDrawer';
 import ExpenseAnalyticsPanel from '../../components/crm/ExpenseAnalyticsPanel';
@@ -105,7 +106,7 @@ const ReconciliationPage: React.FC = () => {
     setSelectedIds,
   });
 
-  const { handleExportCSV, handleExportPDF } = useReconciliationExport({
+  const { handleExportCSV, handleExportPDF, handleExportByMonthZip, zipExporting } = useReconciliationExport({
     filteredTransactions: filters.filteredTransactions,
     projects,
     view,
@@ -167,6 +168,20 @@ const ReconciliationPage: React.FC = () => {
           <Button size="small" variant="outlined" startIcon={<PictureAsPdfIcon />} onClick={handleExportPDF} disabled={!filters.filteredTransactions.length}>
             PDF
           </Button>
+          <Tooltip title="Полный бекап за год: bank_transactions + costs, по месяцам, ZIP-архив">
+            <span>
+              <Button
+                size="small"
+                variant="outlined"
+                color="secondary"
+                startIcon={<Inventory2Icon />}
+                onClick={() => handleExportByMonthZip()}
+                disabled={zipExporting}
+              >
+                {zipExporting ? 'Архивирую...' : 'ZIP по месяцам'}
+              </Button>
+            </span>
+          </Tooltip>
           <Typography variant="body2" color="text.secondary" sx={{ mx: 1 }}>
             {filters.filteredTransactions.length} из {filters.enrichedTransactions.length}
           </Typography>

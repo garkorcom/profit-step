@@ -86,6 +86,7 @@
     "format": "npx -y oxfmt@latest src/",
     "format:check": "npx -y oxfmt@latest --check src/",
     "test:tasktotime": "jest --config tasktotime/jest.config.js",
+    "test:security:tasktotime": "jest --config tasktotime/jest.security.config.js",
     "tsc:tasktotime": "tsc -p tasktotime/tsconfig.json --noEmit"
   }
 }

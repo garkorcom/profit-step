@@ -17,6 +17,7 @@
     "domain/**/*.ts",
     "ports/**/*.ts",
     "application/**/*.ts",
+    "adapters/**/*.ts",
     "shared/**/*.ts",
     "tests/**/*.ts"
   ],

@@ -1,0 +1,321 @@
+/**
+ * Unit tests for FirestoreTaskRepository — *not* integration. We mock the
+ * minimal Firestore admin surface (CollectionReference, DocumentReference,
+ * Query, WriteBatch, Transaction) so these tests run without an emulator.
+ *
+ * Integration tests against a real Firestore (the emulator) live under
+ * `tasktotime/tests/adapters/` per STEP_3_PLAN §A4. This file targets
+ * adapter-internal logic: argument shaping, time-conversion at boundaries,
+ * patch validation, optimistic concurrency error mapping.
+ */
+
+import { Timestamp } from 'firebase-admin/firestore';
+import type { Firestore, Transaction } from 'firebase-admin/firestore';
+
+import { FirestoreTaskRepository } from '../../../adapters/firestore/FirestoreTaskRepository';
+import { IllegalPatchError, StaleVersion } from '../../../adapters/errors';
+import { asTaskId, asCompanyId, asUserId } from '../../../domain/identifiers';
+import type { Task, UserRef } from '../../../domain/Task';
+
+// ─── Test helpers ──────────────────────────────────────────────────────
+
+interface FakeDocSnap {
+  id: string;
+  exists: boolean;
+  data: () => Record<string, unknown> | undefined;
+}
+
+/**
+ * Tiny mock factory — each helper returns just enough surface to compile
+ * against `firebase-admin/firestore` types via structural typing. We cast
+ * to `unknown as Firestore` at the boundary; tests assert on the spies.
+ */
+function makeMockDb(opts: {
+  docs?: Record<string, Record<string, unknown> | undefined>;
+  txnDocs?: Record<string, Record<string, unknown> | undefined>;
+} = {}) {
+  const docs = opts.docs ?? {};
+  const txnDocs = opts.txnDocs ?? docs;
+  const setSpy = jest.fn();
+  const updateSpy = jest.fn();
+  const batchSetSpy = jest.fn();
+  const batchCommitSpy = jest.fn(() => Promise.resolve());
+  const txSetSpy = jest.fn();
+  const txUpdateSpy = jest.fn();
+  const queryGetSpy = jest.fn(() =>
+    Promise.resolve({
+      docs: Object.entries(docs).map(([id, data]) => ({
+        id,
+        data: () => data,
+      })),
+    }),
+  );
+
+  const docFactory = (id: string) => ({
+    id,
+    set: (data: unknown) => {
+      setSpy(id, data);
+      return Promise.resolve();
+    },
+    update: (data: unknown) => {
+      updateSpy(id, data);
+      return Promise.resolve();
+    },
+    get: () =>
+      Promise.resolve({
+        id,
+        exists: docs[id] !== undefined,
+        data: () => docs[id],
+      } satisfies FakeDocSnap),
+  });
+
+  const collectionFactory = () => {
+    const chain: Record<string, unknown> = {
+      doc: docFactory,
+      where: jest.fn(() => chain),
+      orderBy: jest.fn(() => chain),
+      limit: jest.fn(() => chain),
+      startAfter: jest.fn(() => chain),
+      get: queryGetSpy,
+    };
+    return chain;
+  };
+
+  const db = {
+    collection: jest.fn(() => collectionFactory()),
+    getAll: jest.fn((...refs: Array<{ id: string }>) =>
+      Promise.resolve(
+        refs.map((ref) => ({
+          id: ref.id,
+          exists: docs[ref.id] !== undefined,
+          data: () => docs[ref.id],
+        } satisfies FakeDocSnap)),
+      ),
+    ),
+    batch: jest.fn(() => ({
+      set: batchSetSpy,
+      commit: batchCommitSpy,
+    })),
+    runTransaction: jest.fn(async (cb: (tx: Transaction) => Promise<void>) => {
+      const tx = {
+        get: jest.fn((ref: { id: string }) =>
+          Promise.resolve({
+            id: ref.id,
+            exists: txnDocs[ref.id] !== undefined,
+            data: () => txnDocs[ref.id],
+          } satisfies FakeDocSnap),
+        ),
+        set: txSetSpy,
+        update: txUpdateSpy,
+      } as unknown as Transaction;
+      await cb(tx);
+    }),
+  } as unknown as Firestore;
+
+  return { db, setSpy, updateSpy, batchSetSpy, batchCommitSpy, txSetSpy, txUpdateSpy, queryGetSpy };
+}
+
+const userRef: UserRef = { id: asUserId('u1'), name: 'Alice' };
+
+/** Cast Task → indexable record so it satisfies the mock signatures. */
+const asRecord = (t: Task): Record<string, unknown> => t as unknown as Record<string, unknown>;
+
+const baseTask: Task = {
+  id: asTaskId('t1'),
+  companyId: asCompanyId('c1'),
+  taskNumber: 'T-2026-0001',
+  title: 'Demo',
+  lifecycle: 'draft',
+  bucket: 'inbox',
+  priority: 'medium',
+  createdBy: userRef,
+  assignedTo: userRef,
+  requiredHeadcount: 1,
+  createdAt: 1_700_000_000_000,
+  updatedAt: 1_700_000_000_000,
+  dueAt: 1_700_500_000_000,
+  estimatedDurationMinutes: 60,
+  actualDurationMinutes: 0,
+  autoShiftEnabled: false,
+  isCriticalPath: false,
+  slackMinutes: 0,
+  isSubtask: false,
+  subtaskIds: [],
+  wikiInheritsFromParent: false,
+  costInternal: { amount: 0, currency: 'USD' },
+  priceClient: { amount: 0, currency: 'USD' },
+  totalEarnings: 0,
+  materialsCostPlanned: 0,
+  materialsCostActual: 0,
+  source: 'web',
+  aiEstimateUsed: false,
+  history: [],
+  clientVisible: false,
+  internalOnly: true,
+};
+
+// ─── Tests ─────────────────────────────────────────────────────────────
+
+describe('FirestoreTaskRepository.findById', () => {
+  test('returns null for missing doc', async () => {
+    const { db } = makeMockDb({ docs: {} });
+    const repo = new FirestoreTaskRepository(db);
+    const result = await repo.findById(asTaskId('missing'));
+    expect(result).toBeNull();
+  });
+
+  test('returns task with Timestamps converted to epoch ms', async () => {
+    const { db } = makeMockDb({
+      docs: {
+        t1: {
+          ...baseTask,
+          createdAt: Timestamp.fromMillis(1_700_000_000_000),
+          updatedAt: Timestamp.fromMillis(1_700_000_001_000),
+        },
+      },
+    });
+    const repo = new FirestoreTaskRepository(db);
+    const result = await repo.findById(asTaskId('t1'));
+    expect(result).not.toBeNull();
+    expect(typeof result!.createdAt).toBe('number');
+    expect(result!.createdAt).toBe(1_700_000_000_000);
+    expect(result!.updatedAt).toBe(1_700_000_001_000);
+  });
+});
+
+describe('FirestoreTaskRepository.findByIds', () => {
+  test('returns [] for empty input without touching db', async () => {
+    const { db } = makeMockDb();
+    const repo = new FirestoreTaskRepository(db);
+    const result = await repo.findByIds([]);
+    expect(result).toEqual([]);
+    expect(db.getAll).not.toHaveBeenCalled();
+  });
+});
+
+describe('FirestoreTaskRepository.patch', () => {
+  test('throws IllegalPatchError for forbidden lifecycle key', async () => {
+    const { db } = makeMockDb({ docs: { t1: asRecord(baseTask) } });
+    const repo = new FirestoreTaskRepository(db);
+    await expect(
+      repo.patch(asTaskId('t1'), { lifecycle: 'started' }),
+    ).rejects.toBeInstanceOf(IllegalPatchError);
+  });
+
+  test('throws IllegalPatchError listing all forbidden keys', async () => {
+    const { db } = makeMockDb({ docs: { t1: asRecord(baseTask) } });
+    const repo = new FirestoreTaskRepository(db);
+    try {
+      await repo.patch(asTaskId('t1'), {
+        lifecycle: 'started',
+        history: [],
+        title: 'ok',
+      });
+      throw new Error('should have thrown');
+    } catch (err) {
+      expect(err).toBeInstanceOf(IllegalPatchError);
+      expect((err as IllegalPatchError).forbiddenKeys).toEqual(
+        expect.arrayContaining(['lifecycle', 'history']),
+      );
+    }
+  });
+
+  test('allows whitelisted patch (no forbidden keys)', async () => {
+    const { db, updateSpy } = makeMockDb({ docs: { t1: asRecord(baseTask) } });
+    const repo = new FirestoreTaskRepository(db);
+    await repo.patch(asTaskId('t1'), {
+      title: 'updated',
+      slackMinutes: 30,
+    });
+    expect(updateSpy).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('FirestoreTaskRepository.save', () => {
+  test('writes the doc with merge:false and stamps updatedAt', async () => {
+    const { db, setSpy } = makeMockDb();
+    const repo = new FirestoreTaskRepository(db);
+    await repo.save(baseTask);
+    expect(setSpy).toHaveBeenCalledTimes(1);
+    const [id, data] = setSpy.mock.calls[0];
+    expect(id).toBe('t1');
+    // updatedAt should be a sentinel (server timestamp), not a number
+    expect(typeof (data as Record<string, unknown>).updatedAt).not.toBe('number');
+  });
+});
+
+describe('FirestoreTaskRepository.saveMany', () => {
+  test('no-ops on empty input', async () => {
+    const { db, batchCommitSpy } = makeMockDb();
+    const repo = new FirestoreTaskRepository(db);
+    await repo.saveMany([]);
+    expect(batchCommitSpy).not.toHaveBeenCalled();
+  });
+
+  test('uses a single batch when count <= 500', async () => {
+    const { db, batchSetSpy, batchCommitSpy } = makeMockDb();
+    const repo = new FirestoreTaskRepository(db);
+    await repo.saveMany([baseTask, { ...baseTask, id: asTaskId('t2') }]);
+    expect(batchSetSpy).toHaveBeenCalledTimes(2);
+    expect(batchCommitSpy).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('FirestoreTaskRepository.softDelete', () => {
+  test('throws NOT_FOUND for missing doc inside transaction', async () => {
+    const { db } = makeMockDb({ docs: {}, txnDocs: {} });
+    const repo = new FirestoreTaskRepository(db);
+    await expect(
+      repo.softDelete(asTaskId('missing'), userRef),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  });
+
+  test('updates archive fields on existing doc', async () => {
+    const { db, txUpdateSpy } = makeMockDb({
+      docs: { t1: asRecord(baseTask) },
+      txnDocs: { t1: asRecord(baseTask) },
+    });
+    const repo = new FirestoreTaskRepository(db);
+    await repo.softDelete(asTaskId('t1'), userRef);
+    expect(txUpdateSpy).toHaveBeenCalledTimes(1);
+    const updateData = txUpdateSpy.mock.calls[0][1];
+    expect(updateData).toMatchObject({
+      isArchived: true,
+      bucket: 'archive',
+      archivedBy: userRef.id,
+    });
+  });
+});
+
+describe('FirestoreTaskRepository.saveIfUnchanged', () => {
+  test('throws StaleVersion when stored updatedAt does not match', async () => {
+    const { db } = makeMockDb({
+      docs: { t1: asRecord(baseTask) },
+      txnDocs: {
+        t1: {
+          ...asRecord(baseTask),
+          updatedAt: Timestamp.fromMillis(1_700_000_999_000), // different
+        },
+      },
+    });
+    const repo = new FirestoreTaskRepository(db);
+    await expect(
+      repo.saveIfUnchanged(baseTask, 1_700_000_000_000),
+    ).rejects.toBeInstanceOf(StaleVersion);
+  });
+
+  test('writes when stored updatedAt matches expected', async () => {
+    const { db, txSetSpy } = makeMockDb({
+      docs: { t1: asRecord(baseTask) },
+      txnDocs: {
+        t1: {
+          ...asRecord(baseTask),
+          updatedAt: Timestamp.fromMillis(1_700_000_000_000),
+        },
+      },
+    });
+    const repo = new FirestoreTaskRepository(db);
+    await repo.saveIfUnchanged(baseTask, 1_700_000_000_000);
+    expect(txSetSpy).toHaveBeenCalledTimes(1);
+  });
+});

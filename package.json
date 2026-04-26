@@ -84,6 +84,8 @@
     "lint": "oxlint src/",
     "lint:fix": "oxlint --fix src/",
     "format": "npx -y oxfmt@latest src/",
-    "format:check": "npx -y oxfmt@latest --check src/"
+    "format:check": "npx -y oxfmt@latest --check src/",
+    "test:tasktotime": "jest --config tasktotime/jest.config.js",
+    "tsc:tasktotime": "tsc -p tasktotime/tsconfig.json --noEmit"
   }
 }

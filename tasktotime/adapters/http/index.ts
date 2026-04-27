@@ -49,3 +49,35 @@ export {
 export type { ParseResult, ParseError } from './schemas';
 
 export * from './handlers';
+
+// ─── Legacy GTD proxy (Phase 5/6 backwards-compat) ────────────────────
+//
+// Mounted separately from `createTasktotimeRouter` because it lives at a
+// different URL prefix (`/api/gtd-tasks` vs `/api/tasktotime`). See
+// `spec/05-api/backwards-compat.md` and the composition root in
+// `functions/src/agent/routes/gtdTasksProxy.ts`.
+export {
+  createGtdProxyRouter,
+  legacyCreateRoute,
+  legacyGetRoute,
+  legacyListRoute,
+  legacyPatchRoute,
+  legacyDeleteRoute,
+  legacyStatusToLifecycle,
+  lifecycleToLegacyStatus,
+  isKnownLegacyStatus,
+  LEGACY_TO_LIFECYCLE,
+  LIFECYCLE_TO_LEGACY,
+  legacyCreateToTasktotime,
+  legacyPatchToTasktotime,
+  legacyListQueryToTasktotime,
+  lifecycleToTransitionAction,
+  tasktotimeTaskToLegacy,
+} from './handlers/legacyGtdProxy';
+export type {
+  GtdProxyRouterDeps,
+  ProxyRouteDeps,
+  LegacyTaskShape,
+  LegacyPatchPlan,
+  LegacyCreateBody,
+} from './handlers/legacyGtdProxy';

@@ -88,6 +88,27 @@ app.use(portalRoutes);
 app.use(authMiddleware);
 app.use(rateLimitMiddleware);
 
+// ─── Legacy GTD proxy (MUST precede legacy taskRoutes) ─────────────
+//
+// `/api/gtd-tasks/*` is the URL surface the external AI bot
+// (`@crmapiprofit_bot`) hits today. The legacy `tasks.ts` router writes
+// to `gtd_tasks` (deprecated). The proxy below intercepts the same paths
+// and forwards to the canonical `tasktotime_tasks` collection via the
+// tasktotime application handlers. Express matches in registration
+// order, so mounting the proxy FIRST means bot traffic flows through
+// the canonical collection without the bot itself changing.
+//
+// Spec: `tasktotime/spec/05-api/backwards-compat.md`.
+// CLAUDE.md §4 live risk #2: bot is hallucinating because it still
+// targets `gtd_tasks` shapes.
+//
+// Lazy-built like the tasktotime router below — don't pay the cost on
+// unrelated cold starts.
+import { getGtdTasksProxyRouter } from './routes/gtdTasksProxy';
+app.use('/api/gtd-tasks', (req, res, next) =>
+  getGtdTasksProxyRouter()(req, res, next),
+);
+
 // ─── Register Domain Routes ────────────────────────────────────────
 
 const routes = [

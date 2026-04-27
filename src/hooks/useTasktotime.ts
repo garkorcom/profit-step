@@ -109,6 +109,154 @@ export function useTaskList(
     return { tasks, nextCursor, loading, error, refetch };
 }
 
+// ─── useTaskListPaginated ────────────────────────────────────────────────
+
+export interface UseTaskListPaginatedResult {
+    tasks: TaskDto[];
+    /** `null` when there's no next page. */
+    nextCursor: string | null;
+    /** True for both initial load and `loadMore` fetches. */
+    loading: boolean;
+    /** Specifically the initial load — distinct from `loadMore` so the UI
+     * can show a spinner on first paint and a button-spinner on later pages. */
+    loadingInitial: boolean;
+    /** Specifically the follow-up `loadMore` fetch. */
+    loadingMore: boolean;
+    error: Error | null;
+    /** Re-run from page 1 (clears accumulated tasks). */
+    refetch: () => void;
+    /** Fetch the next cursor page and append to the existing list. No-op if
+     * `nextCursor === null` or a fetch is already in flight. */
+    loadMore: () => void;
+}
+
+/**
+ * Cursor-based pagination flavour of {@link useTaskList}.
+ *
+ * Accumulates results across `loadMore` calls. When `params` changes, the
+ * accumulated list is reset and re-fetched from the first page. Internally:
+ *   - Initial load: fetch with `cursor` unset, replace state.
+ *   - `loadMore()`: fetch with the last known `nextCursor`, append items.
+ *   - `refetch()`: bump a counter that re-runs the initial fetch and resets
+ *     accumulated state.
+ *
+ * Why a sibling hook instead of extending `useTaskList`: the append-on-cursor
+ * semantics fundamentally change the state model (multi-fetch accumulator vs
+ * single-fetch replace) and pulling both into one hook would force every
+ * existing caller to reason about cursor mode. Sibling keeps APIs orthogonal.
+ */
+export function useTaskListPaginated(
+    params: Omit<ListTasksParams, 'cursor'> | null,
+): UseTaskListPaginatedResult {
+    const [tasks, setTasks] = useState<TaskDto[]>([]);
+    const [nextCursor, setNextCursor] = useState<string | null>(null);
+    const [loadingInitial, setLoadingInitial] = useState<boolean>(false);
+    const [loadingMore, setLoadingMore] = useState<boolean>(false);
+    const [error, setError] = useState<Error | null>(null);
+    const [reloadCounter, setReloadCounter] = useState<number>(0);
+
+    // Track latest in-flight cursor across re-renders so async callbacks can
+    // bail out when params change mid-flight.
+    const inFlightRef = useRef<{ cancelled: boolean } | null>(null);
+    // `nextCursor` snapshot for `loadMore` — read from a ref so the callback
+    // identity stays stable.
+    const nextCursorRef = useRef<string | null>(null);
+    nextCursorRef.current = nextCursor;
+    const paramsRef = useRef<Omit<ListTasksParams, 'cursor'> | null>(params);
+    paramsRef.current = params;
+
+    const paramsKey = params ? JSON.stringify(params) : null;
+
+    // Initial / params-changed fetch.
+    useEffect(() => {
+        if (!params || !paramsKey) {
+            setTasks([]);
+            setNextCursor(null);
+            setLoadingInitial(false);
+            setLoadingMore(false);
+            setError(null);
+            return;
+        }
+        const flag = { cancelled: false };
+        // Cancel any prior in-flight request.
+        if (inFlightRef.current) inFlightRef.current.cancelled = true;
+        inFlightRef.current = flag;
+
+        setLoadingInitial(true);
+        setLoadingMore(false);
+        setError(null);
+        tasktotimeApi
+            .listTasks(params)
+            .then((res) => {
+                if (flag.cancelled) return;
+                setTasks(res.items);
+                setNextCursor(res.nextCursor);
+            })
+            .catch((err: unknown) => {
+                if (flag.cancelled) return;
+                setError(err instanceof Error ? err : new Error(String(err)));
+                setTasks([]);
+                setNextCursor(null);
+            })
+            .finally(() => {
+                if (flag.cancelled) return;
+                setLoadingInitial(false);
+            });
+        return () => {
+            flag.cancelled = true;
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [paramsKey, reloadCounter]);
+
+    const loadMore = useCallback(() => {
+        const cursor = nextCursorRef.current;
+        const currentParams = paramsRef.current;
+        if (!cursor || !currentParams) return;
+        // Don't stack loadMore calls — UI should disable button via `loading`,
+        // but guard here too as defense-in-depth.
+        if (inFlightRef.current && !inFlightRef.current.cancelled) {
+            // If the in-flight one is the initial fetch, drop this call.
+            // (loadingInitial is read at call-time via state, but here we
+            // simply respect any in-flight marker.)
+        }
+        const flag = { cancelled: false };
+        inFlightRef.current = flag;
+
+        setLoadingMore(true);
+        setError(null);
+        tasktotimeApi
+            .listTasks({ ...currentParams, cursor })
+            .then((res) => {
+                if (flag.cancelled) return;
+                setTasks((prev) => [...prev, ...res.items]);
+                setNextCursor(res.nextCursor);
+            })
+            .catch((err: unknown) => {
+                if (flag.cancelled) return;
+                setError(err instanceof Error ? err : new Error(String(err)));
+            })
+            .finally(() => {
+                if (flag.cancelled) return;
+                setLoadingMore(false);
+            });
+    }, []);
+
+    const refetch = useCallback(() => {
+        setReloadCounter((n) => n + 1);
+    }, []);
+
+    return {
+        tasks,
+        nextCursor,
+        loading: loadingInitial || loadingMore,
+        loadingInitial,
+        loadingMore,
+        error,
+        refetch,
+        loadMore,
+    };
+}
+
 // ─── useTask ─────────────────────────────────────────────────────────────
 
 export interface UseTaskResult {

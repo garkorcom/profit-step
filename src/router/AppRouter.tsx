@@ -74,6 +74,7 @@ const AdminWorkerDetailPage = React.lazy(() => import('../modules/worker').then(
 // that ship in follow-up PRs (board, gantt, wiki editor, etc.).
 const TasktotimeLayout = React.lazy(() => import('../pages/crm/tasktotime').then(m => ({ default: m.TasktotimeLayout })));
 const TaskListPage = React.lazy(() => import('../pages/crm/tasktotime').then(m => ({ default: m.TaskListPage })));
+const TaskDetailPage = React.lazy(() => import('../pages/crm/tasktotime').then(m => ({ default: m.TaskDetailPage })));
 const TasktotimeComingSoon = React.lazy(() => import('../pages/crm/tasktotime').then(m => ({ default: m.ComingSoonView })));
 // Phase 4.3 — temporary debug route for the Wiki editor wrapper. Imported via
 // its own dynamic import (NOT the barrel) so the heavy MDXEditor chunk only
@@ -272,9 +273,9 @@ const AppRouter: React.FC = () => {
             <Route path="hierarchy" element={<TasktotimeComingSoon label="Hierarchy" />} />
             <Route path="wiki" element={<TasktotimeComingSoon label="Wiki" />} />
             <Route path="reports" element={<TasktotimeComingSoon label="Reports" />} />
-            <Route path="tasks/:id" element={<TasktotimeComingSoon label="Task Detail" />} />
+            <Route path="tasks/:id" element={<TaskDetailPage />} />
             {/* Phase 4.3 — temporary debug route. Will be removed when the */}
-            {/* WikiEditor lands inside TaskDetailPage (Phase 4.1 PR).        */}
+            {/* WikiEditor lands inside TaskDetailPage (Phase 4.1 follow-up). */}
             <Route path="wiki-demo" element={<WikiDemoPage />} />
           </Route>
 

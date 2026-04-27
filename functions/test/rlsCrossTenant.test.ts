@@ -1,314 +1,517 @@
 /**
- * @fileoverview rlsCrossTenant.test.ts
+ * @fileoverview rlsCrossTenant.test.ts — Firestore rules emulator tests.
  *
- * Cross-role / cross-user RLS leak tests for the 5 routes hardened in ceb8464:
- *   - /api/dashboard
- *   - /api/inventory/*
- *   - /api/finance/*
- *   - /api/activity
- *   - /api/feedback
+ * Spec source of truth:
+ *   - tasktotime/spec/04-storage/rules.md:114-127 (cross-tenant RLS smoke test
+ *     contract)
+ *   - tasktotime/spec/11-success-metrics.md:23 ("Cross-tenant RLS test
+ *     PASSES — was not run regularly per CLAUDE.md §4")
  *
- * Strategy — FULL MOCK (same pattern as generateAiTask.integration.test.ts):
- * The test does NOT need the Firestore emulator. Instead it replaces
- * `admin.firestore()` with an in-memory spy that records every `.where()`,
- * `.orderBy()`, `.limit()` call. We then assert that the query chain built
- * by each route includes the expected scoping predicate for the impersonated
- * role.
+ * Coverage:
+ *   1. tasktotime_tasks
+ *      - read scoped by companyId (denies cross-tenant)
+ *      - create requires own companyId AND own createdBy.id (no spoofing)
+ *      - update permitted for creator/assignee/reviewer/manager/admin only,
+ *        all gated by same-company; cross-tenant always denied
+ *      - delete: admin only (others denied)
+ *   2. tasktotime_tasks/{taskId}/wiki_history/{vId}
+ *      - read scoped by parent task's companyId
+ *      - write permanently denied (server-only path)
+ *   3. tasktotime_transitions
+ *      - read scoped by companyId
+ *      - write permanently denied (append-only via server-side writes)
+ *   4. work_sessions  ← KNOWN GAP from the rules-as-deployed
+ *      - CURRENT: any signed-in user CAN read another tenant's sessions
+ *        (firestore.rules:439-444). This is documented in a passing test so
+ *        the spec evidence is captured. Hardening is deferred — see PR body.
+ *      - TARGET: cross-tenant denied  ← test.skip + TODO until rules updated
  *
- * This catches:
- *   - a route that forgets to add a .where('userId', '==', uid) filter for
- *     worker/driver role (→ data leak)
- *   - a foreman endpoint that uses 'in' with too many uids (Firestore cap 30)
- *   - a worker endpoint that exposes company-wide estimates
+ * Runtime gating:
+ *   These tests need the Firestore rules emulator on `localhost:8080`. We
+ *   probe reachability at module load (synchronous TCP probe), then either
+ *   use `describe` (when reachable) or `describe.skip` (graceful CI skip).
  *
- * What it does NOT catch:
- *   - Firestore composite-index mismatches (need emulator)
- *   - .get() behavior on real data (need emulator / fixture docs)
+ *   Run via:
  *
- * For a full belt-and-suspenders check, also run:
- *   firebase emulators:start --only firestore,auth
- *   npm --prefix functions run test -- rlsCrossTenant
- * with setup.ts's emulator pointers.
+ *       firebase emulators:exec --only firestore \
+ *         'npm --prefix functions test -- rlsCrossTenant'
+ *
+ * @see functions/test/rlsCrossTenantRoutes.test.ts — separate suite for
+ *      route-layer (HTTP) RLS via `jest.mock('firebase-admin')`.
  */
 
-import * as express from 'express';
-import type { Request, Response, NextFunction } from 'express';
-import * as request from 'supertest';
+import {
+  assertFails,
+  assertSucceeds,
+  type RulesTestEnvironment,
+} from '@firebase/rules-unit-testing';
+import { setLogLevel } from 'firebase/firestore';
+import { execSync } from 'child_process';
 
-// ─── Mock admin before importing routes ───────────────────────────────
+import {
+  COMPANY_A,
+  USER_A_ADMIN,
+  USER_A_ASSIGNEE,
+  USER_A_MANAGER,
+  USER_A_OWNER,
+  USER_A_RANDOM,
+  USER_A_REVIEWER,
+  USER_B_ADMIN,
+  USER_B_RANDOM,
+  authedAs,
+  makeRulesEnv,
+  seedDoc,
+  seedUsers,
+  unauthed,
+} from './helpers/rlsHelpers';
 
-type QuerySpy = {
-  collection: string;
-  wheres: Array<[string, FirebaseFirestore.WhereFilterOp, unknown]>;
-  orderBys: string[];
-  limitN?: number;
-};
+// ─── Synchronous emulator availability probe ────────────────────────────
+//
+// `describe.skip` must be decided at module-load time because Jest does not
+// allow conditionally producing different describe trees from inside an
+// async beforeAll hook. We use a sync `nc -z localhost 8080`-style probe via
+// `execSync`, which is fast (~5-30ms) and only runs once per file load.
 
-const querySpies: QuerySpy[] = [];
-
-function makeQueryChain(collectionName: string, existing?: QuerySpy): any {
-  const spy: QuerySpy = existing ?? {
-    collection: collectionName,
-    wheres: [],
-    orderBys: [],
-  };
-  if (!existing) querySpies.push(spy);
-  const chain: any = {
-    where: (field: string, op: FirebaseFirestore.WhereFilterOp, value: unknown) => {
-      spy.wheres.push([field, op, value]);
-      return makeQueryChain(collectionName, spy);
-    },
-    orderBy: (field: string) => {
-      spy.orderBys.push(field);
-      return makeQueryChain(collectionName, spy);
-    },
-    limit: (n: number) => {
-      spy.limitN = n;
-      return makeQueryChain(collectionName, spy);
-    },
-    get: async () => ({ docs: [], size: 0, empty: true }),
-  };
-  return chain;
+function isEmulatorReachableSync(): boolean {
+  try {
+    // `nc -z` returns 0 if the port is open. We give it a 1-second budget.
+    // On macOS/Linux nc is preinstalled. If absent, we fall back to false
+    // (suite skipped), which is the safer default for CI.
+    execSync('nc -z localhost 8080', {
+      stdio: 'ignore',
+      timeout: 2000,
+    });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
-jest.mock('firebase-admin', () => {
-  const actual = jest.requireActual('firebase-admin');
-  return {
-    ...actual,
-    firestore: () => ({
-      collection: (name: string) => makeQueryChain(name),
-    }),
-    initializeApp: jest.fn(),
-    apps: [{}],
-  };
-});
+const HAS_EMULATOR = isEmulatorReachableSync();
+const describeIfEmulator: typeof describe = HAS_EMULATOR
+  ? describe
+  : (describe.skip as typeof describe);
 
-jest.mock('firebase-functions', () => ({
-  logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn() },
-}));
-
-// routeContext exports `db`, `Timestamp`, `logger`, `getCachedClients`.
-jest.mock('../src/agent/routeContext', () => {
-  const admin = require('firebase-admin');
-  return {
-    db: admin.firestore(),
-    Timestamp: {
-      fromDate: (d: Date) => ({ toDate: () => d, _d: d }),
-      now: () => ({ toDate: () => new Date(), _d: new Date() }),
-    },
-    logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn() },
-    getCachedClients: async () => [],
-  };
-});
-
-// ─── Helpers ──────────────────────────────────────────────────────────
-
-function mountWithRole(
-  routerPath: string,
-  role: string,
-  userId: string,
-  teamUids: string[] = [],
-) {
-  const { default: router } = require(routerPath);
-  const app = express();
-  app.use(express.json());
-  app.use((req: Request, _res: Response, next: NextFunction) => {
-    req.agentUserId = userId;
-    req.effectiveUserId = userId;
-    req.effectiveRole = role;
-    req.effectiveTeamMemberUids = teamUids;
-    req.effectiveScopes = role === 'admin' ? ['admin'] : [];
-    next();
-  });
-  app.use(router);
-  return app;
-}
-
-function resetSpies() {
-  querySpies.length = 0;
-}
-
-function findSpy(collection: string): QuerySpy | undefined {
-  return querySpies.find((s) => s.collection === collection);
-}
-
-function hasFilter(spy: QuerySpy, field: string, value?: unknown): boolean {
-  return spy.wheres.some(
-    ([f, , v]) => f === field && (value === undefined || v === value),
+if (!HAS_EMULATOR) {
+  // eslint-disable-next-line no-console
+  console.warn(
+    '[rlsCrossTenant] Firestore emulator not reachable on localhost:8080; ' +
+      'suite skipped. Run with: ' +
+      'firebase emulators:exec --only firestore "npm --prefix functions test -- rlsCrossTenant"',
   );
 }
 
-// ─── /api/dashboard tests ─────────────────────────────────────────────
+// ─── Shared environment lifecycle ───────────────────────────────────────
 
-describe('RLS: GET /api/dashboard', () => {
-  beforeEach(resetSpies);
+let testEnv: RulesTestEnvironment;
 
-  it('worker role adds userId filter to work_sessions, gtd_tasks, costs', async () => {
-    const app = mountWithRole('../src/agent/routes/dashboard', 'worker', 'userA');
-    await request(app).get('/api/dashboard');
-
-    const sessions = findSpy('work_sessions');
-    const tasks = findSpy('gtd_tasks');
-    const costs = findSpy('costs');
-    expect(sessions).toBeDefined();
-    expect(tasks).toBeDefined();
-    expect(costs).toBeDefined();
-    expect(hasFilter(sessions!, 'userId', 'userA')).toBe(true);
-    expect(hasFilter(tasks!, 'assigneeId', 'userA')).toBe(true);
-    expect(hasFilter(costs!, 'userId', 'userA')).toBe(true);
-  });
-
-  it('worker role does NOT query estimates collection (leak check)', async () => {
-    const app = mountWithRole('../src/agent/routes/dashboard', 'worker', 'userA');
-    await request(app).get('/api/dashboard');
-
-    expect(findSpy('estimates')).toBeUndefined();
-  });
-
-  it('driver role behaves same as worker (treated identically by RLS)', async () => {
-    const app = mountWithRole('../src/agent/routes/dashboard', 'driver', 'userD');
-    await request(app).get('/api/dashboard');
-
-    expect(findSpy('estimates')).toBeUndefined();
-    expect(hasFilter(findSpy('work_sessions')!, 'userId', 'userD')).toBe(true);
-  });
-
-  it('foreman with team ≤30 uses "in" filter with all team uids', async () => {
-    const team = ['u1', 'u2', 'u3'];
-    const app = mountWithRole(
-      '../src/agent/routes/dashboard',
-      'foreman',
-      'foremanA',
-      team,
-    );
-    await request(app).get('/api/dashboard');
-
-    const sessions = findSpy('work_sessions')!;
-    const inFilter = sessions.wheres.find(
-      ([f, op]) => f === 'userId' && op === 'in',
-    );
-    expect(inFilter).toBeDefined();
-    const uids = inFilter![2] as string[];
-    expect(uids).toContain('foremanA');
-    expect(uids).toEqual(expect.arrayContaining(team));
-  });
-
-  it('foreman with >30 team members falls back to admin-wide (no scoping)', async () => {
-    // Firestore caps 'in' at 30 values; route must not try to use 'in'.
-    const bigTeam = Array.from({ length: 31 }, (_, i) => `u${i}`);
-    const app = mountWithRole(
-      '../src/agent/routes/dashboard',
-      'foreman',
-      'foremanB',
-      bigTeam,
-    );
-    await request(app).get('/api/dashboard');
-
-    const sessions = findSpy('work_sessions')!;
-    const inFilter = sessions.wheres.find(
-      ([f, op]) => f === 'userId' && op === 'in',
-    );
-    // Currently the route silently becomes admin-scope in this case.
-    // This is a KNOWN GAP — a team of >30 is unscoped.
-    // Flag it: this test documents the behavior so we notice if it changes.
-    expect(inFilter).toBeUndefined();
-  });
-
-  it('admin role does not add any user scoping to work_sessions', async () => {
-    const app = mountWithRole('../src/agent/routes/dashboard', 'admin', 'adminA');
-    await request(app).get('/api/dashboard');
-
-    const sessions = findSpy('work_sessions')!;
-    const userFilter = sessions.wheres.find(([f]) => f === 'userId');
-    expect(userFilter).toBeUndefined();
+beforeAll(async () => {
+  if (!HAS_EMULATOR) return;
+  setLogLevel('error');
+  testEnv = await makeRulesEnv({
+    projectId: 'profit-step-rls-cross-tenant',
   });
 });
 
-// ─── /api/inventory — RLS leak scenarios ──────────────────────────────
-
-describe('RLS: /api/inventory', () => {
-  beforeEach(resetSpies);
-
-  it('worker listing warehouses sees only own (createdBy filter)', async () => {
-    const app = mountWithRole('../src/agent/routes/inventory', 'worker', 'userA');
-    await request(app).get('/api/inventory/warehouses');
-
-    const warehouses = findSpy('inventory_warehouses') || findSpy('warehouses');
-    if (warehouses) {
-      expect(
-        hasFilter(warehouses, 'createdBy', 'userA') ||
-          hasFilter(warehouses, 'ownerId', 'userA'),
-      ).toBe(true);
-    } else {
-      // If collection name differs, at minimum some user-scoping filter was added.
-      // Fail loud so test is maintained when inventory route changes.
-      throw new Error(
-        'No warehouse query captured. Update this test if inventory collection name changed.',
-      );
-    }
-  });
+afterAll(async () => {
+  if (!HAS_EMULATOR || !testEnv) return;
+  await testEnv.cleanup();
 });
 
-// ─── /api/finance — RLS denial scenarios ──────────────────────────────
+beforeEach(async () => {
+  if (!HAS_EMULATOR || !testEnv) return;
+  await testEnv.clearFirestore();
+  await seedUsers(testEnv);
+});
 
-describe('RLS: /api/finance', () => {
-  beforeEach(resetSpies);
+// ─── Fixtures ────────────────────────────────────────────────────────────
 
-  it('worker role on /finance/context is denied (403, no collection hit)', async () => {
-    const app = mountWithRole('../src/agent/routes/finance', 'worker', 'userA');
-    const res = await request(app).get('/api/finance/context');
+const TASK_A_ID = 'task_in_company_A';
+const TASK_B_ID = 'task_in_company_B';
 
-    // Worker should never reach the Firestore layer for finance/context.
-    // Either 403 or empty response — but NO finance collection reads.
-    expect(res.status).toBeGreaterThanOrEqual(400);
-    const financeSpies = querySpies.filter((s) =>
-      s.collection.startsWith('finance_'),
+async function seedTasks(): Promise<void> {
+  await seedDoc(testEnv, `tasktotime_tasks/${TASK_A_ID}`, {
+    companyId: COMPANY_A,
+    title: 'Demo bathroom (A)',
+    lifecycle: 'ready',
+    createdBy: { id: USER_A_OWNER, name: 'Owner A' },
+    assignedTo: { id: USER_A_ASSIGNEE, name: 'Assignee A' },
+    reviewedBy: { id: USER_A_REVIEWER, name: 'Reviewer A' },
+  });
+  await seedDoc(testEnv, `tasktotime_tasks/${TASK_B_ID}`, {
+    companyId: 'company_B',
+    title: 'Demo kitchen (B)',
+    lifecycle: 'ready',
+    createdBy: { id: USER_B_RANDOM, name: 'Owner B' },
+    assignedTo: { id: USER_B_RANDOM, name: 'Assignee B' },
+  });
+}
+
+// ─── tasktotime_tasks — READ ────────────────────────────────────────────
+
+describeIfEmulator('rules: tasktotime_tasks — READ', () => {
+  it('ALLOWS same-company employee to read', async () => {
+    await seedTasks();
+    await assertSucceeds(
+      authedAs(testEnv, USER_A_RANDOM)
+        .firestore()
+        .doc(`tasktotime_tasks/${TASK_A_ID}`)
+        .get(),
     );
-    expect(financeSpies).toHaveLength(0);
+  });
+
+  it('DENIES cross-company read (companyA user reading companyB task)', async () => {
+    await seedTasks();
+    await assertFails(
+      authedAs(testEnv, USER_A_RANDOM)
+        .firestore()
+        .doc(`tasktotime_tasks/${TASK_B_ID}`)
+        .get(),
+    );
+  });
+
+  it('DENIES cross-company read (companyB user reading companyA task)', async () => {
+    await seedTasks();
+    await assertFails(
+      authedAs(testEnv, USER_B_RANDOM)
+        .firestore()
+        .doc(`tasktotime_tasks/${TASK_A_ID}`)
+        .get(),
+    );
+  });
+
+  it('DENIES unauthenticated read', async () => {
+    await seedTasks();
+    await assertFails(
+      unauthed(testEnv).firestore().doc(`tasktotime_tasks/${TASK_A_ID}`).get(),
+    );
   });
 });
 
-// ─── /api/activity ────────────────────────────────────────────────────
+// ─── tasktotime_tasks — CREATE ──────────────────────────────────────────
 
-describe('RLS: /api/activity', () => {
-  beforeEach(resetSpies);
+describeIfEmulator('rules: tasktotime_tasks — CREATE', () => {
+  it('ALLOWS create with own companyId + own createdBy.id', async () => {
+    await assertSucceeds(
+      authedAs(testEnv, USER_A_OWNER)
+        .firestore()
+        .doc('tasktotime_tasks/new_ok')
+        .set({
+          companyId: COMPANY_A,
+          title: 'OK',
+          createdBy: { id: USER_A_OWNER, name: 'Owner' },
+          assignedTo: { id: USER_A_ASSIGNEE, name: 'Assignee' },
+        }),
+    );
+  });
 
-  it('worker sees own activity only', async () => {
-    const app = mountWithRole('../src/agent/routes/activity', 'worker', 'userA');
-    await request(app).get('/api/activity');
+  it('DENIES create with foreign companyId (cross-tenant attack)', async () => {
+    await assertFails(
+      authedAs(testEnv, USER_A_OWNER)
+        .firestore()
+        .doc('tasktotime_tasks/new_xtenant')
+        .set({
+          companyId: 'company_B',
+          title: 'Cross-tenant attack',
+          createdBy: { id: USER_A_OWNER, name: 'Owner' },
+          assignedTo: { id: USER_A_OWNER, name: 'Owner' },
+        }),
+    );
+  });
 
-    const activity = findSpy('activity_log') || findSpy('user_activity');
-    if (activity) {
-      expect(
-        hasFilter(activity, 'userId', 'userA') ||
-          hasFilter(activity, 'actorId', 'userA'),
-      ).toBe(true);
-    }
+  it('DENIES create with spoofed createdBy.id', async () => {
+    await assertFails(
+      authedAs(testEnv, USER_A_OWNER)
+        .firestore()
+        .doc('tasktotime_tasks/new_spoof')
+        .set({
+          companyId: COMPANY_A,
+          title: 'Spoofed creator',
+          createdBy: { id: 'someone_else', name: 'Fake' },
+          assignedTo: { id: USER_A_ASSIGNEE, name: 'Assignee' },
+        }),
+    );
   });
 });
 
-// ─── /api/feedback ────────────────────────────────────────────────────
+// ─── tasktotime_tasks — UPDATE ──────────────────────────────────────────
 
-describe('RLS: /api/feedback', () => {
-  beforeEach(resetSpies);
+describeIfEmulator('rules: tasktotime_tasks — UPDATE', () => {
+  it('ALLOWS createdBy to update', async () => {
+    await seedTasks();
+    await assertSucceeds(
+      authedAs(testEnv, USER_A_OWNER)
+        .firestore()
+        .doc(`tasktotime_tasks/${TASK_A_ID}`)
+        .update({ title: 'Updated by owner' }),
+    );
+  });
 
-  it('worker/driver/foreman see only own feedback', async () => {
-    for (const role of ['worker', 'driver', 'foreman']) {
-      resetSpies();
-      const app = mountWithRole(
-        '../src/agent/routes/feedback',
-        role,
-        `user_${role}`,
-      );
-      await request(app).get('/api/feedback');
+  it('ALLOWS assignedTo to update', async () => {
+    await seedTasks();
+    await assertSucceeds(
+      authedAs(testEnv, USER_A_ASSIGNEE)
+        .firestore()
+        .doc(`tasktotime_tasks/${TASK_A_ID}`)
+        .update({ lifecycle: 'started' }),
+    );
+  });
 
-      const feedback = findSpy('agent_feedback') || findSpy('feedback');
-      if (feedback) {
-        expect(
-          hasFilter(feedback, 'userId', `user_${role}`) ||
-            hasFilter(feedback, 'submittedBy', `user_${role}`),
-        ).toBe(true);
-      }
-    }
+  it('ALLOWS reviewedBy to update (NEW in v0.2)', async () => {
+    await seedTasks();
+    await assertSucceeds(
+      authedAs(testEnv, USER_A_REVIEWER)
+        .firestore()
+        .doc(`tasktotime_tasks/${TASK_A_ID}`)
+        .update({ lifecycle: 'accepted' }),
+    );
+  });
+
+  it('ALLOWS manager via hierarchyPath to update', async () => {
+    await seedTasks();
+    await assertSucceeds(
+      authedAs(testEnv, USER_A_MANAGER)
+        .firestore()
+        .doc(`tasktotime_tasks/${TASK_A_ID}`)
+        .update({ priority: 'high' }),
+    );
+  });
+
+  it('ALLOWS admin (same company) to update', async () => {
+    await seedTasks();
+    await assertSucceeds(
+      authedAs(testEnv, USER_A_ADMIN)
+        .firestore()
+        .doc(`tasktotime_tasks/${TASK_A_ID}`)
+        .update({ archivedAt: Date.now() }),
+    );
+  });
+
+  it('DENIES random same-company user (not in any role)', async () => {
+    await seedTasks();
+    await assertFails(
+      authedAs(testEnv, USER_A_RANDOM)
+        .firestore()
+        .doc(`tasktotime_tasks/${TASK_A_ID}`)
+        .update({ title: 'Hijack' }),
+    );
+  });
+
+  it('DENIES cross-company user (companyB user updating companyA task)', async () => {
+    await seedTasks();
+    await assertFails(
+      authedAs(testEnv, USER_B_RANDOM)
+        .firestore()
+        .doc(`tasktotime_tasks/${TASK_A_ID}`)
+        .update({ title: 'Cross-tenant' }),
+    );
+  });
+
+  it('DENIES cross-company admin (admin scope is company-bound)', async () => {
+    await seedTasks();
+    // Cross-tenant admin escalation path. The rule is structured as
+    // `companyId == getUserCompany() && (...)`, so admin role on a different
+    // tenant should NOT bypass the companyId scope.
+    await assertFails(
+      authedAs(testEnv, USER_B_ADMIN)
+        .firestore()
+        .doc(`tasktotime_tasks/${TASK_A_ID}`)
+        .update({ title: 'Cross-tenant admin' }),
+    );
+  });
+});
+
+// ─── tasktotime_tasks — DELETE ──────────────────────────────────────────
+
+describeIfEmulator('rules: tasktotime_tasks — DELETE', () => {
+  it('ALLOWS admin (same company) to physically delete', async () => {
+    await seedTasks();
+    await assertSucceeds(
+      authedAs(testEnv, USER_A_ADMIN)
+        .firestore()
+        .doc(`tasktotime_tasks/${TASK_A_ID}`)
+        .delete(),
+    );
+  });
+
+  it('DENIES owner physical delete (must use soft-delete via update)', async () => {
+    await seedTasks();
+    await assertFails(
+      authedAs(testEnv, USER_A_OWNER)
+        .firestore()
+        .doc(`tasktotime_tasks/${TASK_A_ID}`)
+        .delete(),
+    );
+  });
+
+  it('DENIES manager physical delete', async () => {
+    await seedTasks();
+    await assertFails(
+      authedAs(testEnv, USER_A_MANAGER)
+        .firestore()
+        .doc(`tasktotime_tasks/${TASK_A_ID}`)
+        .delete(),
+    );
+  });
+});
+
+// ─── tasktotime_tasks/{id}/wiki_history/{vId} — read scoped, write server-only
+
+describeIfEmulator('rules: tasktotime_tasks/wiki_history', () => {
+  beforeEach(async () => {
+    await seedTasks();
+    await seedDoc(testEnv, `tasktotime_tasks/${TASK_A_ID}/wiki_history/v1`, {
+      version: 1,
+      contentMd: '# Initial',
+    });
+  });
+
+  it('ALLOWS same-company read', async () => {
+    await assertSucceeds(
+      authedAs(testEnv, USER_A_RANDOM)
+        .firestore()
+        .doc(`tasktotime_tasks/${TASK_A_ID}/wiki_history/v1`)
+        .get(),
+    );
+  });
+
+  it('DENIES cross-company read', async () => {
+    await assertFails(
+      authedAs(testEnv, USER_B_RANDOM)
+        .firestore()
+        .doc(`tasktotime_tasks/${TASK_A_ID}/wiki_history/v1`)
+        .get(),
+    );
+  });
+
+  it('DENIES any client write (server-only writes via Cloud Functions)', async () => {
+    await assertFails(
+      authedAs(testEnv, USER_A_OWNER)
+        .firestore()
+        .doc(`tasktotime_tasks/${TASK_A_ID}/wiki_history/v2`)
+        .set({ version: 2, contentMd: '# Hacked' }),
+    );
+  });
+
+  it('DENIES even admin direct write to wiki_history', async () => {
+    // Admin can update tasks but wiki_history is server-only — admin must go
+    // through Cloud Functions (admin SDK bypasses these rules).
+    await assertFails(
+      authedAs(testEnv, USER_A_ADMIN)
+        .firestore()
+        .doc(`tasktotime_tasks/${TASK_A_ID}/wiki_history/v3`)
+        .set({ version: 3, contentMd: '# By admin' }),
+    );
+  });
+});
+
+// ─── tasktotime_transitions — append-only audit log ─────────────────────
+
+describeIfEmulator('rules: tasktotime_transitions', () => {
+  const TR_A = 'transition_in_company_A';
+
+  beforeEach(async () => {
+    await seedDoc(testEnv, `tasktotime_transitions/${TR_A}`, {
+      companyId: COMPANY_A,
+      taskId: TASK_A_ID,
+      action: 'start',
+      from: 'ready',
+      to: 'started',
+      at: Date.now(),
+    });
+  });
+
+  it('ALLOWS same-company read', async () => {
+    await assertSucceeds(
+      authedAs(testEnv, USER_A_RANDOM)
+        .firestore()
+        .doc(`tasktotime_transitions/${TR_A}`)
+        .get(),
+    );
+  });
+
+  it('DENIES cross-company read', async () => {
+    await assertFails(
+      authedAs(testEnv, USER_B_RANDOM)
+        .firestore()
+        .doc(`tasktotime_transitions/${TR_A}`)
+        .get(),
+    );
+  });
+
+  it('DENIES any client write (server-only via Cloud Functions)', async () => {
+    await assertFails(
+      authedAs(testEnv, USER_A_ADMIN)
+        .firestore()
+        .doc('tasktotime_transitions/new_attack')
+        .set({
+          companyId: COMPANY_A,
+          taskId: TASK_A_ID,
+          action: 'cancel',
+          from: 'started',
+          to: 'cancelled',
+          at: Date.now(),
+        }),
+    );
+  });
+});
+
+// ─── work_sessions — KNOWN CROSS-TENANT GAP ─────────────────────────────
+
+describeIfEmulator('rules: work_sessions — known cross-tenant gap', () => {
+  const WS_A = 'session_in_company_A';
+
+  beforeEach(async () => {
+    await seedDoc(testEnv, `work_sessions/${WS_A}`, {
+      companyId: COMPANY_A,
+      userId: USER_A_OWNER,
+      startAt: Date.now(),
+      endAt: Date.now() + 1000,
+    });
+  });
+
+  // CURRENT BEHAVIOR — pinned by test so we notice if the rule changes.
+  // firestore.rules:439-444 reads:
+  //   allow read: if isSignedIn();
+  //   allow create, update: if isSignedIn();
+  //   allow delete: if false;
+  // No companyId scoping ⇒ a companyB user can read companyA's sessions.
+  // This is a TODO not addressed in this PR; see PR body.
+  it('CURRENT: any signed-in user CAN read another tenant session (documents the gap)', async () => {
+    await assertSucceeds(
+      authedAs(testEnv, USER_B_RANDOM)
+        .firestore()
+        .doc(`work_sessions/${WS_A}`)
+        .get(),
+    );
+  });
+
+  // TARGET BEHAVIOR — once `firestore.rules` adds `resource.data.companyId
+  // == getUserCompany()` to the work_sessions read rule, flip `.skip` →
+  // `.it` to enforce the cross-tenant denial. Tracked as a follow-up; do
+  // NOT modify rules in this PR.
+  // eslint-disable-next-line jest/no-disabled-tests
+  it.skip('TARGET: cross-tenant denied (TODO: tighten firestore.rules:439-444)', async () => {
+    await assertFails(
+      authedAs(testEnv, USER_B_RANDOM)
+        .firestore()
+        .doc(`work_sessions/${WS_A}`)
+        .get(),
+    );
+  });
+
+  it('DENIES unauthenticated read of work_sessions (sanity check)', async () => {
+    await assertFails(
+      unauthed(testEnv).firestore().doc(`work_sessions/${WS_A}`).get(),
+    );
+  });
+
+  it('DENIES delete (unconditionally, even by admin)', async () => {
+    await assertFails(
+      authedAs(testEnv, USER_A_ADMIN)
+        .firestore()
+        .doc(`work_sessions/${WS_A}`)
+        .delete(),
+    );
   });
 });

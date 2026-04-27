@@ -18,6 +18,12 @@ export interface ListTasksQuery {
   search?: string;
   limit?: number;
   cursor?: string;
-  orderBy?: 'createdAt' | 'updatedAt' | 'dueAt' | 'priority' | 'taskNumber';
+  orderBy?:
+    | 'createdAt'
+    | 'updatedAt'
+    | 'dueAt'
+    | 'priority'
+    | 'taskNumber'
+    | 'titleLowercase';
   direction?: 'asc' | 'desc';
 }

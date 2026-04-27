@@ -95,6 +95,15 @@ function fromDoc(id: string, data: DocumentData): Task {
 }
 
 /**
+ * Lowercase + trim a title for case-insensitive prefix search. Centralised
+ * so `toDoc` and `patch` agree on the exact shape, and so the search query
+ * branch in `applyFilter` can canonicalise the user input the same way.
+ */
+function normaliseTitleForSearch(title: string): string {
+  return title.trim().toLowerCase();
+}
+
+/**
  * Convert a domain Task to wire-format. The recursive helper handles every
  * `*At` epoch leaf (top-level + nested arrays); we additionally set
  * `updatedAt = serverTimestamp()` to give Firestore the authoritative wall
@@ -102,6 +111,10 @@ function fromDoc(id: string, data: DocumentData): Task {
  *
  * Note: `id` is dropped from the body because it's the document id, not a
  * field. `companyId` MUST stay — RLS depends on it.
+ *
+ * `titleLowercase` is a derived index field for case-insensitive prefix
+ * search (see `applyFilter` below + `TaskFilter.search`). Stored alongside
+ * the canonical `title`; rewritten on every save to stay in sync.
  */
 function toDoc(task: Task, opts: { stampUpdatedAt: boolean }): DocumentData {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -114,6 +127,11 @@ function toDoc(task: Task, opts: { stampUpdatedAt: boolean }): DocumentData {
   // field is absent — only those where it's explicitly null.
   if (!('parentTaskId' in out)) {
     (out as Record<string, unknown>).parentTaskId = null;
+  }
+  if (typeof task.title === 'string') {
+    (out as Record<string, unknown>).titleLowercase = normaliseTitleForSearch(
+      task.title,
+    );
   }
   if (opts.stampUpdatedAt) {
     // Server-side wall clock — overrides whatever the domain set.
@@ -137,13 +155,27 @@ function assertPatchKeys(taskId: TaskId, partial: PartialTaskUpdate): void {
 /**
  * Apply orderBy + cursor pagination to a query. Returns the modified query
  * plus the resolved sort spec used to build the next-page cursor.
+ *
+ * If `filter.search` is set, the orderBy is coerced to `titleLowercase`.
+ * Firestore requires the first orderBy to match the inequality field; the
+ * range filter on `titleLowercase` (built in `applyFilter`) means any other
+ * orderBy choice would error at query time.
  */
 function applyOrderAndCursor(
   q: Query,
   options: ListOptions | undefined,
+  filter: TaskFilter,
 ): { query: Query; orderBy: string; direction: 'asc' | 'desc' } {
-  const orderBy = options?.orderBy ?? 'createdAt';
-  const direction = options?.direction ?? 'desc';
+  // Mirror the trim+lowercase canonicalisation in `applyFilter` so a
+  // whitespace-only `search` does NOT force a titleLowercase orderBy. If
+  // the user typed only spaces we behave as if no search were supplied.
+  const hasSearch =
+    typeof filter.search === 'string' &&
+    filter.search.trim().length > 0;
+  const orderBy = hasSearch ? 'titleLowercase' : (options?.orderBy ?? 'createdAt');
+  const direction = hasSearch
+    ? (options?.direction ?? 'asc')
+    : (options?.direction ?? 'desc');
   let out = q.orderBy(orderBy, direction);
 
   if (options?.cursor) {
@@ -222,9 +254,21 @@ function applyFilter(
     const ts = toTimestamp(filter.dueBefore);
     if (ts != null) q = q.where('dueAt', '<', ts);
   }
-  // `filter.search` is delegated — Firestore has no full-text. Domain code
-  // is expected to fall back to a search service or to in-memory filter on
-  // a small result set. We accept the parameter but do not enforce it here.
+  // `filter.search` — case-insensitive prefix match against the derived
+  // `titleLowercase` field (populated by `toDoc` on every write). Firestore
+  // has no native full-text index; this is a range scan on the lower-cased
+  // title. The trailing `` is the highest valid Unicode code point in
+  // the basic multilingual plane — it bounds the prefix without overlapping
+  // any real subsequent string. NOTE: this is PREFIX, not SUBSTRING. "kit"
+  // matches "kitchen" but not "demo kitchen".
+  if (typeof filter.search === 'string' && filter.search.length > 0) {
+    const prefix = filter.search.trim().toLowerCase();
+    if (prefix.length > 0) {
+      q = q
+        .where('titleLowercase', '>=', prefix)
+        .where('titleLowercase', '<', `${prefix}`);
+    }
+  }
   return q;
 }
 
@@ -297,7 +341,7 @@ export class FirestoreTaskRepository implements TaskRepository {
     const limit = Math.min(options.limit ?? 50, 500);
     try {
       const filtered = applyFilter(this.db.collection(COLLECTION), filter);
-      const { query, orderBy } = applyOrderAndCursor(filtered, options);
+      const { query, orderBy } = applyOrderAndCursor(filtered, options, filter);
       const snap = await query.limit(limit).get();
       const items = snap.docs.map((d) => fromDoc(d.id, d.data()));
 
@@ -416,6 +460,13 @@ export class FirestoreTaskRepository implements TaskRepository {
     try {
       const converted = epochsToTimestamps(partial as Record<string, unknown>);
       const out = stripUndefined(converted);
+      // Keep the derived search index in sync. If the caller patches `title`
+      // we re-derive `titleLowercase` so prefix search continues to match.
+      if (typeof (out as Record<string, unknown>).title === 'string') {
+        (out as Record<string, unknown>).titleLowercase = normaliseTitleForSearch(
+          (out as Record<string, unknown>).title as string,
+        );
+      }
       (out as Record<string, unknown>).updatedAt = FieldValue.serverTimestamp();
       await this.db.collection(COLLECTION).doc(id).update(out);
       this.logger.debug?.('[FirestoreTaskRepository] patched', {

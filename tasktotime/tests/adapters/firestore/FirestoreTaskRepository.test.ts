@@ -231,6 +231,40 @@ describe('FirestoreTaskRepository.patch', () => {
   });
 });
 
+describe('FirestoreTaskRepository.appendToArray', () => {
+  test('no-ops on empty values without touching db', async () => {
+    const { db, updateSpy } = makeMockDb({ docs: { t1: asRecord(baseTask) } });
+    const repo = new FirestoreTaskRepository(db);
+    await repo.appendToArray(asTaskId('t1'), 'subtaskIds', []);
+    expect(updateSpy).not.toHaveBeenCalled();
+  });
+
+  test('issues update with FieldValue.arrayUnion sentinel + serverTimestamp', async () => {
+    const { db, updateSpy } = makeMockDb({ docs: { t1: asRecord(baseTask) } });
+    const repo = new FirestoreTaskRepository(db);
+    await repo.appendToArray(asTaskId('t1'), 'subtaskIds', [asTaskId('child_x')]);
+    expect(updateSpy).toHaveBeenCalledTimes(1);
+    const [id, payload] = updateSpy.mock.calls[0];
+    expect(id).toBe('t1');
+    const data = payload as Record<string, unknown>;
+    // arrayUnion + serverTimestamp are non-plain-object sentinels — assert
+    // the field is present and isn't a literal array (which would betray a
+    // read-then-write fallback rather than the atomic union).
+    expect(data.subtaskIds).toBeDefined();
+    expect(Array.isArray(data.subtaskIds)).toBe(false);
+    expect(data.updatedAt).toBeDefined();
+    expect(typeof data.updatedAt).not.toBe('number');
+  });
+
+  test('throws IllegalPatchError for forbidden field name (defense in depth)', async () => {
+    const { db } = makeMockDb({ docs: { t1: asRecord(baseTask) } });
+    const repo = new FirestoreTaskRepository(db);
+    await expect(
+      repo.appendToArray(asTaskId('t1'), 'history' as keyof Task, [{ at: 1 }]),
+    ).rejects.toBeInstanceOf(IllegalPatchError);
+  });
+});
+
 describe('FirestoreTaskRepository.save', () => {
   test('writes the doc with merge:false and stamps updatedAt', async () => {
     const { db, setSpy } = makeMockDb();

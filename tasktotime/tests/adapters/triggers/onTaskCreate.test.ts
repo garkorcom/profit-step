@@ -160,6 +160,76 @@ describe('onTaskCreate', () => {
     expect(refreshedChild?.isSubtask).toBe(true);
   });
 
+  test('attach is race-safe: two children created in parallel both end up in parent.subtaskIds', async () => {
+    // Regression for the safeAttachToParent race. Pre-fix the trigger did
+    // `[...parent.subtaskIds, child.id]` outside a transaction, so two
+    // concurrent invocations could each read the parent before either had
+    // written, dropping one of the two child ids. After the fix the patch
+    // uses `appendToArray` (FieldValue.arrayUnion) — atomic + idempotent —
+    // so both ids land regardless of interleaving.
+    const { ports, deps } = buildDeps();
+    const parent = makeTask({
+      id: asTaskId('task_parent_race'),
+      companyId: asCompanyId('co_1'),
+      subtaskIds: [],
+    });
+    await ports.taskRepo.save(parent);
+
+    const childA = makeTask({
+      id: asTaskId('task_child_a'),
+      companyId: asCompanyId('co_1'),
+      parentTaskId: parent.id,
+    });
+    const childB = makeTask({
+      id: asTaskId('task_child_b'),
+      companyId: asCompanyId('co_1'),
+      parentTaskId: parent.id,
+    });
+    await ports.taskRepo.save(childA);
+    await ports.taskRepo.save(childB);
+
+    await Promise.all([
+      onTaskCreate(makeChange(childA, 'evt_a'), deps),
+      onTaskCreate(makeChange(childB, 'evt_b'), deps),
+    ]);
+
+    const refreshedParent = await ports.taskRepo.findById(parent.id);
+    expect(refreshedParent?.subtaskIds).toEqual(
+      expect.arrayContaining([childA.id, childB.id]),
+    );
+    expect(refreshedParent?.subtaskIds).toHaveLength(2);
+  });
+
+  test('attach is idempotent on retry: same child id is not duplicated in parent.subtaskIds', async () => {
+    // Pre-fix: a retried fire that lost its idempotency reservation could
+    // re-append the child id and produce a duplicate. arrayUnion semantics
+    // dedup-on-set, so even with a forced second invocation under a fresh
+    // event id (bypassing the dedupe table) the parent's subtaskIds stays
+    // a set.
+    const { ports, deps } = buildDeps();
+    const parent = makeTask({
+      id: asTaskId('task_parent_retry'),
+      companyId: asCompanyId('co_1'),
+      subtaskIds: [],
+    });
+    await ports.taskRepo.save(parent);
+
+    const child = makeTask({
+      id: asTaskId('task_child_retry'),
+      companyId: asCompanyId('co_1'),
+      parentTaskId: parent.id,
+    });
+    await ports.taskRepo.save(child);
+
+    // Two distinct event ids — both pass the idempotency guard, both attempt
+    // to attach. The append must remain a set, no duplicates.
+    await onTaskCreate(makeChange(child, 'evt_retry_1'), deps);
+    await onTaskCreate(makeChange(child, 'evt_retry_2'), deps);
+
+    const refreshedParent = await ports.taskRepo.findById(parent.id);
+    expect(refreshedParent?.subtaskIds).toEqual([child.id]);
+  });
+
   test('refuses to back-fill cross-tenant parent', async () => {
     const { ports, deps } = buildDeps();
     const parent = makeTask({

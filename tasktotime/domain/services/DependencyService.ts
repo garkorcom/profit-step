@@ -9,7 +9,7 @@
  */
 
 import type { Task, TaskDependency, UserRef, EpochMs } from '../Task';
-import type { TaskId, ProjectId } from '../identifiers';
+import type { TaskId, ProjectId, CompanyId } from '../identifiers';
 import {
   buildDependencyGraph,
   canAddDependency,
@@ -176,15 +176,22 @@ export class DependencyService {
 
   // ─── critical path ───────────────────────────────────────────
 
-  async computeCriticalPath(projectId: ProjectId): Promise<CriticalPathSummary> {
+  /**
+   * Compute the critical path for tasks scoped to `(companyId, projectId)`.
+   *
+   * **Cross-tenant safety.** The Firestore `findMany` filter REQUIRES a
+   * companyId; passing an empty string sentinel returns 0 results because
+   * no document has `companyId == ''`. Earlier revisions used such a
+   * sentinel as a Phase-1 shortcut — that silently broke the schedule for
+   * every project. Callers must now thread the real companyId from their
+   * authentication / trigger document context.
+   */
+  async computeCriticalPath(
+    companyId: CompanyId,
+    projectId: ProjectId,
+  ): Promise<CriticalPathSummary> {
     const result = await this.deps.taskRepo.findMany(
-      // companyId is required by TaskFilter — caller-side concern. We use a
-      // sentinel cast here; in real adapter this method would also accept
-      // CompanyId. For Phase 1 simplicity, we look up tasks by projectId via
-      // findByDependsOn-like primitives; to minimize churn, the filter is
-      // permissive and adapter resolves companyId from caller scope.
-      // TODO(phase-2): add explicit companyId param.
-      { companyId: '' as unknown as Task['companyId'], projectId, archivedOnly: false },
+      { companyId, projectId, archivedOnly: false },
       { limit: 500 },
     );
     const schedule = computeSchedule(result.items);
@@ -204,11 +211,19 @@ export class DependencyService {
     };
   }
 
-  async recomputeAndPersist(projectId: ProjectId): Promise<CriticalPathSummary> {
-    const summary = await this.computeCriticalPath(projectId);
+  /**
+   * Recompute the critical path for `(companyId, projectId)` and persist
+   * `slackMinutes` + `isCriticalPath` per task. See {@link computeCriticalPath}
+   * for the cross-tenant safety contract.
+   */
+  async recomputeAndPersist(
+    companyId: CompanyId,
+    projectId: ProjectId,
+  ): Promise<CriticalPathSummary> {
+    const summary = await this.computeCriticalPath(companyId, projectId);
     // Persist slackMinutes + isCriticalPath on each task.
     const result = await this.deps.taskRepo.findMany(
-      { companyId: '' as unknown as Task['companyId'], projectId, archivedOnly: false },
+      { companyId, projectId, archivedOnly: false },
       { limit: 500 },
     );
     const schedule = computeSchedule(result.items);

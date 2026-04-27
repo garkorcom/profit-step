@@ -72,6 +72,20 @@ export interface TaskRepository {
   saveMany(tasks: Task[]): Promise<void>;
   patch(id: TaskId, partial: PartialTaskUpdate): Promise<void>;
 
+  /**
+   * Race-safe append of one or more values to an array-typed field on a task
+   * document. Idempotent — values already present are not duplicated. Implemented
+   * via Firestore `FieldValue.arrayUnion(...)` in the production adapter; mocks
+   * model the same dedup-on-set semantics. Used by triggers that mutate the
+   * same field from concurrent invocations (e.g. `subtaskIds[]` back-fill on
+   * `onTaskCreate` when two children of the same parent are created in
+   * parallel — read-then-write would otherwise lose one of the two ids).
+   *
+   * `field` is a top-level Task array field; the adapter does not support
+   * dotted paths.
+   */
+  appendToArray(id: TaskId, field: keyof Task, values: unknown[]): Promise<void>;
+
   softDelete(id: TaskId, archivedBy: UserRef): Promise<void>;
 
   /**

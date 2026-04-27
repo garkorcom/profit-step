@@ -90,6 +90,24 @@ export class InMemoryTaskRepository implements TaskRepository {
     this.store.set(id, { ...existing, ...partial } as Task);
   }
 
+  /**
+   * Idempotent append that mirrors Firestore `FieldValue.arrayUnion`
+   * semantics — values already present are not duplicated. The mock models
+   * the race-safety property by atomic-update under the JS event loop:
+   * two awaited calls cannot interleave between read and write here.
+   */
+  async appendToArray(id: TaskId, field: keyof Task, values: unknown[]): Promise<void> {
+    if (values.length === 0) return;
+    const existing = this.store.get(id);
+    if (!existing) return;
+    const current = (existing[field] as unknown[]) ?? [];
+    const out = [...current];
+    for (const v of values) {
+      if (!out.includes(v)) out.push(v);
+    }
+    this.store.set(id, { ...existing, [field]: out } as Task);
+  }
+
   async softDelete(id: TaskId, archivedBy: UserRef): Promise<void> {
     const existing = this.store.get(id);
     if (!existing) return;

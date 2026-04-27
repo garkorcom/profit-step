@@ -35,10 +35,7 @@ export const onTasktotimeTaskUpdate = functions
           idempotency: services.adapters.idempotency,
           bigQueryAudit: services.adapters.bigQueryAudit,
           clock: services.adapters.clock,
-          // pubsub deliberately omitted in PR-C; PR-D wires it after
-          // installing @google-cloud/pubsub. Without it the publisher
-          // helper short-circuits and the recomputeCriticalPath flow
-          // stays dormant.
+          pubsub: services.adapters.pubsub,
           logger: functions.logger,
         },
       );

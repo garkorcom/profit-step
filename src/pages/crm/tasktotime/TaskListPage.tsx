@@ -1,43 +1,64 @@
 /**
  * @fileoverview Tasktotime — Task List view.
  *
- * Phase 4.0 minimum-viable list. Renders rows from
- * `GET /api/tasktotime/tasks` with no filters, no search, no kanban — just a
- * table that proves the wiring (auth + API client + hook + types).
+ * Phase 4.2 adds filters / search / pagination on top of the foundation list:
+ *   - Lifecycle multiselect (draft / ready / started / blocked / completed /
+ *     accepted / cancelled).
+ *   - Priority multiselect (critical / high / medium / low).
+ *   - Bucket single-select (inbox / next / someday / archive — optional).
+ *   - Search box (case-insensitive substring on title — server-side via
+ *     `search` param).
+ *   - Reset button to clear all filters.
+ *   - "Load more" cursor-based pagination — append-on-click.
  *
- * Filters / search / inline editing / drawer / detail page / kanban / wiki
- * editor are explicit follow-up PRs. Each row IS a link to a `:id` page that
- * doesn't exist yet — clicking shows a placeholder; this is intentional, the
- * routing target is reserved here so the URL contract is stable across PRs.
+ * URL contract (sharable links):
+ *   ?lifecycle=ready,started&priority=high,medium&bucket=next&search=foo
  *
- * Empty / loading / error states all render in-table so the column widths
- * stay consistent (no layout shift between data states).
+ * Form state owns the inputs (react-hook-form + Controller for MUI Select).
+ * URL is the **source of truth** at mount; user input pushes form -> URL ->
+ * data-fetch params (one cycle, no oscillation).
+ *
+ * Detail page / inline editing / drawer / kanban / wiki editor still live in
+ * later PRs.
  */
 
-import React from 'react';
+import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import {
     Alert,
     Box,
+    Button,
     Chip,
     CircularProgress,
+    FormControl,
     IconButton,
+    InputLabel,
+    MenuItem,
+    OutlinedInput,
     Paper,
+    Select,
+    Stack,
     Table,
     TableBody,
     TableCell,
     TableContainer,
     TableHead,
     TableRow,
+    TextField,
     Tooltip,
     Typography,
 } from '@mui/material';
+import Grid from '@mui/material/Grid';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
-import { useNavigate } from 'react-router-dom';
+import ClearIcon from '@mui/icons-material/Clear';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Controller, useForm, useWatch } from 'react-hook-form';
 
 import { useAuth } from '../../../auth/AuthContext';
-import { useTaskList } from '../../../hooks/useTasktotime';
+import { useTaskListPaginated } from '../../../hooks/useTasktotime';
 import type {
+    ListTasksParams,
+    TaskBucket,
     TaskDto,
     TaskLifecycle,
     TaskPriority,
@@ -59,6 +80,24 @@ const PRIORITY_COLORS: Record<TaskPriority, { bg: string; fg: string }> = {
     medium: { bg: '#FEF3C7', fg: '#92400E' },
     low: { bg: '#E0F2FE', fg: '#075985' },
 };
+
+const LIFECYCLE_OPTIONS: TaskLifecycle[] = [
+    'draft',
+    'ready',
+    'started',
+    'blocked',
+    'completed',
+    'accepted',
+    'cancelled',
+];
+
+const PRIORITY_OPTIONS: TaskPriority[] = ['critical', 'high', 'medium', 'low'];
+
+const BUCKET_OPTIONS: TaskBucket[] = ['inbox', 'next', 'someday', 'archive'];
+
+const PAGE_SIZE = 50;
+
+const SEARCH_DEBOUNCE_MS = 300;
 
 function formatDate(epochMs?: number): string {
     if (!epochMs || !Number.isFinite(epochMs)) return '—';
@@ -86,11 +125,81 @@ function formatDueRelative(dueAt?: number): { label: string; color: string } {
 
 const COLUMN_COUNT = 7;
 
-/**
- * Single row component — extracted for clarity. Also makes it trivial to add
- * row-level mutations (transition button, drawer trigger) in a follow-up
- * without touching the rest of the table.
- */
+// ─── URL <-> filter form state ──────────────────────────────────────────
+
+interface FilterFormValues {
+    lifecycle: TaskLifecycle[];
+    priority: TaskPriority[];
+    bucket: TaskBucket | '';
+    search: string;
+}
+
+const EMPTY_FILTERS: FilterFormValues = {
+    lifecycle: [],
+    priority: [],
+    bucket: '',
+    search: '',
+};
+
+function parseCsv<T extends string>(raw: string | null, allowed: readonly T[]): T[] {
+    if (!raw) return [];
+    return raw
+        .split(',')
+        .map((v) => v.trim())
+        .filter((v): v is T => (allowed as readonly string[]).includes(v));
+}
+
+function parseSingle<T extends string>(raw: string | null, allowed: readonly T[]): T | '' {
+    if (!raw) return '';
+    return (allowed as readonly string[]).includes(raw) ? (raw as T) : '';
+}
+
+function readFiltersFromSearchParams(sp: URLSearchParams): FilterFormValues {
+    return {
+        lifecycle: parseCsv(sp.get('lifecycle'), LIFECYCLE_OPTIONS),
+        priority: parseCsv(sp.get('priority'), PRIORITY_OPTIONS),
+        bucket: parseSingle(sp.get('bucket'), BUCKET_OPTIONS),
+        search: sp.get('search')?.trim() ?? '',
+    };
+}
+
+function writeFiltersToSearchParams(
+    sp: URLSearchParams,
+    f: FilterFormValues,
+): URLSearchParams {
+    const next = new URLSearchParams(sp);
+    if (f.lifecycle.length > 0) next.set('lifecycle', f.lifecycle.join(','));
+    else next.delete('lifecycle');
+    if (f.priority.length > 0) next.set('priority', f.priority.join(','));
+    else next.delete('priority');
+    if (f.bucket) next.set('bucket', f.bucket);
+    else next.delete('bucket');
+    if (f.search) next.set('search', f.search);
+    else next.delete('search');
+    return next;
+}
+
+function filtersAreEqual(a: FilterFormValues, b: FilterFormValues): boolean {
+    if (a.bucket !== b.bucket) return false;
+    if (a.search !== b.search) return false;
+    if (a.lifecycle.length !== b.lifecycle.length) return false;
+    if (a.priority.length !== b.priority.length) return false;
+    for (const v of a.lifecycle) if (!b.lifecycle.includes(v)) return false;
+    for (const v of a.priority) if (!b.priority.includes(v)) return false;
+    return true;
+}
+
+function hasAnyFilter(f: FilterFormValues): boolean {
+    return (
+        f.lifecycle.length > 0 ||
+        f.priority.length > 0 ||
+        f.bucket !== '' ||
+        f.search !== ''
+    );
+}
+
+// ─── Row ────────────────────────────────────────────────────────────────
+
 const TaskRow: React.FC<{ task: TaskDto; onOpen: (id: string) => void }> = ({
     task,
     onOpen,
@@ -167,29 +276,370 @@ const TaskRow: React.FC<{ task: TaskDto; onOpen: (id: string) => void }> = ({
     );
 };
 
+// ─── Filter bar ─────────────────────────────────────────────────────────
+
+interface FilterBarProps {
+    control: ReturnType<typeof useForm<FilterFormValues>>['control'];
+    onReset: () => void;
+    canReset: boolean;
+}
+
+const FilterBar: React.FC<FilterBarProps> = ({ control, onReset, canReset }) => {
+    return (
+        <Paper
+            variant="outlined"
+            sx={{ p: 2, mb: 2, bgcolor: '#FFFFFF', borderColor: '#E5E7EB' }}
+        >
+            <Grid container spacing={2} alignItems="center">
+                <Grid size={{ xs: 12, md: 3 }}>
+                    <Controller
+                        name="lifecycle"
+                        control={control}
+                        render={({ field }) => (
+                            <FormControl fullWidth size="small">
+                                <InputLabel id="filter-lifecycle-label">Lifecycle</InputLabel>
+                                <Select
+                                    {...field}
+                                    multiple
+                                    labelId="filter-lifecycle-label"
+                                    input={<OutlinedInput label="Lifecycle" />}
+                                    renderValue={(selected) => (
+                                        <Box
+                                            sx={{
+                                                display: 'flex',
+                                                flexWrap: 'wrap',
+                                                gap: 0.5,
+                                            }}
+                                        >
+                                            {(selected as TaskLifecycle[]).map((value) => (
+                                                <Chip
+                                                    key={value}
+                                                    label={value}
+                                                    size="small"
+                                                    sx={{
+                                                        bgcolor: LIFECYCLE_COLORS[value].bg,
+                                                        color: LIFECYCLE_COLORS[value].fg,
+                                                        textTransform: 'capitalize',
+                                                        fontWeight: 600,
+                                                    }}
+                                                />
+                                            ))}
+                                        </Box>
+                                    )}
+                                >
+                                    {LIFECYCLE_OPTIONS.map((opt) => (
+                                        <MenuItem key={opt} value={opt}>
+                                            <Box
+                                                sx={{
+                                                    display: 'inline-block',
+                                                    width: 10,
+                                                    height: 10,
+                                                    borderRadius: '50%',
+                                                    bgcolor: LIFECYCLE_COLORS[opt].fg,
+                                                    mr: 1,
+                                                }}
+                                            />
+                                            <span style={{ textTransform: 'capitalize' }}>
+                                                {opt}
+                                            </span>
+                                        </MenuItem>
+                                    ))}
+                                </Select>
+                            </FormControl>
+                        )}
+                    />
+                </Grid>
+
+                <Grid size={{ xs: 12, md: 3 }}>
+                    <Controller
+                        name="priority"
+                        control={control}
+                        render={({ field }) => (
+                            <FormControl fullWidth size="small">
+                                <InputLabel id="filter-priority-label">Priority</InputLabel>
+                                <Select
+                                    {...field}
+                                    multiple
+                                    labelId="filter-priority-label"
+                                    input={<OutlinedInput label="Priority" />}
+                                    renderValue={(selected) => (
+                                        <Box
+                                            sx={{
+                                                display: 'flex',
+                                                flexWrap: 'wrap',
+                                                gap: 0.5,
+                                            }}
+                                        >
+                                            {(selected as TaskPriority[]).map((value) => (
+                                                <Chip
+                                                    key={value}
+                                                    label={value}
+                                                    size="small"
+                                                    sx={{
+                                                        bgcolor: PRIORITY_COLORS[value].bg,
+                                                        color: PRIORITY_COLORS[value].fg,
+                                                        textTransform: 'capitalize',
+                                                        fontWeight: 600,
+                                                    }}
+                                                />
+                                            ))}
+                                        </Box>
+                                    )}
+                                >
+                                    {PRIORITY_OPTIONS.map((opt) => (
+                                        <MenuItem key={opt} value={opt}>
+                                            <Box
+                                                sx={{
+                                                    display: 'inline-block',
+                                                    width: 10,
+                                                    height: 10,
+                                                    borderRadius: '50%',
+                                                    bgcolor: PRIORITY_COLORS[opt].fg,
+                                                    mr: 1,
+                                                }}
+                                            />
+                                            <span style={{ textTransform: 'capitalize' }}>
+                                                {opt}
+                                            </span>
+                                        </MenuItem>
+                                    ))}
+                                </Select>
+                            </FormControl>
+                        )}
+                    />
+                </Grid>
+
+                <Grid size={{ xs: 12, md: 2 }}>
+                    <Controller
+                        name="bucket"
+                        control={control}
+                        render={({ field }) => (
+                            <FormControl fullWidth size="small">
+                                <InputLabel id="filter-bucket-label">Bucket</InputLabel>
+                                <Select
+                                    {...field}
+                                    labelId="filter-bucket-label"
+                                    input={<OutlinedInput label="Bucket" />}
+                                >
+                                    <MenuItem value="">
+                                        <em>Any</em>
+                                    </MenuItem>
+                                    {BUCKET_OPTIONS.map((opt) => (
+                                        <MenuItem
+                                            key={opt}
+                                            value={opt}
+                                            sx={{ textTransform: 'capitalize' }}
+                                        >
+                                            {opt}
+                                        </MenuItem>
+                                    ))}
+                                </Select>
+                            </FormControl>
+                        )}
+                    />
+                </Grid>
+
+                <Grid size={{ xs: 12, md: 3 }}>
+                    <Controller
+                        name="search"
+                        control={control}
+                        render={({ field }) => (
+                            <TextField
+                                {...field}
+                                fullWidth
+                                size="small"
+                                label="Search title"
+                                placeholder="Substring match"
+                                InputProps={{
+                                    endAdornment: field.value ? (
+                                        <IconButton
+                                            size="small"
+                                            onClick={() => field.onChange('')}
+                                            aria-label="Clear search"
+                                            edge="end"
+                                        >
+                                            <ClearIcon fontSize="small" />
+                                        </IconButton>
+                                    ) : null,
+                                }}
+                            />
+                        )}
+                    />
+                </Grid>
+
+                <Grid size={{ xs: 12, md: 1 }}>
+                    <Button
+                        variant="text"
+                        onClick={onReset}
+                        disabled={!canReset}
+                        size="small"
+                        fullWidth
+                    >
+                        Reset
+                    </Button>
+                </Grid>
+            </Grid>
+        </Paper>
+    );
+};
+
+// ─── Page ───────────────────────────────────────────────────────────────
+
 const TaskListPage: React.FC = () => {
     const { userProfile } = useAuth();
     const navigate = useNavigate();
 
     const companyId = userProfile?.companyId ?? null;
 
-    // Phase 4.0 fixed filter: top-level, non-archived tasks for this company,
-    // most-recent first. Filter UI is a follow-up PR.
-    const { tasks, loading, error, refetch } = useTaskList(
-        companyId
-            ? {
-                  companyId,
-                  parentTaskId: null,
-                  orderBy: 'updatedAt',
-                  direction: 'desc',
-                  limit: 100,
-              }
-            : null,
+    const [searchParams, setSearchParams] = useSearchParams();
+
+    // Snapshot from URL — used to seed form defaults on mount.
+    const initialFilters = useMemo(
+        () => readFiltersFromSearchParams(searchParams),
+        // Mount-time only; subsequent URL syncs go through the watch->URL
+        // path. We don't want re-initialising the form on every render.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        [],
     );
 
-    const handleOpen = (taskId: string) => {
-        navigate(`/crm/tasktotime/tasks/${taskId}`);
-    };
+    const { control, reset, getValues } = useForm<FilterFormValues>({
+        defaultValues: initialFilters,
+    });
+
+    // Live-watched form values drive the API params + URL.
+    const watched = useWatch({ control });
+
+    // `watched` is `Partial<FilterFormValues>` from useWatch — normalise to
+    // a fully-populated form value object.
+    const liveFilters: FilterFormValues = useMemo(
+        () => ({
+            lifecycle: (watched.lifecycle ?? []) as TaskLifecycle[],
+            priority: (watched.priority ?? []) as TaskPriority[],
+            bucket: (watched.bucket ?? '') as TaskBucket | '',
+            search: watched.search ?? '',
+        }),
+        [watched.lifecycle, watched.priority, watched.bucket, watched.search],
+    );
+
+    // Debounced version of `search` only — multi-selects + bucket should
+    // react instantly, but typing every character firing the API is wasteful.
+    const [debouncedSearch, setDebouncedSearch] = React.useState<string>(
+        liveFilters.search,
+    );
+    useEffect(() => {
+        const t = setTimeout(() => setDebouncedSearch(liveFilters.search), SEARCH_DEBOUNCE_MS);
+        return () => clearTimeout(t);
+    }, [liveFilters.search]);
+
+    // Sync form state -> URL. Skip the no-op case so the history doesn't
+    // accumulate identical entries.
+    const lastUrlRef = useRef<string>(searchParams.toString());
+    useEffect(() => {
+        // The URL contract uses the *committed* search value (debounced) to
+        // avoid query-string churn on every keystroke.
+        const filtersForUrl: FilterFormValues = {
+            ...liveFilters,
+            search: debouncedSearch,
+        };
+        const next = writeFiltersToSearchParams(searchParams, filtersForUrl);
+        const nextStr = next.toString();
+        if (nextStr !== lastUrlRef.current) {
+            lastUrlRef.current = nextStr;
+            setSearchParams(next, { replace: true });
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [
+        liveFilters.lifecycle,
+        liveFilters.priority,
+        liveFilters.bucket,
+        debouncedSearch,
+    ]);
+
+    // Sync URL -> form (back/forward navigation, deep links).
+    //
+    // The `lastUrlRef` guard is important: when the form->URL effect writes
+    // to the URL, this effect re-fires with the new `searchParams`. If we
+    // didn't gate on `lastUrlRef`, we'd reset the form to match the URL we
+    // just wrote — but the form's `search` field may already hold a newer
+    // unconfirmed keystroke (debounce hasn't flushed yet), and the reset
+    // would wipe it. Skipping when the URL matches what we wrote keeps the
+    // form's live keystroke buffer intact. External URL changes (browser
+    // back/forward, deep links) sail through.
+    useEffect(() => {
+        const currentUrlStr = searchParams.toString();
+        if (currentUrlStr === lastUrlRef.current) return;
+        lastUrlRef.current = currentUrlStr;
+        const fromUrl = readFiltersFromSearchParams(searchParams);
+        const current = getValues();
+        if (!filtersAreEqual(fromUrl, current)) {
+            reset(fromUrl, { keepDefaultValues: false });
+            setDebouncedSearch(fromUrl.search);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [searchParams]);
+
+    // Build API params from committed filters.
+    //
+    // Note on `priority`: the backend's `GET /tasks` filter shape (see
+    // `ListTasksParams` in `src/api/tasktotimeApi.ts`) doesn't expose a
+    // priority filter — only lifecycle / bucket / assignee / project / client /
+    // dueBefore / search. We pass `priority` through the URL for sharability
+    // and apply it client-side after the response (see `tasks` memo below).
+    // When the backend adds a priority param, drop the client-side filter and
+    // pass it through here.
+    const apiParams: Omit<ListTasksParams, 'cursor'> | null = useMemo(() => {
+        if (!companyId) return null;
+        const p: Omit<ListTasksParams, 'cursor'> = {
+            companyId,
+            parentTaskId: null,
+            orderBy: 'updatedAt',
+            direction: 'desc',
+            limit: PAGE_SIZE,
+        };
+        if (liveFilters.lifecycle.length > 0) p.lifecycle = liveFilters.lifecycle;
+        if (liveFilters.bucket) p.bucket = [liveFilters.bucket];
+        if (debouncedSearch) p.search = debouncedSearch;
+        return p;
+    }, [
+        companyId,
+        liveFilters.lifecycle,
+        liveFilters.bucket,
+        debouncedSearch,
+    ]);
+
+    const {
+        tasks: rawTasks,
+        nextCursor,
+        loading,
+        loadingInitial,
+        loadingMore,
+        error,
+        refetch,
+        loadMore,
+    } = useTaskListPaginated(apiParams);
+
+    // Client-side priority filter — see comment above. If/when the backend
+    // adds a `priority` filter param on `GET /tasks`, drop this and pass
+    // through via `apiParams`.
+    const tasks = useMemo(() => {
+        if (liveFilters.priority.length === 0) return rawTasks;
+        const allowed = new Set(liveFilters.priority);
+        return rawTasks.filter((t) => allowed.has(t.priority));
+    }, [rawTasks, liveFilters.priority]);
+
+    const handleOpen = useCallback(
+        (taskId: string) => {
+            navigate(`/crm/tasktotime/tasks/${taskId}`);
+        },
+        [navigate],
+    );
+
+    const handleReset = useCallback(() => {
+        reset(EMPTY_FILTERS);
+        setDebouncedSearch('');
+    }, [reset]);
+
+    const filtersActive = hasAnyFilter(liveFilters);
 
     return (
         <Box sx={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
@@ -217,7 +667,7 @@ const TaskListPage: React.FC = () => {
                     >
                         Task List
                     </Typography>
-                    {!loading && !error && (
+                    {!loadingInitial && !error && (
                         <Box
                             sx={{
                                 bgcolor: '#F3F4F6',
@@ -230,6 +680,7 @@ const TaskListPage: React.FC = () => {
                             }}
                         >
                             {tasks.length} {tasks.length === 1 ? 'task' : 'tasks'}
+                            {nextCursor && '+'}
                         </Box>
                     )}
                 </Box>
@@ -251,6 +702,12 @@ const TaskListPage: React.FC = () => {
                     </Alert>
                 ) : (
                     <>
+                        <FilterBar
+                            control={control}
+                            onReset={handleReset}
+                            canReset={filtersActive}
+                        />
+
                         {error && (
                             <Alert
                                 severity="error"
@@ -270,10 +727,18 @@ const TaskListPage: React.FC = () => {
                             </Alert>
                         )}
 
-                        <TableContainer component={Paper} elevation={0} sx={{ border: '1px solid #E0E0E0' }}>
+                        <TableContainer
+                            component={Paper}
+                            elevation={0}
+                            sx={{ border: '1px solid #E0E0E0' }}
+                        >
                             <Table size="small" stickyHeader>
                                 <TableHead>
-                                    <TableRow sx={{ '& th': { bgcolor: '#F9FAFB', fontWeight: 700 } }}>
+                                    <TableRow
+                                        sx={{
+                                            '& th': { bgcolor: '#F9FAFB', fontWeight: 700 },
+                                        }}
+                                    >
                                         <TableCell sx={{ width: 100 }}>#</TableCell>
                                         <TableCell>Title</TableCell>
                                         <TableCell sx={{ width: 120 }}>Lifecycle</TableCell>
@@ -284,29 +749,63 @@ const TaskListPage: React.FC = () => {
                                     </TableRow>
                                 </TableHead>
                                 <TableBody>
-                                    {loading ? (
+                                    {loadingInitial ? (
                                         <TableRow>
-                                            <TableCell colSpan={COLUMN_COUNT} align="center" sx={{ py: 6 }}>
+                                            <TableCell
+                                                colSpan={COLUMN_COUNT}
+                                                align="center"
+                                                sx={{ py: 6 }}
+                                            >
                                                 <CircularProgress size={28} />
                                             </TableCell>
                                         </TableRow>
                                     ) : tasks.length === 0 ? (
                                         <TableRow>
-                                            <TableCell colSpan={COLUMN_COUNT} align="center" sx={{ py: 6 }}>
-                                                <Typography variant="body2" color="text.secondary">
-                                                    No tasks yet. Create one via the API or wait for
-                                                    estimate decomposition to push tasks here.
+                                            <TableCell
+                                                colSpan={COLUMN_COUNT}
+                                                align="center"
+                                                sx={{ py: 6 }}
+                                            >
+                                                <Typography
+                                                    variant="body2"
+                                                    color="text.secondary"
+                                                >
+                                                    {filtersActive
+                                                        ? 'No tasks match the current filters.'
+                                                        : 'No tasks yet. Create one via the API or wait for estimate decomposition to push tasks here.'}
                                                 </Typography>
                                             </TableCell>
                                         </TableRow>
                                     ) : (
                                         tasks.map((task) => (
-                                            <TaskRow key={task.id} task={task} onOpen={handleOpen} />
+                                            <TaskRow
+                                                key={task.id}
+                                                task={task}
+                                                onOpen={handleOpen}
+                                            />
                                         ))
                                     )}
                                 </TableBody>
                             </Table>
                         </TableContainer>
+
+                        {/* Load more */}
+                        {!loadingInitial && nextCursor && (
+                            <Stack alignItems="center" sx={{ mt: 2 }}>
+                                <Button
+                                    variant="outlined"
+                                    onClick={loadMore}
+                                    disabled={loadingMore}
+                                    startIcon={
+                                        loadingMore ? (
+                                            <CircularProgress size={16} />
+                                        ) : undefined
+                                    }
+                                >
+                                    {loadingMore ? 'Loading…' : 'Load more'}
+                                </Button>
+                            </Stack>
+                        )}
                     </>
                 )}
             </Box>

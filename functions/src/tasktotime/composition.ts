@@ -2,7 +2,7 @@
  * Composition root for the tasktotime module.
  *
  * Resolves Cloud-Functions-side runtime dependencies (Firebase Admin SDK,
- * BigQuery, Brevo / Telegram tokens) and threads them through
+ * BigQuery, Pub/Sub, Brevo / Telegram tokens) and threads them through
  * `tasktotime/adapters/index.ts:createAdapters` to produce the full
  * `Adapters` bundle plus everything the application + HTTP + trigger
  * layers need.
@@ -12,11 +12,11 @@
  * resolving secrets / spinning up clients. Once built, the bundle is
  * cached for the lifetime of the function instance.
  *
- * **Pub/Sub is intentionally skipped in PR-C.** The publisher inside
- * `onTaskUpdate` accepts an optional `pubsub` dep and silently no-ops
- * when missing. The Pub/Sub subscriber Cloud Function + the real
- * `@google-cloud/pubsub` client come in PR-D once the dep is installed
- * (see commit message + PR-D scope).
+ * **Pub/Sub (PR-D).** The `@google-cloud/pubsub` client is wired here and
+ * passed through `createAdapters` so `publishCriticalPathRecompute`
+ * publishes real messages onto the `recomputeCriticalPath` topic. The
+ * topic itself is auto-created by the matching subscriber Cloud Function
+ * (`onTasktotimeRecomputeCriticalPath`) on its first deploy.
  *
  * **Secrets.** Each Cloud Function that uses this composition root MUST
  * bind `TASKTOTIME_TRIGGER_SECRETS` (or `AGENT_API_SECRETS` for the HTTP
@@ -27,6 +27,7 @@
 
 import * as admin from 'firebase-admin';
 import { BigQuery } from '@google-cloud/bigquery';
+import { PubSub } from '@google-cloud/pubsub';
 
 import {
   createAdapters,
@@ -64,27 +65,23 @@ const DEFAULT_STORAGE_BUCKET = (() => {
   );
 })();
 
-// ─── Minimal stub PubSub for PR-C (no @google-cloud/pubsub yet) ────────
+// ─── Pub/Sub client ─────────────────────────────────────────────────────
 
 /**
- * `PubSubLike` no-op stub. PR-D replaces with a real `@google-cloud/pubsub`
- * client once the dep is installed. Passing this stub means
- * `publishCriticalPathRecompute` proceeds through the debounce check and
- * then this `publishMessage` resolves to a deterministic id without any
- * network traffic. Visible in BigQuery audit but no critical-path recompute
- * occurs until PR-D wires the subscriber.
+ * `@google-cloud/pubsub` is structurally compatible with `PubSubLike` (the
+ * adapter only relies on `topic(name).publishMessage({ data, attributes,
+ * orderingKey })`). One client per function instance — Pub/Sub holds an
+ * HTTP/2 connection and reusing the client across invocations matters
+ * for cold-start latency.
+ *
+ * Auth picks up Application Default Credentials (the function's runtime
+ * service account in prod; gcloud user creds locally). No secrets to bind.
  */
-const noopPubSub = {
-  topic: (_name: string) => ({
-    publishMessage: async (_input: {
-      data: Buffer;
-      attributes?: Record<string, string>;
-      orderingKey?: string;
-    }): Promise<string> => {
-      return 'pubsub_noop';
-    },
-  }),
-};
+let pubsubClient: PubSub | null = null;
+function getPubSub(): PubSub {
+  if (!pubsubClient) pubsubClient = new PubSub();
+  return pubsubClient;
+}
 
 // ─── Lazy bundle ───────────────────────────────────────────────────────
 
@@ -124,7 +121,7 @@ function build(): TasktotimeServices {
     messaging,
     storage,
     bigquery,
-    pubsub: noopPubSub,
+    pubsub: getPubSub(),
 
     telegramBotToken: safeSecret(WORKER_BOT_TOKEN, 'WORKER_BOT_TOKEN'),
     brevoApiKey: safeSecret(BREVO_API_KEY, 'BREVO_API_KEY'),

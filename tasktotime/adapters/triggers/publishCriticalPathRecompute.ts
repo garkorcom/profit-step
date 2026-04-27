@@ -13,6 +13,11 @@
  *   - `dependsOn`               (graph topology)
  *   - `estimatedDurationMinutes`(durations on edges)
  *   - `plannedStartAt`          (project start anchor)
+ *   - `completedAt`             (advances the project's actual finish; the
+ *                                 forward pass uses it to clamp slack on
+ *                                 already-done tasks downstream)
+ *   - `projectId`               (re-parenting a task moves it between two
+ *                                 projects' graphs — both need a fresh CPM)
  *
  * Other watched-field changes (assignee, description, lifecycle, etc.)
  * do NOT shift the critical path and are filtered out here.
@@ -43,11 +48,23 @@ export const DEBOUNCE_TTL_MS = 5_000;
 /**
  * Fields whose change should produce a Pub/Sub publish. Anything outside
  * this set leaves the critical path unaffected.
+ *
+ * `completedAt` is included because completion-time advances the project's
+ * actual finish, which the forward + backward CPM pass uses to compute
+ * fresh slack on downstream tasks.
+ *
+ * `projectId` is included because re-parenting a task moves it between
+ * two projects' graphs — both need a fresh CPM. The subscriber receives
+ * the AFTER projectId; a separate publish for the BEFORE side happens
+ * when the caller passes both before/after to `shouldPublish` (the
+ * onTaskUpdate trigger handles that fan-out).
  */
 export const GRAPH_AFFECTING_FIELDS: ReadonlyArray<TaskWatchedField> = [
   'dependsOn',
   'estimatedDurationMinutes',
   'plannedStartAt',
+  'completedAt',
+  'projectId',
 ] as const;
 
 export interface PublishCriticalPathRecomputeDeps {

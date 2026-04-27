@@ -63,6 +63,55 @@ describe('shouldPublishCriticalPathRecompute', () => {
       expect(shouldPublishCriticalPathRecompute([f], t)).toBe(true);
     }
   });
+
+  // ─── Bug 2 — completedAt + projectId now trigger CPM republish ─────
+  // Spec: completion-time advances the project's actual finish; re-parenting
+  // a task to another project rebuilds CPM of both. These two were missing
+  // from GRAPH_AFFECTING_FIELDS and the trigger silently skipped publishes
+  // for those changes.
+  test('true when only completedAt changed (advances project actual finish)', () => {
+    const t = makeTask({
+      id: asTaskId('with_proj_completed'),
+      projectId: asProjectId('proj_complete'),
+    });
+    expect(shouldPublishCriticalPathRecompute(['completedAt'], t)).toBe(true);
+  });
+
+  test('true when only projectId changed (re-parent)', () => {
+    const t = makeTask({
+      id: asTaskId('reparented'),
+      projectId: asProjectId('proj_new_home'),
+    });
+    expect(shouldPublishCriticalPathRecompute(['projectId'], t)).toBe(true);
+  });
+
+  // ─── Loop-termination contract — EXCLUDED computed fields ──────────
+  // These fields are written by `handleRecomputeCriticalPath` itself; if
+  // they were graph-affecting we'd republish on our own writes and burn
+  // money in a loop. Pin the contract so a future edit doesn't slip them in.
+  test('false for isCriticalPath / slackMinutes / subtaskRollup / blocksTaskIds', () => {
+    const t = makeTask({
+      id: asTaskId('loop_check'),
+      projectId: asProjectId('proj_loop'),
+    });
+    // We pass the names as raw strings (these aren't in TaskWatchedField); the
+    // helper just runs `.includes(...)` which returns false for unknown keys.
+    expect(
+      shouldPublishCriticalPathRecompute(
+        ['isCriticalPath' as never],
+        t,
+      ),
+    ).toBe(false);
+    expect(
+      shouldPublishCriticalPathRecompute(['slackMinutes' as never], t),
+    ).toBe(false);
+    expect(
+      shouldPublishCriticalPathRecompute(['subtaskRollup' as never], t),
+    ).toBe(false);
+    expect(
+      shouldPublishCriticalPathRecompute(['blocksTaskIds' as never], t),
+    ).toBe(false);
+  });
 });
 
 describe('publishCriticalPathRecompute', () => {

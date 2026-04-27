@@ -75,8 +75,17 @@ export interface TaskRepository {
   findByIds(ids: TaskId[]): Promise<Task[]>;
   findMany(filter: TaskFilter, options?: ListOptions): Promise<PageResult<Task>>;
   findSubtasks(parentId: TaskId): Promise<Task[]>;
-  /** Reverse query for cycle detection / cascade. */
-  findByDependsOn(taskId: TaskId): Promise<Task[]>;
+  /**
+   * Reverse query for cycle detection / cascade.
+   *
+   * `companyId` is optional in the port signature for backwards-compat
+   * with tests that don't care about tenant scoping, but production callers
+   * (especially triggers that fan out via BFS) MUST pass it. The Firestore
+   * adapter binds the `(companyId, blocksTaskIds array-contains)` composite
+   * index when companyId is supplied; without it the query falls back to a
+   * single-field scan that returns matches across all tenants.
+   */
+  findByDependsOn(taskId: TaskId, companyId?: CompanyId): Promise<Task[]>;
 
   save(task: Task): Promise<void>;
   /** Batch save — atomic per adapter. */

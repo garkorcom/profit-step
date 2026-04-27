@@ -128,6 +128,12 @@ export const TASK_WATCHED_FIELDS = [
   'coAssignees',
   'dependsOn',
   'parentTaskId',
+  // Re-parenting a task into another project should rebuild CPM of both
+  // projects. Listed here so `diffWatchedFields` surfaces the change to
+  // `publishCriticalPathRecompute` (which has `projectId` in
+  // `GRAPH_AFFECTING_FIELDS`). NOT a computed field — set by the user via
+  // PATCH or by a re-parent flow — so safe to watch.
+  'projectId',
   'wiki',
   'priority',
   'bucket',

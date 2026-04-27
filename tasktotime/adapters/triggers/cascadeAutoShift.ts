@@ -100,7 +100,14 @@ export async function cascadeAutoShift(
     for (const id of frontier) {
       let dependents: Task[];
       try {
-        dependents = await deps.taskRepo.findByDependsOn(id);
+        // Pass `trigger.companyId` so the Firestore adapter binds the
+        // `(companyId, blocksTaskIds array-contains)` composite index and
+        // returns only same-tenant matches. Without this, the query falls
+        // back to a single-field array-contains scan that returns matches
+        // across every tenant — wasteful, and a theoretical cross-tenant
+        // leak. The post-fetch `dep.companyId !== trigger.companyId` guard
+        // below stays as belt-and-suspenders.
+        dependents = await deps.taskRepo.findByDependsOn(id, trigger.companyId);
       } catch (err) {
         log.warn?.('cascadeAutoShift.bfs_lookup_failed', {
           triggerId: trigger.id,

@@ -31,7 +31,22 @@ export interface TransitionLogEntry {
 
 export interface TransitionLogPort {
   append(entry: TransitionLogEntry): Promise<void>;
-  findForTask(taskId: TaskId, limit?: number): Promise<TransitionLogEntry[]>;
+  /**
+   * Query the history of a single task.
+   *
+   * `companyId` is optional in the port signature for backwards-compat
+   * (some test callers seed a single tenant and care only about the task)
+   * but production callers SHOULD pass it. Admin SDK bypasses Firestore
+   * security rules; without an explicit companyId predicate the query
+   * could leak entries from another tenant if a `taskId` is ever re-used.
+   * See spec/04-storage/adapter-mapping.md §2 — the composite index
+   * `(companyId, taskId, at desc)` already exists for this scoped query.
+   */
+  findForTask(
+    taskId: TaskId,
+    limit?: number,
+    companyId?: CompanyId,
+  ): Promise<TransitionLogEntry[]>;
   findForCompany(
     companyId: CompanyId,
     sinceMs?: number,

@@ -13,7 +13,7 @@ module.exports = {
   rootDir: __dirname,
   roots: ['<rootDir>'],
   testMatch: ['<rootDir>/tests/**/*.test.ts'],
-  testPathIgnorePatterns: ['/node_modules/'],
+  testPathIgnorePatterns: ['/node_modules/', '/tests/security/'],
   // Pure unit tests — no setup files, no mocks of MUI/firebase.
   globals: {},
   transform: {

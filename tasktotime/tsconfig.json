@@ -10,13 +10,14 @@
     "moduleResolution": "node",
     "module": "CommonJS",
     "target": "ES2020",
-    "lib": ["ES2020"],
+    "lib": ["ES2020", "DOM"],
     "types": ["node", "jest"]
   },
   "include": [
     "domain/**/*.ts",
     "ports/**/*.ts",
     "application/**/*.ts",
+    "adapters/**/*.ts",
     "shared/**/*.ts",
     "tests/**/*.ts"
   ],

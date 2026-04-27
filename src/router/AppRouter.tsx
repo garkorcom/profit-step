@@ -68,6 +68,14 @@ const MyTimePage = React.lazy(() => import('../modules/worker').then(m => ({ def
 const AdminWorkersListPage = React.lazy(() => import('../modules/worker').then(m => ({ default: m.AdminWorkersListPage })));
 const AdminWorkerDetailPage = React.lazy(() => import('../modules/worker').then(m => ({ default: m.AdminWorkerDetailPage })));
 
+// Tasktotime — Phase 4.0 frontend foundation.
+// One bundle per view-shell + view. The Layout owns the sidebar; child routes
+// render through its <Outlet />. ComingSoonView is the placeholder for views
+// that ship in follow-up PRs (board, gantt, wiki editor, etc.).
+const TasktotimeLayout = React.lazy(() => import('../pages/crm/tasktotime').then(m => ({ default: m.TasktotimeLayout })));
+const TaskListPage = React.lazy(() => import('../pages/crm/tasktotime').then(m => ({ default: m.TaskListPage })));
+const TasktotimeComingSoon = React.lazy(() => import('../pages/crm/tasktotime').then(m => ({ default: m.ComingSoonView })));
+
 // Loading fallback component
 const PageLoader = () => (
   <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
@@ -241,6 +249,26 @@ const AppRouter: React.FC = () => {
           <Route path="/inventory" element={<InventoryStandalonePage />} />
           <Route path="/crm/payroll-periods" element={<PayrollPeriodsPage />} />
           <Route path="/crm/contacts" element={<ContactsPage />} />
+
+          {/* Tasktotime — Phase 4.0 frontend foundation. */}
+          {/* Index → list. Other view slugs route to ComingSoonView (URLs */}
+          {/* are reserved so future PRs can flip them to real views without */}
+          {/* breaking shared bookmarks). `/tasks/:id` is reserved for the   */}
+          {/* detail page — it shows ComingSoonView until that PR lands.     */}
+          <Route path="/crm/tasktotime" element={<TasktotimeLayout />}>
+            <Route index element={<TaskListPage />} />
+            <Route path="list" element={<TaskListPage />} />
+            <Route path="inbox" element={<TasktotimeComingSoon label="Inbox" />} />
+            <Route path="board" element={<TasktotimeComingSoon label="Board" />} />
+            <Route path="timeline" element={<TasktotimeComingSoon label="Timeline" />} />
+            <Route path="calendar" element={<TasktotimeComingSoon label="Calendar" />} />
+            <Route path="gantt" element={<TasktotimeComingSoon label="Gantt" />} />
+            <Route path="graph" element={<TasktotimeComingSoon label="Graph" />} />
+            <Route path="hierarchy" element={<TasktotimeComingSoon label="Hierarchy" />} />
+            <Route path="wiki" element={<TasktotimeComingSoon label="Wiki" />} />
+            <Route path="reports" element={<TasktotimeComingSoon label="Reports" />} />
+            <Route path="tasks/:id" element={<TasktotimeComingSoon label="Task Detail" />} />
+          </Route>
 
           {/* Sites Dashboard */}
           <Route path="/sites/:siteId" element={<SiteDashboardPage />} />

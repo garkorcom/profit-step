@@ -74,6 +74,7 @@ const AdminWorkerDetailPage = React.lazy(() => import('../modules/worker').then(
 // that ship in follow-up PRs (board, gantt, wiki editor, etc.).
 const TasktotimeLayout = React.lazy(() => import('../pages/crm/tasktotime').then(m => ({ default: m.TasktotimeLayout })));
 const TaskListPage = React.lazy(() => import('../pages/crm/tasktotime').then(m => ({ default: m.TaskListPage })));
+const TaskDetailPage = React.lazy(() => import('../pages/crm/tasktotime').then(m => ({ default: m.TaskDetailPage })));
 const TasktotimeComingSoon = React.lazy(() => import('../pages/crm/tasktotime').then(m => ({ default: m.ComingSoonView })));
 
 // Loading fallback component
@@ -267,7 +268,7 @@ const AppRouter: React.FC = () => {
             <Route path="hierarchy" element={<TasktotimeComingSoon label="Hierarchy" />} />
             <Route path="wiki" element={<TasktotimeComingSoon label="Wiki" />} />
             <Route path="reports" element={<TasktotimeComingSoon label="Reports" />} />
-            <Route path="tasks/:id" element={<TasktotimeComingSoon label="Task Detail" />} />
+            <Route path="tasks/:id" element={<TaskDetailPage />} />
           </Route>
 
           {/* Sites Dashboard */}

@@ -39,7 +39,6 @@ import type {
 import {
   asProjectId,
 } from '../../domain/identifiers';
-import type { Task } from '../../domain/Task';
 import type {
   TaskFilter,
   TaskRepository,

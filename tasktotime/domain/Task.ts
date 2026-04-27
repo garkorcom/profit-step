@@ -24,7 +24,6 @@ import type {
   NoteId,
   ContactId,
   CatalogItemId,
-  FileId,
 } from './identifiers';
 import type { TaskLifecycle } from './lifecycle';
 

@@ -93,6 +93,10 @@ export const AGENT_API_SECRETS = [
   GEMINI_API_KEY,
   ANTHROPIC_API_KEY,
   TELEGRAM_BOT_TOKEN,
+  // Tasktotime mounts under /api/tasktotime; its adapters need worker-bot
+  // (Telegram notifications) + Brevo (email notifications).
+  WORKER_BOT_TOKEN,
+  BREVO_API_KEY,
 ] as const;
 
 export const SCHEDULED_WORKER_SECRETS = [
@@ -102,4 +106,15 @@ export const SCHEDULED_WORKER_SECRETS = [
 export const WHATSAPP_SECRETS = [
   // verify token is non-secret (public), but whatsapp triggers also call AI
   GEMINI_API_KEY,
+] as const;
+
+/**
+ * Tasktotime trigger / Pub/Sub Cloud Functions need the worker-bot token
+ * (Telegram notifications on transitions) and Brevo (email notifications).
+ * AI secrets aren't needed here — AI flows live in PR-D as separate
+ * callables.
+ */
+export const TASKTOTIME_TRIGGER_SECRETS = [
+  WORKER_BOT_TOKEN,
+  BREVO_API_KEY,
 ] as const;

@@ -24,10 +24,18 @@
   "include": [
     "src",
     "../packages/shared/src",
-    "../packages/contracts/src"
+    "../packages/contracts/src",
+    "../tasktotime/domain/**/*",
+    "../tasktotime/ports/**/*",
+    "../tasktotime/application/**/*",
+    "../tasktotime/adapters/**/*",
+    "../tasktotime/shared/**/*"
   ],
   "exclude": [
     "src/scripts/**",
-    "node_modules"
+    "node_modules",
+    "../tasktotime/tests/**",
+    "../tasktotime/spec/**",
+    "../tasktotime/mockup/**"
   ]
 }

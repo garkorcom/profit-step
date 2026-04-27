@@ -699,3 +699,19 @@ export {
   onEstimateApprovedGenerateInvoice,
   onWorkSessionCompletedAggregateTask,
 } from './triggers/firestore/clientJourneyTriggers';
+
+// ========================================
+// TASKTOTIME — Phase 3 PR-C activation
+// Spec: tasktotime/spec/05-api/triggers.md
+// HTTP routes mount under /api/tasktotime via agentApi (see
+// functions/src/agent/agentApi.ts).
+// Pub/Sub subscriber for recomputeCriticalPath comes in PR-D once
+// @google-cloud/pubsub is installed.
+// ========================================
+export {
+  onTasktotimeTaskCreate,
+  onTasktotimeTaskUpdate,
+  onTasktotimeTaskTransition,
+  onTasktotimeWorkSessionCompleted,
+  onTasktotimeWikiUpdate,
+} from './tasktotime/triggers';

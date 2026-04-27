@@ -342,6 +342,48 @@ describe('onTaskUpdate', () => {
       const payload = ports.bigQueryAudit.events[0].payload as Record<string, unknown>;
       expect(payload.changedFields).toContain('parentTaskId');
     });
+
+    test('cascade auto-shift fires on plannedStartAt change', async () => {
+      const { ports, deps } = buildDeps();
+      const HOUR = 60 * 60 * 1000;
+      const MIN = 60 * 1000;
+      const trigger = makeTask({
+        id: asTaskId('trig_shift'),
+        plannedStartAt: T0 as unknown as Task['plannedStartAt'],
+        estimatedDurationMinutes: 60,
+      });
+      const dependent = makeTask({
+        id: asTaskId('dep_shift'),
+        plannedStartAt: T0 as unknown as Task['plannedStartAt'],
+        estimatedDurationMinutes: 30,
+        autoShiftEnabled: true,
+        dependsOn: [
+          {
+            taskId: trigger.id,
+            type: 'finish_to_start',
+            isHardBlock: true,
+            createdAt: T0 as unknown as Task['createdAt'],
+            createdBy: { id: asUserId('user_x'), name: 'X' },
+          },
+        ],
+      });
+      await ports.taskRepo.save(trigger);
+      await ports.taskRepo.save(dependent);
+
+      // Move trigger 4h forward.
+      const after: Task = {
+        ...trigger,
+        plannedStartAt: (T0 + 4 * HOUR) as unknown as Task['plannedStartAt'],
+      };
+
+      const r = await onTaskUpdate(makeChange(trigger, after, 'evt_shift'), deps);
+      expect(r).toMatchObject({
+        applied: true,
+        effects: expect.arrayContaining(['cascadeAutoShift.applied(1)']),
+      });
+      const refreshed = await ports.taskRepo.findById(dependent.id);
+      expect(refreshed?.plannedStartAt).toBe(T0 + 4 * HOUR + 60 * MIN);
+    });
   });
 
   test('skips when before/after missing', async () => {

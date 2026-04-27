@@ -18,7 +18,7 @@ export default function DemoLanding() {
     <Box sx={{ minHeight: '100vh', backgroundColor: 'var(--lp-bg-color)' }}>
       <Container maxWidth="lg" className="lp-section">
         <Grid container spacing={6} alignItems="center">
-          <Grid item xs={12} md={7}>
+          <Grid size={{ xs: 12, md: 7 }}>
             <Typography variant="overline" sx={{ color: 'var(--lp-primary-color)', fontWeight: 'bold', mb: 1, display: 'block' }}>
               PROFIT STEP
             </Typography>
@@ -36,7 +36,7 @@ export default function DemoLanding() {
               <Typography variant="body2" sx={{ fontWeight: 'bold' }}>✓ Быстрый старт</Typography>
             </Box>
           </Grid>
-          <Grid item xs={12} md={5}>
+          <Grid size={{ xs: 12, md: 5 }}>
             <ActionForm title="Получить точный расчет" source="demo-project" />
           </Grid>
         </Grid>

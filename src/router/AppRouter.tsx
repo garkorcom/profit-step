@@ -75,6 +75,11 @@ const AdminWorkerDetailPage = React.lazy(() => import('../modules/worker').then(
 const TasktotimeLayout = React.lazy(() => import('../pages/crm/tasktotime').then(m => ({ default: m.TasktotimeLayout })));
 const TaskListPage = React.lazy(() => import('../pages/crm/tasktotime').then(m => ({ default: m.TaskListPage })));
 const TasktotimeComingSoon = React.lazy(() => import('../pages/crm/tasktotime').then(m => ({ default: m.ComingSoonView })));
+// Phase 4.3 — temporary debug route for the Wiki editor wrapper. Imported via
+// its own dynamic import (NOT the barrel) so the heavy MDXEditor chunk only
+// loads when this route is opened, keeping it off the main bundle and off the
+// task-list path. Remove this route in the Phase 4.1 integration PR.
+const WikiDemoPage = React.lazy(() => import('../pages/crm/tasktotime/WikiDemoPage'));
 
 // Loading fallback component
 const PageLoader = () => (
@@ -268,6 +273,9 @@ const AppRouter: React.FC = () => {
             <Route path="wiki" element={<TasktotimeComingSoon label="Wiki" />} />
             <Route path="reports" element={<TasktotimeComingSoon label="Reports" />} />
             <Route path="tasks/:id" element={<TasktotimeComingSoon label="Task Detail" />} />
+            {/* Phase 4.3 — temporary debug route. Will be removed when the */}
+            {/* WikiEditor lands inside TaskDetailPage (Phase 4.1 PR).        */}
+            <Route path="wiki-demo" element={<WikiDemoPage />} />
           </Route>
 
           {/* Sites Dashboard */}

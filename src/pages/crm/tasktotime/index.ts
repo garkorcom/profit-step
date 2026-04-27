@@ -9,3 +9,4 @@
 export { default as TasktotimeLayout } from './TasktotimeLayout';
 export { default as TaskListPage } from './TaskListPage';
 export { default as ComingSoonView } from './ComingSoonView';
+export { default as WikiDemoPage } from './WikiDemoPage';

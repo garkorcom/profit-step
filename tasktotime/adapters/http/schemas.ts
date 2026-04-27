@@ -220,14 +220,28 @@ export function parseCreateTaskBody(
     });
   }
 
+  // Priority — wire format is integer 0..3 (low/medium/high/critical) but the
+  // domain stores it as a string. Map at the boundary so downstream code
+  // (Firestore writes, frontend chip lookups) never sees the int form.
   const priorityRaw = body.priority;
+  let priorityResolved: Priority | undefined;
   if (
-    typeof priorityRaw !== 'number' ||
-    !Number.isInteger(priorityRaw) ||
-    priorityRaw < 0 ||
-    priorityRaw > 3
+    typeof priorityRaw === 'number' &&
+    Number.isInteger(priorityRaw) &&
+    priorityRaw >= 0 &&
+    priorityRaw <= 3
   ) {
-    errors.push({ path: 'priority', message: 'must be an integer in 0..3' });
+    priorityResolved = (['low', 'medium', 'high', 'critical'] as const)[priorityRaw];
+  } else if (
+    typeof priorityRaw === 'string' &&
+    (['low', 'medium', 'high', 'critical'] as const).includes(priorityRaw as Priority)
+  ) {
+    priorityResolved = priorityRaw as Priority;
+  } else {
+    errors.push({
+      path: 'priority',
+      message: 'must be an integer in 0..3 or a Priority string',
+    });
   }
 
   const sourceRaw = body.source;
@@ -254,7 +268,7 @@ export function parseCreateTaskBody(
     dueAt: dueAt!,
     estimatedDurationMinutes: estimatedDurationMinutes!,
     bucket: bucketRaw as TaskBucket,
-    priority: priorityRaw as Priority,
+    priority: priorityResolved!,
     source: sourceRaw as TaskSource,
     requiredHeadcount: requiredHeadcount!,
     assignedTo: assignedTo!,

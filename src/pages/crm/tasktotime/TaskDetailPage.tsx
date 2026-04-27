@@ -72,6 +72,24 @@ const PRIORITY_COLORS: Record<TaskPriority, { bg: string; fg: string }> = {
     low: { bg: '#E0F2FE', fg: '#075985' },
 };
 
+const FALLBACK_CHIP = { bg: '#E5E7EB', fg: '#374151' };
+
+// Backend currently persists priority as an integer 0..3 (wire mismatch with
+// the Priority string domain type — see backend audit). Map int → string so
+// the legacy data still chips correctly until the schema fix lands.
+const PRIORITY_INT_TO_STRING: Record<number, TaskPriority> = {
+    0: 'low',
+    1: 'medium',
+    2: 'high',
+    3: 'critical',
+};
+
+function resolvePriorityKey(p: unknown): TaskPriority | undefined {
+    if (typeof p === 'string') return p as TaskPriority;
+    if (typeof p === 'number') return PRIORITY_INT_TO_STRING[p];
+    return undefined;
+}
+
 // ─── Lifecycle state machine (mirror of tasktotime/domain/lifecycle.ts) ─
 
 /**
@@ -381,8 +399,10 @@ const TaskDetailPage: React.FC = () => {
         );
     }
 
-    const lifecycleStyle = LIFECYCLE_COLORS[task.lifecycle];
-    const priorityStyle = PRIORITY_COLORS[task.priority];
+    const lifecycleStyle = LIFECYCLE_COLORS[task.lifecycle] ?? FALLBACK_CHIP;
+    const priorityKey = resolvePriorityKey(task.priority);
+    const priorityStyle = (priorityKey && PRIORITY_COLORS[priorityKey]) ?? FALLBACK_CHIP;
+    const priorityLabel = priorityKey ?? String(task.priority ?? '—');
 
     return (
         <Box sx={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
@@ -420,7 +440,7 @@ const TaskDetailPage: React.FC = () => {
                             }}
                         />
                         <Chip
-                            label={task.priority}
+                            label={priorityLabel}
                             size="small"
                             sx={{
                                 bgcolor: priorityStyle.bg,

@@ -14,7 +14,7 @@
 
 import { act, renderHook, waitFor } from '@testing-library/react';
 
-import { useTaskList, useTransitionTask } from '../useTasktotime';
+import { useTaskList, useTaskListPaginated, useTransitionTask } from '../useTasktotime';
 import type { TaskDto, TransitionTaskResult } from '../../api/tasktotimeApi';
 
 // ─── Mocks ──────────────────────────────────────────────────────────────
@@ -119,6 +119,104 @@ describe('useTaskList', () => {
         await waitFor(() => expect(result.current.loading).toBe(false));
         expect(result.current.error?.message).toBe('boom');
         expect(result.current.tasks).toEqual([]);
+    });
+});
+
+// ─── useTaskListPaginated ───────────────────────────────────────────────
+
+describe('useTaskListPaginated', () => {
+    it('dedupes by id when loadMore returns an overlapping page', async () => {
+        // Initial fetch: two tasks
+        const a = { ...sampleTask, id: 'a', taskNumber: 'T-001' };
+        const b = { ...sampleTask, id: 'b', taskNumber: 'T-002' };
+        // Cursor page overlaps `b` (race / retry / concurrent edit) and adds `c`.
+        // The overlapping `b` carries a *newer* updatedAt to verify the dedupe
+        // keeps the latest revision (Map insert order: prev first, then new).
+        const bUpdated = { ...b, updatedAt: 999 };
+        const c = { ...sampleTask, id: 'c', taskNumber: 'T-003' };
+
+        listTasks
+            .mockResolvedValueOnce({ items: [a, b], nextCursor: 'cur1' })
+            .mockResolvedValueOnce({ items: [bUpdated, c], nextCursor: null });
+
+        const { result } = renderHook(() =>
+            useTaskListPaginated({
+                companyId: 'co_1',
+                parentTaskId: null,
+                orderBy: 'updatedAt',
+                direction: 'desc',
+                limit: 50,
+            }),
+        );
+
+        await waitFor(() => expect(result.current.loadingInitial).toBe(false));
+        expect(result.current.tasks.map((t) => t.id)).toEqual(['a', 'b']);
+
+        await act(async () => {
+            result.current.loadMore();
+        });
+        await waitFor(() => expect(result.current.loadingMore).toBe(false));
+
+        // Three distinct items, no duplicate `b`.
+        expect(result.current.tasks.map((t) => t.id)).toEqual(['a', 'b', 'c']);
+        // Latest revision wins.
+        expect(result.current.tasks.find((t) => t.id === 'b')?.updatedAt).toBe(999);
+    });
+
+    it('drops a stacked loadMore call while a prior one is still in flight', async () => {
+        const a = { ...sampleTask, id: 'a' };
+        const b = { ...sampleTask, id: 'b' };
+        const c = { ...sampleTask, id: 'c' };
+
+        // Initial settles immediately. The first loadMore is gated on a manual
+        // promise resolver so we can fire a second loadMore while it's
+        // pending — the guard should drop the second.
+        let resolveFirstLoadMore: (v: { items: TaskDto[]; nextCursor: string | null }) => void = () => {};
+        const firstLoadMorePromise = new Promise<{
+            items: TaskDto[];
+            nextCursor: string | null;
+        }>((resolve) => {
+            resolveFirstLoadMore = resolve;
+        });
+
+        listTasks
+            .mockResolvedValueOnce({ items: [a], nextCursor: 'cur1' })
+            .mockReturnValueOnce(firstLoadMorePromise)
+            .mockResolvedValueOnce({ items: [c], nextCursor: null });
+
+        const { result } = renderHook(() =>
+            useTaskListPaginated({
+                companyId: 'co_1',
+                parentTaskId: null,
+                limit: 50,
+            }),
+        );
+
+        await waitFor(() => expect(result.current.loadingInitial).toBe(false));
+        expect(listTasks).toHaveBeenCalledTimes(1);
+
+        // First loadMore: enters in-flight, awaits firstLoadMorePromise.
+        act(() => {
+            result.current.loadMore();
+        });
+        await waitFor(() => expect(result.current.loadingMore).toBe(true));
+        expect(listTasks).toHaveBeenCalledTimes(2);
+
+        // Second loadMore while the first is still pending — should be dropped
+        // by the guard, no third API call.
+        act(() => {
+            result.current.loadMore();
+        });
+        expect(listTasks).toHaveBeenCalledTimes(2);
+
+        // Resolve the first one and confirm the list grew correctly with no
+        // duplicate fetch.
+        await act(async () => {
+            resolveFirstLoadMore({ items: [b], nextCursor: null });
+        });
+        await waitFor(() => expect(result.current.loadingMore).toBe(false));
+        expect(result.current.tasks.map((t) => t.id)).toEqual(['a', 'b']);
+        expect(listTasks).toHaveBeenCalledTimes(2);
     });
 });
 

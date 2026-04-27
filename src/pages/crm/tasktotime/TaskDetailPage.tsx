@@ -214,27 +214,74 @@ const SectionTitle: React.FC<{ children: React.ReactNode }> = ({ children }) => 
     </Typography>
 );
 
-const DependencyChip: React.FC<{ label: string; tone?: 'block' | 'blocks' }> = ({
-    label,
-    tone = 'block',
-}) => (
-    <Chip
-        size="small"
-        icon={<LinkIcon style={{ fontSize: 14 }} />}
-        label={label}
-        sx={{
-            bgcolor: tone === 'block' ? '#EEF2FF' : '#FEF3C7',
-            color: tone === 'block' ? '#3730A3' : '#92400E',
-            fontFamily: 'monospace',
-            fontSize: '0.75rem',
-            fontWeight: 600,
-            '& .MuiChip-icon': {
-                color: 'inherit',
-                marginLeft: '6px',
-            },
-        }}
-    />
-);
+/**
+ * One dependency, rendered as a clickable chip that navigates to the linked
+ * task's detail page.
+ *
+ * Label resolution:
+ *   - If the linked task is loaded, show its `taskNumber` (e.g. "T-042"),
+ *     because raw cuids are opaque to humans.
+ *   - While loading or if the lookup fails, fall back to the raw `taskId`.
+ *   - The full `taskId` (and dependency type, when relevant) is always in the
+ *     tooltip so the user can disambiguate.
+ *
+ * Why a per-chip `useTask` (instead of a single batched fetch):
+ *   `ListTasksParams` doesn't currently accept an `in: ids[]` filter — only
+ *   `companyId / parentTaskId / lifecycle / bucket / search / etc`. A single
+ *   batch fetch would need a backend change. Per-chip fetch costs N requests
+ *   per render, but typical tasks have 0–5 dependencies and the responses are
+ *   cached at the route level by the browser. When a `taskIds: string[]`
+ *   filter lands server-side we can swap to a batch fetch in one place.
+ */
+const DependencyChip: React.FC<{
+    taskId: string;
+    companyId: string | null;
+    type?: string;
+    tone?: 'block' | 'blocks';
+}> = ({ taskId, companyId, type, tone = 'block' }) => {
+    // Per-chip fetch. `useTask` short-circuits when companyId is null, so
+    // chips render with the raw id fallback in that edge case.
+    const { task } = useTask(taskId, companyId);
+    const displayLabel = task?.taskNumber ?? taskId;
+    const visualLabel = type ? `${displayLabel} (${type})` : displayLabel;
+    const tooltipBody = type
+        ? `${taskId} (${type})`
+        : taskId;
+
+    return (
+        <Tooltip title={tooltipBody} arrow>
+            <Chip
+                size="small"
+                clickable
+                component={RouterLink}
+                to={`/crm/tasktotime/tasks/${taskId}`}
+                icon={<LinkIcon style={{ fontSize: 14 }} />}
+                label={visualLabel}
+                sx={{
+                    bgcolor: tone === 'block' ? '#EEF2FF' : '#FEF3C7',
+                    color: tone === 'block' ? '#3730A3' : '#92400E',
+                    // Keep the typeface monospaced when we're showing the raw
+                    // cuid fallback (so it visually telegraphs "this is an
+                    // id"); switch to the regular family once the human-
+                    // friendly taskNumber is resolved.
+                    fontFamily: task?.taskNumber
+                        ? '-apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif'
+                        : 'monospace',
+                    fontSize: '0.75rem',
+                    fontWeight: 600,
+                    textDecoration: 'none',
+                    '&:hover': {
+                        bgcolor: tone === 'block' ? '#E0E7FF' : '#FDE68A',
+                    },
+                    '& .MuiChip-icon': {
+                        color: 'inherit',
+                        marginLeft: '6px',
+                    },
+                }}
+            />
+        </Tooltip>
+    );
+};
 
 // ─── Page ───────────────────────────────────────────────────────────────
 
@@ -594,7 +641,9 @@ const TaskDetailPage: React.FC = () => {
                                     {task.dependsOn.map((dep: TaskDependencyDto) => (
                                         <DependencyChip
                                             key={`${dep.taskId}-${dep.type}`}
-                                            label={`${dep.taskId} (${dep.type})`}
+                                            taskId={dep.taskId}
+                                            companyId={companyId}
+                                            type={dep.type}
                                             tone="block"
                                         />
                                     ))}
@@ -624,7 +673,8 @@ const TaskDetailPage: React.FC = () => {
                                     {task.blocksTaskIds.map((blockedId: string) => (
                                         <DependencyChip
                                             key={blockedId}
-                                            label={blockedId}
+                                            taskId={blockedId}
+                                            companyId={companyId}
                                             tone="blocks"
                                         />
                                     ))}

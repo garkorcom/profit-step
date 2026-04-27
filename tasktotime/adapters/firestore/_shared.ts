@@ -201,11 +201,45 @@ export async function getAllChunked<T>(
   return results;
 }
 
-/** Cleanly strip undefined values before write — Firestore rejects them. */
+/**
+ * Recursively strip undefined values before write.
+ *
+ * Firestore rejects `undefined` not only at the document root but also
+ * nested inside arrays / objects (e.g. `history[1].reason` is undefined when
+ * the domain doesn't fill an optional field, and the write fails with
+ * `Cannot use "undefined" as a Firestore value (found in field
+ * "history.\`1\`.reason")`).
+ *
+ * Sentinel objects (Timestamp, FieldValue, GeoPoint) have non-plain
+ * prototypes and are passed through untouched so the wire conversion at
+ * the boundary keeps working.
+ */
 export function stripUndefined<T extends Record<string, unknown>>(input: T): T {
-  const out: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(input)) {
-    if (v !== undefined) out[k] = v;
+  return stripUndefinedDeep(input) as T;
+}
+
+function stripUndefinedDeep(value: unknown): unknown {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  if (Array.isArray(value)) {
+    return value
+      .map((v) => stripUndefinedDeep(v))
+      .filter((v) => v !== undefined);
   }
-  return out as T;
+  if (typeof value === 'object') {
+    const proto = Object.getPrototypeOf(value);
+    // Plain object → recurse. Anything with a non-plain prototype (Timestamp,
+    // FieldValue, GeoPoint, Buffer, etc.) is a Firestore sentinel — leave
+    // intact.
+    if (proto !== Object.prototype && proto !== null) {
+      return value;
+    }
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      const cleaned = stripUndefinedDeep(v);
+      if (cleaned !== undefined) out[k] = cleaned;
+    }
+    return out;
+  }
+  return value;
 }

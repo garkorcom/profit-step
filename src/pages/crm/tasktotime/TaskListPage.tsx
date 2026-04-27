@@ -81,6 +81,24 @@ const PRIORITY_COLORS: Record<TaskPriority, { bg: string; fg: string }> = {
     low: { bg: '#E0F2FE', fg: '#075985' },
 };
 
+const FALLBACK_CHIP = { bg: '#E5E7EB', fg: '#374151' };
+
+// Backend currently persists priority as an integer 0..3 (wire mismatch with
+// the Priority string domain type — see backend audit). Map int → string so
+// the legacy data still chips correctly until the schema fix lands.
+const PRIORITY_INT_TO_STRING: Record<number, TaskPriority> = {
+    0: 'low',
+    1: 'medium',
+    2: 'high',
+    3: 'critical',
+};
+
+function resolvePriorityKey(p: TaskDto['priority']): TaskPriority | undefined {
+    if (typeof p === 'string') return p as TaskPriority;
+    if (typeof p === 'number') return PRIORITY_INT_TO_STRING[p];
+    return undefined;
+}
+
 const LIFECYCLE_OPTIONS: TaskLifecycle[] = [
     'draft',
     'ready',
@@ -204,8 +222,10 @@ const TaskRow: React.FC<{ task: TaskDto; onOpen: (id: string) => void }> = ({
     task,
     onOpen,
 }) => {
-    const lifecycle = LIFECYCLE_COLORS[task.lifecycle];
-    const priority = PRIORITY_COLORS[task.priority];
+    const lifecycle = LIFECYCLE_COLORS[task.lifecycle] ?? FALLBACK_CHIP;
+    const priorityKey = resolvePriorityKey(task.priority);
+    const priority = (priorityKey && PRIORITY_COLORS[priorityKey]) ?? FALLBACK_CHIP;
+    const priorityLabel = priorityKey ?? String(task.priority ?? '—');
     const due = formatDueRelative(task.dueAt);
 
     return (
@@ -241,7 +261,7 @@ const TaskRow: React.FC<{ task: TaskDto; onOpen: (id: string) => void }> = ({
             </TableCell>
             <TableCell>
                 <Chip
-                    label={task.priority}
+                    label={priorityLabel}
                     size="small"
                     sx={{
                         bgcolor: priority.bg,

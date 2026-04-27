@@ -49,6 +49,7 @@ import type {
 } from '../../ports/infra/WeatherForecastPort';
 import type { FilePort, FileMetadata } from '../../ports/infra/FilePort';
 import type { IdGeneratorPort } from '../../ports/infra/IdGeneratorPort';
+import type { PubSubPort, PubSubMessage } from '../../ports/infra/PubSubPort';
 import { asTaskId, type TaskId, type CompanyId } from '../../domain/identifiers';
 
 // ─── Stub implementations of remaining ports ────────────────────────────
@@ -251,6 +252,18 @@ class StubWeatherForecast implements WeatherForecastPort {
   }
 }
 
+export class InMemoryPubSub implements PubSubPort {
+  public published: Array<{ topic: string; message: PubSubMessage; messageId: string }> = [];
+  async publish(topic: string, message: PubSubMessage): Promise<string | null> {
+    const messageId = `pubsub_${this.published.length + 1}`;
+    this.published.push({ topic, message, messageId });
+    return messageId;
+  }
+  reset(): void {
+    this.published = [];
+  }
+}
+
 class StubFilePort implements FilePort {
   public files = new Map<string, FileMetadata>();
   async findByTask() {
@@ -308,6 +321,7 @@ export interface AllPorts {
   storageUpload: StubStorageUpload;
   weatherForecast: StubWeatherForecast;
   filePort: StubFilePort;
+  pubsub: InMemoryPubSub;
   clock: FakeClock;
   idGenerator: FakeIdGenerator;
 }
@@ -338,6 +352,7 @@ export function makeAllPorts(initialEpochMs?: number): AllPorts {
     storageUpload: new StubStorageUpload(),
     weatherForecast: new StubWeatherForecast(),
     filePort: new StubFilePort(),
+    pubsub: new InMemoryPubSub(),
     clock: new FakeClock(initialEpochMs),
     idGenerator: new FakeIdGenerator(),
   };

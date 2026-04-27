@@ -14,19 +14,20 @@
 import { onTaskUpdate } from '../../../adapters/triggers/onTaskUpdate';
 import { makeTask } from '../../../shared/test-helpers/makeTask';
 import { makeAllPorts } from '../../../shared/mocks/StubAllPorts';
-import { asTaskId, asUserId } from '../../../domain/identifiers';
+import { asProjectId, asTaskId, asUserId } from '../../../domain/identifiers';
 import type { Task } from '../../../domain/Task';
 
 const T0 = 1_700_000_000_000;
 const HOUR = 60 * 60 * 1000;
 
-function buildDeps() {
+function buildDeps(opts: { withPubsub?: boolean } = {}) {
   const ports = makeAllPorts(T0);
   const deps = {
     taskRepo: ports.taskRepo,
     idempotency: ports.idempotency,
     bigQueryAudit: ports.bigQueryAudit,
     clock: ports.clock,
+    ...(opts.withPubsub ? { pubsub: ports.pubsub } : {}),
   };
   return { ports, deps };
 }
@@ -341,6 +342,51 @@ describe('onTaskUpdate', () => {
       await onTaskUpdate(makeChange(before, after, 'evt_reparent'), deps);
       const payload = ports.bigQueryAudit.events[0].payload as Record<string, unknown>;
       expect(payload.changedFields).toContain('parentTaskId');
+    });
+
+    test('publishes recomputeCriticalPath when graph-affecting field changes (with pubsub dep)', async () => {
+      const { ports, deps } = buildDeps({ withPubsub: true });
+      const before = makeTask({
+        id: asTaskId('task_cpm_pub'),
+        projectId: asProjectId('proj_pub'),
+        estimatedDurationMinutes: 60,
+      });
+      const after: Task = { ...before, estimatedDurationMinutes: 90 };
+
+      const r = await onTaskUpdate(makeChange(before, after, 'evt_cpm_pub'), deps);
+      expect(r).toMatchObject({
+        applied: true,
+        effects: expect.arrayContaining(['publishCriticalPathRecompute.published']),
+      });
+      expect(ports.pubsub.published).toHaveLength(1);
+      expect(ports.pubsub.published[0].topic).toBe('recomputeCriticalPath');
+    });
+
+    test('does NOT publish without pubsub dep', async () => {
+      const { ports, deps } = buildDeps(); // no pubsub
+      const before = makeTask({
+        id: asTaskId('task_cpm_skip'),
+        projectId: asProjectId('proj_skip'),
+        estimatedDurationMinutes: 60,
+      });
+      const after: Task = { ...before, estimatedDurationMinutes: 90 };
+
+      const r = await onTaskUpdate(makeChange(before, after, 'evt_no_pubsub'), deps);
+      expect(r).toMatchObject({ applied: true });
+      expect(ports.pubsub.published).toHaveLength(0);
+    });
+
+    test('does NOT publish when changed field is not graph-affecting', async () => {
+      const { ports, deps } = buildDeps({ withPubsub: true });
+      const before = makeTask({
+        id: asTaskId('task_cpm_irrelevant'),
+        projectId: asProjectId('proj_irr'),
+        priority: 'medium',
+      });
+      const after: Task = { ...before, priority: 'high' };
+
+      await onTaskUpdate(makeChange(before, after, 'evt_irr'), deps);
+      expect(ports.pubsub.published).toHaveLength(0);
     });
 
     test('cascade auto-shift fires on plannedStartAt change', async () => {

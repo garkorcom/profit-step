@@ -7,7 +7,7 @@
  */
 
 import type { Task, UserRef } from '../../domain/Task';
-import type { TaskId } from '../../domain/identifiers';
+import type { TaskId, CompanyId } from '../../domain/identifiers';
 import { StaleVersion } from '../../domain/errors';
 import type {
   TaskRepository,
@@ -70,9 +70,20 @@ export class InMemoryTaskRepository implements TaskRepository {
       .map(cloneTask);
   }
 
-  async findByDependsOn(taskId: TaskId): Promise<Task[]> {
+  async findByDependsOn(
+    taskId: TaskId,
+    companyId?: CompanyId,
+  ): Promise<Task[]> {
+    // Mirror the Firestore adapter: when companyId is omitted the mock
+    // returns matches across all tenants (legacy/test path); when supplied
+    // it scopes to the tenant before returning. Production callers SHOULD
+    // pass companyId — see TaskRepository port doc.
     return [...this.store.values()]
-      .filter((t) => (t.dependsOn ?? []).some((d) => d.taskId === taskId))
+      .filter(
+        (t) =>
+          (t.dependsOn ?? []).some((d) => d.taskId === taskId) &&
+          (companyId === undefined || t.companyId === companyId),
+      )
       .map(cloneTask);
   }
 

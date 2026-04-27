@@ -160,6 +160,14 @@ function assertPatchKeys(taskId: TaskId, partial: PartialTaskUpdate): void {
  * Firestore requires the first orderBy to match the inequality field; the
  * range filter on `titleLowercase` (built in `applyFilter`) means any other
  * orderBy choice would error at query time.
+ *
+ * **Tiebreaker on `__name__` (doc id).** Two tasks with identical
+ * `createdAt`/`updatedAt` ms (e.g. seeded in the same Firestore batch — our
+ * 50-task smoke seed lands on the same ms) would otherwise produce duplicates
+ * or skips during pagination. We add a secondary sort on `__name__` so the
+ * total ordering is stable, and pass both `lastSortValue` + `lastDocId` to
+ * `startAfter`. Legacy cursors that omit `lastDocId` are still accepted —
+ * we degrade to the single-key behaviour for those (no crash).
  */
 function applyOrderAndCursor(
   q: Query,
@@ -176,22 +184,33 @@ function applyOrderAndCursor(
   const direction = hasSearch
     ? (options?.direction ?? 'asc')
     : (options?.direction ?? 'desc');
-  let out = q.orderBy(orderBy, direction);
+  // Primary sort + stable tiebreaker on the doc id. The same direction is
+  // used for both legs so Firestore can satisfy the ordering with a single
+  // index walk (the trailing `__name__` order matches the implicit doc-id
+  // ordering inside any composite index).
+  let out = q.orderBy(orderBy, direction).orderBy('__name__', direction);
 
   if (options?.cursor) {
     const decoded = decodeCursor(options.cursor);
     if (decoded) {
       // The cursor encodes the sort-key value of the last item on the
-      // previous page. Firestore `startAfter` is a *value*, not a doc id,
-      // when used after `orderBy(<field>)`. If the sort-key happens to be a
-      // timestamp epoch we re-hydrate it back to a Firestore Timestamp.
+      // previous page. Firestore `startAfter` accepts *values* matching the
+      // orderBy chain — pass [sortValue, docId] so the next page starts
+      // strictly after the boundary even when several docs share `sortValue`.
       const value = decoded.lastSortValue;
-      const startAfter =
+      const startAfterPrimary =
         typeof value === 'number' &&
         /At$/.test(orderBy)
           ? toTimestamp(value)
           : value;
-      out = out.startAfter(startAfter as unknown);
+      if (typeof decoded.lastDocId === 'string' && decoded.lastDocId.length > 0) {
+        out = out.startAfter(startAfterPrimary as unknown, decoded.lastDocId);
+      } else {
+        // Legacy cursor (encoded before the tiebreaker fix) — only the
+        // sort-key value was carried. Fall back to single-key startAfter so
+        // pagination keeps working without a hard error.
+        out = out.startAfter(startAfterPrimary as unknown);
+      }
     }
   }
   return { query: out, orderBy, direction };

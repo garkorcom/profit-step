@@ -187,6 +187,12 @@ function domainStatus(name: string): number {
       return 404;
     case 'ValidationError':
     case 'InvalidDependencyInput':
+    case 'InvalidDraft':
+    case 'PreconditionFailed':
+    case 'MaxHierarchyDepth':
+    case 'SelfDependency':
+      // Pre-condition / draft validation errors — surface as 400 per
+      // spec/03-state-machine/transitions.md §"ready()" ("else 400").
       return 400;
     case 'PermissionDenied':
       return 403;

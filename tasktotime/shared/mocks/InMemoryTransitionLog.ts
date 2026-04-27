@@ -32,9 +32,14 @@ export class InMemoryTransitionLog implements TransitionLogPort {
   async findForTask(
     taskId: TaskId,
     limit: number = 100,
+    companyId?: CompanyId,
   ): Promise<TransitionLogEntry[]> {
     return this.entries
-      .filter((e) => e.taskId === taskId)
+      .filter(
+        (e) =>
+          e.taskId === taskId &&
+          (companyId === undefined || e.companyId === companyId),
+      )
       .slice(-limit)
       .map((e) => ({ ...e }));
   }

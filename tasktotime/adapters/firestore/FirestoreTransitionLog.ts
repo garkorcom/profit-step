@@ -165,18 +165,33 @@ export class FirestoreTransitionLog implements TransitionLogPort {
    * on the port. Uses composite index `(companyId, taskId, at desc)` per
    * adapter-mapping.md §2; if it is missing, the underlying Firestore error
    * is mapped to {@link MissingIndexError} via `mapFirestoreError`.
+   *
+   * `companyId` is optional for legacy callers; when supplied (the canonical
+   * production path) we add a `where('companyId', '==', companyId)`
+   * predicate so admin-SDK reads stay tenant-scoped. The composite index
+   * `(companyId, taskId, at desc)` already covers this query — no new
+   * index is required.
    */
-  async findForTask(taskId: TaskId, limit = 50): Promise<TransitionLogEntry[]> {
+  async findForTask(
+    taskId: TaskId,
+    limit = 50,
+    companyId?: CompanyId,
+  ): Promise<TransitionLogEntry[]> {
     try {
-      const snap = await this.db
-        .collection(COLLECTION)
-        .where('taskId', '==', taskId)
-        .orderBy('at', 'desc')
-        .limit(limit)
-        .get();
+      let q: Query = this.db.collection(COLLECTION);
+      if (companyId) {
+        q = q.where('companyId', '==', companyId);
+      }
+      q = q.where('taskId', '==', taskId).orderBy('at', 'desc').limit(limit);
+      const snap = await q.get();
       return snap.docs.map((d) => fromDoc(d.id, d.data()));
     } catch (err) {
-      throw mapFirestoreError(err, { op: 'findForTask', taskId, limit });
+      throw mapFirestoreError(err, {
+        op: 'findForTask',
+        taskId,
+        limit,
+        companyId,
+      });
     }
   }
 

@@ -164,7 +164,7 @@ describe('cascadeAutoShift', () => {
     expect(result.skippedAlreadyShifted).toEqual([]);
   });
 
-  test('cross-tenant target: BFS skips it; no patch issued', async () => {
+  test('cross-tenant target: server-side scoping prevents the lookup; no patch issued', async () => {
     const { ports, deps } = buildDeps();
     const T = makeTask({
       id: asTaskId('T'),
@@ -185,8 +185,16 @@ describe('cascadeAutoShift', () => {
 
     const result = await cascadeAutoShift(T, deps);
 
+    // The trigger now passes `trigger.companyId` to `findByDependsOn` so the
+    // Firestore adapter binds the (companyId, blocksTaskIds array-contains)
+    // composite index server-side. Cross-tenant docs never enter the BFS
+    // candidate set — `skippedCrossTenant` is intentionally empty for this
+    // path. The post-fetch `dep.companyId !== trigger.companyId` guard inside
+    // cascadeAutoShift stays as belt-and-suspenders for the rare case where
+    // a target is reached via a direct findById (cycle through external).
     expect(result.applied).toHaveLength(0);
-    expect(result.skippedCrossTenant).toContain(xtenant.id);
+    expect(result.skippedCrossTenant).toEqual([]);
+    expect(result.bfsVisited).toBe(1);
     const refreshed = await ports.taskRepo.findById(xtenant.id);
     expect(refreshed?.plannedStartAt).toBe(T0);
   });
@@ -275,5 +283,40 @@ describe('cascadeAutoShift', () => {
   test('exposes MAX_CASCADE_DEPTH constant in line with MAX_BFS_DEPTH', () => {
     expect(MAX_BFS_DEPTH).toBe(5);
     expect(MAX_CASCADE_DEPTH).toBe(5);
+  });
+
+  // ─── Bug 3 — companyId forwarded to findByDependsOn ────────────────
+  // Previously the trigger called `findByDependsOn(taskId)` with no second
+  // argument, forcing the Firestore adapter to scan all tenants and the
+  // trigger to filter in-memory. With the fix the adapter binds the
+  // (companyId, blocksTaskIds array-contains) composite index and only
+  // returns same-tenant docs.
+  test('forwards trigger.companyId to taskRepo.findByDependsOn (spy)', async () => {
+    const { ports } = buildDeps();
+    const T = makeTask({
+      id: asTaskId('T_fwd'),
+      companyId: asCompanyId('co_self_fwd'),
+      plannedStartAt: (T0 + 4 * HOUR) as EpochMs,
+      estimatedDurationMinutes: 60,
+    });
+    const A = makeTask({
+      id: asTaskId('A_fwd'),
+      companyId: asCompanyId('co_self_fwd'),
+      plannedStartAt: T0 as EpochMs,
+      estimatedDurationMinutes: 30,
+      autoShiftEnabled: true,
+      dependsOn: [dep('T_fwd')],
+    });
+    await ports.taskRepo.save(T);
+    await ports.taskRepo.save(A);
+
+    const spy = jest.spyOn(ports.taskRepo, 'findByDependsOn');
+    await cascadeAutoShift(T, { taskRepo: ports.taskRepo });
+
+    // Every call must include the trigger's companyId as second arg.
+    expect(spy).toHaveBeenCalled();
+    for (const call of spy.mock.calls) {
+      expect(call[1]).toBe(T.companyId);
+    }
   });
 });

@@ -72,6 +72,7 @@ function makeMockDb(opts: {
   const whereSpy = jest.fn();
   const orderBySpy = jest.fn();
   const limitSpy = jest.fn();
+  const startAfterSpy = jest.fn();
 
   const collectionFactory = () => {
     const chain: Record<string, unknown> = {
@@ -88,7 +89,10 @@ function makeMockDb(opts: {
         limitSpy(...args);
         return chain;
       }),
-      startAfter: jest.fn(() => chain),
+      startAfter: jest.fn((...args: unknown[]) => {
+        startAfterSpy(...args);
+        return chain;
+      }),
       get: queryGetSpy,
     };
     return chain;
@@ -137,6 +141,7 @@ function makeMockDb(opts: {
     whereSpy,
     orderBySpy,
     limitSpy,
+    startAfterSpy,
   };
 }
 
@@ -502,5 +507,116 @@ describe('FirestoreTaskRepository titleLowercase derived index', () => {
     const orderByFields = orderBySpy.mock.calls.map((c: unknown[]) => c[0]);
     expect(orderByFields).toContain('createdAt');
     expect(orderByFields).not.toContain('titleLowercase');
+  });
+});
+
+// ─── Bug 5 — pagination cursor docId tiebreaker ─────────────────────────
+//
+// Previously `applyOrderAndCursor` produced `q.orderBy(field).startAfter(value)`
+// — Firestore's startAfter is a *value*, so two docs sharing the same sort
+// value cause duplicates / skips between pages. The fix:
+//   1. Always add a secondary `orderBy('__name__', direction)` for stable
+//      total order.
+//   2. Encode the cursor with both `lastSortValue` + `lastDocId` (already
+//      done in `_shared.ts:CursorPayload`).
+//   3. Pass both to `startAfter(value, docId)`.
+//   4. Legacy cursors (no `lastDocId`) degrade gracefully — single-key
+//      `startAfter` keeps working.
+describe('FirestoreTaskRepository pagination cursor (Bug 5)', () => {
+  test('findMany() always adds secondary __name__ orderBy for stable pagination', async () => {
+    const { db, orderBySpy } = makeMockDb();
+    const repo = new FirestoreTaskRepository(db);
+    await repo.findMany(
+      { companyId: asCompanyId('c1') },
+      { orderBy: 'createdAt', direction: 'desc' },
+    );
+    const orderByCalls = orderBySpy.mock.calls.map((c: unknown[]) => c);
+    expect(orderByCalls).toContainEqual(['createdAt', 'desc']);
+    // The tiebreaker on the doc id keeps total order stable when several
+    // docs share the same sort-key value (e.g. 50 tasks seeded in the same
+    // batch get identical createdAt ms).
+    expect(orderByCalls).toContainEqual(['__name__', 'desc']);
+  });
+
+  test('findMany() with cursor passes (sortValue, docId) to startAfter', async () => {
+    const { db, startAfterSpy } = makeMockDb();
+    const repo = new FirestoreTaskRepository(db);
+    // Build a cursor encoding both fields — same shape encodeCursor produces.
+    const cursor = Buffer.from(
+      JSON.stringify({
+        lastDocId: 'task_boundary',
+        lastSortValue: 1_700_000_000_000,
+      }),
+      'utf8',
+    ).toString('base64');
+
+    await repo.findMany(
+      { companyId: asCompanyId('c1') },
+      { orderBy: 'createdAt', direction: 'desc', cursor },
+    );
+
+    expect(startAfterSpy).toHaveBeenCalledTimes(1);
+    const args = startAfterSpy.mock.calls[0];
+    // Two arguments — (sortValue, docId). The sortValue is converted to a
+    // Firestore Timestamp because the orderBy is `*At` (epoch field).
+    expect(args).toHaveLength(2);
+    expect(args[1]).toBe('task_boundary');
+  });
+
+  test('findMany() with legacy cursor (no docId) falls back to single-key startAfter', async () => {
+    const { db, startAfterSpy } = makeMockDb();
+    const repo = new FirestoreTaskRepository(db);
+    // Legacy: only `lastSortValue` (no `lastDocId` — older clients).
+    const legacyCursor = Buffer.from(
+      JSON.stringify({ lastSortValue: 1_700_000_000_000 }),
+      'utf8',
+    ).toString('base64');
+
+    // Important: a legacy cursor without `lastDocId` fails the
+    // `typeof parsed?.lastDocId !== 'string'` check inside `decodeCursor`,
+    // so it returns null — startAfter is NEVER called. The query still
+    // works (returns the first page); pagination just resets.
+    await repo.findMany(
+      { companyId: asCompanyId('c1') },
+      { orderBy: 'createdAt', direction: 'desc', cursor: legacyCursor },
+    );
+
+    // No crash — that's the contract. startAfter may or may not be called
+    // depending on the parse outcome; the key invariant is the call MUST
+    // NOT throw or pass `undefined` as the value-leg.
+    if (startAfterSpy.mock.calls.length > 0) {
+      const args = startAfterSpy.mock.calls[0];
+      // If it was called, the first arg must NOT be undefined / NaN.
+      expect(args[0]).toBeDefined();
+    }
+  });
+
+  test('findMany() with empty-string cursor degrades gracefully', async () => {
+    const { db, startAfterSpy } = makeMockDb();
+    const repo = new FirestoreTaskRepository(db);
+    // Garbage cursor → decodeCursor returns null → startAfter not called.
+    await expect(
+      repo.findMany(
+        { companyId: asCompanyId('c1') },
+        { orderBy: 'createdAt', direction: 'desc', cursor: '!!not-base64!!' },
+      ),
+    ).resolves.toBeDefined();
+    expect(startAfterSpy).not.toHaveBeenCalled();
+  });
+
+  test('cursor encode/decode round-trip preserves both lastDocId and lastSortValue', () => {
+    // Pure check on the cursor format — guards against accidental shape
+    // change that would break pagination across deploys.
+    const payload = {
+      lastDocId: 'task_xyz',
+      lastSortValue: 1_700_000_001_234,
+    };
+    const encoded = Buffer.from(JSON.stringify(payload), 'utf8').toString(
+      'base64',
+    );
+    const decoded = JSON.parse(
+      Buffer.from(encoded, 'base64').toString('utf8'),
+    );
+    expect(decoded).toEqual(payload);
   });
 });

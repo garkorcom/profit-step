@@ -389,6 +389,59 @@ describe('onTaskUpdate', () => {
       expect(ports.pubsub.published).toHaveLength(0);
     });
 
+    // ─── Bug 2 — completedAt + projectId now publish CPM republish ─────
+    test('publishes recomputeCriticalPath when completedAt changes', async () => {
+      const { ports, deps } = buildDeps({ withPubsub: true });
+      const before = makeTask({
+        id: asTaskId('task_completed_pub'),
+        projectId: asProjectId('proj_cpm_completed'),
+      });
+      const after: Task = {
+        ...before,
+        completedAt: (T0 + 3 * HOUR) as unknown as Task['completedAt'],
+      };
+
+      const r = await onTaskUpdate(
+        makeChange(before, after, 'evt_completed_pub'),
+        deps,
+      );
+      expect(r).toMatchObject({
+        applied: true,
+        effects: expect.arrayContaining(['publishCriticalPathRecompute.published']),
+      });
+      expect(ports.pubsub.published).toHaveLength(1);
+      const sent = ports.pubsub.published[0];
+      expect(sent.message.data).toMatchObject({
+        triggeredByFields: expect.arrayContaining(['completedAt']),
+      });
+    });
+
+    test('publishes recomputeCriticalPath when projectId changes (re-parent)', async () => {
+      const { ports, deps } = buildDeps({ withPubsub: true });
+      const before = makeTask({
+        id: asTaskId('task_reparent_pub'),
+        projectId: asProjectId('proj_old'),
+      });
+      const after: Task = { ...before, projectId: asProjectId('proj_new') };
+
+      const r = await onTaskUpdate(
+        makeChange(before, after, 'evt_reparent_pub'),
+        deps,
+      );
+      expect(r).toMatchObject({
+        applied: true,
+        effects: expect.arrayContaining(['publishCriticalPathRecompute.published']),
+      });
+      // The publish targets the AFTER projectId (`proj_new`) — that's the
+      // graph the message lands on. The BEFORE projectId loses one task and
+      // its CPM will eventually catch up via the next graph-affecting edit.
+      expect(ports.pubsub.published).toHaveLength(1);
+      expect(ports.pubsub.published[0].message.data).toMatchObject({
+        projectId: 'proj_new',
+        triggeredByFields: expect.arrayContaining(['projectId']),
+      });
+    });
+
     test('cascade auto-shift fires on plannedStartAt change', async () => {
       const { ports, deps } = buildDeps();
       const HOUR = 60 * 60 * 1000;

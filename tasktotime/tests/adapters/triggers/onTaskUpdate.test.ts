@@ -253,6 +253,84 @@ describe('onTaskUpdate', () => {
       expect(ports.bigQueryAudit.events).toHaveLength(1);
     });
 
+    test('parent rollup recompute fires on subtask lifecycle change', async () => {
+      const { ports, deps } = buildDeps();
+      const parent = makeTask({
+        id: asTaskId('parent_b3'),
+        subtaskIds: [asTaskId('child_b3')],
+      });
+      await ports.taskRepo.save(parent);
+
+      const before = makeTask({
+        id: asTaskId('child_b3'),
+        parentTaskId: parent.id,
+        lifecycle: 'started',
+        estimatedDurationMinutes: 60,
+      });
+      await ports.taskRepo.save(before);
+      const after: Task = {
+        ...before,
+        lifecycle: 'completed',
+        completedAt: T0 as unknown as Task['completedAt'],
+      };
+
+      const r = await onTaskUpdate(makeChange(before, after, 'evt_rollup'), deps);
+      expect(r).toMatchObject({
+        applied: true,
+        effects: expect.arrayContaining(['recomputeParentRollup.applied']),
+      });
+      const refreshedParent = await ports.taskRepo.findById(parent.id);
+      expect(refreshedParent?.subtaskRollup).toBeDefined();
+      expect(refreshedParent?.subtaskRollup?.totalEstimatedMinutes).toBe(60);
+    });
+
+    test('parent rollup does NOT fire on non-affecting subtask field change', async () => {
+      const { ports, deps } = buildDeps();
+      const parent = makeTask({
+        id: asTaskId('parent_no_rollup'),
+        subtaskIds: [asTaskId('child_no_rollup')],
+      });
+      await ports.taskRepo.save(parent);
+
+      const before = makeTask({
+        id: asTaskId('child_no_rollup'),
+        parentTaskId: parent.id,
+        memo: 'old',
+      });
+      const after: Task = { ...before, memo: 'new' };
+
+      const r = await onTaskUpdate(makeChange(before, after, 'evt_memo'), deps);
+      expect(r).toMatchObject({
+        applied: true,
+        effects: ['bigQueryAudit.log'],
+      });
+      // Parent's subtaskRollup stays untouched.
+      const refreshedParent = await ports.taskRepo.findById(parent.id);
+      expect(refreshedParent?.subtaskRollup).toBeUndefined();
+    });
+
+    test('parent rollup is NOT recomputed for root task (no parentTaskId)', async () => {
+      const { ports, deps } = buildDeps();
+      const before = makeTask({
+        id: asTaskId('root_task'),
+        lifecycle: 'started',
+      });
+      const after: Task = {
+        ...before,
+        lifecycle: 'completed',
+        completedAt: T0 as unknown as Task['completedAt'],
+      };
+
+      const r = await onTaskUpdate(makeChange(before, after, 'evt_root'), deps);
+      expect(r).toMatchObject({
+        applied: true,
+        effects: ['bigQueryAudit.log'],
+      });
+      const effectsRoot = (r as { effects: string[] }).effects;
+      expect(effectsRoot.some((e) => e.startsWith('recomputeParentRollup'))).toBe(false);
+      void ports;
+    });
+
     test('fires on parentTaskId reparent', async () => {
       const { ports, deps } = buildDeps();
       const before = makeTask({

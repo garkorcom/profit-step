@@ -17,8 +17,9 @@
  * **Cumulative scope:**
  *   - PR-B1: observer triggers — audit + notifications.
  *   - PR-B2: reverse `blocksTaskIds[]` denormalisation cascade.
- *   - PR-B3 (deferred): cascade auto-shift, parent rollup recompute,
- *     `recomputeCriticalPath` Pub/Sub fan-out.
+ *   - PR-B3: parent `subtaskRollup` recompute on subtask field changes.
+ *   - PR-B4 (deferred): cascade auto-shift, `recomputeCriticalPath`
+ *     Pub/Sub fan-out.
  */
 
 export { onTaskCreate } from './onTaskCreate';
@@ -32,6 +33,16 @@ export type {
   CascadeBlocksTaskIdsDeps,
   CascadeBlocksTaskIdsResult,
 } from './cascadeBlocksTaskIds';
+
+export {
+  recomputeParentRollup,
+  shouldRecomputeParentRollup,
+  ROLLUP_AFFECTING_FIELDS,
+} from './recomputeParentRollup';
+export type {
+  RecomputeParentRollupDeps,
+  RecomputeParentRollupResult,
+} from './recomputeParentRollup';
 
 export { onTaskTransition } from './onTaskTransition';
 export type { OnTaskTransitionDeps } from './onTaskTransition';

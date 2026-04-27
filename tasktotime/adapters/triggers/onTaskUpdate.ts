@@ -19,19 +19,19 @@
  *
  * **Scope (cumulative):**
  *   - PR-B1: audit each watched-field change to BigQuery.
- *   - PR-B2: reverse `blocksTaskIds[]` update on `dependsOn` change (this
- *     PR). Loop-safe because `blocksTaskIds` is on the EXCLUDED list inside
+ *   - PR-B2: reverse `blocksTaskIds[]` update on `dependsOn` change.
+ *     Loop-safe because `blocksTaskIds` is on the EXCLUDED list inside
  *     `_shared.ts`, so the follow-up `onTaskUpdate` on each target exits
- *     with `no_watched_field_change`. See `cascadeBlocksTaskIds.ts` for
- *     the exact cascade.
- *   - PR-B3 (deferred):
- *     - Cascade auto-shift on `dueAt` / `plannedStartAt` change — recompute
- *       dependents' `plannedStartAt` via `cascadeShift`. Each cascade step
- *       ALSO triggers `onTaskUpdate` on the dependents on a watched field
- *       (`plannedStartAt`), so the implementation must include a
- *       per-cascade-event idempotency key plus a depth limit (default 5
- *       hops) to break adversarial inputs.
- *     - Parent `subtaskRollup` recompute on subtask field changes.
+ *     with `no_watched_field_change`. See `cascadeBlocksTaskIds.ts`.
+ *   - PR-B3 (this PR): parent `subtaskRollup` recompute on subtask
+ *     field changes. Loop-safe via the same `EXCLUDED` mechanism — see
+ *     `recomputeParentRollup.ts`.
+ *   - PR-B4 (deferred):
+ *     - Cascade auto-shift on `plannedStartAt` / `completedAt` change.
+ *       Each cascade step ALSO triggers `onTaskUpdate` on the dependents
+ *       on a watched field (`plannedStartAt`), so the implementation must
+ *       include a per-cascade-event idempotency key plus a BFS depth limit
+ *       (default 5 hops) to break adversarial inputs.
  *     - Pub/Sub publish to `recomputeCriticalPath` on graph-affecting fields.
  *
  *   These are intentionally separate to keep each PR's review surface small.
@@ -63,6 +63,10 @@ import {
   cascadeBlocksTaskIds,
   type CascadeBlocksTaskIdsResult,
 } from './cascadeBlocksTaskIds';
+import {
+  recomputeParentRollup,
+  shouldRecomputeParentRollup,
+} from './recomputeParentRollup';
 
 const EVENT_TYPE = 'tasktotime_task_update';
 const TTL_MS = 5 * 60 * 1000;
@@ -129,8 +133,31 @@ export async function onTaskUpdate(
     summariseCascade(effects, cascadeResult);
   }
 
-  // ── PR-B3 work (auto-shift cascade, parent rollup, recomputeCriticalPath
-  //    Pub/Sub publisher) goes here. Adding cascades without per-target
+  // ── 3. Parent subtaskRollup recompute on subtask field change (PR-B3) ─
+  // Loop-safe: the patch only writes to the parent doc, and `subtaskRollup`
+  // is on the EXCLUDED list. The parent's onTaskUpdate exits with
+  // `no_watched_field_change`. See recomputeParentRollup.ts.
+  if (shouldRecomputeParentRollup(changedFields, after)) {
+    const rollupResult = await recomputeParentRollup(
+      changedFields,
+      before,
+      after,
+      { taskRepo: deps.taskRepo, logger: log },
+    );
+    if ('applied' in rollupResult) {
+      effects.push('recomputeParentRollup.applied');
+    } else if (
+      rollupResult.skipped !== 'no_parent' &&
+      rollupResult.skipped !== 'no_relevant_field_change'
+    ) {
+      // Surface non-trivial skips (parent missing / cross-tenant /
+      // unchanged-rollup / lookup_failed) for ops visibility.
+      effects.push(`recomputeParentRollup.skipped(${rollupResult.skipped})`);
+    }
+  }
+
+  // ── PR-B4 work (auto-shift cascade, recomputeCriticalPath Pub/Sub
+  //    publisher) goes here. Adding cascades without per-target
   //    idempotency + depth limits is the precise pattern that produces
   //    billing-bomb outages (CLAUDE.md §2.1).
 

@@ -19,7 +19,8 @@
  *   - PR-B2: reverse `blocksTaskIds[]` denormalisation cascade.
  *   - PR-B3: parent `subtaskRollup` recompute on subtask field changes.
  *   - PR-B4: cascade auto-shift on `plannedStartAt` / `completedAt`.
- *   - PR-B5 (deferred): `recomputeCriticalPath` Pub/Sub fan-out.
+ *   - PR-B5: debounced `recomputeCriticalPath` Pub/Sub publisher +
+ *     subscriber handler (CPM forward/backward + critical path patches).
  */
 
 export { onTaskCreate } from './onTaskCreate';
@@ -53,6 +54,28 @@ export type {
   CascadeAutoShiftDeps,
   CascadeAutoShiftResult,
 } from './cascadeAutoShift';
+
+export {
+  publishCriticalPathRecompute,
+  shouldPublishCriticalPathRecompute,
+  RECOMPUTE_CRITICAL_PATH_TOPIC,
+  DEBOUNCE_TTL_MS,
+  GRAPH_AFFECTING_FIELDS,
+} from './publishCriticalPathRecompute';
+export type {
+  PublishCriticalPathRecomputeDeps,
+  PublishCriticalPathRecomputeResult,
+} from './publishCriticalPathRecompute';
+
+export {
+  handleRecomputeCriticalPath,
+  MAX_TASKS_PER_PROJECT,
+} from './handleRecomputeCriticalPath';
+export type {
+  HandleRecomputeCriticalPathDeps,
+  RecomputeCriticalPathMessage,
+  SubscriberContext,
+} from './handleRecomputeCriticalPath';
 
 export { onTaskTransition } from './onTaskTransition';
 export type { OnTaskTransitionDeps } from './onTaskTransition';

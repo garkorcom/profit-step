@@ -33,9 +33,13 @@
  *     terminates because `cascadeShift` returns 0 entries on the second
  *     pass when topology is already correct. See `cascadeAutoShift.ts`
  *     for the full proof.
- *   - PR-B5 (deferred):
- *     - Pub/Sub publish to `recomputeCriticalPath` on graph-affecting
- *       fields. Needs a new `PubSubPort`.
+ *   - PR-B5 (this PR): debounced Pub/Sub publish to
+ *     `recomputeCriticalPath` on graph-affecting fields. The subscriber
+ *     (separate Cloud Function) runs `domain/criticalPath.computeSchedule`
+ *     and patches `isCriticalPath` + `slackMinutes` per task — both are
+ *     EXCLUDED watched fields, so this never re-fires
+ *     `onTaskUpdate`. See `publishCriticalPathRecompute.ts` and
+ *     `handleRecomputeCriticalPath.ts`.
  *
  * **Lifecycle changes** are NOT handled here — they flow through
  * `TaskService.transition` → `tasktotime_transitions/` → `onTaskTransition`
@@ -45,7 +49,11 @@
 
 import type { Task } from '../../domain/Task';
 import type { TaskRepository } from '../../ports/repositories';
-import type { BigQueryAuditPort, ClockPort } from '../../ports/infra';
+import type {
+  BigQueryAuditPort,
+  ClockPort,
+  PubSubPort,
+} from '../../ports/infra';
 import type { IdempotencyPort } from '../../ports/ai';
 
 import { type AdapterLogger, noopLogger } from '../firestore/_shared';
@@ -71,6 +79,10 @@ import {
   cascadeAutoShift,
   type CascadeAutoShiftResult,
 } from './cascadeAutoShift';
+import {
+  publishCriticalPathRecompute,
+  shouldPublishCriticalPathRecompute,
+} from './publishCriticalPathRecompute';
 
 const EVENT_TYPE = 'tasktotime_task_update';
 const TTL_MS = 5 * 60 * 1000;
@@ -80,6 +92,9 @@ export interface OnTaskUpdateDeps {
   idempotency: IdempotencyPort;
   bigQueryAudit: BigQueryAuditPort;
   clock: ClockPort;
+  /** Optional — when set, graph-affecting changes publish a debounced
+   *  recomputeCriticalPath message. Composition root in PR-C wires this. */
+  pubsub?: PubSubPort;
   logger?: AdapterLogger;
 }
 
@@ -175,8 +190,25 @@ export async function onTaskUpdate(
     summariseShift(effects, shiftResult);
   }
 
-  // ── PR-B5 work (recomputeCriticalPath Pub/Sub publisher) goes here.
-  //    Needs a new PubSubPort that doesn't exist yet.
+  // ── 5. Publish debounced recomputeCriticalPath (PR-B5) ──────────────
+  // The actual CPM forward + backward pass runs in a separate subscriber
+  // Cloud Function (handleRecomputeCriticalPath). Here we just publish a
+  // debounced message — multiple rapid edits within the same project
+  // collapse to one Pub/Sub send via IdempotencyPort.
+  if (deps.pubsub && shouldPublishCriticalPathRecompute(changedFields, after)) {
+    const cpmResult = await publishCriticalPathRecompute(changedFields, after, {
+      pubsub: deps.pubsub,
+      idempotency: deps.idempotency,
+      clock: deps.clock,
+      logger: log,
+    });
+    if ('published' in cpmResult) {
+      effects.push('publishCriticalPathRecompute.published');
+    } else if (cpmResult.skipped !== 'no_project' && cpmResult.skipped !== 'no_graph_affecting_change') {
+      // Surface non-trivial skips (debounced / publish_failed) for ops.
+      effects.push(`publishCriticalPathRecompute.skipped(${cpmResult.skipped})`);
+    }
+  }
 
   return applied(effects);
 }

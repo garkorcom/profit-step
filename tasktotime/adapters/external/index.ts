@@ -28,3 +28,6 @@ export type {
 } from './BigQueryAuditAdapter';
 export { FirebaseStorageUploadAdapter } from './FirebaseStorageUploadAdapter';
 export { MockWeatherForecastAdapter } from './MockWeatherForecastAdapter';
+
+export { GooglePubSubAdapter } from './PubSubAdapter';
+export type { PubSubLike, PubSubAdapterDeps } from './PubSubAdapter';

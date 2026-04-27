@@ -48,6 +48,7 @@ import type {
   ClockPort,
   FilePort,
   IdGeneratorPort,
+  PubSubPort,
   StorageUploadPort,
   WeatherForecastPort,
 } from '../ports/infra';
@@ -80,9 +81,11 @@ import {
   BrevoEmailNotifyAdapter,
   FCMPushNotifyAdapter,
   FirebaseStorageUploadAdapter,
+  GooglePubSubAdapter,
   MockWeatherForecastAdapter,
   TelegramNotifyAdapter,
   type BigQueryLike,
+  type PubSubLike,
 } from './external';
 
 // ─── Sub-barrel re-exports ─────────────────────────────────────────────
@@ -129,6 +132,7 @@ export interface Adapters {
   bigQueryAudit: BigQueryAuditPort;
   storage: StorageUploadPort;
   weather: WeatherForecastPort;
+  pubsub: PubSubPort;
 }
 
 export interface CreateAdaptersDeps {
@@ -140,6 +144,8 @@ export interface CreateAdaptersDeps {
   storage: Storage;
   /** BigQuery client (structural — see `BigQueryLike` for the surface used). */
   bigquery: BigQueryLike;
+  /** Pub/Sub client (structural — see `PubSubLike` for the surface used). */
+  pubsub: PubSubLike;
 
   /** Telegram bot token (resolved from Secret Manager by composition root). */
   telegramBotToken: string;
@@ -228,5 +234,6 @@ export function createAdapters(deps: CreateAdaptersDeps): Adapters {
       logger,
     ),
     weather: new MockWeatherForecastAdapter(logger),
+    pubsub: new GooglePubSubAdapter({ pubsub: deps.pubsub, logger }),
   };
 }

@@ -15,3 +15,4 @@ export type {
 export type { FilePort, FileMetadata } from './FilePort';
 export type { ClockPort } from './ClockPort';
 export type { IdGeneratorPort } from './IdGeneratorPort';
+export type { PubSubPort, PubSubMessage } from './PubSubPort';

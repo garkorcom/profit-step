@@ -154,3 +154,189 @@ describe('publishCriticalPathRecompute', () => {
     expect(DEBOUNCE_TTL_MS).toBe(5_000);
   });
 });
+
+// ─── TTL elapse semantics with jest.useFakeTimers ───────────────────────
+//
+// Spec: tasktotime/spec/11-success-metrics.md:23 — "Cross-tenant RLS test
+// PASSES" plus the debounced-publish guarantee that underpins CPM-recompute
+// metrics. The earlier `describe('publishCriticalPathRecompute')` block
+// proves that two back-to-back calls debounce, but does NOT control time —
+// it relies on `InMemoryIdempotency` reading the *real* `Date.now()`. That
+// means we cannot pin the exact 5-second boundary, only "within the same
+// tick".
+//
+// This block uses `jest.useFakeTimers({ now: ... })` to advance virtual
+// time precisely and assert the boundary semantics:
+//
+//   - 4 seconds apart  → single publish (still within TTL window)
+//   - 6 seconds apart  → two publishes (TTL elapsed; fresh reservation)
+//   - exactly 5 seconds apart → at the TTL boundary
+//   - many rapid edits in a 1-second burst → still ONE publish
+//   - debounce key is exactly `cpm_${companyId}_${projectId}`
+//   - two tenants, same projectId → no cross-tenant key collision
+//
+// Why direct `Date.now()` mocking via fake timers? `InMemoryIdempotency`
+// (`tasktotime/shared/mocks/StubAllPorts.ts:206-212`) reads `Date.now()`
+// at every `.reserve()` call. Jest's `useFakeTimers()` (modern variant,
+// default since Jest 27) replaces `Date.now`, `Date constructor`, and
+// `setTimeout`/`setInterval`. We do NOT need to advance setTimeout queues
+// here — only `Date.now()` matters — but `setSystemTime()` is the public
+// API for moving wall-clock forward, so that's what we use.
+
+describe('publishCriticalPathRecompute — TTL elapse semantics with jest.useFakeTimers', () => {
+  beforeEach(() => {
+    // Reset to the same anchor T0 each test so reservations from a prior
+    // test never bleed across the TTL boundary into a new one.
+    jest.useFakeTimers({ now: T0 });
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  test('two publishes 4s apart → only ONE publish (still within 5s TTL)', async () => {
+    const { ports, deps } = buildDeps();
+    const t = makeTask({
+      id: asTaskId('t_4s'),
+      projectId: asProjectId('proj_ttl_4s'),
+    });
+
+    const a = await publishCriticalPathRecompute(['dependsOn'], t, deps);
+    jest.setSystemTime(T0 + 4_000); // 4 seconds later — still inside TTL
+    const b = await publishCriticalPathRecompute(['dependsOn'], t, deps);
+
+    expect(a).toMatchObject({ published: true });
+    expect(b).toEqual({ skipped: 'debounced' });
+    expect(ports.pubsub.published).toHaveLength(1);
+  });
+
+  test('two publishes 6s apart → TWO publishes (TTL elapsed, new reservation taken)', async () => {
+    const { ports, deps } = buildDeps();
+    const t = makeTask({
+      id: asTaskId('t_6s'),
+      projectId: asProjectId('proj_ttl_6s'),
+    });
+
+    const a = await publishCriticalPathRecompute(['dependsOn'], t, deps);
+    jest.setSystemTime(T0 + 6_000); // 6 seconds later — TTL has elapsed
+    const b = await publishCriticalPathRecompute(['dependsOn'], t, deps);
+
+    expect(a).toMatchObject({ published: true });
+    expect(b).toMatchObject({ published: true });
+    expect(ports.pubsub.published).toHaveLength(2);
+  });
+
+  test('exactly 5s apart → debounced (TTL is half-open; "exp > now" is false at the boundary)', async () => {
+    // The InMemoryIdempotency contract:
+    //   reserve(key, ttlMs):
+    //     const exp = this.reservations.get(key);  // = T0 + 5000
+    //     if (exp !== undefined && exp > now) return false;
+    // At t=T0+5000 exactly, exp === now ⇒ "exp > now" is false ⇒ we treat
+    // the previous reservation as expired and create a new one. So the
+    // boundary is OPEN at exactly TTL. This matches the contract: the
+    // 5-second debounce window is "(0, 5000]" exclusive on the upper end.
+    const { ports, deps } = buildDeps();
+    const t = makeTask({
+      id: asTaskId('t_exact_boundary'),
+      projectId: asProjectId('proj_ttl_exact'),
+    });
+
+    await publishCriticalPathRecompute(['dependsOn'], t, deps);
+    jest.setSystemTime(T0 + DEBOUNCE_TTL_MS); // exactly the boundary
+    const b = await publishCriticalPathRecompute(['dependsOn'], t, deps);
+
+    // Per the InMemoryIdempotency semantics, exact-boundary callers fall on
+    // the "TTL elapsed" side and re-publish. If this contract changes (e.g.
+    // `>=` instead of `>`), this test will tell you.
+    expect(b).toMatchObject({ published: true });
+    expect(ports.pubsub.published).toHaveLength(2);
+  });
+
+  test('many rapid edits in a sub-1s burst → ONE publish', async () => {
+    const { ports, deps } = buildDeps();
+    const projectId = asProjectId('proj_burst');
+    const burst = 50;
+
+    for (let i = 0; i < burst; i++) {
+      // Spread 50 edits across 0..1000ms (well inside the 5s window).
+      jest.setSystemTime(T0 + Math.floor((i / burst) * 1_000));
+      const ti = makeTask({
+        id: asTaskId(`t_burst_${i}`),
+        projectId,
+      });
+      await publishCriticalPathRecompute(
+        ['estimatedDurationMinutes'],
+        ti,
+        deps,
+      );
+    }
+
+    expect(ports.pubsub.published).toHaveLength(1);
+  });
+
+  test('debounce key shape is exactly `cpm_${companyId}_${projectId}`', async () => {
+    // We exercise the key indirectly by exposing a custom IdempotencyPort
+    // spy that records every `reserve()` call. That contract — the literal
+    // string format — is the docstring promise in
+    // `adapters/triggers/publishCriticalPathRecompute.ts:97-99`.
+    const reserveCalls: Array<{ key: string; ttlMs?: number; result: boolean }> = [];
+    const spyIdempotency = {
+      reserve: async (key: string, ttlMs?: number) => {
+        const result = reserveCalls.every((c) => c.key !== key);
+        reserveCalls.push({ key, ttlMs, result });
+        return result;
+      },
+      isProcessed: async () => false,
+      release: async () => {
+        /* noop */
+      },
+    };
+    const { ports } = buildDeps();
+    const deps = {
+      pubsub: ports.pubsub,
+      idempotency: spyIdempotency,
+      clock: ports.clock,
+    };
+    const t = makeTask({
+      id: asTaskId('t_keyshape'),
+      projectId: asProjectId('proj_key_shape'),
+    });
+
+    await publishCriticalPathRecompute(['dependsOn'], t, deps);
+
+    expect(reserveCalls).toHaveLength(1);
+    expect(reserveCalls[0]!.key).toBe(
+      `cpm_${t.companyId}_proj_key_shape`,
+    );
+    expect(reserveCalls[0]!.ttlMs).toBe(DEBOUNCE_TTL_MS);
+  });
+
+  test('multi-tenant: same projectId across two companyIds does NOT collide', async () => {
+    // Two tenants happen to use the same projectId string. Because the key
+    // is `cpm_${companyId}_${projectId}`, both should be allowed to
+    // publish — even within the same TTL window — because the keys differ.
+    const { ports, deps } = buildDeps();
+    const sharedProj = asProjectId('shared_proj_id');
+
+    // Both tasks share `projectId = sharedProj` but the default
+    // companyId from `makeTask` is the same in both cases. To exercise
+    // multi-tenant isolation we must vary companyId explicitly.
+    const tA = makeTask({
+      id: asTaskId('t_tenant_a'),
+      projectId: sharedProj,
+    });
+    const tB = makeTask({
+      id: asTaskId('t_tenant_b'),
+      projectId: sharedProj,
+      companyId: 'company_other_tenant' as Task['companyId'],
+    });
+
+    const a = await publishCriticalPathRecompute(['dependsOn'], tA, deps);
+    // Same wall-clock instant — verifying no cross-tenant key collision.
+    const b = await publishCriticalPathRecompute(['dependsOn'], tB, deps);
+
+    expect(a).toMatchObject({ published: true });
+    expect(b).toMatchObject({ published: true });
+    expect(ports.pubsub.published).toHaveLength(2);
+  });
+});

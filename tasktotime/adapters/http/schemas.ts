@@ -23,9 +23,19 @@ import type {
   AddDependencyCommand,
   TransitionTaskCommand,
   UpdateWikiCommand,
+  PatchTaskCommand,
+  PatchTaskFields,
+  DeleteTaskCommand,
+  RemoveDependencyCommand,
 } from '../../application';
 import type { ListTasksQuery } from '../../application/queries/ListTasksQuery';
-import type { Priority, TaskBucket, TaskSource, UserRef } from '../../domain/Task';
+import type {
+  Money,
+  Priority,
+  TaskBucket,
+  TaskSource,
+  UserRef,
+} from '../../domain/Task';
 import type { TaskLifecycle, TransitionAction } from '../../domain/lifecycle';
 
 // ─── Result shape ───────────────────────────────────────────────────────
@@ -77,6 +87,97 @@ const VALID_LIFECYCLES = new Set<TaskLifecycle>([
   'completed',
   'accepted',
   'cancelled',
+]);
+
+/**
+ * Keys the wire format MUST refuse for `PATCH /tasks/:id`.
+ *
+ * Two layers share this contract:
+ *   1. The Firestore adapter
+ *      (`tasktotime/adapters/firestore/FirestoreTaskRepository.ts:PATCH_FORBIDDEN_KEYS`)
+ *      additionally rejects state-machine fields (`lifecycle`, `history`,
+ *      `transitions`) — those flow through the transition handler.
+ *   2. The HTTP schema (here) ALSO rejects identity / source-of-truth fields
+ *      that the storage adapter happens to allow but that MUST be immutable
+ *      from any external caller: `taskNumber` and `source`.
+ *
+ * Keep the union in sync if either side adds a new restriction. The
+ * forbidden-key check must happen BEFORE the `IdempotencyPort.reserve`
+ * call so a malformed request cannot consume an idempotency slot.
+ */
+const PATCH_HTTP_FORBIDDEN_KEYS: readonly string[] = [
+  // Mirror of the Firestore adapter's PATCH_FORBIDDEN_KEYS — copied to keep
+  // the HTTP layer free of an inbound dependency on a side adapter.
+  'lifecycle',
+  'history',
+  'transitions',
+  'id',
+  'companyId',
+  'createdAt',
+  'createdBy',
+  // Additionally locked at the HTTP boundary (immutable post-create).
+  'taskNumber',
+  'source',
+];
+
+/**
+ * Whitelist of keys that may flow through `PATCH /tasks/:id`.
+ *
+ * Anything outside this set is treated as a validation error so that the
+ * domain types act as the single source of truth for shape — adding a new
+ * patchable field requires an explicit edit here AND a matching parser
+ * branch below. This is more conservative than just diff-ing the forbidden
+ * list against `Object.keys(Task)`, because some Task fields (e.g.
+ * `subtaskRollup`, `wiki`) are computed/derived and have their own update
+ * paths.
+ *
+ * Categories below match the layout in `tasktotime/domain/Task.ts:Task` for
+ * easier grep-ability when extending.
+ */
+const PATCHABLE_KEYS = new Set<string>([
+  // Core content
+  'title',
+  'description',
+  'memo',
+  // Lifecycle config (NOT lifecycle itself — that is forbidden)
+  'bucket',
+  'priority',
+  'blockedReason',
+  // People
+  'assignedTo',
+  'reviewedBy',
+  'coAssignees',
+  'requiredHeadcount',
+  'linkedContactIds',
+  // Time
+  'plannedStartAt',
+  'dueAt',
+  'estimatedDurationMinutes',
+  // Dependencies (auto-shift toggle only — `dependsOn` flows through the
+  // dedicated /dependencies endpoints)
+  'autoShiftEnabled',
+  // Hierarchy
+  'parentTaskId',
+  'category',
+  'phase',
+  // Money
+  'costInternal',
+  'priceClient',
+  'bonusOnTime',
+  'penaltyOverdue',
+  'hourlyRate',
+  // Linking
+  'clientId',
+  'clientName',
+  'projectId',
+  'projectName',
+  'sourceEstimateId',
+  'sourceEstimateItemId',
+  'sourceNoteId',
+  'linkedTaskIds',
+  // Visibility
+  'clientVisible',
+  'internalOnly',
 ]);
 
 // ─── Common helpers ────────────────────────────────────────────────────
@@ -495,3 +596,366 @@ export function parseListTasksQuery(
   if (errors.length > 0) return fail(errors);
   return ok(filter);
 }
+
+// ─── Idempotency-key extraction ────────────────────────────────────────
+
+/**
+ * Pull the idempotency key from an Express-style `req.headers`-or-`req.body`
+ * pair. Both location paths are valid per `spec/05-api/rest-endpoints.md`:
+ *
+ *   1. `Idempotency-Key` HTTP header (preferred for REST clients).
+ *   2. `idempotencyKey` body field (used by AI / voice flows that synthesise
+ *      the request through the agent gateway).
+ *
+ * Returns `undefined` if neither location holds a non-empty string. Callers
+ * raise the validation error themselves so the path-of-failure stays
+ * consistent with the rest of the parser.
+ *
+ * The `headers` argument is typed loosely (`Record<string, unknown>`)
+ * because Express's `IncomingHttpHeaders` is a string-or-array-of-strings
+ * map; we coerce only when it's actually a non-empty string.
+ */
+export function extractIdempotencyKey(
+  headers: Record<string, unknown> | undefined,
+  body: unknown,
+): string | undefined {
+  // Header case-insensitive — Express normalises to lowercase, but be
+  // defensive and check the canonical RFC casing too.
+  const headerValue =
+    (headers && (headers['idempotency-key'] ?? headers['Idempotency-Key'])) ??
+    undefined;
+  if (typeof headerValue === 'string' && headerValue.length > 0) {
+    return headerValue;
+  }
+  if (isObject(body)) {
+    const v = body['idempotencyKey'];
+    if (typeof v === 'string' && v.length > 0) return v;
+  }
+  return undefined;
+}
+
+// ─── Patch / delete / remove-dependency schemas ─────────────────────────
+
+/**
+ * Parse a `Money` patch fragment. Same shape as `parseMoney` but used for
+ * `PATCH` payloads where the field is OPTIONAL — returns `undefined` when
+ * the key is absent. Validation errors append to the shared `errors` list.
+ */
+function parseOptionalMoney(
+  raw: unknown,
+  errors: ParseError[],
+  path: string,
+): Money | undefined {
+  if (raw === undefined) return undefined;
+  return parseMoney(raw, errors, path);
+}
+
+/**
+ * Parse `PATCH /api/tasktotime/tasks/:id` body.
+ *
+ * Behaviour:
+ *   - Forbidden keys (see `PATCH_HTTP_FORBIDDEN_KEYS`) cause a 400 with the
+ *     OFFENDING key in the error path so callers can pinpoint which field
+ *     was rejected.
+ *   - Unknown keys (anything outside `PATCHABLE_KEYS` and the forbidden
+ *     list) are also rejected with `unknown_field`. We deliberately do NOT
+ *     silently drop them — that would let typos pass review unnoticed.
+ *   - Each known key is shape-validated with `optString` / `optNumber` /
+ *     `optBoolean` / typed parsers (UserRef / Money / TaskBucket / Priority).
+ *   - At least one field must be present; an empty patch returns a 400.
+ *
+ * Returns the assembled `PatchTaskCommand` ready for `PatchTaskHandler`.
+ */
+export function parsePatchTaskBody(
+  taskId: string,
+  body: unknown,
+  by: UserRef,
+  idempotencyKey: string,
+): ParseResult<PatchTaskCommand> {
+  if (!isObject(body)) {
+    return fail([{ path: '', message: 'request body must be an object' }]);
+  }
+  const errors: ParseError[] = [];
+
+  // Forbidden-key check first — before walking the patch body so that a
+  // single illegal key short-circuits with a clean error path. Skip the
+  // `idempotencyKey` field itself (handled by `extractIdempotencyKey`).
+  const incomingKeys = Object.keys(body).filter(
+    (k) => k !== 'idempotencyKey',
+  );
+  const forbidden = incomingKeys.filter((k) =>
+    PATCH_HTTP_FORBIDDEN_KEYS.includes(k),
+  );
+  if (forbidden.length > 0) {
+    return fail(
+      forbidden.map((k) => ({
+        path: k,
+        message: `field is not patchable; use the dedicated endpoint instead`,
+      })),
+    );
+  }
+
+  const unknown = incomingKeys.filter((k) => !PATCHABLE_KEYS.has(k));
+  if (unknown.length > 0) {
+    return fail(
+      unknown.map((k) => ({
+        path: k,
+        message: `unknown_field — not in PATCHABLE_KEYS`,
+      })),
+    );
+  }
+
+  if (incomingKeys.length === 0) {
+    return fail([
+      {
+        path: '',
+        message: 'patch body must contain at least one patchable field',
+      },
+    ]);
+  }
+
+  const patch: PatchTaskFields = {};
+
+  // Strings
+  for (const key of [
+    'title',
+    'description',
+    'memo',
+    'blockedReason',
+    'clientId',
+    'clientName',
+    'projectId',
+    'projectName',
+    'sourceEstimateId',
+    'sourceEstimateItemId',
+    'sourceNoteId',
+    'parentTaskId',
+  ]) {
+    if (key in body) {
+      const v = optString(body, key);
+      if (v === undefined) {
+        errors.push({
+          path: key,
+          message: 'must be a non-empty string',
+        });
+      } else {
+        patch[key] = v;
+      }
+    }
+  }
+
+  // Numbers
+  for (const key of [
+    'requiredHeadcount',
+    'plannedStartAt',
+    'dueAt',
+    'estimatedDurationMinutes',
+    'hourlyRate',
+  ]) {
+    if (key in body) {
+      const v = optNumber(body, key);
+      if (v === undefined) {
+        errors.push({ path: key, message: 'must be a finite number' });
+      } else {
+        patch[key] = v;
+      }
+    }
+  }
+
+  // Booleans
+  for (const key of [
+    'autoShiftEnabled',
+    'clientVisible',
+    'internalOnly',
+  ]) {
+    if (key in body) {
+      const v = optBoolean(body, key);
+      if (v === undefined) {
+        errors.push({ path: key, message: 'must be a boolean' });
+      } else {
+        patch[key] = v;
+      }
+    }
+  }
+
+  // bucket / priority — enums
+  if ('bucket' in body) {
+    const raw = body.bucket;
+    if (typeof raw !== 'string' || !VALID_BUCKETS.has(raw as TaskBucket)) {
+      errors.push({
+        path: 'bucket',
+        message: `must be one of ${[...VALID_BUCKETS].join(' | ')}`,
+      });
+    } else {
+      patch.bucket = raw as TaskBucket;
+    }
+  }
+  if ('priority' in body) {
+    const raw = body.priority;
+    if (
+      typeof raw === 'number' &&
+      Number.isInteger(raw) &&
+      raw >= 0 &&
+      raw <= 3
+    ) {
+      patch.priority = (['low', 'medium', 'high', 'critical'] as const)[raw];
+    } else if (
+      typeof raw === 'string' &&
+      (['low', 'medium', 'high', 'critical'] as const).includes(
+        raw as Priority,
+      )
+    ) {
+      patch.priority = raw as Priority;
+    } else {
+      errors.push({
+        path: 'priority',
+        message: 'must be an integer in 0..3 or a Priority string',
+      });
+    }
+  }
+
+  // category / phase — typed string passthrough (further validated by domain)
+  if ('category' in body) {
+    if (typeof body.category !== 'string') {
+      errors.push({ path: 'category', message: 'must be a string' });
+    } else {
+      patch.category = body.category;
+    }
+  }
+  if ('phase' in body) {
+    if (typeof body.phase !== 'string') {
+      errors.push({ path: 'phase', message: 'must be a string' });
+    } else {
+      patch.phase = body.phase;
+    }
+  }
+
+  // assignedTo / reviewedBy — UserRef
+  if ('assignedTo' in body) {
+    const ref = parseUserRef(body.assignedTo, errors, 'assignedTo');
+    if (ref) patch.assignedTo = ref;
+  }
+  if ('reviewedBy' in body) {
+    const ref = parseUserRef(body.reviewedBy, errors, 'reviewedBy');
+    if (ref) patch.reviewedBy = ref;
+  }
+
+  // coAssignees — UserRef[]
+  if ('coAssignees' in body) {
+    if (!Array.isArray(body.coAssignees)) {
+      errors.push({
+        path: 'coAssignees',
+        message: 'must be an array of UserRef',
+      });
+    } else {
+      const refs: UserRef[] = [];
+      body.coAssignees.forEach((raw, i) => {
+        const ref = parseUserRef(raw, errors, `coAssignees[${i}]`);
+        if (ref) refs.push(ref);
+      });
+      patch.coAssignees = refs;
+    }
+  }
+
+  // linkedContactIds / linkedTaskIds — string[]
+  for (const key of ['linkedContactIds', 'linkedTaskIds']) {
+    if (key in body) {
+      const raw = body[key];
+      if (!isStringArray(raw)) {
+        errors.push({
+          path: key,
+          message: 'must be an array of non-empty strings',
+        });
+      } else {
+        patch[key] = raw;
+      }
+    }
+  }
+
+  // Money fields
+  for (const key of [
+    'costInternal',
+    'priceClient',
+    'bonusOnTime',
+    'penaltyOverdue',
+  ]) {
+    if (key in body) {
+      const m = parseOptionalMoney(body[key], errors, key);
+      if (m !== undefined) patch[key] = m;
+    }
+  }
+
+  if (errors.length > 0) return fail(errors);
+  return ok({
+    idempotencyKey,
+    by,
+    taskId,
+    patch,
+  });
+}
+
+/**
+ * Parse `DELETE /api/tasktotime/tasks/:id` body. The body is OPTIONAL — the
+ * caller may omit it entirely. The only field consumed is `idempotencyKey`,
+ * which the HTTP handler usually pre-extracts via `extractIdempotencyKey`.
+ *
+ * Why this exists at all (vs. inline in the handler): keeping all schema
+ * shaping in one file means the OpenAPI contract has a single source.
+ */
+export function parseDeleteTaskParams(
+  taskId: string,
+  by: UserRef,
+  idempotencyKey: string,
+): ParseResult<DeleteTaskCommand> {
+  if (typeof taskId !== 'string' || taskId.length === 0) {
+    return fail([
+      { path: 'id', message: 'taskId path param required' },
+    ]);
+  }
+  if (typeof idempotencyKey !== 'string' || idempotencyKey.length === 0) {
+    return fail([
+      {
+        path: 'idempotencyKey',
+        message: 'must be supplied via Idempotency-Key header or body',
+      },
+    ]);
+  }
+  return ok({ idempotencyKey, by, taskId });
+}
+
+/**
+ * Parse `DELETE /api/tasktotime/tasks/:id/dependencies/:depId` route params.
+ * `depId` is interpreted as the predecessor task id (= `to` side of the
+ * edge). The convention follows `spec/05-api/rest-endpoints.md`: edges live
+ * on `from.dependsOn[]` and the `:depId` segment names the target.
+ */
+export function parseRemoveDependencyParams(
+  fromTaskId: string,
+  depId: string,
+  by: UserRef,
+  idempotencyKey: string,
+): ParseResult<RemoveDependencyCommand> {
+  const errors: ParseError[] = [];
+  if (typeof fromTaskId !== 'string' || fromTaskId.length === 0) {
+    errors.push({ path: 'id', message: 'taskId path param required' });
+  }
+  if (typeof depId !== 'string' || depId.length === 0) {
+    errors.push({ path: 'depId', message: 'depId path param required' });
+  }
+  if (typeof idempotencyKey !== 'string' || idempotencyKey.length === 0) {
+    errors.push({
+      path: 'idempotencyKey',
+      message: 'must be supplied via Idempotency-Key header or body',
+    });
+  }
+  if (errors.length > 0) return fail(errors);
+  return ok({
+    idempotencyKey,
+    by,
+    fromTaskId,
+    toTaskId: depId,
+  });
+}
+
+// ─── Re-exports for tests ─────────────────────────────────────────────
+export { PATCH_HTTP_FORBIDDEN_KEYS, PATCHABLE_KEYS };

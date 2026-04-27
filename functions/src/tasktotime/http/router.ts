@@ -38,6 +38,9 @@ export function getTasktotimeRouter(): RequestHandler {
     transitionTaskHandler: services.transitionTaskHandler,
     addDependencyHandler: services.addDependencyHandler,
     updateWikiHandler: services.updateWikiHandler,
+    patchTaskHandler: services.patchTaskHandler,
+    deleteTaskHandler: services.deleteTaskHandler,
+    removeDependencyHandler: services.removeDependencyHandler,
   }) as unknown as RequestHandler;
   cached = router;
   return router;

@@ -10,7 +10,7 @@
  */
 
 import type { TaskId } from './identifiers';
-import type { Task, TaskDependency } from './Task';
+import type { Task } from './Task';
 import { CycleDetected, SelfDependency } from './errors';
 
 /**

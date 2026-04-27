@@ -12,7 +12,7 @@
  *     limit + 500-write batch limit.
  */
 
-import { Timestamp, FieldValue } from 'firebase-admin/firestore';
+import { Timestamp } from 'firebase-admin/firestore';
 import type { Firestore } from 'firebase-admin/firestore';
 
 /** Firestore Timestamp (re-exported for convenience). */

@@ -100,6 +100,12 @@ const routes = [
 ];
 routes.forEach(r => app.use(r));
 
+// ─── Tasktotime sub-router ─────────────────────────────────────────
+// Mounted lazily so unrelated agentApi cold starts don't pay the
+// composition cost. Builds on first /api/tasktotime/* request.
+import { getTasktotimeRouter } from '../tasktotime/http/router';
+app.use('/api/tasktotime', (req, res, next) => getTasktotimeRouter()(req, res, next));
+
 // ─── Error Handler (must be last) ──────────────────────────────────
 
 app.use(errorHandler);

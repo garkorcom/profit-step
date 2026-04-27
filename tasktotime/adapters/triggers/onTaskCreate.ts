@@ -25,7 +25,7 @@
  */
 
 import type { Task } from '../../domain/Task';
-import { asTaskId, type CompanyId, type TaskId } from '../../domain/identifiers';
+import type { CompanyId, TaskId } from '../../domain/identifiers';
 import type { TaskRepository, TransitionLogPort } from '../../ports/repositories';
 import type { TelegramNotifyPort } from '../../ports/notify';
 import type { BigQueryAuditPort, ClockPort } from '../../ports/infra';

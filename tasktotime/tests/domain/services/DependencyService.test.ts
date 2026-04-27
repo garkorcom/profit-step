@@ -6,7 +6,13 @@ import { DependencyService } from '../../../domain/services/DependencyService';
 import { makeAllPorts } from '../../../shared/mocks/StubAllPorts';
 import { CycleDetected, TaskNotFound } from '../../../domain/errors';
 import { graph } from '../../../shared/test-helpers/buildDependencyGraph';
-import { asTaskId, asUserId } from '../../../domain/identifiers';
+import { makeTask } from '../../../shared/test-helpers/makeTask';
+import {
+  asCompanyId,
+  asProjectId,
+  asTaskId,
+  asUserId,
+} from '../../../domain/identifiers';
 
 const TEST_USER = {
   id: asUserId('user_test'),
@@ -132,5 +138,66 @@ describe('DependencyService.canSetParent', () => {
     const { service } = buildService();
     const result = await service.canSetParent(asTaskId('any'), null);
     expect(result.ok).toBe(true);
+  });
+});
+
+describe('DependencyService.computeCriticalPath cross-tenant scoping', () => {
+  // Regression for the cross-tenant bug: previously the service called
+  // `findMany({ companyId: '' as unknown as ... })` which returns 0 results
+  // in Firestore (no doc has `companyId == ''`), silently breaking CPM for
+  // every project. After the fix the caller must pass a real companyId,
+  // and only tasks under that companyId participate in the schedule.
+  test('only schedules tasks whose companyId matches the requested tenant', async () => {
+    const { ports, service } = buildService();
+    const co_self = asCompanyId('co_self');
+    const co_other = asCompanyId('co_other');
+    const projectId = asProjectId('proj_1');
+
+    // Two tasks in the requested project across two tenants.
+    const mine = makeTask({
+      id: asTaskId('task_mine'),
+      companyId: co_self,
+      projectId,
+      lifecycle: 'ready',
+      estimatedDurationMinutes: 60,
+    });
+    const theirs = makeTask({
+      id: asTaskId('task_theirs'),
+      companyId: co_other,
+      projectId,
+      lifecycle: 'ready',
+      estimatedDurationMinutes: 60,
+    });
+    ports.taskRepo.seed([mine, theirs]);
+
+    const summary = await service.computeCriticalPath(co_self, projectId);
+
+    // Schedule must contain only the same-tenant task; the foreign task
+    // must not appear in slackByTaskId or critical path.
+    expect(Object.keys(summary.slackByTaskId)).toEqual([mine.id]);
+    expect(summary.taskIds).not.toContain(theirs.id);
+  });
+
+  test('returns no schedule when companyId does not match any task', async () => {
+    const { ports, service } = buildService();
+    const projectId = asProjectId('proj_2');
+    ports.taskRepo.seed([
+      makeTask({
+        id: asTaskId('task_alpha'),
+        companyId: asCompanyId('co_alpha'),
+        projectId,
+        lifecycle: 'ready',
+      }),
+    ]);
+
+    const summary = await service.computeCriticalPath(
+      asCompanyId('co_beta'),
+      projectId,
+    );
+
+    // computeSchedule on an empty set still produces a degenerate but valid
+    // summary; the important assertion is that the foreign tenant's task
+    // did NOT leak into the schedule.
+    expect(Object.keys(summary.slackByTaskId)).toHaveLength(0);
   });
 });

@@ -435,6 +435,42 @@ export class FirestoreTaskRepository implements TaskRepository {
   }
 
   /**
+   * Race-safe append via `FieldValue.arrayUnion`. The Firestore server-side
+   * union is idempotent (values already present are no-ops) and atomic across
+   * concurrent writers — the standard read-then-write pattern
+   * `[...existing, value]` would lose updates when two triggers patch the
+   * same field in parallel (e.g. `safeAttachToParent` for two children of
+   * the same parent created back-to-back).
+   *
+   * `updatedAt` is stamped server-side as on every other write path.
+   */
+  async appendToArray(id: TaskId, field: keyof Task, values: unknown[]): Promise<void> {
+    if (values.length === 0) return;
+    if (PATCH_FORBIDDEN_KEYS.includes(field as string)) {
+      throw new IllegalPatchError(id, [field as string]);
+    }
+    try {
+      const update: Record<string, unknown> = {
+        [field as string]: FieldValue.arrayUnion(...values),
+        updatedAt: FieldValue.serverTimestamp(),
+      };
+      await this.db.collection(COLLECTION).doc(id).update(update);
+      this.logger.debug?.('[FirestoreTaskRepository] appendToArray', {
+        id,
+        field,
+        count: values.length,
+      });
+    } catch (err) {
+      if (err instanceof AdapterError) throw err;
+      throw mapFirestoreError(err, {
+        op: 'appendToArray',
+        id,
+        field: String(field),
+      });
+    }
+  }
+
+  /**
    * Adapter mapping §1 row 9. Soft delete via read-then-write transaction.
    * Verifies the doc exists, then sets archive fields. Never hard-delete.
    *

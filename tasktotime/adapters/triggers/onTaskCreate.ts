@@ -193,15 +193,14 @@ async function safeAttachToParent(
       });
       return;
     }
-    if ((parent.subtaskIds ?? []).some((id) => id === task.id)) {
-      // Already attached — likely a retry that overlapped with a
-      // previous successful run.
-      return;
-    }
-    await deps.taskRepo.patch(parentId, {
-      subtaskIds: [...(parent.subtaskIds ?? []), task.id],
-    });
-    effects.push('taskRepo.patch(parent.subtaskIds)');
+    // Race-safe atomic append. The previous read-then-write `[...subtaskIds,
+    // task.id]` was not atomic: two children of the same parent created
+    // concurrently would each read the parent before either had written, so
+    // one of the two child ids would be lost. `arrayUnion` is server-side
+    // and dedup-on-set, so it is idempotent on retries (parent already
+    // contains the id → no-op) AND race-safe across concurrent invocations.
+    await deps.taskRepo.appendToArray(parentId, 'subtaskIds', [task.id]);
+    effects.push('taskRepo.appendToArray(parent.subtaskIds)');
 
     if (!task.isSubtask) {
       await deps.taskRepo.patch(task.id, { isSubtask: true });

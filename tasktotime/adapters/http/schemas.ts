@@ -317,7 +317,23 @@ export function parseCreateTaskBody(
   return ok(command);
 }
 
-/** `POST /api/tasktotime/tasks/:id/transition` */
+/** Min length for `block` action's `blockedReason`. Mirrors
+ *  `assertBlockReason` in `domain/validation.ts`. Centralised here so the
+ *  HTTP-side message and the domain-side message stay in sync. */
+const BLOCK_REASON_MIN_LENGTH = 5;
+
+/** `POST /api/tasktotime/tasks/:id/transition`
+ *
+ * Per-action payload requirements (mirrors `domain/validation.ts`):
+ *   - `block`  → `blockedReason: string` with `length >= 5`
+ *   - `accept` → `acceptance: { signedAt: number, signedBy: UserRef,
+ *                               signature?: string }`
+ *
+ * Validating these at the HTTP boundary (in addition to the domain) lets the
+ * client surface field-level errors via the structured `errors[]` payload
+ * instead of waiting for the domain `PreconditionFailed` and unpacking its
+ * message.
+ */
 export function parseTransitionBody(
   taskId: string,
   body: unknown,
@@ -329,10 +345,10 @@ export function parseTransitionBody(
   const errors: ParseError[] = [];
 
   const idempotencyKey = requireString(body, 'idempotencyKey', errors);
-  const action = body.action;
+  const actionRaw = body.action;
   if (
-    typeof action !== 'string' ||
-    !VALID_TRANSITION_ACTIONS.has(action as TransitionAction)
+    typeof actionRaw !== 'string' ||
+    !VALID_TRANSITION_ACTIONS.has(actionRaw as TransitionAction)
   ) {
     errors.push({
       path: 'action',
@@ -340,20 +356,100 @@ export function parseTransitionBody(
     });
   }
 
+  // Bail early if the basics didn't parse — per-action checks below assume a
+  // valid action string.
   if (errors.length > 0) return fail(errors);
+
+  const action = actionRaw as TransitionAction;
+
+  // ─── Per-action payload validation ──────────────────────────────────
+  let blockedReason: string | undefined;
+  let acceptance: TransitionTaskCommand['acceptance'] | undefined;
+
+  if (action === 'block') {
+    const raw = body.blockedReason;
+    if (typeof raw !== 'string' || raw.trim().length === 0) {
+      errors.push({
+        path: 'blockedReason',
+        message: 'must be a non-empty string',
+      });
+    } else if (raw.trim().length < BLOCK_REASON_MIN_LENGTH) {
+      errors.push({
+        path: 'blockedReason',
+        message: `must be at least ${BLOCK_REASON_MIN_LENGTH} characters`,
+      });
+    } else {
+      blockedReason = raw;
+    }
+  } else {
+    // For non-block actions, blockedReason is allowed but optional — forward
+    // it through if present so existing clients keep working.
+    blockedReason = optString(body, 'blockedReason');
+  }
+
+  if (action === 'accept') {
+    if (!isObject(body.acceptance)) {
+      errors.push({
+        path: 'acceptance',
+        message:
+          'must be an object { signedAt, signedBy: { id, name }, signature? }',
+      });
+    } else {
+      const acc = body.acceptance;
+      const accErrs: ParseError[] = [];
+
+      const signedAt = requireNumber(acc, 'signedAt', accErrs, 'acceptance.');
+      if (signedAt !== undefined && signedAt <= 0) {
+        accErrs.push({
+          path: 'acceptance.signedAt',
+          message: 'must be a positive epoch millisecond timestamp',
+        });
+      }
+
+      const signedBy = parseUserRef(
+        acc.signedBy,
+        accErrs,
+        'acceptance.signedBy',
+      );
+
+      // signature is optional — only validate type if present.
+      let signature: string | undefined;
+      if (acc.signature !== undefined) {
+        if (typeof acc.signature !== 'string') {
+          accErrs.push({
+            path: 'acceptance.signature',
+            message: 'must be a string when provided',
+          });
+        } else {
+          signature = acc.signature;
+        }
+      }
+
+      if (accErrs.length > 0) {
+        errors.push(...accErrs);
+      } else if (signedAt !== undefined && signedBy) {
+        acceptance = { signedAt, signedBy, signature };
+      }
+    }
+  } else {
+    // Forward optional acceptance for non-accept actions if present (no
+    // strict validation — the domain ignores it for those actions).
+    if (isObject(body.acceptance)) {
+      acceptance = body.acceptance as unknown as TransitionTaskCommand['acceptance'];
+    }
+  }
+
+  if (errors.length > 0) return fail(errors);
+
   const command: TransitionTaskCommand = {
     taskId,
-    action: action as TransitionAction,
+    action,
     by,
     reason: optString(body, 'reason'),
-    blockedReason: optString(body, 'blockedReason'),
+    blockedReason,
     idempotencyKey: idempotencyKey!,
   };
-  if (isObject(body.acceptance)) {
-    // The application/domain layer validates the AcceptanceAct shape further;
-    // here we just forward it as a structurally compatible object.
-    command.acceptance = body.acceptance as unknown as TransitionTaskCommand['acceptance'];
-  }
+  if (acceptance) command.acceptance = acceptance;
   return ok(command);
 }
 

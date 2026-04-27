@@ -272,4 +272,70 @@ describe('useTransitionTask', () => {
         expect(caught.err?.message).toBe('TransitionNotAllowed');
         expect(result.current.error?.message).toBe('TransitionNotAllowed');
     });
+
+    // Coverage for block / accept payloads added to fix the silent-400 bug
+    // in `TaskDetailPage`. The hook itself is just a passthrough — these
+    // tests exist to lock the wire shape so a future schema rename breaks
+    // them loudly instead of silently returning 400 again.
+    it('forwards a `block` payload with `blockedReason` to the API', async () => {
+        transitionTask.mockResolvedValueOnce({
+            task: { ...sampleTask, lifecycle: 'blocked' },
+            events: [],
+            skipped: false,
+        });
+
+        const { result } = renderHook(() => useTransitionTask());
+
+        await act(async () => {
+            await result.current.mutate({
+                taskId: 'task_1',
+                companyId: 'co_1',
+                input: {
+                    action: 'block',
+                    idempotencyKey: 'k_block',
+                    blockedReason: 'Waiting on permit committee approval',
+                },
+            });
+        });
+
+        expect(transitionTask).toHaveBeenCalledWith('task_1', 'co_1', {
+            action: 'block',
+            idempotencyKey: 'k_block',
+            blockedReason: 'Waiting on permit committee approval',
+        });
+    });
+
+    it('forwards an `accept` payload with `acceptance` to the API', async () => {
+        transitionTask.mockResolvedValueOnce({
+            task: { ...sampleTask, lifecycle: 'accepted' },
+            events: [],
+            skipped: false,
+        });
+
+        const { result } = renderHook(() => useTransitionTask());
+
+        const acceptance = {
+            signedAt: 1_700_000_000_000,
+            signedBy: { id: 'client_jim', name: 'Jim Dvorkin' },
+            signature: 'https://example.com/act.pdf',
+        };
+
+        await act(async () => {
+            await result.current.mutate({
+                taskId: 'task_1',
+                companyId: 'co_1',
+                input: {
+                    action: 'accept',
+                    idempotencyKey: 'k_accept',
+                    acceptance,
+                },
+            });
+        });
+
+        expect(transitionTask).toHaveBeenCalledWith('task_1', 'co_1', {
+            action: 'accept',
+            idempotencyKey: 'k_accept',
+            acceptance,
+        });
+    });
 });

@@ -290,20 +290,33 @@ export interface CreateTaskInput {
     phase?: TaskPhase;
 }
 
+/**
+ * Wire-format for the `accept` transition payload. Mirrors the backend
+ * `AcceptanceAct` in `tasktotime/domain/Task.ts`.
+ *
+ * Fields:
+ *   - `signedAt` — epoch ms; usually `Date.now()` from the dialog.
+ *   - `signedBy` — `{ id, name }` — collected from the current user OR
+ *     entered by the operator on behalf of the client (PM signing while
+ *     phoning the client, etc).
+ *   - `signature` — optional free-form string. Today this is a placeholder
+ *     URL; once we ship a real signing flow it'll be the URL of the uploaded
+ *     PDF / image. Intentionally optional so the act can be filed first and
+ *     the artefact attached later.
+ */
 export interface AcceptanceActInput {
-    url: string;
     signedAt: number;
-    signedBy: string;
-    signedByName: string;
-    notes?: string;
-    photos?: string[];
+    signedBy: TaskUserRef;
+    signature?: string;
 }
 
 export interface TransitionTaskInput {
     action: TransitionAction;
     idempotencyKey: string;
     reason?: string;
+    /** Required when `action === 'block'`. Min length 5 chars (validated server-side). */
     blockedReason?: string;
+    /** Required when `action === 'accept'`. */
     acceptance?: AcceptanceActInput;
 }
 

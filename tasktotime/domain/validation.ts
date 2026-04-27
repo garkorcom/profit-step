@@ -64,6 +64,11 @@ export function assertBlockReason(reason: string | undefined): void {
 
 /**
  * `accept` action requires complete `acceptance` object.
+ *
+ * Wire shape (matches `AcceptanceAct` in `Task.ts`):
+ *   `{ signedAt: EpochMs, signedBy: UserRef, signature?: string }`
+ * `signature` is intentionally optional — it can be filled later (e.g. PDF
+ * upload after the on-device signing) without re-running the transition.
  */
 export function assertAcceptancePayload(
   acceptance: Task['acceptance'] | undefined,
@@ -72,10 +77,15 @@ export function assertAcceptancePayload(
     throw new PreconditionFailed('accept action requires acceptance object');
   }
   const missing: string[] = [];
-  if (!acceptance.url) missing.push('url');
   if (!acceptance.signedAt || acceptance.signedAt <= 0) missing.push('signedAt');
-  if (!acceptance.signedBy) missing.push('signedBy');
-  if (!acceptance.signedByName) missing.push('signedByName');
+  if (
+    !acceptance.signedBy ||
+    typeof acceptance.signedBy !== 'object' ||
+    !acceptance.signedBy.id ||
+    !acceptance.signedBy.name
+  ) {
+    missing.push('signedBy');
+  }
   if (missing.length > 0) {
     throw new PreconditionFailed(
       `acceptance object missing fields: ${missing.join(', ')}`,

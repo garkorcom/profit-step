@@ -97,12 +97,25 @@ export interface Location {
   notes?: string;
 }
 
-/** Acceptance act (signed by client). See sub-types.md §AcceptanceAct. */
+/**
+ * Acceptance act (signed by client). See sub-types.md §AcceptanceAct.
+ *
+ * Wire shape (HTTP boundary): `{ signedAt, signedBy: UserRef, signature? }`.
+ *   - `signedBy` carries both the actor id and display name as a `UserRef`
+ *     (was previously two separate `signedBy: string` + `signedByName: string`
+ *     fields — collapsed for symmetry with the rest of the domain types).
+ *   - `signature` is an optional free-form string. Today it can be a URL to a
+ *     hosted PDF / image of the signed document, a base64 data URI for an
+ *     inline e-signature image, or a placeholder like
+ *     `"v.signature.placeholder.com"`. Open-ended on purpose so the contract
+ *     can evolve before we lock down a storage strategy.
+ *   - `notes` / `photos` are kept optional for future use but are not
+ *     populated by the current frontend dialog.
+ */
 export interface AcceptanceAct {
-  url: string;
   signedAt: EpochMs;
-  signedBy: string;
-  signedByName: string;
+  signedBy: UserRef;
+  signature?: string;
   notes?: string;
   photos?: string[];
 }

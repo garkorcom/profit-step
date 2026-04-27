@@ -14,11 +14,11 @@
  *   - Notification + audit failures are logged at `warn`, never thrown.
  *   - One handler per file; no cross-handler imports.
  *
- * **PR-B1 scope:** observer-only triggers — audit + notifications. Active
- * mutation triggers (cascade auto-shift, parent rollup recompute,
- * `blocksTaskIds[]` reverse update, `recomputeCriticalPath` Pub/Sub fan-out)
- * are deferred to PR-B2 so each can land with proper end-to-end emulator
- * testing in isolation.
+ * **Cumulative scope:**
+ *   - PR-B1: observer triggers — audit + notifications.
+ *   - PR-B2: reverse `blocksTaskIds[]` denormalisation cascade.
+ *   - PR-B3 (deferred): cascade auto-shift, parent rollup recompute,
+ *     `recomputeCriticalPath` Pub/Sub fan-out.
  */
 
 export { onTaskCreate } from './onTaskCreate';
@@ -26,6 +26,12 @@ export type { OnTaskCreateDeps } from './onTaskCreate';
 
 export { onTaskUpdate } from './onTaskUpdate';
 export type { OnTaskUpdateDeps } from './onTaskUpdate';
+
+export { cascadeBlocksTaskIds } from './cascadeBlocksTaskIds';
+export type {
+  CascadeBlocksTaskIdsDeps,
+  CascadeBlocksTaskIdsResult,
+} from './cascadeBlocksTaskIds';
 
 export { onTaskTransition } from './onTaskTransition';
 export type { OnTaskTransitionDeps } from './onTaskTransition';

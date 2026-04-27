@@ -174,6 +174,85 @@ describe('onTaskUpdate', () => {
       expect(payload.changedFields).toContain('dependsOn');
     });
 
+    test('cascade reverse-edge: dependsOn add propagates to target.blocksTaskIds', async () => {
+      const { ports, deps } = buildDeps();
+      const target = makeTask({ id: asTaskId('task_pred'), blocksTaskIds: [] });
+      await ports.taskRepo.save(target);
+
+      const before = makeTask({ id: asTaskId('task_succ'), dependsOn: [] });
+      const after: Task = {
+        ...before,
+        dependsOn: [
+          {
+            taskId: target.id,
+            type: 'finish_to_start',
+            isHardBlock: true,
+            createdAt: T0 as unknown as Task['createdAt'],
+            createdBy: { id: asUserId('user_x'), name: 'X' },
+          },
+        ],
+      };
+
+      const r = await onTaskUpdate(makeChange(before, after, 'evt_cascade_add'), deps);
+      expect(r).toMatchObject({
+        applied: true,
+        effects: expect.arrayContaining(['cascadeBlocksTaskIds.added(1)']),
+      });
+      const refreshed = await ports.taskRepo.findById(target.id);
+      expect(refreshed?.blocksTaskIds).toEqual([before.id]);
+    });
+
+    test('cascade reverse-edge: dependsOn remove propagates to target.blocksTaskIds', async () => {
+      const { ports, deps } = buildDeps();
+      const target = makeTask({
+        id: asTaskId('task_pred_rm'),
+        blocksTaskIds: [asTaskId('task_succ_rm'), asTaskId('task_other_succ')],
+      });
+      await ports.taskRepo.save(target);
+
+      const before = makeTask({
+        id: asTaskId('task_succ_rm'),
+        dependsOn: [
+          {
+            taskId: target.id,
+            type: 'finish_to_start',
+            isHardBlock: true,
+            createdAt: T0 as unknown as Task['createdAt'],
+            createdBy: { id: asUserId('user_x'), name: 'X' },
+          },
+        ],
+      });
+      const after: Task = { ...before, dependsOn: [] };
+
+      const r = await onTaskUpdate(makeChange(before, after, 'evt_cascade_rm'), deps);
+      expect(r).toMatchObject({
+        applied: true,
+        effects: expect.arrayContaining(['cascadeBlocksTaskIds.removed(1)']),
+      });
+      const refreshed = await ports.taskRepo.findById(target.id);
+      expect(refreshed?.blocksTaskIds).toEqual([asTaskId('task_other_succ')]);
+    });
+
+    test('cascade does NOT run when only non-dependsOn fields changed', async () => {
+      const { ports, deps } = buildDeps();
+      const before = makeTask({
+        id: asTaskId('task_no_cascade'),
+        bucket: 'inbox',
+      });
+      const after: Task = { ...before, bucket: 'next' };
+
+      const r = await onTaskUpdate(makeChange(before, after, 'evt_no_casc'), deps);
+      expect(r).toMatchObject({
+        applied: true,
+        effects: ['bigQueryAudit.log'],
+      });
+      // No blocksTaskIds patches happened — refresh original task.
+      const refreshed = await ports.taskRepo.findById(before.id);
+      // We never seeded the source itself; its blocksTaskIds shouldn't change.
+      expect(refreshed).toBeNull();
+      expect(ports.bigQueryAudit.events).toHaveLength(1);
+    });
+
     test('fires on parentTaskId reparent', async () => {
       const { ports, deps } = buildDeps();
       const before = makeTask({

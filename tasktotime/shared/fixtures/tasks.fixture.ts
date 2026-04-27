@@ -150,10 +150,9 @@ export function acceptedTask(): Task {
     actualDurationMinutes: 600,
     totalEarnings: 300,
     acceptance: {
-      url: 'https://storage.example/acts/T-2026-1006.pdf',
       signedAt: acceptedAt,
-      signedBy: 'client_jim',
-      signedByName: 'Jim Dvorkin',
+      signedBy: { id: asUserId('client_jim'), name: 'Jim Dvorkin' },
+      signature: 'https://storage.example/acts/T-2026-1006.pdf',
       notes: 'Looks good',
     },
     companyId: asCompanyId('company_acme'),

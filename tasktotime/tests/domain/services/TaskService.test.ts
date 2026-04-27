@@ -184,10 +184,9 @@ describe('TaskService.transition', () => {
       action: 'accept',
       by: TEST_USER,
       acceptance: {
-        url: 'https://example/act.pdf',
         signedAt: T0 + 5 * HOUR,
-        signedBy: 'client_jim',
-        signedByName: 'Jim',
+        signedBy: { id: asUserId('client_jim'), name: 'Jim' },
+        signature: 'https://example/act.pdf',
       },
       idempotencyKey: 'ka',
     });
@@ -207,10 +206,8 @@ describe('TaskService.transition', () => {
       action: 'accept',
       by: TEST_USER,
       acceptance: {
-        url: 'x',
         signedAt: T0,
-        signedBy: 'u',
-        signedByName: 'U',
+        signedBy: { id: asUserId('u'), name: 'U' },
       },
       idempotencyKey: 'k1',
     });
@@ -226,10 +223,8 @@ describe('TaskService.transition', () => {
         action: 'accept',
         by: TEST_USER,
         acceptance: {
-          url: 'x',
           signedAt: T0,
-          signedBy: 'u',
-          signedByName: 'U',
+          signedBy: { id: asUserId('u'), name: 'U' },
         },
         idempotencyKey: 'k2',
       }),

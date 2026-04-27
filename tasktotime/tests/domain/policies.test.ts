@@ -146,10 +146,8 @@ describe('shouldAutoApprove', () => {
     const task = makeTask({
       lifecycle: 'completed',
       acceptance: {
-        url: 'x',
         signedAt: 1 as never,
-        signedBy: 'u',
-        signedByName: 'U',
+        signedBy: { id: 'u' as never, name: 'U' },
       },
     });
     const result = shouldAutoApprove(task, { featureEnabled: true });

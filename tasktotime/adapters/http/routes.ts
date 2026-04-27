@@ -15,6 +15,9 @@ import type { TaskRepository } from '../../ports/repositories';
 import type {
   AddDependencyHandler,
   CreateTaskHandler,
+  DeleteTaskHandler,
+  PatchTaskHandler,
+  RemoveDependencyHandler,
   TransitionTaskHandler,
   UpdateWikiHandler,
 } from '../../application';
@@ -22,9 +25,12 @@ import type {
 import {
   addDependencyRoute,
   createTaskRoute,
+  deleteTaskRoute,
   getRollupRoute,
   getTaskRoute,
   listTasksRoute,
+  patchTaskRoute,
+  removeDependencyRoute,
   transitionTaskRoute,
   updateWikiRoute,
 } from './handlers';
@@ -36,6 +42,9 @@ export interface TasktotimeRouterDeps {
   transitionTaskHandler: TransitionTaskHandler;
   addDependencyHandler: AddDependencyHandler;
   updateWikiHandler: UpdateWikiHandler;
+  patchTaskHandler: PatchTaskHandler;
+  deleteTaskHandler: DeleteTaskHandler;
+  removeDependencyHandler: RemoveDependencyHandler;
 }
 
 /**
@@ -44,13 +53,16 @@ export interface TasktotimeRouterDeps {
  *
  * Endpoint catalogue (all behind agentApi auth + rate-limit):
  *
- *   POST   /tasks                        — create
- *   GET    /tasks                        — list (filters via query string)
- *   GET    /tasks/:id                    — fetch one
- *   POST   /tasks/:id/transition         — drive lifecycle
- *   POST   /tasks/:id/dependencies       — add dependency edge
- *   PUT    /tasks/:id/wiki               — patch wiki (optimistic-concurrency)
- *   GET    /tasks/:id/rollup             — recompute subtask rollup
+ *   POST   /tasks                                    — create
+ *   GET    /tasks                                    — list (filters via query string)
+ *   GET    /tasks/:id                                — fetch one
+ *   PATCH  /tasks/:id                                — partial update (NOT lifecycle)
+ *   DELETE /tasks/:id                                — soft delete (sets archivedAt)
+ *   POST   /tasks/:id/transition                     — drive lifecycle
+ *   POST   /tasks/:id/dependencies                   — add dependency edge
+ *   DELETE /tasks/:id/dependencies/:depId            — remove dependency edge
+ *   PUT    /tasks/:id/wiki                           — patch wiki (optimistic-concurrency)
+ *   GET    /tasks/:id/rollup                         — recompute subtask rollup
  *
  * Errors thrown from handlers are caught by `tasktotimeErrorHandler` (added
  * last). Unknown errors return HTTP 500 with `{ code: 'INTERNAL' }`.
@@ -66,6 +78,20 @@ export function createTasktotimeRouter(deps: TasktotimeRouterDeps): Router {
   );
   router.get('/tasks', listTasksRoute({ taskRepo: deps.taskRepo }));
   router.get('/tasks/:id', getTaskRoute({ taskRepo: deps.taskRepo }));
+  router.patch(
+    '/tasks/:id',
+    patchTaskRoute({
+      handler: deps.patchTaskHandler,
+      taskRepo: deps.taskRepo,
+    }),
+  );
+  router.delete(
+    '/tasks/:id',
+    deleteTaskRoute({
+      handler: deps.deleteTaskHandler,
+      taskRepo: deps.taskRepo,
+    }),
+  );
   router.post(
     '/tasks/:id/transition',
     transitionTaskRoute({
@@ -77,6 +103,13 @@ export function createTasktotimeRouter(deps: TasktotimeRouterDeps): Router {
     '/tasks/:id/dependencies',
     addDependencyRoute({
       handler: deps.addDependencyHandler,
+      taskRepo: deps.taskRepo,
+    }),
+  );
+  router.delete(
+    '/tasks/:id/dependencies/:depId',
+    removeDependencyRoute({
+      handler: deps.removeDependencyHandler,
       taskRepo: deps.taskRepo,
     }),
   );

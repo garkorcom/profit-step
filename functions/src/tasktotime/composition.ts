@@ -42,6 +42,9 @@ import {
   TransitionTaskHandler,
   AddDependencyHandler,
   UpdateWikiHandler,
+  PatchTaskHandler,
+  DeleteTaskHandler,
+  RemoveDependencyHandler,
 } from '../../../tasktotime/application';
 
 import {
@@ -92,6 +95,9 @@ interface TasktotimeServices {
   transitionTaskHandler: TransitionTaskHandler;
   addDependencyHandler: AddDependencyHandler;
   updateWikiHandler: UpdateWikiHandler;
+  patchTaskHandler: PatchTaskHandler;
+  deleteTaskHandler: DeleteTaskHandler;
+  removeDependencyHandler: RemoveDependencyHandler;
   taskService: TaskService;
   dependencyService: DependencyService;
 }
@@ -155,6 +161,20 @@ function build(): TasktotimeServices {
     taskRepo: adapters.taskRepo,
     clock: adapters.clock,
   });
+  const patchTaskHandler = new PatchTaskHandler({
+    taskRepo: adapters.taskRepo,
+    idempotency: adapters.idempotency,
+  });
+  const deleteTaskHandler = new DeleteTaskHandler({
+    taskRepo: adapters.taskRepo,
+    idempotency: adapters.idempotency,
+    clock: adapters.clock,
+  });
+  const removeDependencyHandler = new RemoveDependencyHandler({
+    dependencyService,
+    taskRepo: adapters.taskRepo,
+    idempotency: adapters.idempotency,
+  });
 
   return {
     adapters,
@@ -162,6 +182,9 @@ function build(): TasktotimeServices {
     transitionTaskHandler,
     addDependencyHandler,
     updateWikiHandler,
+    patchTaskHandler,
+    deleteTaskHandler,
+    removeDependencyHandler,
     taskService,
     dependencyService,
   };

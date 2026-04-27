@@ -26,3 +26,12 @@ export type { UpdateWikiHttpDeps } from './updateWiki';
 
 export { getRollupRoute } from './getRollup';
 export type { GetRollupHttpDeps } from './getRollup';
+
+export { patchTaskRoute } from './patchTask';
+export type { PatchTaskHttpDeps } from './patchTask';
+
+export { deleteTaskRoute } from './deleteTask';
+export type { DeleteTaskHttpDeps } from './deleteTask';
+
+export { removeDependencyRoute } from './removeDependency';
+export type { RemoveDependencyHttpDeps } from './removeDependency';

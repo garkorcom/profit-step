@@ -41,6 +41,10 @@ export {
   parseAddDependencyBody,
   parseUpdateWikiBody,
   parseListTasksQuery,
+  parsePatchTaskBody,
+  parseDeleteTaskParams,
+  parseRemoveDependencyParams,
+  extractIdempotencyKey,
 } from './schemas';
 export type { ParseResult, ParseError } from './schemas';
 

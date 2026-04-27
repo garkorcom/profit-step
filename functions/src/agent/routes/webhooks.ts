@@ -62,7 +62,7 @@ router.get('/api/webhooks', requireScope(SCOPES.WEBHOOKS_READ, SCOPES.WEBHOOKS_M
 
 router.get('/api/webhooks/:id', requireScope(SCOPES.WEBHOOKS_READ, SCOPES.WEBHOOKS_MANAGE), async (req, res, next) => {
   try {
-    const { id } = req.params;
+    const id = String(req.params.id);
     const doc = await db.collection('webhook_subscriptions').doc(id).get();
 
     if (!doc.exists) {
@@ -134,7 +134,7 @@ router.post('/api/webhooks', requireScope(SCOPES.WEBHOOKS_MANAGE), async (req, r
 
 router.put('/api/webhooks/:id', requireScope(SCOPES.WEBHOOKS_MANAGE), async (req, res, next) => {
   try {
-    const { id } = req.params;
+    const id = String(req.params.id);
     const data = UpdateWebhookSchema.parse(req.body);
     logger.info('🔔 webhooks:update', { webhookId: id, ...data });
 
@@ -169,7 +169,7 @@ router.put('/api/webhooks/:id', requireScope(SCOPES.WEBHOOKS_MANAGE), async (req
 
 router.delete('/api/webhooks/:id', requireScope(SCOPES.WEBHOOKS_MANAGE), async (req, res, next) => {
   try {
-    const { id } = req.params;
+    const id = String(req.params.id);
     logger.info('🔔 webhooks:delete', { webhookId: id });
 
     const doc = await db.collection('webhook_subscriptions').doc(id).get();

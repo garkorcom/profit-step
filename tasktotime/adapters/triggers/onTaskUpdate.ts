@@ -23,19 +23,19 @@
  *     Loop-safe because `blocksTaskIds` is on the EXCLUDED list inside
  *     `_shared.ts`, so the follow-up `onTaskUpdate` on each target exits
  *     with `no_watched_field_change`. See `cascadeBlocksTaskIds.ts`.
- *   - PR-B3 (this PR): parent `subtaskRollup` recompute on subtask
- *     field changes. Loop-safe via the same `EXCLUDED` mechanism — see
+ *   - PR-B3: parent `subtaskRollup` recompute on subtask field changes.
+ *     Loop-safe via the same `EXCLUDED` mechanism — see
  *     `recomputeParentRollup.ts`.
- *   - PR-B4 (deferred):
- *     - Cascade auto-shift on `plannedStartAt` / `completedAt` change.
- *       Each cascade step ALSO triggers `onTaskUpdate` on the dependents
- *       on a watched field (`plannedStartAt`), so the implementation must
- *       include a per-cascade-event idempotency key plus a BFS depth limit
- *       (default 5 hops) to break adversarial inputs.
- *     - Pub/Sub publish to `recomputeCriticalPath` on graph-affecting fields.
- *
- *   These are intentionally separate to keep each PR's review surface small.
- *   Each is its own subject for end-to-end emulator testing.
+ *   - PR-B4 (this PR): cascade auto-shift on `plannedStartAt` /
+ *     `completedAt` change. BFS depth-limited (5 hops) over
+ *     `findByDependsOn` + patch-level idempotency (skip when
+ *     `target.plannedStartAt === entry.newPlannedStartAt`). The cascade
+ *     terminates because `cascadeShift` returns 0 entries on the second
+ *     pass when topology is already correct. See `cascadeAutoShift.ts`
+ *     for the full proof.
+ *   - PR-B5 (deferred):
+ *     - Pub/Sub publish to `recomputeCriticalPath` on graph-affecting
+ *       fields. Needs a new `PubSubPort`.
  *
  * **Lifecycle changes** are NOT handled here — they flow through
  * `TaskService.transition` → `tasktotime_transitions/` → `onTaskTransition`
@@ -67,6 +67,10 @@ import {
   recomputeParentRollup,
   shouldRecomputeParentRollup,
 } from './recomputeParentRollup';
+import {
+  cascadeAutoShift,
+  type CascadeAutoShiftResult,
+} from './cascadeAutoShift';
 
 const EVENT_TYPE = 'tasktotime_task_update';
 const TTL_MS = 5 * 60 * 1000;
@@ -156,12 +160,52 @@ export async function onTaskUpdate(
     }
   }
 
-  // ── PR-B4 work (auto-shift cascade, recomputeCriticalPath Pub/Sub
-  //    publisher) goes here. Adding cascades without per-target
-  //    idempotency + depth limits is the precise pattern that produces
-  //    billing-bomb outages (CLAUDE.md §2.1).
+  // ── 4. Cascade auto-shift on plannedStartAt / completedAt (PR-B4) ───
+  // BFS-bounded + patch-level idempotency. The cascade naturally
+  // terminates because cascadeShift returns 0 entries on the second pass
+  // when topology is already correct. See cascadeAutoShift.ts.
+  if (
+    changedFields.includes('plannedStartAt') ||
+    changedFields.includes('completedAt')
+  ) {
+    const shiftResult = await cascadeAutoShift(after, {
+      taskRepo: deps.taskRepo,
+      logger: log,
+    });
+    summariseShift(effects, shiftResult);
+  }
+
+  // ── PR-B5 work (recomputeCriticalPath Pub/Sub publisher) goes here.
+  //    Needs a new PubSubPort that doesn't exist yet.
 
   return applied(effects);
+}
+
+function summariseShift(
+  effects: string[],
+  result: CascadeAutoShiftResult,
+): void {
+  if (result.applied.length > 0) {
+    effects.push(`cascadeAutoShift.applied(${result.applied.length})`);
+  }
+  if (result.skippedAlreadyShifted.length > 0) {
+    effects.push(
+      `cascadeAutoShift.skippedAlreadyShifted(${result.skippedAlreadyShifted.length})`,
+    );
+  }
+  if (result.skippedCrossTenant.length > 0) {
+    effects.push(
+      `cascadeAutoShift.skippedCrossTenant(${result.skippedCrossTenant.length})`,
+    );
+  }
+  if (result.skippedDepth.length > 0) {
+    effects.push(`cascadeAutoShift.skippedDepth(${result.skippedDepth.length})`);
+  }
+  if (result.skippedNotFound.length > 0) {
+    effects.push(
+      `cascadeAutoShift.skippedNotFound(${result.skippedNotFound.length})`,
+    );
+  }
 }
 
 function summariseCascade(

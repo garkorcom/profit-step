@@ -148,6 +148,7 @@ const Header: React.FC = () => {
     const tasksLinks = [
       { path: '/crm/tasks?view=board', label: 'GTD Board (Kanban)', icon: <KanbanIcon sx={{ mr: 0.5 }} /> },
       { path: '/crm/tasks?view=calendar', label: 'Calendar', icon: <CalendarIcon sx={{ mr: 0.5 }} /> },
+      { path: '/crm/tasktotime', label: 'Tasktotime (beta)', icon: <TaskIcon sx={{ mr: 0.5 }} /> },
       { path: '/crm/time-tracking', label: 'Time Tracking', icon: <DescriptionIcon sx={{ mr: 0.5 }} /> },
       { path: '/crm/shopping', label: 'Shopping', icon: <ShoppingCartIcon sx={{ mr: 0.5 }} /> },
     ];

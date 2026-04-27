@@ -108,6 +108,13 @@ function toDoc(task: Task, opts: { stampUpdatedAt: boolean }): DocumentData {
   const { id: _id, ...rest } = task as unknown as Record<string, unknown>;
   const converted = epochsToTimestamps(rest as Record<string, unknown>);
   const out = stripUndefined(converted);
+  // For root tasks, persist `parentTaskId: null` explicitly. Firestore's
+  // `where('parentTaskId', '==', null)` filter (used to list top-level
+  // tasks in the UI default view) does NOT match documents where the
+  // field is absent — only those where it's explicitly null.
+  if (!('parentTaskId' in out)) {
+    (out as Record<string, unknown>).parentTaskId = null;
+  }
   if (opts.stampUpdatedAt) {
     // Server-side wall clock — overrides whatever the domain set.
     (out as Record<string, unknown>).updatedAt = FieldValue.serverTimestamp();

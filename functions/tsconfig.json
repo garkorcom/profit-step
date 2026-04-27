@@ -17,7 +17,8 @@
     "rootDirs": [
       "src",
       "../packages/shared/src",
-      "../packages/contracts/src"
+      "../packages/contracts/src",
+      "../tasktotime"
     ]
   },
   "compileOnSave": true,

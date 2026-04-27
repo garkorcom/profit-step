@@ -483,7 +483,8 @@ export function parseListTasksQuery(
     query.orderBy === 'updatedAt' ||
     query.orderBy === 'dueAt' ||
     query.orderBy === 'priority' ||
-    query.orderBy === 'taskNumber'
+    query.orderBy === 'taskNumber' ||
+    query.orderBy === 'titleLowercase'
   ) {
     filter.orderBy = query.orderBy;
   }

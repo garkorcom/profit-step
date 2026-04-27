@@ -69,12 +69,25 @@ function makeMockDb(opts: {
       } satisfies FakeDocSnap),
   });
 
+  const whereSpy = jest.fn();
+  const orderBySpy = jest.fn();
+  const limitSpy = jest.fn();
+
   const collectionFactory = () => {
     const chain: Record<string, unknown> = {
       doc: docFactory,
-      where: jest.fn(() => chain),
-      orderBy: jest.fn(() => chain),
-      limit: jest.fn(() => chain),
+      where: jest.fn((...args: unknown[]) => {
+        whereSpy(...args);
+        return chain;
+      }),
+      orderBy: jest.fn((...args: unknown[]) => {
+        orderBySpy(...args);
+        return chain;
+      }),
+      limit: jest.fn((...args: unknown[]) => {
+        limitSpy(...args);
+        return chain;
+      }),
       startAfter: jest.fn(() => chain),
       get: queryGetSpy,
     };
@@ -112,7 +125,19 @@ function makeMockDb(opts: {
     }),
   } as unknown as Firestore;
 
-  return { db, setSpy, updateSpy, batchSetSpy, batchCommitSpy, txSetSpy, txUpdateSpy, queryGetSpy };
+  return {
+    db,
+    setSpy,
+    updateSpy,
+    batchSetSpy,
+    batchCommitSpy,
+    txSetSpy,
+    txUpdateSpy,
+    queryGetSpy,
+    whereSpy,
+    orderBySpy,
+    limitSpy,
+  };
 }
 
 const userRef: UserRef = { id: asUserId('u1'), name: 'Alice' };
@@ -351,5 +376,131 @@ describe('FirestoreTaskRepository.saveIfUnchanged', () => {
     const repo = new FirestoreTaskRepository(db);
     await repo.saveIfUnchanged(baseTask, 1_700_000_000_000);
     expect(txSetSpy).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ─── titleLowercase derived index ───────────────────────────────────────
+//
+// Pins the contract for the prefix-search feature added in
+// `feat/tasktotime-search-title-prefix`. The behaviour is:
+//   1. `save` populates `titleLowercase` = `title.trim().toLowerCase()`.
+//   2. `patch` re-derives `titleLowercase` when `title` is in the partial.
+//   3. `findMany` with `filter.search` set issues a range query on
+//      `titleLowercase` and forces orderBy to that same field (Firestore
+//      requires the inequality field to be the first orderBy).
+//   4. The search input is canonicalised the same way (trim + lowercase) so
+//      uppercase user input matches lowercase-stored data.
+describe('FirestoreTaskRepository titleLowercase derived index', () => {
+  test('save() populates titleLowercase from trimmed lowercased title', async () => {
+    const { db, setSpy } = makeMockDb();
+    const repo = new FirestoreTaskRepository(db);
+    await repo.save({ ...baseTask, title: '  Kitchen Remodel  ' });
+    expect(setSpy).toHaveBeenCalledTimes(1);
+    const written = setSpy.mock.calls[0][1] as Record<string, unknown>;
+    expect(written.titleLowercase).toBe('kitchen remodel');
+    // Original title preserved as-is — the lower-cased copy is purely derived.
+    expect(written.title).toBe('  Kitchen Remodel  ');
+  });
+
+  test('saveMany() populates titleLowercase for every doc in the batch', async () => {
+    const { db, batchSetSpy } = makeMockDb();
+    const repo = new FirestoreTaskRepository(db);
+    await repo.saveMany([
+      { ...baseTask, id: asTaskId('t1'), title: 'Kitchen' },
+      { ...baseTask, id: asTaskId('t2'), title: 'BATHROOM' },
+    ]);
+    expect(batchSetSpy).toHaveBeenCalledTimes(2);
+    const first = batchSetSpy.mock.calls[0][1] as Record<string, unknown>;
+    const second = batchSetSpy.mock.calls[1][1] as Record<string, unknown>;
+    expect(first.titleLowercase).toBe('kitchen');
+    expect(second.titleLowercase).toBe('bathroom');
+  });
+
+  test('patch() updates titleLowercase when title is patched', async () => {
+    const { db, updateSpy } = makeMockDb({
+      docs: { t1: asRecord(baseTask) },
+    });
+    const repo = new FirestoreTaskRepository(db);
+    await repo.patch(asTaskId('t1'), { title: '  Kitchen Wall  ' });
+    expect(updateSpy).toHaveBeenCalledTimes(1);
+    const written = updateSpy.mock.calls[0][1] as Record<string, unknown>;
+    expect(written.title).toBe('  Kitchen Wall  ');
+    expect(written.titleLowercase).toBe('kitchen wall');
+  });
+
+  test('patch() leaves titleLowercase untouched when title is not patched', async () => {
+    const { db, updateSpy } = makeMockDb({
+      docs: { t1: asRecord(baseTask) },
+    });
+    const repo = new FirestoreTaskRepository(db);
+    await repo.patch(asTaskId('t1'), { slackMinutes: 30 });
+    expect(updateSpy).toHaveBeenCalledTimes(1);
+    const written = updateSpy.mock.calls[0][1] as Record<string, unknown>;
+    expect('titleLowercase' in written).toBe(false);
+  });
+
+  test('findMany() with filter.search issues prefix-range where + orderBy titleLowercase', async () => {
+    const { db, whereSpy, orderBySpy } = makeMockDb();
+    const repo = new FirestoreTaskRepository(db);
+    await repo.findMany(
+      { companyId: asCompanyId('c1'), search: 'Kitchen' },
+      // Caller asked for createdAt — but search forces titleLowercase.
+      { orderBy: 'createdAt', direction: 'desc' },
+    );
+    // Range filter applied with the canonicalised (lowercased + trimmed) input.
+    const whereArgs = whereSpy.mock.calls.map((c: unknown[]) => c);
+    expect(whereArgs).toContainEqual(['titleLowercase', '>=', 'kitchen']);
+    // Upper bound bounds the prefix without overlapping any subsequent string.
+    const upperBoundCalls = whereArgs.filter(
+      (call: unknown[]) =>
+        call[0] === 'titleLowercase' && call[1] === '<' && typeof call[2] === 'string',
+    );
+    expect(upperBoundCalls.length).toBe(1);
+    expect((upperBoundCalls[0][2] as string).startsWith('kitchen')).toBe(true);
+    // orderBy coerced to titleLowercase regardless of caller's choice.
+    expect(orderBySpy).toHaveBeenCalledWith('titleLowercase', expect.any(String));
+    // It must NOT order by createdAt — Firestore would reject that with
+    // "first orderBy must match inequality field".
+    const orderByFields = orderBySpy.mock.calls.map((c: unknown[]) => c[0]);
+    expect(orderByFields).not.toContain('createdAt');
+  });
+
+  test('findMany() canonicalises uppercase user input to match lowercase-stored data', async () => {
+    const { db, whereSpy } = makeMockDb();
+    const repo = new FirestoreTaskRepository(db);
+    await repo.findMany({ companyId: asCompanyId('c1'), search: '  KITCHEN  ' });
+    const whereArgs = whereSpy.mock.calls.map((c: unknown[]) => c);
+    expect(whereArgs).toContainEqual(['titleLowercase', '>=', 'kitchen']);
+  });
+
+  test('findMany() without filter.search keeps the caller-supplied orderBy', async () => {
+    const { db, whereSpy, orderBySpy } = makeMockDb();
+    const repo = new FirestoreTaskRepository(db);
+    await repo.findMany(
+      { companyId: asCompanyId('c1') },
+      { orderBy: 'updatedAt', direction: 'desc' },
+    );
+    const orderByFields = orderBySpy.mock.calls.map((c: unknown[]) => c[0]);
+    expect(orderByFields).toContain('updatedAt');
+    // No titleLowercase range filter when search is absent.
+    const whereArgs = whereSpy.mock.calls.map((c: unknown[]) => c);
+    const titleWheres = whereArgs.filter((c: unknown[]) => c[0] === 'titleLowercase');
+    expect(titleWheres).toEqual([]);
+  });
+
+  test('findMany() with whitespace-only search does not add a range filter or coerce orderBy', async () => {
+    const { db, whereSpy, orderBySpy } = makeMockDb();
+    const repo = new FirestoreTaskRepository(db);
+    await repo.findMany(
+      { companyId: asCompanyId('c1'), search: '   ' },
+      { orderBy: 'createdAt', direction: 'desc' },
+    );
+    const whereArgs = whereSpy.mock.calls.map((c: unknown[]) => c);
+    const titleWheres = whereArgs.filter((c: unknown[]) => c[0] === 'titleLowercase');
+    expect(titleWheres).toEqual([]);
+    // Whitespace-only search behaves as if absent — orderBy stays createdAt.
+    const orderByFields = orderBySpy.mock.calls.map((c: unknown[]) => c[0]);
+    expect(orderByFields).toContain('createdAt');
+    expect(orderByFields).not.toContain('titleLowercase');
   });
 });

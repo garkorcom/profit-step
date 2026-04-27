@@ -38,7 +38,18 @@ export interface ListOptions {
   limit?: number;
   /** Opaque pagination cursor. */
   cursor?: string;
-  orderBy?: 'createdAt' | 'updatedAt' | 'dueAt' | 'priority' | 'taskNumber';
+  /**
+   * Sort key. `'titleLowercase'` is reserved for adapters that pair an
+   * inequality range filter on the same field (the prefix-match search
+   * path); see `TaskFilter.search`.
+   */
+  orderBy?:
+    | 'createdAt'
+    | 'updatedAt'
+    | 'dueAt'
+    | 'priority'
+    | 'taskNumber'
+    | 'titleLowercase';
   direction?: 'asc' | 'desc';
 }
 

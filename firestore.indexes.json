@@ -1277,6 +1277,23 @@
       ]
     },
     {
+      "collectionGroup": "tasktotime_tasks",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "companyId", "order": "ASCENDING" },
+        { "fieldPath": "titleLowercase", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "tasktotime_tasks",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "companyId", "order": "ASCENDING" },
+        { "fieldPath": "parentTaskId", "order": "ASCENDING" },
+        { "fieldPath": "titleLowercase", "order": "ASCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "tasktotime_transitions",
       "queryScope": "COLLECTION",
       "fields": [

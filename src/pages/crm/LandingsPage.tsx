@@ -47,7 +47,7 @@ const CARD_ACCENTS = [
   { bg: 'linear-gradient(135deg, #fbe9e7 0%, #ffccbc 100%)', color: '#bf360c', icon: '🎨' },
 ];
 
-const STATUS_MAP: Record<string, { icon: React.ReactNode; chipColor: 'success' | 'warning' | 'default'; label: string }> = {
+const STATUS_MAP: Record<string, { icon: React.ReactElement; chipColor: 'success' | 'warning' | 'default'; label: string }> = {
   Live: { icon: <RocketIcon sx={{ fontSize: 14 }} />, chipColor: 'success', label: 'Live' },
   Draft: { icon: <ScienceIcon sx={{ fontSize: 14 }} />, chipColor: 'warning', label: 'Draft' },
   Archived: { icon: <ArchiveIcon sx={{ fontSize: 14 }} />, chipColor: 'default', label: 'Archived' },

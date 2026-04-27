@@ -181,8 +181,9 @@ router.post('/api/files/upload-from-url', async (req: Request, res: Response, ne
     }
 
     // Detect content type from response headers or provided value
+    const headerCt = response.headers['content-type'];
     const contentType = data.contentType
-      || response.headers['content-type']?.split(';')[0]
+      || (typeof headerCt === 'string' ? headerCt.split(';')[0] : undefined)
       || 'application/octet-stream';
 
     // Detect filename

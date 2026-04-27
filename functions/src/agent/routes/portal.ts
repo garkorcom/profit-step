@@ -76,7 +76,7 @@ async function validateToken(slug: string, token: string | undefined): Promise<T
 
 router.get('/api/portal/:slug', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { slug } = req.params;
+    const slug = String(req.params.slug);
     const token = req.query.token as string | undefined;
 
     logger.info('🌐 portal:get', { slug, hasToken: !!token });
@@ -175,7 +175,7 @@ router.get('/api/portal/:slug', async (req: Request, res: Response, next: NextFu
 
 router.post('/api/portal/:slug/approve', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { slug } = req.params;
+    const slug = String(req.params.slug);
     const { token, estimateId, sectionId, decision, comment } = req.body as {
       token?: string;
       estimateId?: string;
@@ -232,7 +232,7 @@ router.post('/api/portal/:slug/approve', async (req: Request, res: Response, nex
 
 router.post('/api/portal/:slug/comment', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { slug } = req.params;
+    const slug = String(req.params.slug);
     const { token, estimateId, text } = req.body as {
       token?: string;
       estimateId?: string;

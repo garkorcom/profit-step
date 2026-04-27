@@ -63,7 +63,7 @@ function generateToken(): string {
 
 router.post('/api/clients/:id/share-tokens', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const clientId = req.params.id;
+    const clientId = String(req.params.id);
     const { expiresInDays } = req.body as { expiresInDays?: number };
 
     logger.info('🔑 sharing:create', { clientId, expiresInDays });
@@ -132,7 +132,7 @@ router.post('/api/clients/:id/share-tokens', async (req: Request, res: Response,
 
 router.get('/api/clients/:id/share-tokens', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const clientId = req.params.id;
+    const clientId = String(req.params.id);
     logger.info('🔑 sharing:list', { clientId });
 
     const snap = await db
@@ -177,7 +177,8 @@ router.get('/api/clients/:id/share-tokens', async (req: Request, res: Response, 
 
 router.delete('/api/clients/:id/share-tokens/:tokenId', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { id: clientId, tokenId } = req.params;
+    const clientId = String(req.params.id);
+    const tokenId = String(req.params.tokenId);
     logger.info('🔑 sharing:revoke', { clientId, tokenId });
 
     const ref = db.collection('client_portal_tokens').doc(tokenId);

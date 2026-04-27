@@ -17,20 +17,24 @@
  *      computed fields → handler exits with `skipped`.
  *   3. **Idempotency reservation** keyed by `<eventType>_<taskId>_<eventId>`.
  *
- * **PR-B1 scope (this PR):**
- *   - Audit each watched-field change to BigQuery.
+ * **Scope (cumulative):**
+ *   - PR-B1: audit each watched-field change to BigQuery.
+ *   - PR-B2: reverse `blocksTaskIds[]` update on `dependsOn` change (this
+ *     PR). Loop-safe because `blocksTaskIds` is on the EXCLUDED list inside
+ *     `_shared.ts`, so the follow-up `onTaskUpdate` on each target exits
+ *     with `no_watched_field_change`. See `cascadeBlocksTaskIds.ts` for
+ *     the exact cascade.
+ *   - PR-B3 (deferred):
+ *     - Cascade auto-shift on `dueAt` / `plannedStartAt` change — recompute
+ *       dependents' `plannedStartAt` via `cascadeShift`. Each cascade step
+ *       ALSO triggers `onTaskUpdate` on the dependents on a watched field
+ *       (`plannedStartAt`), so the implementation must include a
+ *       per-cascade-event idempotency key plus a depth limit (default 5
+ *       hops) to break adversarial inputs.
+ *     - Parent `subtaskRollup` recompute on subtask field changes.
+ *     - Pub/Sub publish to `recomputeCriticalPath` on graph-affecting fields.
  *
- * **PR-B2 scope (deferred):**
- *   - Cascade auto-shift on `dueAt` / `plannedStartAt` change — recompute
- *     dependents' `plannedStartAt` via `cascadeShift`. Each cascade step
- *     ALSO triggers `onTaskUpdate` on the dependents, so the implementation
- *     must include a per-cascade-event idempotency key plus a depth limit
- *     (default 5 hops) to break adversarial inputs.
- *   - Reverse `blocksTaskIds[]` update on `dependsOn` change.
- *   - Parent `subtaskRollup` recompute on subtask field changes.
- *   - Pub/Sub publish to `recomputeCriticalPath` on graph-affecting fields.
- *
- *   These are intentionally separate to keep PR-B1's review surface small.
+ *   These are intentionally separate to keep each PR's review surface small.
  *   Each is its own subject for end-to-end emulator testing.
  *
  * **Lifecycle changes** are NOT handled here — they flow through
@@ -55,6 +59,10 @@ import {
   idempotencyKey,
   skipped,
 } from './_shared';
+import {
+  cascadeBlocksTaskIds,
+  type CascadeBlocksTaskIdsResult,
+} from './cascadeBlocksTaskIds';
 
 const EVENT_TYPE = 'tasktotime_task_update';
 const TTL_MS = 5 * 60 * 1000;
@@ -109,12 +117,46 @@ export async function onTaskUpdate(
   });
   effects.push('bigQueryAudit.log');
 
-  // ── PR-B2 work goes here. Each follow-up is a separate trigger
-  //    branch — DO NOT inline complex cascade logic above. Adding it now
-  //    without per-target idempotency + depth limits is the precise
-  //    pattern that produces billing-bomb outages (CLAUDE.md §2.1).
+  // ── 2. Reverse-edge cascade on dependsOn change (PR-B2) ─────────────
+  // Loop-safe: each target write fires onTaskUpdate again, but
+  // `blocksTaskIds` is on the EXCLUDED list, so the follow-up exits with
+  // `no_watched_field_change`. See cascadeBlocksTaskIds.ts for the proof.
+  if (changedFields.includes('dependsOn')) {
+    const cascadeResult = await cascadeBlocksTaskIds(before, after, {
+      taskRepo: deps.taskRepo,
+      logger: log,
+    });
+    summariseCascade(effects, cascadeResult);
+  }
+
+  // ── PR-B3 work (auto-shift cascade, parent rollup, recomputeCriticalPath
+  //    Pub/Sub publisher) goes here. Adding cascades without per-target
+  //    idempotency + depth limits is the precise pattern that produces
+  //    billing-bomb outages (CLAUDE.md §2.1).
 
   return applied(effects);
+}
+
+function summariseCascade(
+  effects: string[],
+  result: CascadeBlocksTaskIdsResult,
+): void {
+  if (result.added.length > 0) {
+    effects.push(`cascadeBlocksTaskIds.added(${result.added.length})`);
+  }
+  if (result.removed.length > 0) {
+    effects.push(`cascadeBlocksTaskIds.removed(${result.removed.length})`);
+  }
+  if (result.skippedCrossTenant.length > 0) {
+    effects.push(
+      `cascadeBlocksTaskIds.skippedCrossTenant(${result.skippedCrossTenant.length})`,
+    );
+  }
+  if (result.skippedNotFound.length > 0) {
+    effects.push(
+      `cascadeBlocksTaskIds.skippedNotFound(${result.skippedNotFound.length})`,
+    );
+  }
 }
 
 // ─── Helpers ───────────────────────────────────────────────────────────

@@ -543,8 +543,15 @@ const TaskListPage: React.FC = () => {
 
     // Debounced version of `search` only — multi-selects + bucket should
     // react instantly, but typing every character firing the API is wasteful.
+    //
+    // IMPORTANT: seed from `initialFilters.search` (URL value at mount), NOT
+    // from `liveFilters.search`. On cold-load with `?search=foo`, the form
+    // is seeded from URL via `defaultValues`, but `useWatch`'s first emission
+    // can briefly return the field as empty before settling. If we seeded
+    // `debouncedSearch` from that empty snapshot, the form->URL effect would
+    // commit it back and wipe `?search=foo` from the URL on first paint.
     const [debouncedSearch, setDebouncedSearch] = React.useState<string>(
-        liveFilters.search,
+        initialFilters.search,
     );
     useEffect(() => {
         const t = setTimeout(() => setDebouncedSearch(liveFilters.search), SEARCH_DEBOUNCE_MS);
@@ -554,7 +561,19 @@ const TaskListPage: React.FC = () => {
     // Sync form state -> URL. Skip the no-op case so the history doesn't
     // accumulate identical entries.
     const lastUrlRef = useRef<string>(searchParams.toString());
+    // Skip the very first form->URL sync. Reasoning: on cold-load with a
+    // deep-link like `?search=kitchen`, this effect fires once before
+    // `useWatch` has settled, and the snapshot it builds may not yet
+    // reflect the URL-seeded form values. Letting that first run write to
+    // the URL can wipe legitimate URL params. The URL is already authoritative
+    // at mount (we seeded the form from it) — there's nothing to sync on the
+    // first render.
+    const skipFirstFormToUrlSync = useRef<boolean>(true);
     useEffect(() => {
+        if (skipFirstFormToUrlSync.current) {
+            skipFirstFormToUrlSync.current = false;
+            return;
+        }
         // The URL contract uses the *committed* search value (debounced) to
         // avoid query-string churn on every keystroke.
         const filtersForUrl: FilterFormValues = {

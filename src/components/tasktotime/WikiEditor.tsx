@@ -8,10 +8,17 @@
  * a string and diff/version it without a custom serializer.
  *
  * What this component is:
- *   - Controlled-ish: `value` seeds the editor on mount (MDXEditor reads
- *     `markdown` once and ignores subsequent prop changes by design — see the
- *     editor's docs); `onChange(md)` fires on every internal edit so the parent
- *     keeps an up-to-date copy for save / preview / autosave hooks.
+ *   - Properly controlled: `value` seeds the editor on mount and a follow-up
+ *     `useEffect` calls `editorRef.setMarkdown(value)` when the prop changes
+ *     to a value that doesn't match the editor's current markdown. This makes
+ *     the wrapper safe to drop into views that rehydrate after a refetch
+ *     (e.g. TaskDetailPage post-save) without remounting the editor.
+ *     The compare-before-set step prevents fighting the user on every
+ *     keystroke (every internal edit fires `onChange`, which lifts state up,
+ *     which re-renders the parent with a new `value` prop — without the guard
+ *     we'd loop and stomp on the active selection).
+ *   - `onChange(md)` fires on every internal edit so the parent keeps an
+ *     up-to-date copy for save / preview / autosave hooks.
  *   - Read-only aware: when `readOnly` flips on, the toolbar collapses and
  *     the contenteditable goes inert.
  *   - Image-upload aware: when `onAttachmentUpload(file) → Promise<URL>` is
@@ -241,6 +248,48 @@ const WikiEditor: React.FC<WikiEditorProps> = ({
         [onAttachmentUpload, readOnly],
     );
 
+    // Internal ref used to drive `setMarkdown` on prop changes. The component
+    // also exposes the same instance through the optional `editorRef` prop so
+    // parents can call `getMarkdown` / `focus` / etc. directly. We merge by
+    // setting both refs in a callback ref below.
+    const internalRef = React.useRef<MDXEditorMethods | null>(null);
+
+    const setRefs = React.useCallback(
+        (instance: MDXEditorMethods | null) => {
+            internalRef.current = instance;
+            // Forward to the optional caller-provided ref. React.Ref can be
+            // either a function ref or a `MutableRefObject`; handle both.
+            if (typeof editorRef === 'function') {
+                editorRef(instance);
+            } else if (editorRef && typeof editorRef === 'object') {
+                // `current` is mutable on `MutableRefObject<T | null>`. We
+                // accept `React.Ref<MDXEditorMethods>` from props (which
+                // includes the read-only `RefObject` shape), but in practice
+                // React's own `useRef` returns a mutable object — this assign
+                // matches React's own forwardRef plumbing.
+                (editorRef as React.MutableRefObject<MDXEditorMethods | null>).current =
+                    instance;
+            }
+        },
+        [editorRef],
+    );
+
+    // Re-sync the editor when `value` changes from outside (e.g. parent
+    // refetches the task and the wiki content rehydrates). Compare against
+    // the editor's *current* markdown before calling `setMarkdown` to avoid
+    // a feedback loop: each keystroke fires `onChange` -> parent updates
+    // `value` -> this effect runs. Without the guard we would call
+    // `setMarkdown` with the same string the user just typed and stomp on
+    // their cursor / selection on every character.
+    React.useEffect(() => {
+        const editor = internalRef.current;
+        if (!editor) return;
+        const current = editor.getMarkdown();
+        if (current !== value) {
+            editor.setMarkdown(value);
+        }
+    }, [value]);
+
     return (
         <Paper
             elevation={1}
@@ -255,7 +304,7 @@ const WikiEditor: React.FC<WikiEditorProps> = ({
                 sx={editorThemeSx}
             >
                 <MDXEditor
-                    ref={editorRef}
+                    ref={setRefs}
                     markdown={value}
                     onChange={handleChange}
                     readOnly={readOnly}

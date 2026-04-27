@@ -201,6 +201,9 @@ export function useTaskListPaginated(
             .finally(() => {
                 if (flag.cancelled) return;
                 setLoadingInitial(false);
+                // Clear the in-flight marker on settle so a follow-up
+                // loadMore isn't blocked by the just-completed request.
+                if (inFlightRef.current === flag) inFlightRef.current = null;
             });
         return () => {
             flag.cancelled = true;
@@ -212,12 +215,14 @@ export function useTaskListPaginated(
         const cursor = nextCursorRef.current;
         const currentParams = paramsRef.current;
         if (!cursor || !currentParams) return;
-        // Don't stack loadMore calls — UI should disable button via `loading`,
-        // but guard here too as defense-in-depth.
+        // Don't stack loadMore calls — the UI disables the button via
+        // `loadingMore`, but rapid double-clicks (or programmatic callers)
+        // can still race past that. If a fetch is in flight, bail.
+        // `inFlightRef.current` is cleared on settle (and replaced when a
+        // new initial-fetch starts), so a non-null, non-cancelled marker is
+        // always a genuinely-pending request.
         if (inFlightRef.current && !inFlightRef.current.cancelled) {
-            // If the in-flight one is the initial fetch, drop this call.
-            // (loadingInitial is read at call-time via state, but here we
-            // simply respect any in-flight marker.)
+            return;
         }
         const flag = { cancelled: false };
         inFlightRef.current = flag;
@@ -228,7 +233,19 @@ export function useTaskListPaginated(
             .listTasks({ ...currentParams, cursor })
             .then((res) => {
                 if (flag.cancelled) return;
-                setTasks((prev) => [...prev, ...res.items]);
+                // Dedupe by `id` before merging. A retry, a server-side race
+                // with concurrent edits, or simply an overlapping cursor page
+                // can deliver a task we already have. Without a dedupe pass we
+                // ship a duplicate row + React key collision warning.
+                // A `Map` keyed by id keeps the latest revision (later writes
+                // overwrite earlier ones), which is what we want when an item
+                // was edited mid-pagination.
+                setTasks((prev) => {
+                    const merged = new Map<string, TaskDto>();
+                    for (const t of prev) merged.set(t.id, t);
+                    for (const t of res.items) merged.set(t.id, t);
+                    return Array.from(merged.values());
+                });
                 setNextCursor(res.nextCursor);
             })
             .catch((err: unknown) => {
@@ -238,6 +255,9 @@ export function useTaskListPaginated(
             .finally(() => {
                 if (flag.cancelled) return;
                 setLoadingMore(false);
+                // Clear the in-flight marker on settle so the next loadMore
+                // isn't blocked by this just-completed request.
+                if (inFlightRef.current === flag) inFlightRef.current = null;
             });
     }, []);
 

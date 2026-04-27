@@ -19,7 +19,8 @@ export type AdapterErrorCode =
   | 'TRANSACTION_ABORTED'
   | 'IDEMPOTENCY_CONFLICT'
   | 'STORAGE_FAILURE'
-  | 'EXTERNAL_FAILURE';
+  | 'EXTERNAL_FAILURE'
+  | 'INVALID_INPUT';
 
 export class AdapterError extends Error {
   public readonly code: AdapterErrorCode;

@@ -13,6 +13,7 @@
     "test:coverage": "jest --coverage",
     "test:antiloop": "jest antiloop",
     "test:api": "jest --config jest.agentApi.config.js",
+    "test:integration:tasktotime": "jest --config jest.integration.config.js",
     "lint": "eslint --ext .js,.ts .",
     "lint:fix": "eslint --ext .js,.ts . --fix"
   },

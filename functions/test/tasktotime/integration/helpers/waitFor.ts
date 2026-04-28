@@ -37,7 +37,7 @@ const DEFAULT_INTERVAL_MS = 200;
 export async function waitFor<T>(
   predicate: () => T | Promise<T>,
   options: WaitForOptions = {},
-): Promise<T> {
+): Promise<NonNullable<T>> {
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const intervalMs = options.intervalMs ?? DEFAULT_INTERVAL_MS;
   const label = options.label ?? 'waitFor';
@@ -49,7 +49,7 @@ export async function waitFor<T>(
   while (Date.now() < deadline) {
     try {
       const value = await predicate();
-      if (value) return value as T;
+      if (value) return value as NonNullable<T>;
       lastValue = value;
     } catch (err) {
       lastError = err;
@@ -71,7 +71,7 @@ export async function waitFor<T>(
 export async function waitForOrNull<T>(
   predicate: () => T | Promise<T>,
   options: WaitForOptions = {},
-): Promise<T | null> {
+): Promise<NonNullable<T> | null> {
   try {
     return await waitFor(predicate, options);
   } catch {

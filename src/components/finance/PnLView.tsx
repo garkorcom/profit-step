@@ -5,6 +5,7 @@ import {
 } from '@mui/material';
 import { collection, query, where, orderBy, getDocs, Timestamp } from 'firebase/firestore';
 import { db } from '../../firebase/firebase';
+import { useAuth } from '../../auth/AuthContext';
 import { startOfDay, endOfDay } from 'date-fns';
 import type { Invoice } from '../../types/invoice.types';
 import type { WorkSession } from '../../types/timeTracking.types';
@@ -36,11 +37,17 @@ const PnLView: React.FC<PnLViewProps> = ({ startDate, endDate }) => {
     const [sessions, setSessions] = useState<WorkSession[]>([]);
     const [costs, setCosts] = useState<CostEntry[]>([]);
     const [loading, setLoading] = useState(true);
+    const { userProfile } = useAuth();
+    const companyId = userProfile?.companyId;
 
     // ── Fetch all 3 collections in parallel ──────────────────────────────────
 
     useEffect(() => {
         const fetchAll = async () => {
+            if (!companyId) {
+                setLoading(false);
+                return;
+            }
             setLoading(true);
             const start = Timestamp.fromDate(startOfDay(startDate));
             const end = Timestamp.fromDate(endOfDay(endDate));
@@ -57,9 +64,11 @@ const PnLView: React.FC<PnLViewProps> = ({ startDate, endDate }) => {
                         ),
                     ),
                     // Labor: finalized work_sessions within date range
+                    // companyId filter REQUIRED — RLS read rule (PR #95).
                     getDocs(
                         query(
                             collection(db, 'work_sessions'),
+                            where('companyId', '==', companyId),
                             where('startTime', '>=', start),
                             where('startTime', '<=', end),
                             orderBy('startTime', 'desc'),
@@ -87,7 +96,7 @@ const PnLView: React.FC<PnLViewProps> = ({ startDate, endDate }) => {
         };
 
         fetchAll();
-    }, [startDate, endDate]);
+    }, [startDate, endDate, companyId]);
 
     // ── Build P&L rows ───────────────────────────────────────────────────────
 

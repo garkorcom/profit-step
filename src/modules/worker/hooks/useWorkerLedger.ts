@@ -1,4 +1,26 @@
 /**
+ * ╔══════════════════════════════════════════════════════════════════════════╗
+ * ║ 🚨 PROD-CRITICAL — time-tracking / finance module                        ║
+ * ║                                                                          ║
+ * ║ DO NOT MODIFY without explicit approval from Denis in chat.              ║
+ * ║                                                                          ║
+ * ║ This file participates in real workers' hours and money calculation.   ║
+ * ║ A one-line firestore.rules tightening without code/index/backfill        ║
+ * ║ companions caused the 6-hour outage of incident 2026-04-28.              ║
+ * ║                                                                          ║
+ * ║ Before touching this file:                                               ║
+ * ║   1. Read ~/.claude/projects/-Users-denysharbuzov-Projects-profit-step/  ║
+ * ║      memory/feedback_no_touch_time_finance.md                            ║
+ * ║   2. Get explicit "ok" from Denis IN THE CURRENT SESSION.                ║
+ * ║   3. If RLS-related: plan backfill + code-audit + indexes + deploy order ║
+ * ║      together (see feedback_rls_three_part_change.md).                   ║
+ * ║   4. Run functions/scripts/backup-finance-and-time.js BEFORE any write.  ║
+ * ║                                                                          ║
+ * ║ "Just refactoring / cleaning up / adding types" is NOT a reason to       ║
+ * ║ skip step 2. Stop and ask first.                                         ║
+ * ╚══════════════════════════════════════════════════════════════════════════╝
+ */
+/**
  * Worker's own ledger — queries work_sessions filtered by employeeId.
  * Unlike the admin `useFinanceLedger`, this hook is scoped to a single
  * worker, so the query is cheap (one composite index hit) and doesn't
@@ -35,6 +57,11 @@ interface UseWorkerLedgerArgs {
     telegramId?: string | number;
     startDate: Date;
     endDate: Date;
+    /**
+     * Caller's companyId — required by RLS read rule on work_sessions
+     * (PR #95). Pass `userProfile.companyId` from `useAuth()`.
+     */
+    companyId?: string;
 }
 
 interface UseWorkerLedgerResult {
@@ -52,6 +79,7 @@ export function useWorkerLedger({
     telegramId,
     startDate,
     endDate,
+    companyId,
 }: UseWorkerLedgerArgs): UseWorkerLedgerResult {
     const [entries, setEntries] = useState<WorkSession[]>([]);
     const [buckets, setBuckets] = useState<PayrollBuckets>({
@@ -71,6 +99,12 @@ export function useWorkerLedger({
             setLoading(false);
             return;
         }
+        if (!companyId) {
+            // RLS read rule (PR #95) requires companyId on every doc; skip
+            // until auth profile resolves.
+            setLoading(false);
+            return;
+        }
 
         setLoading(true);
         setError(null);
@@ -87,11 +121,14 @@ export function useWorkerLedger({
             // existing `employeeId ASC + startTime ASC` composite index
             // (firestore.indexes.json). Avoids needing a new DESC index for
             // this one query path.
+            //
+            // companyId filter REQUIRED — RLS read rule (PR #95).
             const snapshots = await Promise.all(
                 Array.from(ids).map(id =>
                     getDocs(
                         query(
                             collection(db, 'work_sessions'),
+                            where('companyId', '==', companyId),
                             where('employeeId', '==', id),
                             where('startTime', '>=', start),
                             where('startTime', '<=', end)
@@ -122,7 +159,7 @@ export function useWorkerLedger({
         } finally {
             setLoading(false);
         }
-    }, [userId, telegramId, startDate, endDate]);
+    }, [userId, telegramId, startDate, endDate, companyId]);
 
     useEffect(() => {
         load();

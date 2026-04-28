@@ -291,6 +291,7 @@ const CompanyDashboard: React.FC = () => {
           )),
           getDocs(query(
             collection(db, 'work_sessions'),
+            where('companyId', '==', userProfile.companyId),
             where('status', '==', 'closed'),
             where('startTime', '>=', Timestamp.fromDate(sixMonthsAgo))
           )),
@@ -376,7 +377,11 @@ const CompanyDashboard: React.FC = () => {
     if (!userProfile?.companyId) return;
 
     const sessionsRef = collection(db, 'work_sessions');
-    const activeQuery = query(sessionsRef, where('status', '==', 'active'));
+    const activeQuery = query(
+      sessionsRef,
+      where('companyId', '==', userProfile.companyId),
+      where('status', '==', 'active'),
+    );
 
     const unsubscribe = onSnapshot(activeQuery, (snapshot) => {
       const employees: ActiveEmployee[] = snapshot.docs.map((doc) => {

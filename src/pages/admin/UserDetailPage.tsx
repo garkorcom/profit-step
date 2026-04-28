@@ -256,18 +256,18 @@ const UserDetailPage: React.FC = () => {
     // LOAD ACTIVITY DATA
     // ============================================
     const loadActivityData = useCallback(async () => {
-        if (!userId) return;
+        if (!userId || !adminProfile?.companyId) return;
 
         setDataLoading(true);
         try {
             const [sessionsData, tasksData, dealsData, shoppingData, notesData, statsData] =
                 await Promise.all([
-                    getUserWorkSessions(userId),
+                    getUserWorkSessions(userId, adminProfile.companyId),
                     getUserTasks(userId),
                     getUserDeals(userId),
                     getUserShoppingActivity(userId),
                     getUserNotes(userId),
-                    getUserMonthlyStats(userId),
+                    getUserMonthlyStats(userId, adminProfile.companyId),
                 ]);
 
             setSessions(sessionsData);
@@ -281,7 +281,7 @@ const UserDetailPage: React.FC = () => {
         } finally {
             setDataLoading(false);
         }
-    }, [userId]);
+    }, [userId, adminProfile?.companyId]);
 
     useEffect(() => {
         if (user) loadActivityData();

@@ -140,11 +140,14 @@ function toDate(val: Timestamp | string | Date | null | undefined): Date {
  */
 export async function getUserWorkSessions(
     userId: string,
+    companyId: string,
     maxResults = 20
 ): Promise<WorkSessionItem[]> {
+    // companyId filter REQUIRED — RLS read rule (PR #95).
     const q = query(
         collection(db, 'work_sessions'),
-        where('userId', '==', userId),
+        where('companyId', '==', companyId),
+        where('employeeId', '==', userId),
         orderBy('startTime', 'desc'),
         firestoreLimit(maxResults)
     );
@@ -280,13 +283,15 @@ export async function getUserNotes(userId: string, maxResults = 20): Promise<Not
 /**
  * Получить месячную статистику пользователя
  */
-export async function getUserMonthlyStats(userId: string): Promise<MonthlyStats> {
+export async function getUserMonthlyStats(userId: string, companyId: string): Promise<MonthlyStats> {
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
+    // companyId filter REQUIRED — RLS read rule (PR #95).
     const q = query(
         collection(db, 'work_sessions'),
-        where('userId', '==', userId),
+        where('companyId', '==', companyId),
+        where('employeeId', '==', userId),
         where('startTime', '>=', Timestamp.fromDate(startOfMonth)),
         orderBy('startTime', 'desc')
     );

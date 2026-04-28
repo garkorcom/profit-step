@@ -99,11 +99,16 @@ export function useSiteDashboard({ siteId, companyId, tabValue }: UseSiteDashboa
   }, [site]);
 
   const loadSessions = useCallback(async () => {
-    if (!site) return;
-    const q = query(collection(db, 'work_sessions'), where('clientId', '==', site.clientId));
+    if (!site || !companyId) return;
+    // companyId filter REQUIRED — RLS read rule (PR #95).
+    const q = query(
+      collection(db, 'work_sessions'),
+      where('companyId', '==', companyId),
+      where('clientId', '==', site.clientId),
+    );
     const snap = await getDocs(q);
     setSessions(snap.docs.map(d => ({ id: d.id, ...d.data() } as WorkSession)));
-  }, [site]);
+  }, [site, companyId]);
 
   const loadContacts = useCallback(async () => {
     if (!site) return;

@@ -10,6 +10,7 @@ import {
 } from '@mui/material';
 import { collection, query, where, orderBy, onSnapshot } from 'firebase/firestore';
 import { db } from '../../firebase/firebase';
+import { useAuth } from '../../auth/AuthContext';
 import { format as formatDate } from 'date-fns';
 import { ru } from 'date-fns/locale';
 
@@ -38,13 +39,17 @@ interface WorkSessionsListProps {
 const WorkSessionsList: React.FC<WorkSessionsListProps> = ({ taskId }) => {
   const [sessions, setSessions] = useState<WorkSession[]>([]);
   const [loadingSessions, setLoadingSessions] = useState(true);
+  const { userProfile } = useAuth();
+  const companyId = userProfile?.companyId;
 
   useEffect(() => {
-    if (!taskId) return;
+    if (!taskId || !companyId) return;
     setLoadingSessions(true);
 
+    // companyId filter REQUIRED — RLS read rule on work_sessions (PR #95).
     const q = query(
       collection(db, 'work_sessions'),
+      where('companyId', '==', companyId),
       where('relatedTaskId', '==', taskId),
       orderBy('startTime', 'desc')
     );
@@ -58,7 +63,7 @@ const WorkSessionsList: React.FC<WorkSessionsListProps> = ({ taskId }) => {
     });
 
     return () => unsubscribe();
-  }, [taskId]);
+  }, [taskId, companyId]);
 
   if (loadingSessions && sessions.length === 0) return <CircularProgress size={20} />;
   if (sessions.length === 0) return null;

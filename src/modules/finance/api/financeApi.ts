@@ -1,4 +1,26 @@
 /**
+ * ╔══════════════════════════════════════════════════════════════════════════╗
+ * ║ 🚨 PROD-CRITICAL — time-tracking / finance module                        ║
+ * ║                                                                          ║
+ * ║ DO NOT MODIFY without explicit approval from Denis in chat.              ║
+ * ║                                                                          ║
+ * ║ This file participates in real workers' hours and money calculation.   ║
+ * ║ A one-line firestore.rules tightening without code/index/backfill        ║
+ * ║ companions caused the 6-hour outage of incident 2026-04-28.              ║
+ * ║                                                                          ║
+ * ║ Before touching this file:                                               ║
+ * ║   1. Read ~/.claude/projects/-Users-denysharbuzov-Projects-profit-step/  ║
+ * ║      memory/feedback_no_touch_time_finance.md                            ║
+ * ║   2. Get explicit "ok" from Denis IN THE CURRENT SESSION.                ║
+ * ║   3. If RLS-related: plan backfill + code-audit + indexes + deploy order ║
+ * ║      together (see feedback_rls_three_part_change.md).                   ║
+ * ║   4. Run functions/scripts/backup-finance-and-time.js BEFORE any write.  ║
+ * ║                                                                          ║
+ * ║ "Just refactoring / cleaning up / adding types" is NOT a reason to       ║
+ * ║ skip step 2. Stop and ask first.                                         ║
+ * ╚══════════════════════════════════════════════════════════════════════════╝
+ */
+/**
  * Finance data-layer — all Firestore reads for the Finance & Payroll
  * module live here. Pure async functions, no React, no state. Callers are
  * the `useFinanceLedger` / `useEmployeesWithRates` hooks, which own
@@ -78,13 +100,20 @@ export interface EmployeeDirectory extends IdentityDirectory {
  * Note: returns EVERYTHING in range, including active / paused shifts and
  * pending-finalization entries. Callers decide what to render via
  * `filterReportableSessions` from the services layer.
+ *
+ * `companyId` is REQUIRED — the tightened RLS read rule (PR #95) demands
+ * `resource.data.companyId == getUserCompany()`; without this filter
+ * Firestore rejects the query with "Missing or insufficient permissions"
+ * rather than returning 0 docs. Pass the caller's `userProfile.companyId`.
  */
 export async function fetchWorkSessions(
     start: Date,
-    end: Date
+    end: Date,
+    companyId: string
 ): Promise<WorkSession[]> {
     const q = query(
         collection(db, 'work_sessions'),
+        where('companyId', '==', companyId),
         where('startTime', '>=', Timestamp.fromDate(startOfDay(start))),
         where('startTime', '<=', Timestamp.fromDate(endOfDay(end))),
         orderBy('startTime', 'desc')

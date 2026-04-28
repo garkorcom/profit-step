@@ -32,6 +32,7 @@ import {
 import { collection, query, where, onSnapshot } from 'firebase/firestore';
 import { getStorage, ref, listAll, getDownloadURL } from 'firebase/storage';
 import { db } from '../../../firebase/firebase';
+import { useAuth } from '../../../auth/AuthContext';
 import { InventoryTransaction } from '../../../types/inventory.types';
 import { Client } from '../../../types/crm.types';
 import { crmApi } from '../../../api/crmApi';
@@ -58,6 +59,8 @@ import {
 const ClientDashboardPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { userProfile } = useAuth();
+  const companyId = userProfile?.companyId;
   const [newNote, setNewNote] = useState('');
 
   // Client from Firestore
@@ -147,9 +150,11 @@ const ClientDashboardPage: React.FC = () => {
 
   // Real-time work sessions
   useEffect(() => {
-    if (!id || clientLoading || !client) return;
+    if (!id || clientLoading || !client || !companyId) return;
+    // companyId filter REQUIRED — RLS read rule (PR #95).
     const q = query(
       collection(db, 'work_sessions'),
+      where('companyId', '==', companyId),
       where('clientId', '==', id),
       where('status', '==', 'completed')
     );
@@ -173,7 +178,7 @@ const ClientDashboardPage: React.FC = () => {
       }
     );
     return () => unsub();
-  }, [id, clientLoading, client]);
+  }, [id, clientLoading, client, companyId]);
 
   // Aggregate inventory by item
   const inventorySummary = useMemo((): InventoryRow[] => {

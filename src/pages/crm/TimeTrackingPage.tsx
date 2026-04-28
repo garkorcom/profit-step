@@ -1,3 +1,25 @@
+/**
+ * ╔══════════════════════════════════════════════════════════════════════════╗
+ * ║ 🚨 PROD-CRITICAL — time-tracking / finance module                        ║
+ * ║                                                                          ║
+ * ║ DO NOT MODIFY without explicit approval from Denis in chat.              ║
+ * ║                                                                          ║
+ * ║ This file participates in real workers' hours and money calculation.   ║
+ * ║ A one-line firestore.rules tightening without code/index/backfill        ║
+ * ║ companions caused the 6-hour outage of incident 2026-04-28.              ║
+ * ║                                                                          ║
+ * ║ Before touching this file:                                               ║
+ * ║   1. Read ~/.claude/projects/-Users-denysharbuzov-Projects-profit-step/  ║
+ * ║      memory/feedback_no_touch_time_finance.md                            ║
+ * ║   2. Get explicit "ok" from Denis IN THE CURRENT SESSION.                ║
+ * ║   3. If RLS-related: plan backfill + code-audit + indexes + deploy order ║
+ * ║      together (see feedback_rls_three_part_change.md).                   ║
+ * ║   4. Run functions/scripts/backup-finance-and-time.js BEFORE any write.  ║
+ * ║                                                                          ║
+ * ║ "Just refactoring / cleaning up / adding types" is NOT a reason to       ║
+ * ║ skip step 2. Stop and ask first.                                         ║
+ * ╚══════════════════════════════════════════════════════════════════════════╝
+ */
 import React, { useEffect, useState, useMemo, useRef } from 'react';
 import {
     Container, Typography, Box, Paper, Button, Tabs, Tab,
@@ -276,6 +298,13 @@ const TimeTrackingPage: React.FC = () => {
 
     useEffect(() => {
         const fetchSessions = async () => {
+            // Skip query while companyId still resolving — RLS read rule
+            // requires it (PR #95) and Firestore rejects the whole query
+            // with permission-denied if the filter is absent.
+            if (!companyId) {
+                setLoading(false);
+                return;
+            }
             setLoading(true);
             try {
                 // First, build employee identity mapping if not yet built
@@ -304,6 +333,7 @@ const TimeTrackingPage: React.FC = () => {
 
                 const q = query(
                     collection(db, 'work_sessions'),
+                    where('companyId', '==', companyId),
                     where('startTime', '>=', startTs),
                     where('startTime', '<=', endTs),
                     orderBy('startTime', 'desc')
@@ -344,7 +374,7 @@ const TimeTrackingPage: React.FC = () => {
         };
 
         fetchSessions();
-    }, [startDate, endDate, refreshKey]);
+    }, [startDate, endDate, refreshKey, companyId]);
 
     // --- Computed Values ---
 

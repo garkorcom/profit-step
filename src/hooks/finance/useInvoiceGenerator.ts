@@ -1,12 +1,36 @@
+/**
+ * ╔══════════════════════════════════════════════════════════════════════════╗
+ * ║ 🚨 PROD-CRITICAL — time-tracking / finance module                        ║
+ * ║                                                                          ║
+ * ║ DO NOT MODIFY without explicit approval from Denis in chat.              ║
+ * ║                                                                          ║
+ * ║ This file participates in real workers' hours and money calculation.   ║
+ * ║ A one-line firestore.rules tightening without code/index/backfill        ║
+ * ║ companions caused the 6-hour outage of incident 2026-04-28.              ║
+ * ║                                                                          ║
+ * ║ Before touching this file:                                               ║
+ * ║   1. Read ~/.claude/projects/-Users-denysharbuzov-Projects-profit-step/  ║
+ * ║      memory/feedback_no_touch_time_finance.md                            ║
+ * ║   2. Get explicit "ok" from Denis IN THE CURRENT SESSION.                ║
+ * ║   3. If RLS-related: plan backfill + code-audit + indexes + deploy order ║
+ * ║      together (see feedback_rls_three_part_change.md).                   ║
+ * ║   4. Run functions/scripts/backup-finance-and-time.js BEFORE any write.  ║
+ * ║                                                                          ║
+ * ║ "Just refactoring / cleaning up / adding types" is NOT a reason to       ║
+ * ║ skip step 2. Stop and ask first.                                         ║
+ * ╚══════════════════════════════════════════════════════════════════════════╝
+ */
 import { useState } from 'react';
 import { collection, query, where, getDocs, Timestamp } from 'firebase/firestore';
 import { db } from '../../firebase/firebase';
+import { useAuth } from '../../auth/AuthContext';
 import { WorkSession } from '../../types/timeTracking.types';
 import { InvoiceLineItem } from '../../types/invoice.types';
 
 export const useInvoiceGenerator = () => {
     const [generating, setGenerating] = useState(false);
     const [error, setError] = useState<Error | null>(null);
+    const { userProfile } = useAuth();
 
     const generateFromTimeTracking = async (
         clientId: string,
@@ -20,6 +44,10 @@ export const useInvoiceGenerator = () => {
         setError(null);
 
         try {
+            if (!userProfile?.companyId) {
+                throw new Error('Cannot generate invoice: missing company. Please re-login.');
+            }
+
             const startTimestamp = Timestamp.fromDate(startDate);
             // End date should include the full day
             const endOfDay = new Date(endDate);
@@ -27,8 +55,10 @@ export const useInvoiceGenerator = () => {
             const endTimestamp = Timestamp.fromDate(endOfDay);
 
             const sessionsRef = collection(db, 'work_sessions');
+            // companyId filter REQUIRED — RLS read rule (PR #95).
             const q = query(
                 sessionsRef,
+                where('companyId', '==', userProfile.companyId),
                 where('clientId', '==', clientId),
                 where('status', '==', 'completed')
                 // Note: Firestore requires a composite index if we combine == and >=/<= on different fields.

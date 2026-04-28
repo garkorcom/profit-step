@@ -1,3 +1,25 @@
+/**
+ * ╔══════════════════════════════════════════════════════════════════════════╗
+ * ║ 🚨 PROD-CRITICAL — time-tracking / finance module                        ║
+ * ║                                                                          ║
+ * ║ DO NOT MODIFY without explicit approval from Denis in chat.              ║
+ * ║                                                                          ║
+ * ║ This file participates in real workers' hours and money calculation.   ║
+ * ║ A one-line firestore.rules tightening without code/index/backfill        ║
+ * ║ companions caused the 6-hour outage of incident 2026-04-28.              ║
+ * ║                                                                          ║
+ * ║ Before touching this file:                                               ║
+ * ║   1. Read ~/.claude/projects/-Users-denysharbuzov-Projects-profit-step/  ║
+ * ║      memory/feedback_no_touch_time_finance.md                            ║
+ * ║   2. Get explicit "ok" from Denis IN THE CURRENT SESSION.                ║
+ * ║   3. If RLS-related: plan backfill + code-audit + indexes + deploy order ║
+ * ║      together (see feedback_rls_three_part_change.md).                   ║
+ * ║   4. Run functions/scripts/backup-finance-and-time.js BEFORE any write.  ║
+ * ║                                                                          ║
+ * ║ "Just refactoring / cleaning up / adding types" is NOT a reason to       ║
+ * ║ skip step 2. Stop and ask first.                                         ║
+ * ╚══════════════════════════════════════════════════════════════════════════╝
+ */
 import { useCallback, useEffect, useState } from 'react';
 
 import { WorkSession } from '../../../types/timeTracking.types';
@@ -19,6 +41,11 @@ interface UseFinanceLedgerArgs {
      * the directory is still loading — the hook will skip its fetch.
      */
     directory: EmployeeDirectory | null;
+    /**
+     * Caller's companyId — required by RLS read rule on work_sessions
+     * (PR #95). Pass `userProfile.companyId` from `useAuth()`.
+     */
+    companyId: string | undefined;
 }
 
 interface UseFinanceLedgerResult {
@@ -42,6 +69,7 @@ export function useFinanceLedger({
     startDate,
     endDate,
     directory,
+    companyId,
 }: UseFinanceLedgerArgs): UseFinanceLedgerResult {
     const [entries, setEntries] = useState<WorkSession[]>([]);
     const [costs, setCosts] = useState<CostEntry[]>([]);
@@ -54,12 +82,18 @@ export function useFinanceLedger({
             // not be normalised, causing drifting filter rows.
             return;
         }
+        if (!companyId) {
+            // RLS read rule requires companyId on every work_sessions doc;
+            // skip until auth profile resolves.
+            setLoading(false);
+            return;
+        }
 
         setLoading(true);
         setError(null);
         try {
             const [sessions, costsData] = await Promise.all([
-                fetchWorkSessions(startDate, endDate),
+                fetchWorkSessions(startDate, endDate, companyId),
                 fetchCosts(startDate, endDate),
             ]);
 
@@ -74,7 +108,7 @@ export function useFinanceLedger({
         } finally {
             setLoading(false);
         }
-    }, [startDate, endDate, directory]);
+    }, [startDate, endDate, directory, companyId]);
 
     useEffect(() => {
         load();

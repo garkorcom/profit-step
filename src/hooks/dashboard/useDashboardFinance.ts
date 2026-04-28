@@ -1,3 +1,25 @@
+/**
+ * ╔══════════════════════════════════════════════════════════════════════════╗
+ * ║ 🚨 PROD-CRITICAL — time-tracking / finance module                        ║
+ * ║                                                                          ║
+ * ║ DO NOT MODIFY without explicit approval from Denis in chat.              ║
+ * ║                                                                          ║
+ * ║ This file participates in real workers' hours and money calculation.   ║
+ * ║ A one-line firestore.rules tightening without code/index/backfill        ║
+ * ║ companions caused the 6-hour outage of incident 2026-04-28.              ║
+ * ║                                                                          ║
+ * ║ Before touching this file:                                               ║
+ * ║   1. Read ~/.claude/projects/-Users-denysharbuzov-Projects-profit-step/  ║
+ * ║      memory/feedback_no_touch_time_finance.md                            ║
+ * ║   2. Get explicit "ok" from Denis IN THE CURRENT SESSION.                ║
+ * ║   3. If RLS-related: plan backfill + code-audit + indexes + deploy order ║
+ * ║      together (see feedback_rls_three_part_change.md).                   ║
+ * ║   4. Run functions/scripts/backup-finance-and-time.js BEFORE any write.  ║
+ * ║                                                                          ║
+ * ║ "Just refactoring / cleaning up / adding types" is NOT a reason to       ║
+ * ║ skip step 2. Stop and ask first.                                         ║
+ * ╚══════════════════════════════════════════════════════════════════════════╝
+ */
 import { useState, useEffect } from 'react';
 import { collection, query, where, onSnapshot, Timestamp } from 'firebase/firestore';
 import { db } from '../../firebase/firebase';
@@ -123,9 +145,14 @@ export const useDashboardFinance = (companyId: string | undefined): DashboardFin
         });
 
         // --- Listen to work_sessions (status=closed) for labor ---
+        // companyId filter REQUIRED — RLS read rule (PR #95) requires
+        // resource.data.companyId == getUserCompany(); without this filter
+        // Firestore rejects the entire query as "Missing or insufficient
+        // permissions" rather than returning 0 docs.
         const sessionsRef = collection(db, 'work_sessions');
         const sessionsQuery = query(
             sessionsRef,
+            where('companyId', '==', companyId),
             where('status', '==', 'closed'),
             where('startTime', '>=', Timestamp.fromDate(startOfPreviousMonth))
         );

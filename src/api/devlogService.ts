@@ -112,7 +112,7 @@ export const togglePublishDevLog = async (
 
 // ==================== AUTO-GATHER DAILY ACCOMPLISHMENTS ====================
 
-export const getTodayAccomplishments = async (userId: string): Promise<{ notes: string, totalMinutes: number }> => {
+export const getTodayAccomplishments = async (userId: string, companyId: string): Promise<{ notes: string, totalMinutes: number }> => {
     // 1. Determine today's boundaries
     const now = new Date();
     const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
@@ -125,9 +125,11 @@ export const getTodayAccomplishments = async (userId: string): Promise<{ notes: 
     const notesLines: string[] = [];
 
     // 2. Query work_sessions ended today
+    // companyId filter REQUIRED — RLS read rule (PR #95).
     try {
         const sessionsQuery = query(
             collection(db, 'work_sessions'),
+            where('companyId', '==', companyId),
             where('employeeId', '==', userId),
             where('endTime', '>=', startTimestamp),
             where('endTime', '<=', endTimestamp)

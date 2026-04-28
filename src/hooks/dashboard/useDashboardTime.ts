@@ -1,3 +1,25 @@
+/**
+ * ╔══════════════════════════════════════════════════════════════════════════╗
+ * ║ 🚨 PROD-CRITICAL — time-tracking / finance module                        ║
+ * ║                                                                          ║
+ * ║ DO NOT MODIFY without explicit approval from Denis in chat.              ║
+ * ║                                                                          ║
+ * ║ This file participates in real workers' hours and money calculation.   ║
+ * ║ A one-line firestore.rules tightening without code/index/backfill        ║
+ * ║ companions caused the 6-hour outage of incident 2026-04-28.              ║
+ * ║                                                                          ║
+ * ║ Before touching this file:                                               ║
+ * ║   1. Read ~/.claude/projects/-Users-denysharbuzov-Projects-profit-step/  ║
+ * ║      memory/feedback_no_touch_time_finance.md                            ║
+ * ║   2. Get explicit "ok" from Denis IN THE CURRENT SESSION.                ║
+ * ║   3. If RLS-related: plan backfill + code-audit + indexes + deploy order ║
+ * ║      together (see feedback_rls_three_part_change.md).                   ║
+ * ║   4. Run functions/scripts/backup-finance-and-time.js BEFORE any write.  ║
+ * ║                                                                          ║
+ * ║ "Just refactoring / cleaning up / adding types" is NOT a reason to       ║
+ * ║ skip step 2. Stop and ask first.                                         ║
+ * ╚══════════════════════════════════════════════════════════════════════════╝
+ */
 import { useState, useEffect } from 'react';
 import { collection, query, where, onSnapshot, Timestamp } from 'firebase/firestore';
 import { db } from '../../firebase/firebase';
@@ -38,12 +60,14 @@ export const useDashboardTime = (companyId: string | undefined): DashboardTimeDa
         const previousWeekStart = subWeeks(currentWeekStart, 1);
 
         const sessionsRef = collection(db, 'work_sessions');
-        // Fetch everything from previous week start
-        // Normally we'd filter by companyId too, but work_sessions doesn't explicitly guarantee companyId in schema.
-        // If it does, we should add: where('companyId', '==', companyId),
-        // Profit Step RBAC implies user is either global admin or company admin. We'll fetch all and filter client-side if missing companyId index.
+        // companyId filter REQUIRED — RLS read rule (PR #95) requires
+        // resource.data.companyId == getUserCompany(); without this filter
+        // Firestore rejects the entire query as "Missing or insufficient
+        // permissions". Backfill incident-2026-04-28 ensured ~280 sessions
+        // got their `companyId` field populated.
         const q = query(
             sessionsRef,
+            where('companyId', '==', companyId),
             where('startTime', '>=', Timestamp.fromDate(previousWeekStart))
         );
 

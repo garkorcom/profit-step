@@ -94,7 +94,7 @@ const MarkdownBlock: React.FC<{ content: string }> = ({ content }) => {
 // ============================================
 const DevLogCreatePage: React.FC = () => {
     const navigate = useNavigate();
-    const { currentUser } = useAuth();
+    const { currentUser, userProfile } = useAuth();
 
     // Form state
     const [formData, setFormData] = useState<DevLogFormData>({
@@ -185,10 +185,10 @@ const DevLogCreatePage: React.FC = () => {
     };
 
     const handleGatherToday = async () => {
-        if (!currentUser) return;
+        if (!currentUser || !userProfile?.companyId) return;
         setIsGathering(true);
         try {
-            const result = await getTodayAccomplishments(currentUser.uid);
+            const result = await getTodayAccomplishments(currentUser.uid, userProfile.companyId);
 
             // Append if there's already some text
             const newNotes = formData.notes

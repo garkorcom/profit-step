@@ -436,6 +436,19 @@ service cloud.firestore {
                     (resource.data.createdBy == request.auth.uid || isAdmin());
     }
 
+    // ╔══════════════════════════════════════════════════════════════════════╗
+    // ║ 🚨 PROD-CRITICAL — work_sessions RLS (time-tracking + finance)       ║
+    // ║ Tightening this block requires shipping FOUR things together:        ║
+    // ║   1. Backfill the field on existing docs.                            ║
+    // ║   2. Audit every query in src/ for the matching equality filter.     ║
+    // ║   3. Add composite indexes in firestore.indexes.json.                ║
+    // ║   4. Then deploy the rule.                                           ║
+    // ║ A single-rule deploy caused incident 2026-04-28 (6h prod outage).    ║
+    // ║ See ~/.claude/.../memory/feedback_rls_three_part_change.md and       ║
+    // ║   feedback_no_touch_time_finance.md                                  ║
+    // ║ DO NOT MODIFY without explicit approval from Denis.                  ║
+    // ╚══════════════════════════════════════════════════════════════════════╝
+    //
     // Work Sessions (Time Tracking)
     //
     // RLS: companyId-scoped reads + writes. Closes the cross-tenant leak
@@ -523,6 +536,11 @@ service cloud.firestore {
       allow read, write: if isSignedIn();
     }
 
+    // ╔══════════════════════════════════════════════════════════════════════╗
+    // ║ 🚨 PROD-CRITICAL — costs (finance ledger)                            ║
+    // ║ Same four-part protocol applies as work_sessions above if tightening.║
+    // ║ DO NOT MODIFY without explicit approval from Denis.                  ║
+    // ╚══════════════════════════════════════════════════════════════════════╝
     // Costs Collection (Operational Expenses)
     match /costs/{costId} {
       // Read: any authenticated user can view costs

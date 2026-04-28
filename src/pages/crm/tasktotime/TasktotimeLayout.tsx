@@ -86,7 +86,7 @@ interface NavItem {
 const NAV_ITEMS: NavItem[] = [
     { to: 'list', label: 'List', icon: <ViewListIcon />, enabled: true },
     { to: 'inbox', label: 'Inbox', icon: <InboxIcon />, enabled: false },
-    { to: 'board', label: 'Board', icon: <ViewKanbanIcon />, enabled: false },
+    { to: 'board', label: 'Board', icon: <ViewKanbanIcon />, enabled: true },
     { to: 'timeline', label: 'Timeline', icon: <TimelineIcon />, enabled: false },
     { to: 'calendar', label: 'Calendar', icon: <CalendarMonthIcon />, enabled: false },
     { to: 'gantt', label: 'Gantt', icon: <ArchitectureIcon />, enabled: false },

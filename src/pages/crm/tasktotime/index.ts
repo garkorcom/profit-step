@@ -11,3 +11,4 @@ export { default as TaskListPage } from './TaskListPage';
 export { default as TaskDetailPage } from './TaskDetailPage';
 export { default as ComingSoonView } from './ComingSoonView';
 export { default as WikiDemoPage } from './WikiDemoPage';
+export { useDrawerOpenState } from './useDrawerOpenState';

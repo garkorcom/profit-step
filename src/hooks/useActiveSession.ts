@@ -34,6 +34,16 @@ export function useActiveSession(userId?: string | number) {
             }
             setLoading(false);
         }, (error) => {
+            // QA 2026-04-27 P1-4: work_sessions Firestore Rules were tightened
+            // (PR #95/#100 cross-tenant scoping). Users without read scope
+            // for the current employeeId/companyId hit `permission-denied`.
+            // Treat that as "no active session" and stay quiet — the widget
+            // already shows an empty state. Console-error other failures.
+            if ((error as { code?: string })?.code === 'permission-denied') {
+                setActiveSession(null);
+                setLoading(false);
+                return;
+            }
             console.error("Error listening to active session:", error);
             setLoading(false);
         });

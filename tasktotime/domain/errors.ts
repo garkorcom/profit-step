@@ -89,6 +89,37 @@ export class StaleVersion extends DomainError {
   }
 }
 
+/**
+ * Wiki concurrency conflict — caller's `expectedVersion` doesn't match the
+ * current monotonic version. Modeled as a kind of `StaleVersion` so the
+ * HTTP error mapper translates it to 409 Conflict, the same status as the
+ * document-level concurrency case. Kept as a separate class so meta carries
+ * `expectedVersion / currentVersion` instead of the parent class's
+ * timestamp-shaped fields.
+ *
+ * `name = 'StaleVersion'` is deliberate — `tasktotime/adapters/http/middleware.ts:domainStatus()`
+ * keys the HTTP status off `name`, and we want this to round-trip as 409
+ * exactly like the timestamp variant. Keep both in sync if either is renamed.
+ *
+ * Was raised as `PreconditionFailed` (→ 400) until QA 2026-04-27 found the
+ * status-code mismatch breaking frontend retry-on-409 logic.
+ */
+export class WikiStaleVersion extends DomainError {
+  constructor(
+    public readonly taskId: TaskId,
+    public readonly expectedVersion: number,
+    public readonly currentVersion: number,
+  ) {
+    super(
+      'STALE_VERSION',
+      `Wiki version conflict on ${taskId} — expected ${expectedVersion}, current ${currentVersion}`,
+      { taskId, expectedVersion, currentVersion },
+    );
+    this.name = 'StaleVersion';
+    Object.setPrototypeOf(this, WikiStaleVersion.prototype);
+  }
+}
+
 export class PreconditionFailed extends DomainError {
   constructor(message: string, meta?: Record<string, unknown>) {
     super('PRECONDITION_FAILED', message, meta);

@@ -114,7 +114,10 @@ export const useDashboardFinance = (companyId: string | undefined): DashboardFin
             costsLoaded = true;
             recalculate();
         }, (error) => {
-            console.error('Error fetching costs for dashboard:', error);
+            // QA 2026-04-27 P1-4: tightened RLS — silent on permission-denied.
+            if ((error as { code?: string })?.code !== 'permission-denied') {
+                console.error('Error fetching costs for dashboard:', error);
+            }
             costsLoaded = true;
             recalculate();
         });
@@ -148,7 +151,10 @@ export const useDashboardFinance = (companyId: string | undefined): DashboardFin
             sessionsLoaded = true;
             recalculate();
         }, (error) => {
-            console.error('Error fetching work_sessions for dashboard:', error);
+            // QA 2026-04-27 P1-4: tightened RLS — silent on permission-denied.
+            if ((error as { code?: string })?.code !== 'permission-denied') {
+                console.error('Error fetching work_sessions for dashboard:', error);
+            }
             sessionsLoaded = true;
             recalculate();
         });

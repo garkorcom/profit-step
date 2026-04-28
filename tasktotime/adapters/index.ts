@@ -17,7 +17,11 @@ import type { Firestore } from 'firebase-admin/firestore';
 import type { Messaging } from 'firebase-admin/messaging';
 import type { Storage } from 'firebase-admin/storage';
 
-import type { TaskRepository, TransitionLogPort } from '../ports/repositories';
+import type {
+  TaskRepository,
+  TransitionLogPort,
+  WikiHistoryPort,
+} from '../ports/repositories';
 import type {
   ClientLookupPort,
   ContactLookupPort,
@@ -72,6 +76,7 @@ import {
   FirestoreTaskRepository,
   FirestoreTransitionLog,
   FirestoreUserLookup,
+  FirestoreWikiHistory,
   FirestoreWorkSession,
   RealClock,
   type AdapterLogger,
@@ -100,6 +105,8 @@ export interface Adapters {
   // §1, §2 — task aggregate
   taskRepo: TaskRepository;
   transitionLog: TransitionLogPort;
+  /** §wiki — overflowed wiki versions (parent doc keeps last 10 inline). */
+  wikiHistory: WikiHistoryPort;
   // §3-9 — read-side lookups
   clientLookup: ClientLookupPort;
   projectLookup: ProjectLookupPort;
@@ -186,6 +193,7 @@ export function createAdapters(deps: CreateAdaptersDeps): Adapters {
   return {
     taskRepo: new FirestoreTaskRepository(db, logger),
     transitionLog: new FirestoreTransitionLog(db, logger),
+    wikiHistory: new FirestoreWikiHistory(db, logger),
 
     clientLookup: new FirestoreClientLookup(db, logger),
     projectLookup: new FirestoreProjectLookup(db, logger),

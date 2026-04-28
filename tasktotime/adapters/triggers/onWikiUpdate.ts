@@ -10,24 +10,39 @@
  *
  * Side effects (per spec/05-api/triggers.md §onWikiUpdate):
  *   1. BigQuery audit row.
- *   2. (Future) Archive `versionHistory[0]` to a `wiki_history/` subcollection
- *      when the inline buffer overflows. Currently the application handler
- *      caps the inline buffer at 10 via `slice(-9) + new`, so overflow does
- *      not happen unless someone bypasses the handler. Out of scope for
- *      PR-B1 — TODO for PR-B2 once the WikiHistoryPort lands.
+ *   2. **Archive overflow** — if the inline `versionHistory[]` carries more
+ *      than 10 entries, the oldest entry is moved to the per-task
+ *      subcollection `tasktotime_tasks/{taskId}/wiki_history/{versionId}`
+ *      via {@link WikiHistoryPort.append}. The parent doc is then patched
+ *      to keep only the **latest 10** entries inline. The application
+ *      handler already caps at 10 via `slice(-9) + new`, so this branch
+ *      only fires for legacy data or callers that bypass the handler.
  *   3. (Future) Parent `subtaskRollup.wikiSummary` invalidation for
- *      subtasks with `wikiInheritsFromParent: true`. Same TODO.
+ *      subtasks with `wikiInheritsFromParent: true`. TODO post PR-B6.
  *
  * **Field-change guard** — strict equality on `wiki.contentMd` AND
  * `wiki.attachments`. Wiki updates don't write to the task's other fields,
  * so we use the cheapest possible guard rather than a `diffWatchedFields`
  * full sweep.
  *
- * **Idempotency** — `tasktotime_wiki_update_<taskId>_<eventId>`.
+ * **Idempotency** — `tasktotime_wiki_update_<taskId>_<eventId>`. The
+ * deterministic subcollection doc id (`v${version}`) makes a retried
+ * archive write a no-op overwrite, so even a partial replay (audit
+ * succeeded, archive failed) lands the same data on retry.
+ *
+ * **Patch safety** — the `versionHistory` crop uses `taskRepo.patch` with
+ * a single `wiki.versionHistory` dotted-path key. We do NOT touch
+ * `wiki.contentMd`, `wiki.version`, `wiki.updatedAt` etc., so the trigger
+ * cannot loop on its own write (the field-change guard at the top of the
+ * handler also blocks that).
  */
 
-import type { Task, TaskWiki } from '../../domain/Task';
-import type { TaskRepository } from '../../ports/repositories';
+import type { Task, TaskWiki, WikiVersion } from '../../domain/Task';
+import type { TaskId } from '../../domain/identifiers';
+import type {
+  TaskRepository,
+  WikiHistoryPort,
+} from '../../ports/repositories';
 import type { BigQueryAuditPort, ClockPort } from '../../ports/infra';
 import type { IdempotencyPort } from '../../ports/ai';
 
@@ -44,8 +59,18 @@ import {
 const EVENT_TYPE = 'tasktotime_wiki_update';
 const TTL_MS = 5 * 60 * 1000;
 
+/**
+ * Inline `versionHistory[]` cap. Older entries spill into the per-task
+ * `wiki_history/` subcollection. Mirrors the application handler's
+ * `slice(-9) + new = 10` window — kept here as a named constant so the
+ * trigger's overflow check stays readable and a future bump only requires
+ * one edit.
+ */
+const INLINE_VERSION_HISTORY_CAP = 10;
+
 export interface OnWikiUpdateDeps {
   taskRepo: TaskRepository;
+  wikiHistory: WikiHistoryPort;
   idempotency: IdempotencyPort;
   bigQueryAudit: BigQueryAuditPort;
   clock: ClockPort;
@@ -90,7 +115,78 @@ export async function onWikiUpdate(
   });
   effects.push('bigQueryAudit.log');
 
+  // ── Archive overflow ────────────────────────────────────────────────
+  // The application handler already caps `versionHistory` at 10. This
+  // branch is the safety net for legacy data or callers that bypass the
+  // handler. We only act when the post-write inline buffer carries more
+  // than 10 entries.
+  const versionHistory = after.wiki?.versionHistory ?? [];
+  if (versionHistory.length > INLINE_VERSION_HISTORY_CAP) {
+    const archived = await archiveOverflow(
+      after.id,
+      versionHistory,
+      deps,
+      log,
+    );
+    if (archived > 0) {
+      effects.push(`wikiHistory.append.x${archived}`);
+      effects.push('taskRepo.patch.versionHistory');
+    }
+  }
+
   return applied(effects);
+}
+
+/**
+ * Move the oldest overflowed entries into `wiki_history/`, then patch the
+ * parent doc to keep only the latest {@link INLINE_VERSION_HISTORY_CAP}
+ * inline. Returns the number of entries archived.
+ *
+ * Append order matters: we archive in oldest-first order so a partial
+ * failure (some appends succeed, the rest plus the patch don't) still
+ * leaves the inline buffer valid. The trigger's idempotency reservation
+ * blocks re-runs on the same eventId; the deterministic subcollection
+ * doc id makes a retried archive write a no-op overwrite of the same
+ * payload. After all appends succeed we patch the parent doc once with
+ * the cropped inline buffer.
+ */
+async function archiveOverflow(
+  taskId: TaskId,
+  versionHistory: WikiVersion[],
+  deps: Pick<OnWikiUpdateDeps, 'wikiHistory' | 'taskRepo'>,
+  log: AdapterLogger,
+): Promise<number> {
+  const overflow = versionHistory.length - INLINE_VERSION_HISTORY_CAP;
+  if (overflow <= 0) return 0;
+
+  // Oldest entries first — `versionHistory` is append-order, so the head
+  // of the array is the oldest. Slice once to avoid mutating the input.
+  const toArchive = versionHistory.slice(0, overflow);
+  const toKeep = versionHistory.slice(overflow);
+
+  for (const entry of toArchive) {
+    await deps.wikiHistory.append(taskId, {
+      version: entry.version,
+      contentMd: entry.contentMd,
+      updatedAt: entry.updatedAt,
+      updatedBy: entry.updatedBy,
+      changeSummary: entry.changeSummary,
+      // `WikiVersion` does not carry attachments — they live on the wiki
+      // root, not per-version. The history snapshot intentionally omits
+      // them so a render of an old version uses the wiki's current
+      // attachment registry.
+    });
+    log.debug?.('onWikiUpdate.archived', { taskId, version: entry.version });
+  }
+
+  // Patch the parent doc — single dotted-path field. Does not change any
+  // watched field, so the field-change guard at the top of `onWikiUpdate`
+  // blocks the resulting onUpdate from re-firing this branch.
+  await deps.taskRepo.patch(taskId, {
+    'wiki.versionHistory': toKeep,
+  });
+
+  return toArchive.length;
 }
 
 function summariseWikiChange(
@@ -107,4 +203,4 @@ function summariseWikiChange(
   };
 }
 
-export const __test__ = { TTL_MS, EVENT_TYPE };
+export const __test__ = { TTL_MS, EVENT_TYPE, INLINE_VERSION_HISTORY_CAP };

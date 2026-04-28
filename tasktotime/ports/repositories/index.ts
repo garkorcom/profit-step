@@ -7,3 +7,4 @@ export type {
 } from './TaskRepository';
 
 export type { TransitionLogPort, TransitionLogEntry } from './TransitionLogPort';
+export type { WikiHistoryPort, WikiHistoryEntry } from './WikiHistoryPort';

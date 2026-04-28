@@ -15,27 +15,30 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 
 import {
+    useCreateTask,
     useTaskList,
     useTaskListPaginated,
     useTransitionTask,
     useUpdateWiki,
 } from '../useTasktotime';
-import type { TaskDto, TransitionTaskResult } from '../../api/tasktotimeApi';
+import type {
+    CreateTaskInput,
+    TaskDto,
+    TransitionTaskResult,
+} from '../../api/tasktotimeApi';
 
 // ─── Mocks ──────────────────────────────────────────────────────────────
 
 const listTasks = jest.fn();
 const transitionTask = jest.fn();
+const createTask = jest.fn();
 const updateWiki = jest.fn();
 
 /**
  * The hook detects the conflict via
  * `instanceof TasktotimeApiError && err.isVersionConflict` — for the mock to
  * trigger the same branch the test must construct the *same* class identity
- * the hook imports. We define the mirror class inside the `jest.mock`
- * factory (so it's available at hoist-time), then re-import it through the
- * mocked module path in the test body. Both sides reference the same
- * constructor reference.
+ * the hook imports. Mirror class defined inside jest.mock factory.
  */
 jest.mock('../../api/tasktotimeApi', () => {
     class MockTasktotimeApiError extends Error {
@@ -56,14 +59,13 @@ jest.mock('../../api/tasktotimeApi', () => {
         tasktotimeApi: {
             listTasks: (...args: unknown[]) => listTasks(...args),
             transitionTask: (...args: unknown[]) => transitionTask(...args),
+            createTask: (...args: unknown[]) => createTask(...args),
             updateWiki: (...args: unknown[]) => updateWiki(...args),
         },
         TasktotimeApiError: MockTasktotimeApiError,
     };
 });
 
-// Re-import the class through the mocked module so test code can construct
-// the *exact* error type the hook checks `instanceof` against.
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { TasktotimeApiError } = require('../../api/tasktotimeApi') as {
     TasktotimeApiError: new (
@@ -112,6 +114,7 @@ const sampleTask: TaskDto = {
 beforeEach(() => {
     listTasks.mockReset();
     transitionTask.mockReset();
+    createTask.mockReset();
     updateWiki.mockReset();
 });
 
@@ -385,6 +388,86 @@ describe('useTransitionTask', () => {
     });
 });
 
+// ─── useCreateTask ───────────────────────────────────────────────────────
+
+describe('useCreateTask', () => {
+    const baseInput = (overrides: Partial<CreateTaskInput> = {}): CreateTaskInput => ({
+        idempotencyKey: 'idem_1',
+        companyId: 'co_1',
+        title: 'New task',
+        bucket: 'next',
+        priority: 'medium',
+        source: 'web',
+        requiredHeadcount: 1,
+        assignedTo: { id: 'u_1', name: 'Alice' },
+        dueAt: 1_900_000_000_000,
+        estimatedDurationMinutes: 60,
+        costInternal: { amount: 0, currency: 'USD' },
+        priceClient: { amount: 0, currency: 'USD' },
+        ...overrides,
+    });
+
+    it('forwards the input to the API and resolves to the created task', async () => {
+        const created: TaskDto = { ...sampleTask, taskNumber: 'T-100' };
+        createTask.mockResolvedValueOnce(created);
+
+        const { result } = renderHook(() => useCreateTask());
+
+        let returned: TaskDto | undefined;
+        await act(async () => {
+            returned = await result.current.mutate(
+                baseInput({ title: 'Install kitchen cabinets' }),
+            );
+        });
+
+        expect(returned).toEqual(created);
+        expect(createTask).toHaveBeenCalledTimes(1);
+        expect(createTask).toHaveBeenCalledWith(
+            expect.objectContaining({
+                title: 'Install kitchen cabinets',
+                priority: 'medium',
+                source: 'web',
+                companyId: 'co_1',
+                idempotencyKey: 'idem_1',
+            }),
+        );
+        expect(result.current.error).toBeNull();
+    });
+
+    it('surfaces the error and rethrows when the API rejects', async () => {
+        createTask.mockRejectedValueOnce(new Error('ValidationError: title too short'));
+
+        const { result } = renderHook(() => useCreateTask());
+
+        const caught: { err: Error | null } = { err: null };
+        await act(async () => {
+            try {
+                await result.current.mutate(baseInput({ title: 'no' }));
+            } catch (err) {
+                caught.err = err instanceof Error ? err : new Error(String(err));
+            }
+        });
+
+        expect(caught.err).toBeInstanceOf(Error);
+        expect(caught.err?.message).toBe('ValidationError: title too short');
+        expect(result.current.error?.message).toBe('ValidationError: title too short');
+    });
+
+    it('passes through the string priority value verbatim (no int coercion)', async () => {
+        createTask.mockResolvedValueOnce(sampleTask);
+
+        const { result } = renderHook(() => useCreateTask());
+
+        await act(async () => {
+            await result.current.mutate(baseInput({ priority: 'critical' }));
+        });
+
+        expect(createTask).toHaveBeenCalledWith(
+            expect.objectContaining({ priority: 'critical' }),
+        );
+    });
+});
+
 // ─── useUpdateWiki ──────────────────────────────────────────────────────
 
 describe('useUpdateWiki', () => {
@@ -421,13 +504,8 @@ describe('useUpdateWiki', () => {
     });
 
     it('flags `conflict` when the API rejects with a 409 STALE_VERSION', async () => {
-        // Adapter-layer code path (`STALE_VERSION` upper-snake).
         updateWiki.mockRejectedValueOnce(
-            new TasktotimeApiError(
-                409,
-                'STALE_VERSION',
-                'expectedVersion 1 is stale; current is 3',
-            ),
+            new TasktotimeApiError(409, 'STALE_VERSION', 'expectedVersion 1 is stale; current is 3'),
         );
 
         const { result } = renderHook(() => useUpdateWiki());

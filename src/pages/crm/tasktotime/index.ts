@@ -15,3 +15,4 @@ export { default as WikiDemoPage } from './WikiDemoPage';
 // dynamic import to keep @xyflow/react out of the main bundle; barrel
 // re-export here for symmetry with the other views).
 export { default as GraphPage } from './GraphPage';
+export { useDrawerOpenState } from './useDrawerOpenState';

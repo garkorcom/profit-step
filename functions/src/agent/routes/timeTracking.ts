@@ -633,6 +633,82 @@ router.get('/api/time-tracking/summary', async (req, res, next) => {
     const fromUtc = fromZonedTime(new Date(fromParts[0], fromParts[1] - 1, fromParts[2], 0, 0, 0, 0), TZ);
     const toUtc = fromZonedTime(new Date(toParts[0], toParts[1] - 1, toParts[2], 23, 59, 59, 999), TZ);
 
+    // ─── Pre-build identity maps ──────────────────────────────────────
+    // Sessions use either telegramId (number) or Firebase UID (string) as
+    // employeeId. We merge both into a single canonical ID per person using
+    // the users + employees collections. Canonical = Firebase UID if
+    // available, otherwise the raw employeeId.
+    //
+    // CRUCIAL: these maps are built BEFORE the work_sessions query so the
+    // employeeId filter can include both shapes (`'in', [uid, telegramNum]`).
+    // Firestore equality is type-strict — `where('employeeId', '==', '123')`
+    // does NOT match `employeeId: 123` (number). Bot writes the numeric form;
+    // Web writes the string form. Filtering with only one shape silently
+    // drops the worker's bot-created sessions from the summary (incident
+    // 2026-04-28).
+    const idToCanonical: Record<string, string> = {};
+    const canonicalNames: Record<string, string> = {};
+    const uidToTelegramNum: Record<string, number> = {};
+
+    const usersSnap = await db.collection('users').get();
+    for (const uDoc of usersSnap.docs) {
+      const u = uDoc.data();
+      const firebaseUid = uDoc.id;
+      const tgId = u.telegramId ? String(u.telegramId) : null;
+      const name = u.displayName || u.name || '';
+
+      idToCanonical[firebaseUid] = firebaseUid;
+      if (name) canonicalNames[firebaseUid] = name;
+
+      if (tgId) {
+        idToCanonical[tgId] = firebaseUid;
+        const num = Number(tgId);
+        if (Number.isFinite(num)) uidToTelegramNum[firebaseUid] = num;
+      }
+    }
+
+    const empsSnap = await db.collection('employees').get();
+    for (const eDoc of empsSnap.docs) {
+      const e = eDoc.data();
+      const tgId = e.telegramId ? String(e.telegramId) : eDoc.id;
+      if (!idToCanonical[tgId]) {
+        idToCanonical[tgId] = tgId;
+      }
+      if (e.name && !canonicalNames[idToCanonical[tgId]]) {
+        canonicalNames[idToCanonical[tgId]] = e.name;
+      }
+    }
+
+    // Expand a list of UIDs / telegramId-strings into the full set of
+    // employeeId shapes Firestore must match. For each input id we emit:
+    //   1. the canonical UID (string) if known, else the raw input
+    //   2. the numeric telegramId (number) for that UID, if any
+    // Dedupe by `${typeof}|${value}` so number 123 and string "123" remain
+    // distinct in the resulting `'in'` filter.
+    const expandEmployeeIdVariants = (
+      ids: ReadonlyArray<string>
+    ): Array<string | number> => {
+      const seen = new Set<string>();
+      const out: Array<string | number> = [];
+      const push = (v: string | number): void => {
+        const key = `${typeof v}|${String(v)}`;
+        if (seen.has(key)) return;
+        seen.add(key);
+        out.push(v);
+      };
+      for (const raw of ids) {
+        const canonical = idToCanonical[raw] || raw;
+        push(canonical);
+        const tgNum = uidToTelegramNum[canonical];
+        if (tgNum !== undefined) push(tgNum);
+        // Input may itself be a numeric telegram-id string — also try the
+        // number form so legacy callers passing the telegram id still match.
+        const rawNum = Number(raw);
+        if (Number.isFinite(rawNum) && String(rawNum) === raw) push(rawNum);
+      }
+      return out;
+    };
+
     let q: admin.firestore.Query = db.collection('work_sessions')
       .where('status', '==', 'completed')
       .where('startTime', '>=', Timestamp.fromDate(fromUtc))
@@ -642,67 +718,34 @@ router.get('/api/time-tracking/summary', async (req, res, next) => {
     const rlsRole = req.effectiveRole || 'admin';
     const rlsUserId = req.effectiveUserId || req.agentUserId;
     if (rlsRole === 'worker' || rlsRole === 'driver') {
-      q = q.where('employeeId', '==', rlsUserId);
+      q = q.where('employeeId', 'in', expandEmployeeIdVariants([rlsUserId!]));
     } else if (rlsRole === 'foreman') {
       const teamUids = req.effectiveTeamMemberUids || [];
       const allUids = Array.from(new Set([rlsUserId!, ...teamUids]));
       if (params.employeeId && allUids.includes(params.employeeId)) {
-        q = q.where('employeeId', '==', params.employeeId);
-      } else if (!params.employeeId && allUids.length <= 30) {
-        q = q.where('employeeId', 'in', allUids);
+        q = q.where('employeeId', 'in', expandEmployeeIdVariants([params.employeeId]));
+      } else if (!params.employeeId) {
+        const expanded = expandEmployeeIdVariants(allUids);
+        if (expanded.length <= 30) {
+          q = q.where('employeeId', 'in', expanded);
+        } else {
+          // Team too large even before adding telegram variants would not have
+          // fit either; fall back to the foreman's own scope.
+          q = q.where('employeeId', 'in', expandEmployeeIdVariants([rlsUserId!]));
+        }
       } else {
-        q = q.where('employeeId', '==', rlsUserId);
+        q = q.where('employeeId', 'in', expandEmployeeIdVariants([rlsUserId!]));
       }
     } else if (params.employeeId) {
-      q = q.where('employeeId', '==', params.employeeId);
+      q = q.where('employeeId', 'in', expandEmployeeIdVariants([params.employeeId]));
     }
 
     const snap = await q.get();
 
-    // ─── Build ID merge map ───────────────────────────────────────────
-    // Sessions use either telegramId (number) or Firebase UID (string) as employeeId.
-    // We merge both into a single canonical ID per person using the users collection.
-    // Canonical = Firebase UID if available, otherwise the raw employeeId.
-    const idToCanonical: Record<string, string> = {};
-    const canonicalNames: Record<string, string> = {};
-
-    // Collect all unique employeeIds from sessions
+    // Collect all unique employeeIds from the returned sessions and ensure
+    // each has a canonical mapping (fallback to raw id when unknown).
     const rawIds = new Set<string>();
     snap.docs.forEach((d) => rawIds.add(String(d.data().employeeId || 'unknown')));
-
-    // Load users who have telegramId — build bidirectional map
-    const usersSnap = await db.collection('users').get();
-    for (const uDoc of usersSnap.docs) {
-      const u = uDoc.data();
-      const firebaseUid = uDoc.id;
-      const tgId = u.telegramId ? String(u.telegramId) : null;
-      const name = u.displayName || u.name || '';
-
-      // Map Firebase UID → itself
-      idToCanonical[firebaseUid] = firebaseUid;
-      if (name) canonicalNames[firebaseUid] = name;
-
-      // Map telegramId → Firebase UID
-      if (tgId) {
-        idToCanonical[tgId] = firebaseUid;
-      }
-    }
-
-    // Also check employees collection (legacy bot-only workers)
-    const empsSnap = await db.collection('employees').get();
-    for (const eDoc of empsSnap.docs) {
-      const e = eDoc.data();
-      const tgId = e.telegramId ? String(e.telegramId) : eDoc.id;
-      // Only set if not already mapped via users collection
-      if (!idToCanonical[tgId]) {
-        idToCanonical[tgId] = tgId;
-      }
-      if (e.name && !canonicalNames[idToCanonical[tgId]]) {
-        canonicalNames[idToCanonical[tgId]] = e.name;
-      }
-    }
-
-    // Fallback: any ID not in the map maps to itself
     for (const rid of rawIds) {
       if (!idToCanonical[rid]) idToCanonical[rid] = rid;
     }

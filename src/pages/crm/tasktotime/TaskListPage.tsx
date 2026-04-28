@@ -218,10 +218,11 @@ function hasAnyFilter(f: FilterFormValues): boolean {
 
 // ─── Row ────────────────────────────────────────────────────────────────
 
-const TaskRow: React.FC<{ task: TaskDto; onOpen: (id: string) => void }> = ({
-    task,
-    onOpen,
-}) => {
+const TaskRow: React.FC<{
+    task: TaskDto;
+    onOpen: (id: string) => void;
+    onOpenNewTab: (id: string) => void;
+}> = ({ task, onOpen, onOpenNewTab }) => {
     const lifecycle = LIFECYCLE_COLORS[task.lifecycle] ?? FALLBACK_CHIP;
     const priorityKey = resolvePriorityKey(task.priority);
     const priority = (priorityKey && PRIORITY_COLORS[priorityKey]) ?? FALLBACK_CHIP;
@@ -234,7 +235,7 @@ const TaskRow: React.FC<{ task: TaskDto; onOpen: (id: string) => void }> = ({
             onClick={() => onOpen(task.id)}
             sx={{ cursor: 'pointer', '&:last-child td': { borderBottom: 0 } }}
         >
-            <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.8rem', color: '#6B7280' }}>
+            <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.8rem', color: '#4B5563' }}>
                 {task.taskNumber}
             </TableCell>
             <TableCell>
@@ -280,12 +281,13 @@ const TaskRow: React.FC<{ task: TaskDto; onOpen: (id: string) => void }> = ({
                 </Typography>
             </TableCell>
             <TableCell align="right" sx={{ width: 56 }}>
-                <Tooltip title="Open">
+                <Tooltip title="Open in new tab">
                     <IconButton
                         size="small"
+                        aria-label={`Open task ${task.taskNumber} in new tab`}
                         onClick={(e) => {
                             e.stopPropagation();
-                            onOpen(task.id);
+                            onOpenNewTab(task.id);
                         }}
                     >
                         <OpenInNewIcon fontSize="small" />
@@ -302,9 +304,15 @@ interface FilterBarProps {
     control: ReturnType<typeof useForm<FilterFormValues>>['control'];
     onReset: () => void;
     canReset: boolean;
+    /**
+     * `true` while the live `search` field has changed but the debounced
+     * value hasn't caught up yet. Renders a small inline spinner inside the
+     * search input so the user knows the keystroke is still in flight.
+     */
+    searchPending: boolean;
 }
 
-const FilterBar: React.FC<FilterBarProps> = ({ control, onReset, canReset }) => {
+const FilterBar: React.FC<FilterBarProps> = ({ control, onReset, canReset, searchPending }) => {
     return (
         <Paper
             variant="outlined"
@@ -471,16 +479,25 @@ const FilterBar: React.FC<FilterBarProps> = ({ control, onReset, canReset }) => 
                                 label="Search title"
                                 placeholder="Substring match"
                                 InputProps={{
-                                    endAdornment: field.value ? (
-                                        <IconButton
-                                            size="small"
-                                            onClick={() => field.onChange('')}
-                                            aria-label="Clear search"
-                                            edge="end"
-                                        >
-                                            <ClearIcon fontSize="small" />
-                                        </IconButton>
-                                    ) : null,
+                                    endAdornment:
+                                        searchPending ? (
+                                            <Tooltip title="Searching…">
+                                                <CircularProgress
+                                                    size={14}
+                                                    aria-label="Search debounce pending"
+                                                    sx={{ color: '#6B7280', mr: 0.5 }}
+                                                />
+                                            </Tooltip>
+                                        ) : field.value ? (
+                                            <IconButton
+                                                size="small"
+                                                onClick={() => field.onChange('')}
+                                                aria-label="Clear search"
+                                                edge="end"
+                                            >
+                                                <ClearIcon fontSize="small" />
+                                            </IconButton>
+                                        ) : null,
                                 }}
                             />
                         )}
@@ -673,6 +690,25 @@ const TaskListPage: React.FC = () => {
         [navigate],
     );
 
+    /**
+     * Open the task in a new tab. Wired to the OpenInNewIcon button (which
+     * had previously navigated same-tab — misleading given the icon).
+     * `noopener,noreferrer` is the standard hardening so the new context
+     * can't `window.opener` back into this page.
+     */
+    const handleOpenNewTab = useCallback((taskId: string) => {
+        window.open(`/crm/tasktotime/tasks/${taskId}`, '_blank', 'noopener,noreferrer');
+    }, []);
+
+    /**
+     * `true` while the live search keystroke hasn't yet reached the
+     * debounced value driving the API. Used to render a spinner inside the
+     * search field so fast typing doesn't feel like the UI froze.
+     * The trim() comparison matches what `readFiltersFromSearchParams`
+     * does, so trailing whitespace doesn't perma-trigger the spinner.
+     */
+    const searchPending = liveFilters.search.trim() !== debouncedSearch.trim();
+
     const handleReset = useCallback(() => {
         reset(EMPTY_FILTERS);
         setDebouncedSearch('');
@@ -726,7 +762,12 @@ const TaskListPage: React.FC = () => {
 
                 <Tooltip title="Refresh">
                     <span>
-                        <IconButton onClick={refetch} disabled={loading} size="small">
+                        <IconButton
+                            onClick={refetch}
+                            disabled={loading}
+                            size="small"
+                            aria-label="Refresh task list"
+                        >
                             <RefreshIcon />
                         </IconButton>
                     </span>
@@ -745,6 +786,7 @@ const TaskListPage: React.FC = () => {
                             control={control}
                             onReset={handleReset}
                             canReset={filtersActive}
+                            searchPending={searchPending}
                         />
 
                         {error && (
@@ -821,6 +863,7 @@ const TaskListPage: React.FC = () => {
                                                 key={task.id}
                                                 task={task}
                                                 onOpen={handleOpen}
+                                                onOpenNewTab={handleOpenNewTab}
                                             />
                                         ))
                                     )}

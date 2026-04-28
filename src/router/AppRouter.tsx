@@ -75,6 +75,10 @@ const AdminWorkerDetailPage = React.lazy(() => import('../modules/worker').then(
 const TasktotimeLayout = React.lazy(() => import('../pages/crm/tasktotime').then(m => ({ default: m.TasktotimeLayout })));
 const TaskListPage = React.lazy(() => import('../pages/crm/tasktotime').then(m => ({ default: m.TaskListPage })));
 const TaskDetailPage = React.lazy(() => import('../pages/crm/tasktotime').then(m => ({ default: m.TaskDetailPage })));
+// Phase 4.4 — Board (kanban) view, replacing the ComingSoon placeholder for
+// `board`. Lazy-loaded via the same barrel pattern as List / Detail so the
+// chunk only ships when the user opens the board.
+const TasktotimeBoardPage = React.lazy(() => import('../pages/crm/tasktotime/BoardPage'));
 const TasktotimeComingSoon = React.lazy(() => import('../pages/crm/tasktotime').then(m => ({ default: m.ComingSoonView })));
 // Phase 4.3 — temporary debug route for the Wiki editor wrapper. Imported via
 // its own dynamic import (NOT the barrel) so the heavy MDXEditor chunk only
@@ -265,7 +269,7 @@ const AppRouter: React.FC = () => {
             <Route index element={<TaskListPage />} />
             <Route path="list" element={<TaskListPage />} />
             <Route path="inbox" element={<TasktotimeComingSoon label="Inbox" />} />
-            <Route path="board" element={<TasktotimeComingSoon label="Board" />} />
+            <Route path="board" element={<TasktotimeBoardPage />} />
             <Route path="timeline" element={<TasktotimeComingSoon label="Timeline" />} />
             <Route path="calendar" element={<TasktotimeComingSoon label="Calendar" />} />
             <Route path="gantt" element={<TasktotimeComingSoon label="Gantt" />} />

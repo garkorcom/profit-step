@@ -29,18 +29,12 @@ import {
     Button,
     Chip,
     CircularProgress,
-    Dialog,
-    DialogActions,
-    DialogContent,
-    DialogContentText,
-    DialogTitle,
     Divider,
     Grid,
     IconButton,
     Link as MuiLink,
     Paper,
     Stack,
-    TextField,
     Tooltip,
     Typography,
 } from '@mui/material';
@@ -48,7 +42,6 @@ import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import LinkIcon from '@mui/icons-material/Link';
 import dayjs from 'dayjs';
-import { Controller, useForm } from 'react-hook-form';
 
 import { useAuth } from '../../../auth/AuthContext';
 import { useTask, useTransitionTask } from '../../../hooks/useTasktotime';
@@ -56,46 +49,18 @@ import type {
     TaskDependencyDto,
     TaskDto,
     TaskLifecycle,
-    TaskPriority,
     TransitionAction,
 } from '../../../api/tasktotimeApi';
-
-// ─── Visual tokens (mirrors TaskListPage so chips stay consistent) ──────
-
-const LIFECYCLE_COLORS: Record<TaskLifecycle, { bg: string; fg: string }> = {
-    draft: { bg: '#F3F4F6', fg: '#6B7280' },
-    ready: { bg: '#DBEAFE', fg: '#1E40AF' },
-    started: { bg: '#FEF3C7', fg: '#92400E' },
-    blocked: { bg: '#FEE2E2', fg: '#991B1B' },
-    completed: { bg: '#DCFCE7', fg: '#166534' },
-    accepted: { bg: '#D1FAE5', fg: '#064E3B' },
-    cancelled: { bg: '#E5E7EB', fg: '#374151' },
-};
-
-const PRIORITY_COLORS: Record<TaskPriority, { bg: string; fg: string }> = {
-    critical: { bg: '#FEE2E2', fg: '#991B1B' },
-    high: { bg: '#FED7AA', fg: '#9A3412' },
-    medium: { bg: '#FEF3C7', fg: '#92400E' },
-    low: { bg: '#E0F2FE', fg: '#075985' },
-};
-
-const FALLBACK_CHIP = { bg: '#E5E7EB', fg: '#374151' };
-
-// Backend currently persists priority as an integer 0..3 (wire mismatch with
-// the Priority string domain type — see backend audit). Map int → string so
-// the legacy data still chips correctly until the schema fix lands.
-const PRIORITY_INT_TO_STRING: Record<number, TaskPriority> = {
-    0: 'low',
-    1: 'medium',
-    2: 'high',
-    3: 'critical',
-};
-
-function resolvePriorityKey(p: unknown): TaskPriority | undefined {
-    if (typeof p === 'string') return p as TaskPriority;
-    if (typeof p === 'number') return PRIORITY_INT_TO_STRING[p];
-    return undefined;
-}
+import {
+    AcceptDialog,
+    BlockDialog,
+    FALLBACK_CHIP,
+    LIFECYCLE_COLORS,
+    PRIORITY_COLORS,
+    newIdempotencyKey,
+    resolvePriorityKey,
+} from '../../../components/tasktotime';
+import type { AcceptDialogPayload } from '../../../components/tasktotime';
 
 // ─── Lifecycle state machine (mirror of tasktotime/domain/lifecycle.ts) ─
 
@@ -290,264 +255,14 @@ const DependencyChip: React.FC<{
     );
 };
 
-/**
- * Generate a fresh idempotency key for one transition request.
- *
- * The backend treats two `(taskId, action, idempotencyKey)` tuples as
- * identical → returns the cached outcome on retry. We want every fresh user
- * click to produce a fresh key (otherwise a re-block after an unblock would
- * be skipped). `crypto.randomUUID()` is on every modern browser; the
- * fallback exists only for old Safari / testing environments that polyfill
- * before injecting a `crypto` global.
- */
-function newIdempotencyKey(): string {
-    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-        return crypto.randomUUID();
-    }
-    return `transition-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-}
-
-// ─── Block dialog ───────────────────────────────────────────────────────
-
-interface BlockFormFields {
-    blockedReason: string;
-}
-
-/**
- * Modal that collects the `blockedReason` (>= 5 chars) required by the
- * backend `block` transition. Submit is disabled until the field is valid;
- * the parent re-renders the lifecycle once the mutation resolves.
- *
- * Why react-hook-form: matches the existing house style (e.g.
- * `AddPaymentDialog`, `CreateInvoiceDialog`) — validation rules sit next to
- * the field, `formState.isValid` drives the submit button, and the form
- * resets cleanly on close.
- */
-const BlockDialog: React.FC<{
-    open: boolean;
-    onClose: () => void;
-    onConfirm: (reason: string) => Promise<void>;
-    submitting: boolean;
-}> = ({ open, onClose, onConfirm, submitting }) => {
-    const { control, handleSubmit, reset, watch } = useForm<BlockFormFields>({
-        mode: 'onChange',
-        defaultValues: { blockedReason: '' },
-    });
-
-    // Reset on each open so a previous abandoned attempt doesn't leak in.
-    useEffect(() => {
-        if (open) reset({ blockedReason: '' });
-    }, [open, reset]);
-
-    // Live-watch the field for the submit-button disable. Using `watch`
-    // instead of `formState.isValid` because v7's `isValid` starts as `true`
-    // for `mode: 'onChange'` until the user touches the field — which would
-    // leave the button incorrectly enabled on an empty initial form.
-    const reasonValue = watch('blockedReason') ?? '';
-    const reasonValid = reasonValue.trim().length >= 5;
-
-    const submit = handleSubmit(async (data) => {
-        await onConfirm(data.blockedReason.trim());
-    });
-
-    return (
-        <Dialog open={open} onClose={submitting ? undefined : onClose} maxWidth="sm" fullWidth>
-            <DialogTitle>Block task</DialogTitle>
-            <form onSubmit={submit}>
-                <DialogContent dividers>
-                    <DialogContentText sx={{ mb: 2 }}>
-                        Tell the team why you&apos;re blocking this task. The
-                        reason is shown in the task banner and recorded in the
-                        history log. Minimum 5 characters.
-                    </DialogContentText>
-                    <Controller
-                        name="blockedReason"
-                        control={control}
-                        rules={{
-                            required: 'Reason is required',
-                            validate: (value) =>
-                                value.trim().length >= 5 ||
-                                'Reason must be at least 5 characters',
-                        }}
-                        render={({ field, fieldState }) => (
-                            <TextField
-                                {...field}
-                                label="Reason"
-                                placeholder="e.g. Waiting on permit committee approval"
-                                multiline
-                                minRows={2}
-                                fullWidth
-                                autoFocus
-                                error={Boolean(fieldState.error)}
-                                helperText={
-                                    fieldState.error?.message ??
-                                    `${field.value.trim().length}/5 characters minimum`
-                                }
-                            />
-                        )}
-                    />
-                </DialogContent>
-                <DialogActions>
-                    <Button onClick={onClose} disabled={submitting}>
-                        Cancel
-                    </Button>
-                    <Button
-                        type="submit"
-                        variant="contained"
-                        color="warning"
-                        disabled={!reasonValid || submitting}
-                    >
-                        {submitting ? 'Blocking…' : 'Block'}
-                    </Button>
-                </DialogActions>
-            </form>
-        </Dialog>
-    );
-};
-
-// ─── Accept dialog ──────────────────────────────────────────────────────
-
-interface AcceptFormFields {
-    signedByName: string;
-    signature: string;
-}
-
-/**
- * Modal that collects the `acceptance` payload (signedAt, signedBy:
- * UserRef, signature?) required by the backend `accept` transition.
- *
- * UX choices:
- *   - `signedAt` is captured automatically when the dialog opens (no field
- *     for it — the payload represents "the moment the operator clicked
- *     Accept"). Stored in a ref so a slow human typing doesn't drift the
- *     timestamp.
- *   - `signedByName` defaults to the logged-in user's `displayName`. PMs
- *     usually accept on behalf of the client, but the field is editable so
- *     a different name can be entered.
- *   - `signedBy.id` defaults to the logged-in user's `id` so the audit log
- *     ties back to the operator. If the dialog ever evolves to "accept on
- *     behalf of client X" we'd swap this to a contact-picker.
- *   - `signature` is free-form (URL or placeholder text) and optional.
- */
-const AcceptDialog: React.FC<{
-    open: boolean;
-    onClose: () => void;
-    onConfirm: (payload: {
-        signedAt: number;
-        signedBy: { id: string; name: string };
-        signature?: string;
-    }) => Promise<void>;
-    submitting: boolean;
-    defaultSignerId: string;
-    defaultSignerName: string;
-}> = ({
-    open,
-    onClose,
-    onConfirm,
-    submitting,
-    defaultSignerId,
-    defaultSignerName,
-}) => {
-    const { control, handleSubmit, reset, watch } = useForm<AcceptFormFields>({
-        mode: 'onChange',
-        defaultValues: { signedByName: defaultSignerName, signature: '' },
-    });
-
-    // signedAt is captured at dialog-open time so it represents the user's
-    // intent moment, not whenever the form happens to submit. Re-set on each
-    // open so a re-opened dialog gets a fresh timestamp.
-    const [signedAtMs, setSignedAtMs] = useState<number>(() => Date.now());
-    useEffect(() => {
-        if (open) {
-            setSignedAtMs(Date.now());
-            reset({ signedByName: defaultSignerName, signature: '' });
-        }
-    }, [open, reset, defaultSignerName]);
-
-    // Live-watch for the submit-button disable (see BlockDialog comment).
-    const signerName = watch('signedByName') ?? '';
-    const signerValid = signerName.trim().length > 0;
-
-    const submit = handleSubmit(async (data) => {
-        const trimmedName = data.signedByName.trim();
-        const trimmedSignature = data.signature.trim();
-        await onConfirm({
-            signedAt: signedAtMs,
-            signedBy: {
-                id: defaultSignerId,
-                name: trimmedName,
-            },
-            signature: trimmedSignature.length > 0 ? trimmedSignature : undefined,
-        });
-    });
-
-    return (
-        <Dialog open={open} onClose={submitting ? undefined : onClose} maxWidth="sm" fullWidth>
-            <DialogTitle>Accept task</DialogTitle>
-            <form onSubmit={submit}>
-                <DialogContent dividers>
-                    <DialogContentText sx={{ mb: 2 }}>
-                        Confirm acceptance. The signed timestamp is captured
-                        now ({dayjs(signedAtMs).format('MMM D, YYYY h:mm A')}).
-                    </DialogContentText>
-                    <Stack spacing={2}>
-                        <Controller
-                            name="signedByName"
-                            control={control}
-                            rules={{
-                                required: 'Signer name is required',
-                                validate: (value) =>
-                                    value.trim().length > 0 ||
-                                    'Signer name is required',
-                            }}
-                            render={({ field, fieldState }) => (
-                                <TextField
-                                    {...field}
-                                    label="Signed by"
-                                    placeholder="Client name (or your own)"
-                                    fullWidth
-                                    autoFocus
-                                    required
-                                    error={Boolean(fieldState.error)}
-                                    helperText={
-                                        fieldState.error?.message ??
-                                        'Name printed on the acceptance act.'
-                                    }
-                                />
-                            )}
-                        />
-                        <Controller
-                            name="signature"
-                            control={control}
-                            render={({ field }) => (
-                                <TextField
-                                    {...field}
-                                    label="Signature (optional)"
-                                    placeholder="https://… or placeholder text"
-                                    fullWidth
-                                    helperText="URL of the signed PDF / image, or a free-form note. Can be filled later."
-                                />
-                            )}
-                        />
-                    </Stack>
-                </DialogContent>
-                <DialogActions>
-                    <Button onClick={onClose} disabled={submitting}>
-                        Cancel
-                    </Button>
-                    <Button
-                        type="submit"
-                        variant="contained"
-                        color="success"
-                        disabled={!signerValid || submitting}
-                    >
-                        {submitting ? 'Accepting…' : 'Accept'}
-                    </Button>
-                </DialogActions>
-            </form>
-        </Dialog>
-    );
-};
+// `BlockDialog`, `AcceptDialog`, and `newIdempotencyKey` were inlined here
+// through Phase 4.3. Phase 4.4 (Board view) needs the same dialogs when the
+// user drags a card onto `blocked` / `accepted` columns, so they were
+// extracted to `src/components/tasktotime/{BlockDialog,AcceptDialog}.tsx`
+// (byte-for-byte identical behaviour). The visual tokens
+// (`LIFECYCLE_COLORS`, `PRIORITY_COLORS`, `FALLBACK_CHIP`,
+// `resolvePriorityKey`) moved to `components/tasktotime/visualTokens.ts`
+// for the same reason.
 
 // ─── Page ───────────────────────────────────────────────────────────────
 
@@ -649,11 +364,7 @@ const TaskDetailPage: React.FC = () => {
     );
 
     const handleAcceptConfirm = useCallback(
-        async (payload: {
-            signedAt: number;
-            signedBy: { id: string; name: string };
-            signature?: string;
-        }) => {
+        async (payload: AcceptDialogPayload) => {
             const okFlag = await fireTransition('accept', { acceptance: payload });
             if (okFlag) setAcceptOpen(false);
         },

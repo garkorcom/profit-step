@@ -14,30 +14,40 @@
  *
  * Responsive behaviour:
  *   - viewport ≥ md (900px): permanent left Drawer, no hamburger.
- *   - viewport <  md       : Drawer is `variant="temporary"`, toggled by a
- *                            hamburger IconButton mounted inside this layout
- *                            (not in the global Header — keeps the scope
- *                            local to tasktotime). Tapping a nav item or the
- *                            backdrop closes the drawer. State lives in
- *                            component memory only — no localStorage.
+ *   - viewport <  md       : `<SwipeableDrawer>` (MUI v7) with native swipe-
+ *                            to-open/close gestures + backdrop tap to close.
+ *                            The hamburger IconButton mounted inside this
+ *                            layout (not in the global Header — keeps the
+ *                            scope local to tasktotime) toggles it
+ *                            programmatically. Open state persists under
+ *                            localStorage key `tasktotime.drawer.open` via
+ *                            `useDrawerOpenState` (lazy initializer pattern,
+ *                            defensive about Safari private mode / SSR).
  *
  * Phase 4.0 punted the mobile drawer toggle (`isMobile && return null`) which
- * left phone users stuck on whatever view they landed on. This module fixes
- * that without touching routing, hooks, the API client, WikiEditor, or the
- * Task pages.
+ * left phone users stuck on whatever view they landed on. PR #86 fixed that
+ * with `<Drawer variant="temporary">`. This module is the Phase 4.0 follow-up
+ * polish:
+ *   - swap `<Drawer variant="temporary">` for `<SwipeableDrawer>` (native
+ *     swipe gesture)
+ *   - persist open state to localStorage (in-memory still works as fallback)
+ *   - make the brand header a clickable link back to `/crm/tasktotime/list`
+ *   - keep desktop + mobile pointed at the same `NAV_ITEMS` + same
+ *     active-route detection so the two sidebars never drift
  */
 
-import React, { useCallback, useState } from 'react';
-import { NavLink, Outlet, useLocation } from 'react-router-dom';
+import React, { useCallback, useMemo } from 'react';
+import { Link as RouterLink, NavLink, Outlet, useLocation } from 'react-router-dom';
 import {
     Box,
-    Drawer,
     IconButton,
     List,
     ListItem,
     ListItemButton,
     ListItemIcon,
     ListItemText,
+    SwipeableDrawer,
+    Drawer,
     Toolbar,
     Typography,
     useMediaQuery,
@@ -56,8 +66,11 @@ import DescriptionIcon from '@mui/icons-material/Description';
 import ArchitectureIcon from '@mui/icons-material/Architecture';
 import AssessmentIcon from '@mui/icons-material/Assessment';
 
+import { useDrawerOpenState } from './useDrawerOpenState';
+
 const SIDEBAR_WIDTH = 220;
 const MOBILE_TOPBAR_HEIGHT = 48;
+const TASKTOTIME_HOME = '/crm/tasktotime/list';
 
 interface NavItem {
     to: string;
@@ -77,11 +90,25 @@ const NAV_ITEMS: NavItem[] = [
     { to: 'timeline', label: 'Timeline', icon: <TimelineIcon />, enabled: false },
     { to: 'calendar', label: 'Calendar', icon: <CalendarMonthIcon />, enabled: false },
     { to: 'gantt', label: 'Gantt', icon: <ArchitectureIcon />, enabled: false },
-    { to: 'graph', label: 'Graph', icon: <HubIcon />, enabled: false },
+    // Phase 4.5 — dependency graph view shipped.
+    { to: 'graph', label: 'Graph', icon: <HubIcon />, enabled: true },
     { to: 'hierarchy', label: 'Hierarchy', icon: <AccountTreeIcon />, enabled: false },
     { to: 'wiki', label: 'Wiki', icon: <DescriptionIcon />, enabled: false },
     { to: 'reports', label: 'Reports', icon: <AssessmentIcon />, enabled: false },
 ];
+
+/**
+ * Single source of truth for "which nav item is active given a pathname".
+ *
+ * Both the desktop (permanent Drawer) and mobile (SwipeableDrawer) branches
+ * call into the same `<TasktotimeSidebar />` so they automatically share this
+ * detection — but extracting it to a named function makes the contract
+ * explicit and easy to grep when future views (board, timeline, etc.) flip
+ * `enabled: true`.
+ */
+const isItemActive = (pathname: string, slug: string): boolean =>
+    pathname.endsWith(`/tasktotime/${slug}`) ||
+    (slug === 'list' && pathname.endsWith('/tasktotime'));
 
 interface TasktotimeSidebarProps {
     /**
@@ -102,9 +129,7 @@ const TasktotimeSidebar: React.FC<TasktotimeSidebarProps> = ({ onNavigate }) => 
     return (
         <List dense disablePadding sx={{ pt: 1 }}>
             {NAV_ITEMS.map((item) => {
-                const isActive =
-                    location.pathname.endsWith(`/tasktotime/${item.to}`) ||
-                    (item.to === 'list' && location.pathname.endsWith('/tasktotime'));
+                const isActive = isItemActive(location.pathname, item.to);
                 return (
                     <ListItem key={item.to} disablePadding>
                         <ListItemButton
@@ -151,58 +176,131 @@ const TasktotimeSidebar: React.FC<TasktotimeSidebarProps> = ({ onNavigate }) => 
     );
 };
 
+interface SidebarHeaderProps {
+    /**
+     * When set, renders a close (×) button. Mobile passes a handler so the
+     * drawer can be dismissed from inside as well as via swipe / backdrop.
+     */
+    onClose?: () => void;
+    /**
+     * When `true`, the brand title behaves as a tap target that navigates back
+     * to the tasktotime home (`/crm/tasktotime/list`). Mobile branch passes
+     * `true` so phone users can recover from a deep coming-soon placeholder
+     * with a single tap on the title; desktop keeps it static because the
+     * permanent sidebar already shows "List" highlighted in the nav.
+     */
+    asHomeLink?: boolean;
+}
+
 /**
- * Drawer header — shared between the permanent (desktop) and temporary
+ * Drawer header — shared between the permanent (desktop) and SwipeableDrawer
  * (mobile) variants. On mobile a close button is rendered so the drawer can
- * be dismissed from inside as well as via backdrop tap.
+ * be dismissed from inside as well as via swipe / backdrop tap, AND the
+ * brand title becomes a `RouterLink` back to the list view.
  */
-const SidebarHeader: React.FC<{ onClose?: () => void }> = ({ onClose }) => (
-    <Toolbar
-        sx={{
-            minHeight: 56,
-            px: 2,
-            borderBottom: '1px solid #E0E0E0',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-        }}
-        disableGutters
-    >
+const SidebarHeader: React.FC<SidebarHeaderProps> = ({ onClose, asHomeLink }) => {
+    // Title content, optionally wrapped in a RouterLink. Underline removed via
+    // `sx` since MUI Typography → RouterLink doesn't get our default link
+    // styling, and we want the visual to stay identical to the static text
+    // version on desktop.
+    const titleNode = (
         <Typography
             variant="subtitle1"
             fontWeight={700}
             sx={{
                 fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif',
                 pl: 2,
+                color: 'inherit',
+                textDecoration: 'none',
             }}
         >
             Tasktotime
         </Typography>
-        {onClose && (
-            <IconButton
-                aria-label="Close navigation"
-                onClick={onClose}
-                size="small"
-                sx={{ mr: 1 }}
-            >
-                <CloseIcon fontSize="small" />
-            </IconButton>
-        )}
-    </Toolbar>
-);
+    );
+
+    return (
+        <Toolbar
+            sx={{
+                minHeight: 56,
+                px: 2,
+                borderBottom: '1px solid #E0E0E0',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+            }}
+            disableGutters
+        >
+            {asHomeLink ? (
+                <Box
+                    component={RouterLink}
+                    to={TASKTOTIME_HOME}
+                    onClick={onClose}
+                    aria-label="Tasktotime home"
+                    sx={{
+                        // Make the whole left chunk tappable (≥ 44px high
+                        // counts toward WCAG 2.2 §2.5.8 target size).
+                        display: 'flex',
+                        alignItems: 'center',
+                        flex: 1,
+                        minHeight: 44,
+                        textDecoration: 'none',
+                        color: 'inherit',
+                        borderRadius: 1,
+                        // Subtle hover/active affordance so the link is
+                        // discoverable on touch + on stylus tap.
+                        '&:hover': { bgcolor: 'rgba(0, 122, 255, 0.04)' },
+                        '&:focus-visible': {
+                            outline: '2px solid #007AFF',
+                            outlineOffset: 2,
+                        },
+                    }}
+                >
+                    {titleNode}
+                </Box>
+            ) : (
+                titleNode
+            )}
+            {onClose && (
+                <IconButton
+                    aria-label="Close navigation"
+                    onClick={onClose}
+                    size="small"
+                    sx={{ mr: 1 }}
+                >
+                    <CloseIcon fontSize="small" />
+                </IconButton>
+            )}
+        </Toolbar>
+    );
+};
+
+/**
+ * Detect iOS once per render so SwipeableDrawer can pick the right
+ * gesture-recognition mode. MUI's docs recommend:
+ *   - `disableBackdropTransition={!iOS}` — Android benefits from skipping
+ *     the backdrop transition (cheaper paint), iOS wants it
+ *   - `disableDiscovery={iOS}` — iOS users get edge-swipe-back from the OS,
+ *     so the SwipeableDrawer's own discovery tooltip would conflict
+ */
+const detectIOS = (): boolean => {
+    if (typeof navigator === 'undefined') return false;
+    return /iPad|iPhone|iPod/.test(navigator.userAgent);
+};
 
 const TasktotimeLayout: React.FC = () => {
     const theme = useTheme();
     const isMobile = useMediaQuery(theme.breakpoints.down('md'));
-    const [mobileOpen, setMobileOpen] = useState(false);
+    const { open: mobileOpen, handleOpen, handleClose, setOpen } = useDrawerOpenState();
 
-    const handleOpen = useCallback(() => setMobileOpen(true), []);
-    const handleClose = useCallback(() => setMobileOpen(false), []);
+    // iOS detection is stable across the component lifetime — useMemo so we
+    // don't re-run the regex on every render.
+    const iOS = useMemo(detectIOS, []);
+
     // Close drawer after navigation on mobile; desktop passes undefined so
     // selecting an item is a no-op for drawer state.
     const handleNavigate = useCallback(() => {
-        if (isMobile) setMobileOpen(false);
-    }, [isMobile]);
+        if (isMobile) setOpen(false);
+    }, [isMobile, setOpen]);
 
     return (
         <Box sx={{ display: 'flex', flex: 1, height: '100%', overflow: 'hidden', bgcolor: '#FAFBFC' }}>
@@ -227,15 +325,23 @@ const TasktotimeLayout: React.FC = () => {
                 </Drawer>
             )}
 
-            {/* Mobile sidebar — temporary; controlled by hamburger above. */}
+            {/* Mobile sidebar — SwipeableDrawer; opens via hamburger, swipe,
+                or programmatic restore from localStorage. Closes via swipe,
+                backdrop tap, close button, or nav-item tap. */}
             {isMobile && (
-                <Drawer
-                    variant="temporary"
+                <SwipeableDrawer
+                    anchor="left"
                     open={mobileOpen}
+                    onOpen={handleOpen}
                     onClose={handleClose}
+                    // MUI-recommended platform tuning for swipe gesture:
+                    disableBackdropTransition={!iOS}
+                    disableDiscovery={iOS}
                     ModalProps={{
                         // Keeps the DOM mounted so route transitions inside the
-                        // drawer don't unmount NavLink active state.
+                        // drawer don't unmount NavLink active state, and so the
+                        // restore-from-localStorage open state on mount doesn't
+                        // race the first paint.
                         keepMounted: true,
                     }}
                     sx={{
@@ -246,9 +352,9 @@ const TasktotimeLayout: React.FC = () => {
                         },
                     }}
                 >
-                    <SidebarHeader onClose={handleClose} />
+                    <SidebarHeader onClose={handleClose} asHomeLink />
                     <TasktotimeSidebar onNavigate={handleNavigate} />
-                </Drawer>
+                </SwipeableDrawer>
             )}
 
             {/* Content slot */}
@@ -293,12 +399,25 @@ const TasktotimeLayout: React.FC = () => {
                             <MenuIcon />
                         </IconButton>
                         <Typography
+                            component={RouterLink}
+                            to={TASKTOTIME_HOME}
                             variant="subtitle1"
                             fontWeight={700}
                             sx={{
                                 ml: 1,
                                 fontFamily:
                                     '-apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif',
+                                color: 'inherit',
+                                textDecoration: 'none',
+                                // WCAG 2.2 target size — pad the inline link so
+                                // a tap on the title hits ≥ 44px tall.
+                                py: 1,
+                                pr: 1,
+                                '&:focus-visible': {
+                                    outline: '2px solid #007AFF',
+                                    outlineOffset: 2,
+                                    borderRadius: 4,
+                                },
                             }}
                         >
                             Tasktotime

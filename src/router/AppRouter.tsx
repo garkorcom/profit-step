@@ -76,6 +76,11 @@ const TasktotimeLayout = React.lazy(() => import('../pages/crm/tasktotime').then
 const TaskListPage = React.lazy(() => import('../pages/crm/tasktotime').then(m => ({ default: m.TaskListPage })));
 const TaskDetailPage = React.lazy(() => import('../pages/crm/tasktotime').then(m => ({ default: m.TaskDetailPage })));
 const TasktotimeComingSoon = React.lazy(() => import('../pages/crm/tasktotime').then(m => ({ default: m.ComingSoonView })));
+// Phase 4.5 — dependency graph view. Lazy-loaded via its own dynamic import
+// (NOT the barrel) so the @xyflow/react + dagre chunk only loads when
+// /crm/tasktotime/graph is opened. Keeps the main bundle and the task-list
+// path free of the ~135KB graph runtime.
+const TasktotimeGraphPage = React.lazy(() => import('../pages/crm/tasktotime/GraphPage'));
 
 // Loading fallback component
 const PageLoader = () => (
@@ -264,7 +269,8 @@ const AppRouter: React.FC = () => {
             <Route path="timeline" element={<TasktotimeComingSoon label="Timeline" />} />
             <Route path="calendar" element={<TasktotimeComingSoon label="Calendar" />} />
             <Route path="gantt" element={<TasktotimeComingSoon label="Gantt" />} />
-            <Route path="graph" element={<TasktotimeComingSoon label="Graph" />} />
+            {/* Phase 4.5 — dependency graph view (real, no longer Coming Soon). */}
+            <Route path="graph" element={<TasktotimeGraphPage />} />
             <Route path="hierarchy" element={<TasktotimeComingSoon label="Hierarchy" />} />
             <Route path="wiki" element={<TasktotimeComingSoon label="Wiki" />} />
             <Route path="reports" element={<TasktotimeComingSoon label="Reports" />} />

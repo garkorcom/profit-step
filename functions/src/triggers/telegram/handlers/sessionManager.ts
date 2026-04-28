@@ -7,7 +7,7 @@
 
 import * as admin from 'firebase-admin';
 import { logger } from 'firebase-functions';
-import { sendMessage, getActiveSession, sendMainMenu, findPlatformUser, logBotAction } from '../telegramUtils';
+import { sendMessage, getActiveSession, sendMainMenu, findPlatformUser, logBotAction, dedupeEmployeeIdVariants } from '../telegramUtils';
 import { resolveHourlyRate } from '../rateUtils';
 import { sendAdminNotification } from './profileHandlers';
 import {
@@ -252,12 +252,17 @@ export async function finalizeSession(chatId: number, userId: number, activeSess
         const yearStart = new Date(new Date().getFullYear(), 0, 1);
         const yearStartTs = admin.firestore.Timestamp.fromDate(yearStart);
 
+        // Bot writes employeeId as a NUMBER (Telegram chat id); Web / agent-API
+        // writes it as a STRING (Firebase UID). Both coexist in prod and Firestore
+        // is type-strict on equality. A naive `.map(String)` dedupe drops the
+        // numeric variant — see calculateDailyStats below for the same dual-type
+        // pattern that already worked. dedupeEmployeeIdVariants preserves type.
         const idVariants: (string | number)[] = [userId, String(userId)];
         const platformUser = await findPlatformUser(userId);
         if (platformUser?.id) {
             idVariants.push(platformUser.id);
         }
-        const uniqueIds = [...new Set(idVariants.map(String))];
+        const uniqueIds = dedupeEmployeeIdVariants(idVariants);
 
         const queries = uniqueIds.map(id =>
             admin.firestore().collection('work_sessions')

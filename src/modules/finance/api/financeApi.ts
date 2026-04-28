@@ -78,13 +78,20 @@ export interface EmployeeDirectory extends IdentityDirectory {
  * Note: returns EVERYTHING in range, including active / paused shifts and
  * pending-finalization entries. Callers decide what to render via
  * `filterReportableSessions` from the services layer.
+ *
+ * `companyId` is REQUIRED — the tightened RLS read rule (PR #95) demands
+ * `resource.data.companyId == getUserCompany()`; without this filter
+ * Firestore rejects the query with "Missing or insufficient permissions"
+ * rather than returning 0 docs. Pass the caller's `userProfile.companyId`.
  */
 export async function fetchWorkSessions(
     start: Date,
-    end: Date
+    end: Date,
+    companyId: string
 ): Promise<WorkSession[]> {
     const q = query(
         collection(db, 'work_sessions'),
+        where('companyId', '==', companyId),
         where('startTime', '>=', Timestamp.fromDate(startOfDay(start))),
         where('startTime', '<=', Timestamp.fromDate(endOfDay(end))),
         orderBy('startTime', 'desc')

@@ -111,7 +111,7 @@ const FinancePage: React.FC = () => {
             employeesDir.uidToName,
         ]
     );
-    const ledger = useFinanceLedger({ startDate, endDate, directory });
+    const ledger = useFinanceLedger({ startDate, endDate, directory, companyId });
     const entries = ledger.entries;
     const costs = ledger.costs;
     const loading = ledger.loading || employeesDir.loading;

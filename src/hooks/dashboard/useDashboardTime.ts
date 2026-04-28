@@ -38,12 +38,14 @@ export const useDashboardTime = (companyId: string | undefined): DashboardTimeDa
         const previousWeekStart = subWeeks(currentWeekStart, 1);
 
         const sessionsRef = collection(db, 'work_sessions');
-        // Fetch everything from previous week start
-        // Normally we'd filter by companyId too, but work_sessions doesn't explicitly guarantee companyId in schema.
-        // If it does, we should add: where('companyId', '==', companyId),
-        // Profit Step RBAC implies user is either global admin or company admin. We'll fetch all and filter client-side if missing companyId index.
+        // companyId filter REQUIRED — RLS read rule (PR #95) requires
+        // resource.data.companyId == getUserCompany(); without this filter
+        // Firestore rejects the entire query as "Missing or insufficient
+        // permissions". Backfill incident-2026-04-28 ensured ~280 sessions
+        // got their `companyId` field populated.
         const q = query(
             sessionsRef,
+            where('companyId', '==', companyId),
             where('startTime', '>=', Timestamp.fromDate(previousWeekStart))
         );
 

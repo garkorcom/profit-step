@@ -103,6 +103,7 @@ const AdminWorkerDetailPage: React.FC = () => {
         telegramId: employee?.telegramId as string | number | undefined,
         startDate,
         endDate,
+        companyId,
     });
 
     const { payments, completedSessions } = useMemo(() => {

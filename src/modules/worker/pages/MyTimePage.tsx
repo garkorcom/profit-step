@@ -94,6 +94,7 @@ const MyTimePage: React.FC = () => {
         telegramId,
         startDate,
         endDate,
+        companyId: userProfile?.companyId,
     });
 
     // Available GTD tasks for the start-shift picker. Memoise the user

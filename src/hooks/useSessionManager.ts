@@ -144,8 +144,12 @@ export const useSessionManager = (
             // leveraging the same query logic as original code
 
             const sessionsRef = collection(db, 'work_sessions');
+            // companyId filter REQUIRED — RLS read rule (PR #95) demands
+            // resource.data.companyId == getUserCompany(); without it
+            // Firestore rejects the query as permission-denied.
             const q = query(
                 sessionsRef,
+                where('companyId', '==', userCompanyId),
                 where('employeeId', '==', effectiveUserId),
                 where('status', '==', 'active')
             );

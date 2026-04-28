@@ -37,6 +37,7 @@ import SearchIcon from '@mui/icons-material/Search';
 import { format } from 'date-fns';
 
 import { WorkSession } from '../../../types/timeTracking.types';
+import { useAuth } from '../../../auth/AuthContext';
 import {
     calculatePayrollBuckets,
     defaultFinanceStartDate,
@@ -68,6 +69,8 @@ interface WorkerRow {
 const AdminWorkersListPage: React.FC = () => {
     const navigate = useNavigate();
     const [search, setSearch] = useState('');
+    const { userProfile } = useAuth();
+    const companyId = userProfile?.companyId;
 
     const [startDate] = useState(defaultFinanceStartDate());
     const [endDate] = useState(new Date());
@@ -80,7 +83,7 @@ const AdminWorkersListPage: React.FC = () => {
               telegramIdToUid: employeesDir.telegramIdToUid,
               uidToName: employeesDir.uidToName,
           };
-    const ledger = useFinanceLedger({ startDate, endDate, directory });
+    const ledger = useFinanceLedger({ startDate, endDate, directory, companyId });
 
     const rows = useMemo<WorkerRow[]>(() => {
         if (employeesDir.loading || ledger.loading) return [];

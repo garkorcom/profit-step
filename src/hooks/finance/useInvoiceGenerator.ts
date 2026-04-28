@@ -1,12 +1,14 @@
 import { useState } from 'react';
 import { collection, query, where, getDocs, Timestamp } from 'firebase/firestore';
 import { db } from '../../firebase/firebase';
+import { useAuth } from '../../auth/AuthContext';
 import { WorkSession } from '../../types/timeTracking.types';
 import { InvoiceLineItem } from '../../types/invoice.types';
 
 export const useInvoiceGenerator = () => {
     const [generating, setGenerating] = useState(false);
     const [error, setError] = useState<Error | null>(null);
+    const { userProfile } = useAuth();
 
     const generateFromTimeTracking = async (
         clientId: string,
@@ -20,6 +22,10 @@ export const useInvoiceGenerator = () => {
         setError(null);
 
         try {
+            if (!userProfile?.companyId) {
+                throw new Error('Cannot generate invoice: missing company. Please re-login.');
+            }
+
             const startTimestamp = Timestamp.fromDate(startDate);
             // End date should include the full day
             const endOfDay = new Date(endDate);
@@ -27,8 +33,10 @@ export const useInvoiceGenerator = () => {
             const endTimestamp = Timestamp.fromDate(endOfDay);
 
             const sessionsRef = collection(db, 'work_sessions');
+            // companyId filter REQUIRED — RLS read rule (PR #95).
             const q = query(
                 sessionsRef,
+                where('companyId', '==', userProfile.companyId),
                 where('clientId', '==', clientId),
                 where('status', '==', 'completed')
                 // Note: Firestore requires a composite index if we combine == and >=/<= on different fields.

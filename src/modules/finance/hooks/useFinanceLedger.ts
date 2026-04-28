@@ -19,6 +19,11 @@ interface UseFinanceLedgerArgs {
      * the directory is still loading — the hook will skip its fetch.
      */
     directory: EmployeeDirectory | null;
+    /**
+     * Caller's companyId — required by RLS read rule on work_sessions
+     * (PR #95). Pass `userProfile.companyId` from `useAuth()`.
+     */
+    companyId: string | undefined;
 }
 
 interface UseFinanceLedgerResult {
@@ -42,6 +47,7 @@ export function useFinanceLedger({
     startDate,
     endDate,
     directory,
+    companyId,
 }: UseFinanceLedgerArgs): UseFinanceLedgerResult {
     const [entries, setEntries] = useState<WorkSession[]>([]);
     const [costs, setCosts] = useState<CostEntry[]>([]);
@@ -54,12 +60,18 @@ export function useFinanceLedger({
             // not be normalised, causing drifting filter rows.
             return;
         }
+        if (!companyId) {
+            // RLS read rule requires companyId on every work_sessions doc;
+            // skip until auth profile resolves.
+            setLoading(false);
+            return;
+        }
 
         setLoading(true);
         setError(null);
         try {
             const [sessions, costsData] = await Promise.all([
-                fetchWorkSessions(startDate, endDate),
+                fetchWorkSessions(startDate, endDate, companyId),
                 fetchCosts(startDate, endDate),
             ]);
 
@@ -74,7 +86,7 @@ export function useFinanceLedger({
         } finally {
             setLoading(false);
         }
-    }, [startDate, endDate, directory]);
+    }, [startDate, endDate, directory, companyId]);
 
     useEffect(() => {
         load();

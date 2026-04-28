@@ -123,9 +123,14 @@ export const useDashboardFinance = (companyId: string | undefined): DashboardFin
         });
 
         // --- Listen to work_sessions (status=closed) for labor ---
+        // companyId filter REQUIRED — RLS read rule (PR #95) requires
+        // resource.data.companyId == getUserCompany(); without this filter
+        // Firestore rejects the entire query as "Missing or insufficient
+        // permissions" rather than returning 0 docs.
         const sessionsRef = collection(db, 'work_sessions');
         const sessionsQuery = query(
             sessionsRef,
+            where('companyId', '==', companyId),
             where('status', '==', 'closed'),
             where('startTime', '>=', Timestamp.fromDate(startOfPreviousMonth))
         );

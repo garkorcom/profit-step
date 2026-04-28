@@ -108,13 +108,15 @@ const AIReportsSection: React.FC = () => {
     // MY WEEK SUMMARY
     // ─────────────────────────────────────────────────────────
     const loadWeekSummary = async () => {
-        if (!userProfile?.id) return;
+        if (!userProfile?.id || !userProfile?.companyId) return;
 
         const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
         try {
+            // companyId filter REQUIRED — RLS read rule (PR #95).
             const sessionsQuery = query(
                 collection(db, 'work_sessions'),
+                where('companyId', '==', userProfile.companyId),
                 where('platformUserId', '==', userProfile.id),
                 where('status', '==', 'completed'),
                 where('endTime', '>=', Timestamp.fromDate(weekAgo))
@@ -249,14 +251,16 @@ const AIReportsSection: React.FC = () => {
     // TODAY TIME
     // ─────────────────────────────────────────────────────────
     const loadTodayTime = async () => {
-        if (!userProfile?.id) return;
+        if (!userProfile?.id || !userProfile?.companyId) return;
 
         const todayStart = new Date();
         todayStart.setHours(0, 0, 0, 0);
 
         try {
+            // companyId filter REQUIRED — RLS read rule (PR #95).
             const activeQuery = query(
                 collection(db, 'work_sessions'),
+                where('companyId', '==', userProfile.companyId),
                 where('platformUserId', '==', userProfile.id),
                 where('status', '==', 'active'),
                 limit(1)
@@ -278,6 +282,7 @@ const AIReportsSection: React.FC = () => {
 
             const todayQuery = query(
                 collection(db, 'work_sessions'),
+                where('companyId', '==', userProfile.companyId),
                 where('platformUserId', '==', userProfile.id),
                 where('status', '==', 'completed'),
                 where('startTime', '>=', Timestamp.fromDate(todayStart))

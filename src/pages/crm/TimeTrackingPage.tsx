@@ -276,6 +276,13 @@ const TimeTrackingPage: React.FC = () => {
 
     useEffect(() => {
         const fetchSessions = async () => {
+            // Skip query while companyId still resolving — RLS read rule
+            // requires it (PR #95) and Firestore rejects the whole query
+            // with permission-denied if the filter is absent.
+            if (!companyId) {
+                setLoading(false);
+                return;
+            }
             setLoading(true);
             try {
                 // First, build employee identity mapping if not yet built
@@ -304,6 +311,7 @@ const TimeTrackingPage: React.FC = () => {
 
                 const q = query(
                     collection(db, 'work_sessions'),
+                    where('companyId', '==', companyId),
                     where('startTime', '>=', startTs),
                     where('startTime', '<=', endTs),
                     orderBy('startTime', 'desc')
@@ -344,7 +352,7 @@ const TimeTrackingPage: React.FC = () => {
         };
 
         fetchSessions();
-    }, [startDate, endDate, refreshKey]);
+    }, [startDate, endDate, refreshKey, companyId]);
 
     // --- Computed Values ---
 

@@ -35,6 +35,11 @@ interface UseWorkerLedgerArgs {
     telegramId?: string | number;
     startDate: Date;
     endDate: Date;
+    /**
+     * Caller's companyId — required by RLS read rule on work_sessions
+     * (PR #95). Pass `userProfile.companyId` from `useAuth()`.
+     */
+    companyId?: string;
 }
 
 interface UseWorkerLedgerResult {
@@ -52,6 +57,7 @@ export function useWorkerLedger({
     telegramId,
     startDate,
     endDate,
+    companyId,
 }: UseWorkerLedgerArgs): UseWorkerLedgerResult {
     const [entries, setEntries] = useState<WorkSession[]>([]);
     const [buckets, setBuckets] = useState<PayrollBuckets>({
@@ -71,6 +77,12 @@ export function useWorkerLedger({
             setLoading(false);
             return;
         }
+        if (!companyId) {
+            // RLS read rule (PR #95) requires companyId on every doc; skip
+            // until auth profile resolves.
+            setLoading(false);
+            return;
+        }
 
         setLoading(true);
         setError(null);
@@ -87,11 +99,14 @@ export function useWorkerLedger({
             // existing `employeeId ASC + startTime ASC` composite index
             // (firestore.indexes.json). Avoids needing a new DESC index for
             // this one query path.
+            //
+            // companyId filter REQUIRED — RLS read rule (PR #95).
             const snapshots = await Promise.all(
                 Array.from(ids).map(id =>
                     getDocs(
                         query(
                             collection(db, 'work_sessions'),
+                            where('companyId', '==', companyId),
                             where('employeeId', '==', id),
                             where('startTime', '>=', start),
                             where('startTime', '<=', end)
@@ -122,7 +137,7 @@ export function useWorkerLedger({
         } finally {
             setLoading(false);
         }
-    }, [userId, telegramId, startDate, endDate]);
+    }, [userId, telegramId, startDate, endDate, companyId]);
 
     useEffect(() => {
         load();

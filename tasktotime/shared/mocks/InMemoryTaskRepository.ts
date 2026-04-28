@@ -151,6 +151,8 @@ function match(t: Task, filter: TaskFilter): boolean {
     return false;
   if (filter.bucket && filter.bucket.length > 0 && !filter.bucket.includes(t.bucket))
     return false;
+  if (filter.priority && filter.priority.length > 0 && !filter.priority.includes(t.priority))
+    return false;
   if (filter.assigneeId && t.assignedTo.id !== filter.assigneeId) return false;
   if (filter.parentTaskId === null && t.parentTaskId) return false;
   if (filter.parentTaskId && t.parentTaskId !== filter.parentTaskId) return false;

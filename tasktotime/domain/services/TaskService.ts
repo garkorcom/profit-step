@@ -23,7 +23,7 @@ import { canTransition } from '../lifecycle';
 import { applyTransition } from '../transitions';
 import type { TransitionPayload } from '../transitions';
 import { validateTaskDraft } from '../validation';
-import { TransitionNotAllowed, TaskNotFound } from '../errors';
+import { TransitionNotAllowed, TaskNotFound, MaxHierarchyDepth } from '../errors';
 import type { DomainEvent } from '../events';
 import { computeBonusPenalty } from '../policies/BonusPenaltyPolicy';
 
@@ -116,6 +116,16 @@ export class TaskService {
       throw new Error(
         `Task creation already processed for idempotency key: ${input.idempotencyKey}`,
       );
+    }
+
+    // Hierarchy depth guard: max 2 levels — a root task can have subtasks,
+    // but a subtask cannot have its own subtasks (no grand-subtasks).
+    // QA 2026-04-27 P2-2 found we created chains down to L7 unbounded.
+    if (input.draft.parentTaskId) {
+      const parent = await this.deps.taskRepo.findById(input.draft.parentTaskId);
+      if (parent?.isSubtask) {
+        throw new MaxHierarchyDepth(input.draft.parentTaskId);
+      }
     }
 
     const now = this.deps.clock.now() as EpochMs;

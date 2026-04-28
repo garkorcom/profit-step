@@ -52,6 +52,7 @@ export function listTasksRoute(deps: ListTasksHttpDeps) {
     };
     if (parsed.value.lifecycle) filter.lifecycle = parsed.value.lifecycle;
     if (parsed.value.bucket) filter.bucket = parsed.value.bucket;
+    if (parsed.value.priority) filter.priority = parsed.value.priority;
     if (parsed.value.assigneeId) {
       filter.assigneeId = asUserId(parsed.value.assigneeId);
     }

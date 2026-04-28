@@ -639,6 +639,10 @@ export { categorizeBankTransactions } from './callable/finance/categorizeBankTra
 
 export { generateAiTask, confirmAiTask } from './callable/ai/generateAiTask';
 export { modifyAiTask } from './callable/ai/modifyAiTask';
+export {
+    decomposeAiTask,
+    confirmAiDecomposition,
+} from './callable/ai/decomposeAiTask';
 
 // ========================================
 // AGENT API (OpenClaw Integration)

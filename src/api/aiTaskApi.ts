@@ -128,3 +128,108 @@ export async function confirmAiTask(request: ConfirmAiTaskRequest): Promise<Conf
     const result = await callable(request);
     return result.data;
 }
+
+// ═══════════════════════════════════════
+// AI TASK DECOMPOSITION (Phase 5.1)
+// ═══════════════════════════════════════
+//
+// Two-phase: decomposeAiTask() returns proposed subtasks (no writes), the
+// operator reviews/edits in the dialog, then confirmAiDecomposition()
+// atomically creates the subtasks via the canonical createTaskHandler.
+
+// Includes 'critical' because Claude often mirrors the parent task's
+// post-domain priority back (parents store 'critical' in tasktotime_tasks).
+// Backend mapPriority() folds 'urgent' / 'critical' to the same domain
+// value, so they are visually distinct here but functionally equivalent.
+export type AiSubtaskPriority =
+    | 'low'
+    | 'medium'
+    | 'high'
+    | 'urgent'
+    | 'critical';
+
+/** Proposed subtask returned from decomposeAiTask preview. */
+export interface ProposedSubtask {
+    title: string;
+    description?: string;
+    estimatedDurationMinutes: number;
+    priority: AiSubtaskPriority;
+    /** Optional human-readable justification — shown as a hint in the UI. */
+    rationale?: string;
+}
+
+export interface DecomposeAiTaskRequest {
+    taskId: string;
+}
+
+export interface DecomposeAiTaskSuccessResponse {
+    success: true;
+    parentTaskId: string;
+    parentTitle: string;
+    proposedSubtasks: ProposedSubtask[];
+    summary: string;
+    auditLogId: string;
+    latencyMs: number;
+}
+
+export interface DecomposeAiTaskFallbackResponse {
+    success: false;
+    error: string;
+    zodErrors: unknown[];
+    fallbackToManual: true;
+}
+
+export type DecomposeAiTaskResponse =
+    | DecomposeAiTaskSuccessResponse
+    | DecomposeAiTaskFallbackResponse;
+
+/** Subtask payload accepted by confirmAiDecomposition (allows 'none'). */
+export interface ConfirmSubtaskInput {
+    title: string;
+    description?: string;
+    estimatedDurationMinutes: number;
+    priority: 'low' | 'medium' | 'high' | 'urgent' | 'critical' | 'none';
+}
+
+export interface ConfirmAiDecompositionRequest {
+    parentTaskId: string;
+    auditLogId?: string;
+    subtasks: ConfirmSubtaskInput[];
+}
+
+export interface ConfirmAiDecompositionResponse {
+    success: boolean;
+    parentTaskId: string;
+    createdTaskIds: string[];
+}
+
+/**
+ * Generate a preview decomposition for an existing task.
+ * No subtasks are written until confirmAiDecomposition is called.
+ */
+export async function decomposeAiTask(
+    request: DecomposeAiTaskRequest,
+): Promise<DecomposeAiTaskResponse> {
+    const callable = httpsCallable<DecomposeAiTaskRequest, DecomposeAiTaskResponse>(
+        functionsEast,
+        'decomposeAiTask',
+    );
+    const result = await callable(request);
+    return result.data;
+}
+
+/**
+ * Apply a (possibly edited) decomposition by creating subtasks under the
+ * parent. Subtasks inherit `clientId`, `projectId`, `assignedTo`, `bucket`,
+ * and `dueAt` from the parent.
+ */
+export async function confirmAiDecomposition(
+    request: ConfirmAiDecompositionRequest,
+): Promise<ConfirmAiDecompositionResponse> {
+    const callable = httpsCallable<
+        ConfirmAiDecompositionRequest,
+        ConfirmAiDecompositionResponse
+    >(functionsEast, 'confirmAiDecomposition');
+    const result = await callable(request);
+    return result.data;
+}

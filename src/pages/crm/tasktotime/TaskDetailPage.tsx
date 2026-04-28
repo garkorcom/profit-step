@@ -52,6 +52,7 @@ import LinkIcon from '@mui/icons-material/Link';
 import EditIcon from '@mui/icons-material/Edit';
 import SaveIcon from '@mui/icons-material/Save';
 import CloseIcon from '@mui/icons-material/Close';
+import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import dayjs from 'dayjs';
 import { Controller, useForm } from 'react-hook-form';
 
@@ -73,6 +74,15 @@ import type {
  * established and keeps the tasktotime barrel chunk lean.
  */
 const WikiEditor = React.lazy(() => import('../../../components/tasktotime/WikiEditor'));
+
+/**
+ * Lazy-load the AI Decompose dialog. The dialog imports the Anthropic
+ * callable shim and only matters when the operator clicks the button —
+ * keeps it out of the default TaskDetailPage chunk.
+ */
+const AiDecomposeDialog = React.lazy(
+    () => import('../../../components/tasktotime/AiDecomposeDialog'),
+);
 
 // ─── Visual tokens (mirrors TaskListPage so chips stay consistent) ──────
 
@@ -637,6 +647,21 @@ const TaskDetailPage: React.FC = () => {
     const [wikiDraft, setWikiDraft] = useState<string>('');
     const [wikiSaveError, setWikiSaveError] = useState<string | null>(null);
 
+    // ─── AI Decompose dialog state (Phase 5.1) ───────────────────────────
+    const [decomposeOpen, setDecomposeOpen] = useState<boolean>(false);
+    const [decomposeNotice, setDecomposeNotice] = useState<string | null>(null);
+    const handleDecomposeSuccess = useCallback(
+        (createdTaskIds: string[]) => {
+            setDecomposeNotice(
+                `${createdTaskIds.length} subtask${createdTaskIds.length === 1 ? '' : 's'} created — refreshing…`,
+            );
+            // Refetch the parent so subtaskIds[] reflects the new children once
+            // the onTaskUpdate rollup trigger has run.
+            refetch();
+        },
+        [refetch],
+    );
+
     const handleWikiEditStart = useCallback(() => {
         // Seed the draft from the freshly-loaded task content. Fall back to
         // the empty string so the editor has a sane starting buffer when the
@@ -820,18 +845,43 @@ const TaskDetailPage: React.FC = () => {
                 </Breadcrumbs>
             </Stack>
 
-            <Tooltip title="Refresh">
-                <span>
-                    <IconButton
-                        onClick={refetch}
-                        disabled={loading}
-                        size="small"
-                        aria-label="Refresh task"
-                    >
-                        <RefreshIcon />
-                    </IconButton>
-                </span>
-            </Tooltip>
+            <Stack direction="row" alignItems="center" spacing={1}>
+                <Tooltip title="Decompose this task into subtasks with AI">
+                    <span>
+                        <Button
+                            onClick={() => setDecomposeOpen(true)}
+                            disabled={loading || !task}
+                            startIcon={<AutoAwesomeIcon />}
+                            size="small"
+                            variant="outlined"
+                            sx={{
+                                borderColor: '#7c3aed',
+                                color: '#7c3aed',
+                                fontWeight: 600,
+                                textTransform: 'none',
+                                '&:hover': {
+                                    borderColor: '#6d28d9',
+                                    bgcolor: 'rgba(124,58,237,0.04)',
+                                },
+                            }}
+                        >
+                            Decompose
+                        </Button>
+                    </span>
+                </Tooltip>
+                <Tooltip title="Refresh">
+                    <span>
+                        <IconButton
+                            onClick={refetch}
+                            disabled={loading}
+                            size="small"
+                            aria-label="Refresh task"
+                        >
+                            <RefreshIcon />
+                        </IconButton>
+                    </span>
+                </Tooltip>
+            </Stack>
         </Box>
     );
 
@@ -1425,6 +1475,39 @@ const TaskDetailPage: React.FC = () => {
                 defaultSignerId={userProfile?.id ?? ''}
                 defaultSignerName={userProfile?.displayName ?? ''}
             />
+
+            {/* AI Decompose dialog (Phase 5.1). Lazy-loaded so the Anthropic
+                callable shim isn't pulled into the default chunk. The
+                Suspense fallback is `null` — the dialog itself renders its
+                own loading spinner once mounted. Only mount when open so we
+                don't pay the chunk download until the user opens it. */}
+            {decomposeOpen && task && (
+                <Suspense fallback={null}>
+                    <AiDecomposeDialog
+                        open={decomposeOpen}
+                        parentTaskId={task.id}
+                        parentTitle={task.title}
+                        onClose={() => setDecomposeOpen(false)}
+                        onSuccess={handleDecomposeSuccess}
+                    />
+                </Suspense>
+            )}
+
+            {decomposeNotice && (
+                <Alert
+                    severity="success"
+                    onClose={() => setDecomposeNotice(null)}
+                    sx={{
+                        position: 'fixed',
+                        bottom: 88,
+                        right: 24,
+                        zIndex: (theme) => theme.zIndex.snackbar,
+                        boxShadow: 3,
+                    }}
+                >
+                    {decomposeNotice}
+                </Alert>
+            )}
         </Box>
     );
 };

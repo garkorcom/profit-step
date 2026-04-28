@@ -51,7 +51,9 @@ export function useCockpitTask(taskId: string | undefined) {
   // Session manager for timer
   const { activeSession, startSession, stopSession } = useSessionManager(
     currentUser?.uid,
-    currentUser?.displayName || undefined
+    currentUser?.displayName || undefined,
+    undefined,
+    userProfile?.companyId
   );
 
   // Timer elapsed seconds

@@ -15,6 +15,14 @@ export interface WorkSession {
     employeeName: string;
     clientId: string;
     clientName: string;
+    /**
+     * Tenant scope. Required by tightened firestore.rules in PR #95
+     * (`request.resource.data.companyId == getUserCompany()` on every
+     * create + update). Optional in the type so legacy in-memory reads of
+     * pre-#95 docs keep typechecking — but every client write since #95
+     * MUST include it.
+     */
+    companyId?: string;
     /** Optional: project within client for granular attribution */
     projectId?: string;
     projectName?: string;

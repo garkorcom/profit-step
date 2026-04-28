@@ -10,6 +10,7 @@ import { InvoicesTab } from '../../components/finance/invoices/InvoicesTab';
 import { ExpensesTab } from '../../components/finance/expenses/ExpensesTab';
 import { collection, addDoc, doc, updateDoc, Timestamp } from 'firebase/firestore';
 import { db } from '../../firebase/firebase';
+import { useAuth } from '../../auth/AuthContext';
 import { endOfDay, format, isValid } from 'date-fns';
 import AddIcon from '@mui/icons-material/Add';
 import SettingsIcon from '@mui/icons-material/Settings';
@@ -73,6 +74,12 @@ const FinancePage: React.FC = () => {
     // Date window for the ledger (YTD by default — see financeFilters.ts).
     const [startDate, setStartDate] = useState<Date>(defaultFinanceStartDate());
     const [endDate, setEndDate] = useState<Date>(endOfDay(new Date()));
+
+    // PR #95 companion: tightened work_sessions rules require `companyId`
+    // on every write (create + update). Read once and inject into each
+    // adjustment / payment / void path below.
+    const { userProfile } = useAuth();
+    const companyId = userProfile?.companyId;
 
     // Adjustment Dialog
     const [openAdjDialog, setOpenAdjDialog] = useState(false);
@@ -167,6 +174,10 @@ const FinancePage: React.FC = () => {
     const handleAddAdjustment = async () => {
         // Only employee + amount are required. Description and project are optional.
         if (!adjEmployee || !adjAmount) return;
+        if (!companyId) {
+            alert('Cannot save: missing company. Please re-login.');
+            return;
+        }
 
         try {
             const employee = uniqueEmployees.find(e => e.id === adjEmployee) || employees.find(e => e.id === adjEmployee);
@@ -181,6 +192,7 @@ const FinancePage: React.FC = () => {
                 type: 'adjustment',
                 summary: `${employee?.name || 'Unknown'}: ${amt >= 0 ? '+' : ''}$${amt.toFixed(2)}${clientLabel}${descLabel}`,
                 execute: async () => {
+                    // PR #95 companion: tightened work_sessions rules require companyId.
                     const adjustmentSession: Partial<WorkSession> = {
                         type: 'manual_adjustment',
                         startTime: Timestamp.now(),
@@ -188,6 +200,7 @@ const FinancePage: React.FC = () => {
                         employeeName: employee?.name || 'Unknown',
                         clientName: selectedClient?.name || 'Manual Adjustment',
                         clientId: selectedClient?.id || 'manual_adj',
+                        companyId,
                         status: 'completed',
                         finalizationStatus: 'finalized',
                         durationMinutes: 0,
@@ -227,6 +240,10 @@ const FinancePage: React.FC = () => {
 
     const handleAddPayment = async () => {
         if (!paymentEmployee || !paymentAmount) return;
+        if (!companyId) {
+            alert('Cannot save: missing company. Please re-login.');
+            return;
+        }
 
         try {
             const employee = uniqueEmployees.find(e => e.id === paymentEmployee) || employees.find(e => e.id === paymentEmployee);
@@ -236,6 +253,7 @@ const FinancePage: React.FC = () => {
                 type: 'payment',
                 summary: `${employee?.name || 'Unknown'}: -$${Math.abs(amount).toFixed(2)} (${format(paymentDate, 'dd.MM.yyyy')})${paymentNote ? ` — ${paymentNote}` : ''}`,
                 execute: async () => {
+                    // PR #95 companion: tightened work_sessions rules require companyId.
                     const paymentSession: Partial<WorkSession> = {
                         type: 'payment',
                         startTime: Timestamp.fromDate(paymentDate),
@@ -243,6 +261,7 @@ const FinancePage: React.FC = () => {
                         employeeName: employee?.name || 'Unknown',
                         clientName: 'Payment',
                         clientId: 'payment',
+                        companyId,
                         status: 'completed',
                         finalizationStatus: 'finalized',
                         durationMinutes: 0,
@@ -269,9 +288,14 @@ const FinancePage: React.FC = () => {
 
     const handleVoidSubmit = async () => {
         if (!voidTarget || !voidReason) return;
+        if (!companyId) {
+            alert('Cannot void: missing company. Please re-login.');
+            return;
+        }
 
         try {
             // 1. Create Negative Correction
+            // PR #95 companion: tightened work_sessions rules require companyId.
             const correction: Partial<WorkSession> = {
                 type: 'correction',
                 relatedSessionId: voidTarget.id,
@@ -280,6 +304,7 @@ const FinancePage: React.FC = () => {
                 employeeName: voidTarget.employeeName,
                 clientId: voidTarget.clientId || 'void',
                 clientName: voidTarget.clientName || 'Voided Record',
+                companyId,
 
                 // Negate
                 durationMinutes: -(voidTarget.durationMinutes || 0),
@@ -297,7 +322,8 @@ const FinancePage: React.FC = () => {
             // 2. Mark Original as Voided (Soft Delete)
             await updateDoc(doc(db, 'work_sessions', voidTarget.id), {
                 isVoided: true,
-                voidReason: voidReason
+                voidReason: voidReason,
+                companyId // self-heal legacy docs missing the field
             });
 
             setVoidTarget(null);

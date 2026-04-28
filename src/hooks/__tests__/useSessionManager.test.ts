@@ -97,7 +97,7 @@ describe('useSessionManager', () => {
             };
 
             const { result } = renderHook(() =>
-                useSessionManager('user-1', 'Test User')
+                useSessionManager('user-1', 'Test User', undefined, 'company-1')
             );
 
             await act(async () => {
@@ -111,13 +111,15 @@ describe('useSessionManager', () => {
             expect(updateData.status).toBe('completed');
             expect(updateData.durationMinutes).toBeGreaterThan(0);
             expect(updateData.sessionEarnings).toBeGreaterThan(0);
+            // PR #95 companion: companyId must be on every write.
+            expect(updateData.companyId).toBe('company-1');
         });
 
         it('should do nothing when no active session', async () => {
             mockActiveSession.current = null;
 
             const { result } = renderHook(() =>
-                useSessionManager('user-1', 'Test User')
+                useSessionManager('user-1', 'Test User', undefined, 'company-1')
             );
 
             await act(async () => {
@@ -137,7 +139,7 @@ describe('useSessionManager', () => {
             };
 
             const { result } = renderHook(() =>
-                useSessionManager('user-1', 'Test User')
+                useSessionManager('user-1', 'Test User', undefined, 'company-1')
             );
 
             await act(async () => {
@@ -146,6 +148,26 @@ describe('useSessionManager', () => {
 
             const updateData = mockUpdateDoc.mock.calls[0][1];
             expect(updateData.sessionEarnings).toBe(0);
+        });
+
+        // PR #95 companion: refuse to write without companyId.
+        it('should refuse to stop session when companyId is missing', async () => {
+            mockActiveSession.current = {
+                id: 'session-3',
+                startTime: { toMillis: () => Date.now() - 60 * 60 * 1000 },
+                hourlyRate: 25,
+                status: 'active',
+            };
+
+            const { result } = renderHook(() =>
+                useSessionManager('user-1', 'Test User')
+            );
+
+            await act(async () => {
+                await result.current.stopSession();
+            });
+
+            expect(mockUpdateDoc).not.toHaveBeenCalled();
         });
     });
 
@@ -161,7 +183,7 @@ describe('useSessionManager', () => {
             } as any;
 
             const { result } = renderHook(() =>
-                useSessionManager('user-1', 'Test User', '12345')
+                useSessionManager('user-1', 'Test User', '12345', 'company-1')
             );
 
             await act(async () => {
@@ -176,6 +198,8 @@ describe('useSessionManager', () => {
             expect(addedData.description).toBe('Fix plumbing');
             expect(addedData.clientId).toBe('client-1');
             expect(addedData.relatedTaskId).toBe('task-1');
+            // PR #95 companion: companyId must be on every write.
+            expect(addedData.companyId).toBe('company-1');
         });
 
         it('should auto-close previous active session', async () => {
@@ -194,7 +218,7 @@ describe('useSessionManager', () => {
             const task = { id: 'task-2', title: 'New task' } as any;
 
             const { result } = renderHook(() =>
-                useSessionManager('user-1', 'Test User')
+                useSessionManager('user-1', 'Test User', undefined, 'company-1')
             );
 
             await act(async () => {
@@ -205,16 +229,21 @@ describe('useSessionManager', () => {
             expect(mockUpdateDoc).toHaveBeenCalledTimes(1);
             const closeData = mockUpdateDoc.mock.calls[0][1];
             expect(closeData.status).toBe('completed');
+            // PR #95 companion: even the auto-close update needs companyId
+            // so legacy docs missing the field self-heal.
+            expect(closeData.companyId).toBe('company-1');
 
             // New session created
             expect(mockAddDoc).toHaveBeenCalledTimes(1);
+            const addedData = mockAddDoc.mock.calls[0][1];
+            expect(addedData.companyId).toBe('company-1');
         });
 
         it('should not start session without userId', async () => {
             const task = { id: 'task-3', title: 'Test' } as any;
 
             const { result } = renderHook(() =>
-                useSessionManager(undefined, 'Test User')
+                useSessionManager(undefined, 'Test User', undefined, 'company-1')
             );
 
             await act(async () => {
@@ -222,6 +251,23 @@ describe('useSessionManager', () => {
             });
 
             expect(mockAddDoc).not.toHaveBeenCalled();
+        });
+
+        // PR #95 companion: refuse to write without companyId.
+        it('should refuse to start session when companyId is missing', async () => {
+            mockGetDocs.mockResolvedValueOnce({ empty: true, docs: [] });
+            const task = { id: 'task-4', title: 'Test' } as any;
+
+            const { result } = renderHook(() =>
+                useSessionManager('user-1', 'Test User')
+            );
+
+            await act(async () => {
+                await result.current.startSession(task);
+            });
+
+            expect(mockAddDoc).not.toHaveBeenCalled();
+            expect(mockUpdateDoc).not.toHaveBeenCalled();
         });
     });
 

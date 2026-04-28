@@ -49,6 +49,7 @@ import { format } from 'date-fns';
 import toast from 'react-hot-toast';
 
 import { db } from '../../../firebase/firebase';
+import { useAuth } from '../../../auth/AuthContext';
 import {
     calculatePayrollBuckets,
     defaultFinanceStartDate,
@@ -84,6 +85,10 @@ function fmtDate(ts: { toDate?: () => Date } | undefined): string {
 const AdminWorkerDetailPage: React.FC = () => {
     const { userId = '' } = useParams<{ userId: string }>();
     const navigate = useNavigate();
+    const { userProfile } = useAuth();
+    // PR #95 companion: tightened work_sessions rules require companyId on
+    // every write. Threaded into the payment dialog below.
+    const companyId = userProfile?.companyId;
     const [startDate] = useState(defaultFinanceStartDate());
     const [endDate] = useState(new Date());
 
@@ -266,6 +271,7 @@ const AdminWorkerDetailPage: React.FC = () => {
                 onClose={() => setPaymentDialogOpen(false)}
                 employeeId={userId}
                 employeeName={employee?.name || ''}
+                companyId={companyId}
                 onSaved={async () => {
                     await ledger.refresh();
                     setPaymentDialogOpen(false);
@@ -347,6 +353,7 @@ interface DialogProps {
     onClose: () => void;
     employeeId: string;
     employeeName: string;
+    companyId: string | undefined;
     onSaved: () => Promise<void>;
 }
 
@@ -355,6 +362,7 @@ const RecordPaymentDialog: React.FC<DialogProps> = ({
     onClose,
     employeeId,
     employeeName,
+    companyId,
     onSaved,
 }) => {
     const [amount, setAmount] = useState('');
@@ -367,6 +375,11 @@ const RecordPaymentDialog: React.FC<DialogProps> = ({
             toast.error('Сумма должна быть положительной');
             return;
         }
+        // PR #95 companion: tightened work_sessions rules require companyId.
+        if (!companyId) {
+            toast.error('Не получилось: нет companyId. Перелогиньтесь.');
+            return;
+        }
         setSaving(true);
         try {
             const now = Timestamp.now();
@@ -376,6 +389,7 @@ const RecordPaymentDialog: React.FC<DialogProps> = ({
             await addDoc(collection(db, 'work_sessions'), {
                 employeeId,
                 employeeName,
+                companyId, // PR #95 companion: required by tightened rules
                 clientId: '',
                 clientName: 'Payment',
                 startTime: now,

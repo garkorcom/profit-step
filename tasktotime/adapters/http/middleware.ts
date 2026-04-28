@@ -67,11 +67,26 @@ export function attachAuthContext(
   const userName = req.agentUserName ?? userId;
   const tokenType = req.agentTokenType ?? 'master';
 
-  // Company id source — first the impersonated team scope, then header,
-  // then the static OWNER_COMPANY_ID for master tokens. Header is the
-  // common case for the agent.
+  // Company id source — depends on token type.
+  //
+  // - JWT (browser users): header is IGNORED. Browser callers must not be
+  //   able to spoof a different company by setting `x-company-id` — that
+  //   was a cross-tenant read leak. The server-side scope is fixed to the
+  //   user's own profile (`agentUserId`, which equals `companyId` for
+  //   single-user tenants and equals the membership-derived id once team
+  //   membership lookup is wired). `effectiveTeamId` is left as a fallback
+  //   for future team-membership flows where the upstream auth middleware
+  //   has already verified the user belongs to that team.
+  //
+  // - master / employee tokens (server-to-server, agent gateway): header
+  //   IS honoured for impersonation. The agent middleware has already
+  //   verified the static API key, so the token holder is allowed to act
+  //   on any company.
   const headerCompanyId = req.header('x-company-id');
-  const companyId = headerCompanyId ?? req.effectiveTeamId ?? req.agentUserId;
+  const companyId =
+    tokenType === 'jwt'
+      ? (req.effectiveTeamId ?? req.agentUserId)
+      : (headerCompanyId ?? req.effectiveTeamId ?? req.agentUserId);
 
   if (!userId || !userName || !companyId) {
     next(

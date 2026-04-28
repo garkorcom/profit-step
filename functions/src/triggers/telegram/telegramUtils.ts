@@ -8,6 +8,32 @@ if (admin.apps.length === 0) {
 const db = admin.firestore();
 
 /**
+ * Dedupe a list of employeeId candidates while PRESERVING type (number vs
+ * string). Firestore is type-strict on equality: `where('employeeId', '==',
+ * '123')` does NOT match a document where `employeeId: 123` (number). The bot
+ * writes `employeeId` as a number (Telegram chat id); Web/agent-API writes it
+ * as a string (Firebase UID). Both shapes coexist in production work_sessions.
+ *
+ * A naive `[...new Set(arr.map(String))]` collapses the numeric variant into
+ * the string one and silently drops bot-created sessions from the result —
+ * see incident 2026-04-28 (bot's end-of-shift balance showed $0 because all
+ * own sessions were filtered out). Always dedupe by `${typeof}|${value}`.
+ */
+export function dedupeEmployeeIdVariants(
+    variants: ReadonlyArray<string | number>
+): Array<string | number> {
+    const seen = new Set<string>();
+    const out: Array<string | number> = [];
+    for (const v of variants) {
+        const key = `${typeof v}|${String(v)}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push(v);
+    }
+    return out;
+}
+
+/**
  * Find platform user by Telegram ID.
  * Tries string match first, then numeric match as fallback.
  * Single source of truth — import from here instead of duplicating.

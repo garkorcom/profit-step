@@ -11,4 +11,8 @@ export { default as TaskListPage } from './TaskListPage';
 export { default as TaskDetailPage } from './TaskDetailPage';
 export { default as ComingSoonView } from './ComingSoonView';
 export { default as WikiDemoPage } from './WikiDemoPage';
+// Phase 4.5 — dependency graph view (lazy-loaded by AppRouter via its own
+// dynamic import to keep @xyflow/react out of the main bundle; barrel
+// re-export here for symmetry with the other views).
+export { default as GraphPage } from './GraphPage';
 export { useDrawerOpenState } from './useDrawerOpenState';

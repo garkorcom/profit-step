@@ -18,6 +18,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import {
     tasktotimeApi,
+    TasktotimeApiError,
     type ListTasksParams,
     type TaskDto,
     type TransitionTaskInput,
@@ -400,13 +401,28 @@ export interface UpdateWikiArgs {
 }
 
 /**
- * Mutation hook for `PUT /tasks/:id/wiki`. Optimistic concurrency is enforced
- * server-side via `expectedVersion`; on a stale version the API returns 409
- * and the rejected promise carries `StaleVersion` in its message.
+ * Mutation hook for `PUT /tasks/:id/wiki` with explicit conflict-state handling.
+ *
+ * Returned shape extends the standard `MutationState` with a `conflict` flag
+ * that flips to `true` when the API rejects with HTTP 409
+ * `STALE_VERSION` / `StaleVersion` — the optimistic-concurrency collision
+ * surfaced when another editor (or background trigger) bumped
+ * `task.wiki.version` while the user was typing. The TaskDetailPage uses this
+ * flag to render a "Wiki was edited by someone else. [Reload]" Alert instead
+ * of a generic error toast.
+ *
+ * `reset()` clears both `error` and `conflict` so the caller can dismiss the
+ * banner after the user reloads (or chooses to overwrite).
  */
-export function useUpdateWiki(): MutationState<UpdateWikiArgs, TaskDto> {
+export interface UseUpdateWikiResult extends MutationState<UpdateWikiArgs, TaskDto> {
+    /** True when the latest mutation failed with a 409 version conflict. */
+    conflict: boolean;
+}
+
+export function useUpdateWiki(): UseUpdateWikiResult {
     const [loading, setLoading] = useState<boolean>(false);
     const [error, setError] = useState<Error | null>(null);
+    const [conflict, setConflict] = useState<boolean>(false);
     const inFlight = useRef<boolean>(false);
 
     const mutate = useCallback(async (args: UpdateWikiArgs): Promise<TaskDto> => {
@@ -416,6 +432,10 @@ export function useUpdateWiki(): MutationState<UpdateWikiArgs, TaskDto> {
         inFlight.current = true;
         setLoading(true);
         setError(null);
+        // Clear stale conflict from a previous attempt — once the user
+        // resolves (reloads the task and submits fresh content), the next
+        // attempt should start with a clean slate.
+        setConflict(false);
         try {
             const updated = await tasktotimeApi.updateWiki(
                 args.taskId,
@@ -426,6 +446,14 @@ export function useUpdateWiki(): MutationState<UpdateWikiArgs, TaskDto> {
         } catch (err: unknown) {
             const e = err instanceof Error ? err : new Error(String(err));
             setError(e);
+            // Detect the version-conflict path so the caller can render a
+            // dedicated reload affordance. We rely on the typed
+            // `TasktotimeApiError.isVersionConflict` getter (see
+            // `tasktotimeApi.ts`) so a future error-code rename doesn't slip
+            // through a string-match check here.
+            if (err instanceof TasktotimeApiError && err.isVersionConflict) {
+                setConflict(true);
+            }
             throw e;
         } finally {
             inFlight.current = false;
@@ -435,7 +463,8 @@ export function useUpdateWiki(): MutationState<UpdateWikiArgs, TaskDto> {
 
     const reset = useCallback(() => {
         setError(null);
+        setConflict(false);
     }, []);
 
-    return { mutate, loading, error, reset };
+    return { mutate, loading, error, conflict, reset };
 }

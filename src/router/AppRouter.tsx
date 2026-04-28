@@ -76,15 +76,10 @@ const TasktotimeLayout = React.lazy(() => import('../pages/crm/tasktotime').then
 const TaskListPage = React.lazy(() => import('../pages/crm/tasktotime').then(m => ({ default: m.TaskListPage })));
 const TaskDetailPage = React.lazy(() => import('../pages/crm/tasktotime').then(m => ({ default: m.TaskDetailPage })));
 const TasktotimeComingSoon = React.lazy(() => import('../pages/crm/tasktotime').then(m => ({ default: m.ComingSoonView })));
-// Phase 4.3 — temporary debug route for the Wiki editor wrapper. Imported via
-// its own dynamic import (NOT the barrel) so the heavy MDXEditor chunk only
-// loads when this route is opened, keeping it off the main bundle and off the
-// task-list path. Remove this route in the Phase 4.1 integration PR.
-const WikiDemoPage = React.lazy(() => import('../pages/crm/tasktotime/WikiDemoPage'));
-// Phase 4.5 — dependency graph view. Same lazy-load pattern as WikiDemoPage:
-// imported via its own dynamic import (NOT the barrel) so the @xyflow/react +
-// dagre chunk only loads when /crm/tasktotime/graph is opened. Keeps the main
-// bundle and the task-list path free of the ~135KB graph runtime.
+// Phase 4.5 — dependency graph view. Lazy-loaded via its own dynamic import
+// (NOT the barrel) so the @xyflow/react + dagre chunk only loads when
+// /crm/tasktotime/graph is opened. Keeps the main bundle and the task-list
+// path free of the ~135KB graph runtime.
 const TasktotimeGraphPage = React.lazy(() => import('../pages/crm/tasktotime/GraphPage'));
 
 // Loading fallback component
@@ -280,9 +275,6 @@ const AppRouter: React.FC = () => {
             <Route path="wiki" element={<TasktotimeComingSoon label="Wiki" />} />
             <Route path="reports" element={<TasktotimeComingSoon label="Reports" />} />
             <Route path="tasks/:id" element={<TaskDetailPage />} />
-            {/* Phase 4.3 — temporary debug route. Will be removed when the */}
-            {/* WikiEditor lands inside TaskDetailPage (Phase 4.1 follow-up). */}
-            <Route path="wiki-demo" element={<WikiDemoPage />} />
           </Route>
 
           {/* Sites Dashboard */}

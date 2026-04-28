@@ -14,20 +14,64 @@
 
 import { act, renderHook, waitFor } from '@testing-library/react';
 
-import { useTaskList, useTaskListPaginated, useTransitionTask } from '../useTasktotime';
+import {
+    useTaskList,
+    useTaskListPaginated,
+    useTransitionTask,
+    useUpdateWiki,
+} from '../useTasktotime';
 import type { TaskDto, TransitionTaskResult } from '../../api/tasktotimeApi';
 
 // ─── Mocks ──────────────────────────────────────────────────────────────
 
 const listTasks = jest.fn();
 const transitionTask = jest.fn();
+const updateWiki = jest.fn();
 
-jest.mock('../../api/tasktotimeApi', () => ({
-    tasktotimeApi: {
-        listTasks: (...args: unknown[]) => listTasks(...args),
-        transitionTask: (...args: unknown[]) => transitionTask(...args),
-    },
-}));
+/**
+ * The hook detects the conflict via
+ * `instanceof TasktotimeApiError && err.isVersionConflict` — for the mock to
+ * trigger the same branch the test must construct the *same* class identity
+ * the hook imports. We define the mirror class inside the `jest.mock`
+ * factory (so it's available at hoist-time), then re-import it through the
+ * mocked module path in the test body. Both sides reference the same
+ * constructor reference.
+ */
+jest.mock('../../api/tasktotimeApi', () => {
+    class MockTasktotimeApiError extends Error {
+        readonly status: number;
+        readonly code: string | null;
+        constructor(status: number, code: string | null, message: string) {
+            super(code ? `${code}: ${message}` : message);
+            this.name = 'TasktotimeApiError';
+            this.status = status;
+            this.code = code;
+        }
+        get isVersionConflict(): boolean {
+            if (this.status !== 409) return false;
+            return this.code === 'STALE_VERSION' || this.code === 'StaleVersion';
+        }
+    }
+    return {
+        tasktotimeApi: {
+            listTasks: (...args: unknown[]) => listTasks(...args),
+            transitionTask: (...args: unknown[]) => transitionTask(...args),
+            updateWiki: (...args: unknown[]) => updateWiki(...args),
+        },
+        TasktotimeApiError: MockTasktotimeApiError,
+    };
+});
+
+// Re-import the class through the mocked module so test code can construct
+// the *exact* error type the hook checks `instanceof` against.
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const { TasktotimeApiError } = require('../../api/tasktotimeApi') as {
+    TasktotimeApiError: new (
+        status: number,
+        code: string | null,
+        message: string,
+    ) => Error & { status: number; code: string | null; isVersionConflict: boolean };
+};
 
 // ─── Fixtures ───────────────────────────────────────────────────────────
 
@@ -68,6 +112,7 @@ const sampleTask: TaskDto = {
 beforeEach(() => {
     listTasks.mockReset();
     transitionTask.mockReset();
+    updateWiki.mockReset();
 });
 
 // ─── useTaskList ─────────────────────────────────────────────────────────
@@ -337,5 +382,148 @@ describe('useTransitionTask', () => {
             idempotencyKey: 'k_accept',
             acceptance,
         });
+    });
+});
+
+// ─── useUpdateWiki ──────────────────────────────────────────────────────
+
+describe('useUpdateWiki', () => {
+    it('returns the updated task on success and forwards the wire payload', async () => {
+        const updated: TaskDto = {
+            ...sampleTask,
+            wiki: {
+                contentMd: '# Hello',
+                version: 2,
+                updatedAt: 1_700_000_000_000,
+                updatedBy: { id: 'u_1', name: 'Owner' },
+            },
+        };
+        updateWiki.mockResolvedValueOnce(updated);
+
+        const { result } = renderHook(() => useUpdateWiki());
+
+        let res: TaskDto | undefined;
+        await act(async () => {
+            res = await result.current.mutate({
+                taskId: 'task_1',
+                companyId: 'co_1',
+                input: { contentMd: '# Hello', expectedVersion: 1 },
+            });
+        });
+
+        expect(res).toBe(updated);
+        expect(updateWiki).toHaveBeenCalledWith('task_1', 'co_1', {
+            contentMd: '# Hello',
+            expectedVersion: 1,
+        });
+        expect(result.current.error).toBeNull();
+        expect(result.current.conflict).toBe(false);
+    });
+
+    it('flags `conflict` when the API rejects with a 409 STALE_VERSION', async () => {
+        // Adapter-layer code path (`STALE_VERSION` upper-snake).
+        updateWiki.mockRejectedValueOnce(
+            new TasktotimeApiError(
+                409,
+                'STALE_VERSION',
+                'expectedVersion 1 is stale; current is 3',
+            ),
+        );
+
+        const { result } = renderHook(() => useUpdateWiki());
+
+        const caught: { err: Error | null } = { err: null };
+        await act(async () => {
+            try {
+                await result.current.mutate({
+                    taskId: 'task_1',
+                    companyId: 'co_1',
+                    input: { contentMd: '# stale', expectedVersion: 1 },
+                });
+            } catch (err) {
+                caught.err = err instanceof Error ? err : new Error(String(err));
+            }
+        });
+
+        expect(caught.err).toBeInstanceOf(TasktotimeApiError);
+        expect(result.current.conflict).toBe(true);
+        expect(result.current.error?.message).toContain('STALE_VERSION');
+    });
+
+    it('also recognises the domain-layer `StaleVersion` code as a conflict', async () => {
+        // Domain-layer code path (`StaleVersion` PascalCase) — same 409
+        // status, different code spelling. UX should be identical.
+        updateWiki.mockRejectedValueOnce(
+            new TasktotimeApiError(409, 'StaleVersion', 'version mismatch'),
+        );
+
+        const { result } = renderHook(() => useUpdateWiki());
+
+        await act(async () => {
+            try {
+                await result.current.mutate({
+                    taskId: 'task_1',
+                    companyId: 'co_1',
+                    input: { contentMd: '# stale', expectedVersion: 1 },
+                });
+            } catch {
+                // expected
+            }
+        });
+
+        expect(result.current.conflict).toBe(true);
+    });
+
+    it('does NOT flag `conflict` for non-409 failures', async () => {
+        updateWiki.mockRejectedValueOnce(
+            new TasktotimeApiError(403, 'PERMISSION_DENIED', 'no access'),
+        );
+
+        const { result } = renderHook(() => useUpdateWiki());
+
+        await act(async () => {
+            try {
+                await result.current.mutate({
+                    taskId: 'task_1',
+                    companyId: 'co_1',
+                    input: { contentMd: '# x', expectedVersion: 0 },
+                });
+            } catch {
+                // expected
+            }
+        });
+
+        expect(result.current.conflict).toBe(false);
+        expect(result.current.error?.message).toContain('PERMISSION_DENIED');
+    });
+
+    it('clears `conflict` and `error` on `reset()`', async () => {
+        updateWiki.mockRejectedValueOnce(
+            new TasktotimeApiError(409, 'STALE_VERSION', 'stale'),
+        );
+
+        const { result } = renderHook(() => useUpdateWiki());
+
+        await act(async () => {
+            try {
+                await result.current.mutate({
+                    taskId: 'task_1',
+                    companyId: 'co_1',
+                    input: { contentMd: '# x', expectedVersion: 1 },
+                });
+            } catch {
+                // expected
+            }
+        });
+
+        expect(result.current.conflict).toBe(true);
+        expect(result.current.error).not.toBeNull();
+
+        act(() => {
+            result.current.reset();
+        });
+
+        expect(result.current.conflict).toBe(false);
+        expect(result.current.error).toBeNull();
     });
 });

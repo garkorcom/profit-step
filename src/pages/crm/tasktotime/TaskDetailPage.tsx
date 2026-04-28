@@ -20,10 +20,11 @@
  * disallowed actions with `TransitionNotAllowed`.
  */
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { Link as RouterLink, useNavigate, useParams } from 'react-router-dom';
 import {
     Alert,
+    AlertTitle,
     Box,
     Breadcrumbs,
     Button,
@@ -39,6 +40,7 @@ import {
     IconButton,
     Link as MuiLink,
     Paper,
+    Skeleton,
     Stack,
     TextField,
     Tooltip,
@@ -47,11 +49,14 @@ import {
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import LinkIcon from '@mui/icons-material/Link';
+import EditIcon from '@mui/icons-material/Edit';
+import SaveIcon from '@mui/icons-material/Save';
+import CloseIcon from '@mui/icons-material/Close';
 import dayjs from 'dayjs';
 import { Controller, useForm } from 'react-hook-form';
 
 import { useAuth } from '../../../auth/AuthContext';
-import { useTask, useTransitionTask } from '../../../hooks/useTasktotime';
+import { useTask, useTransitionTask, useUpdateWiki } from '../../../hooks/useTasktotime';
 import type {
     TaskDependencyDto,
     TaskDto,
@@ -59,6 +64,15 @@ import type {
     TaskPriority,
     TransitionAction,
 } from '../../../api/tasktotimeApi';
+
+/**
+ * Lazy-load the Markdown editor so the heavy MDXEditor bundle (~590 KB raw,
+ * ~185 KB gzipped) stays in its own chunk and downloads only when a task
+ * detail page is opened — not on the task list / cockpit / other tasktotime
+ * surfaces. This preserves the bundle split that the Phase 4.3 demo route
+ * established and keeps the tasktotime barrel chunk lean.
+ */
+const WikiEditor = React.lazy(() => import('../../../components/tasktotime/WikiEditor'));
 
 // ─── Visual tokens (mirrors TaskListPage so chips stay consistent) ──────
 
@@ -305,6 +319,35 @@ function newIdempotencyKey(): string {
         return crypto.randomUUID();
     }
     return `transition-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+/**
+ * Tiny sleep helper used by the wiki attachment-upload stub. Matches the
+ * 500 ms latency of the Phase 4.3 demo so the editor's "uploading…" UX feels
+ * realistic until Firebase Storage wiring lands.
+ */
+function sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => {
+        setTimeout(resolve, ms);
+    });
+}
+
+/**
+ * Placeholder attachment-upload handler for the wiki editor.
+ *
+ * TODO(tasktotime/wiki-attachments): wire to Firebase Storage. Should upload
+ * the file to a per-task path (e.g. `companies/{companyId}/tasks/{taskId}/wiki/{filename}`)
+ * and return the public download URL. Until then we return a stable
+ * placeholder so the editor's drop-image / insert-image affordances render
+ * end-to-end without a backend dependency.
+ */
+async function placeholderAttachmentUpload(file: File): Promise<string> {
+    await sleep(500);
+    // eslint-disable-next-line no-console
+    console.info(
+        `[TaskDetailPage] stub wiki upload for "${file.name}" (${file.size} bytes) — returning placeholder URL`,
+    );
+    return 'https://placehold.co/600x400';
 }
 
 // ─── Block dialog ───────────────────────────────────────────────────────
@@ -561,6 +604,7 @@ const TaskDetailPage: React.FC = () => {
 
     const { task, loading, error, refetch } = useTask(taskId, companyId);
     const transitionTask = useTransitionTask();
+    const updateWiki = useUpdateWiki();
     const [actionError, setActionError] = useState<string | null>(null);
     const [blockOpen, setBlockOpen] = useState<boolean>(false);
     const [acceptOpen, setAcceptOpen] = useState<boolean>(false);
@@ -575,6 +619,82 @@ const TaskDetailPage: React.FC = () => {
     useEffect(() => {
         if (!transitionTask.loading) setPendingAction(null);
     }, [transitionTask.loading]);
+
+    // ─── Wiki edit state ────────────────────────────────────────────────
+    /**
+     * `wikiEditing` toggles between read-only render and the editable toolbar
+     * surface. `wikiDraft` is the user-typed Markdown buffer (controlled by
+     * `WikiEditor`'s `onChange` lift); when not editing, the editor renders
+     * the persisted `task.wiki?.contentMd` directly so a refetch immediately
+     * shows fresh server-side content without leaking stale draft text.
+     *
+     * `wikiSaveError` holds any non-409 backend error so the user sees it
+     * inline (e.g. permission denied, network failure). The 409 conflict
+     * path uses `updateWiki.conflict` instead — see the dedicated Alert in
+     * the wiki section below.
+     */
+    const [wikiEditing, setWikiEditing] = useState<boolean>(false);
+    const [wikiDraft, setWikiDraft] = useState<string>('');
+    const [wikiSaveError, setWikiSaveError] = useState<string | null>(null);
+
+    const handleWikiEditStart = useCallback(() => {
+        // Seed the draft from the freshly-loaded task content. Fall back to
+        // the empty string so the editor has a sane starting buffer when the
+        // task has no wiki content yet.
+        setWikiDraft(task?.wiki?.contentMd ?? '');
+        setWikiSaveError(null);
+        updateWiki.reset();
+        setWikiEditing(true);
+    }, [task, updateWiki]);
+
+    const handleWikiCancel = useCallback(() => {
+        setWikiEditing(false);
+        setWikiDraft('');
+        setWikiSaveError(null);
+        updateWiki.reset();
+    }, [updateWiki]);
+
+    const handleWikiSave = useCallback(async () => {
+        if (!task || !companyId) return;
+        setWikiSaveError(null);
+        try {
+            await updateWiki.mutate({
+                taskId: task.id,
+                companyId,
+                input: {
+                    contentMd: wikiDraft,
+                    // `expectedVersion` powers optimistic concurrency on the
+                    // server — fall back to 0 when the task has no wiki yet
+                    // (matches the wire contract for first-write).
+                    expectedVersion: task.wiki?.version ?? 0,
+                },
+            });
+            setWikiEditing(false);
+            setWikiDraft('');
+            refetch();
+        } catch (err) {
+            // 409 conflicts are surfaced by `updateWiki.conflict` (rendered
+            // as a dedicated Alert inside the wiki section). For every other
+            // failure, show the message inline so the user can retry without
+            // losing their draft buffer.
+            if (err instanceof Error && !updateWiki.conflict) {
+                setWikiSaveError(err.message);
+            } else if (!(err instanceof Error)) {
+                setWikiSaveError(String(err));
+            }
+        }
+    }, [companyId, refetch, task, updateWiki, wikiDraft]);
+
+    const handleWikiReload = useCallback(() => {
+        // User chose to discard local draft and pick up the latest server
+        // content after a 409. Reset mutation state, exit edit mode, and
+        // refetch — the next "Edit Wiki" click will re-seed from fresh data.
+        updateWiki.reset();
+        setWikiEditing(false);
+        setWikiDraft('');
+        setWikiSaveError(null);
+        refetch();
+    }, [refetch, updateWiki]);
 
     /**
      * Fire a transition with a fresh idempotency key. Surface backend errors
@@ -1032,94 +1152,182 @@ const TaskDetailPage: React.FC = () => {
                     </Grid>
                 </Paper>
 
-                {/* Wiki content (read-only — Markdown editor lands in PR 4.3).
-                    When the task has no wiki content yet we still render the
-                    section as a friendly empty state so the user knows the
-                    surface exists and discovers the (still-disabled) editor
-                    affordance — instead of the section silently disappearing. */}
-                {task.wiki && task.wiki.contentMd ? (
-                    <Paper
-                        elevation={0}
-                        sx={{
-                            p: { xs: 2, md: 3 },
-                            mb: 3,
-                            border: '1px solid #E5E7EB',
-                            bgcolor: '#FFFFFF',
-                        }}
+                {/* Wiki content — MDXEditor-backed editor with edit / save /
+                    cancel UX and 409 optimistic-concurrency handling.
+                    Always renders the editor (in readOnly mode by default)
+                    so empty tasks still show the surface and the "Edit Wiki"
+                    affordance is consistently discoverable (PR #96 P2 polish).
+                    The editor itself is `React.lazy`-loaded so the heavy
+                    MDXEditor bundle stays in its own chunk and only loads
+                    when this page is opened. */}
+                <Paper
+                    elevation={0}
+                    sx={{
+                        p: { xs: 2, md: 3 },
+                        mb: 3,
+                        border: '1px solid #E5E7EB',
+                        bgcolor: '#FFFFFF',
+                    }}
+                >
+                    <Stack
+                        direction={{ xs: 'column', sm: 'row' }}
+                        alignItems={{ xs: 'flex-start', sm: 'center' }}
+                        justifyContent="space-between"
+                        spacing={1}
+                        sx={{ mb: 1.5 }}
                     >
-                        <Stack
-                            direction="row"
-                            alignItems="center"
-                            justifyContent="space-between"
-                            sx={{ mb: 1 }}
-                        >
+                        <Stack direction="row" alignItems="center" spacing={1.5}>
                             <SectionTitle>Wiki</SectionTitle>
-                            <Typography variant="caption" color="text.secondary">
-                                v{task.wiki.version} · updated {formatDate(task.wiki.updatedAt)}
-                            </Typography>
+                            {task.wiki && task.wiki.version > 0 && (
+                                <Typography
+                                    variant="caption"
+                                    color="text.secondary"
+                                    sx={{ display: 'block' }}
+                                >
+                                    v{task.wiki.version} · updated{' '}
+                                    {formatDate(task.wiki.updatedAt)}
+                                </Typography>
+                            )}
                         </Stack>
-                        <Box
-                            component="pre"
-                            sx={{
-                                m: 0,
-                                p: 2,
-                                bgcolor: '#F9FAFB',
-                                border: '1px solid #E5E7EB',
-                                borderRadius: 1,
-                                fontFamily:
-                                    'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-                                fontSize: '0.85rem',
-                                color: '#374151',
-                                whiteSpace: 'pre-wrap',
-                                wordBreak: 'break-word',
-                                overflowX: 'auto',
-                            }}
+                        {/* Edit / Save / Cancel button group. Buttons are
+                            sized at 32 px min-height to satisfy WCAG 2.2
+                            §2.5.8 (24x24 target size minimum) while keeping
+                            the chrome compact alongside the section title. */}
+                        {wikiEditing ? (
+                            <Stack direction="row" spacing={1}>
+                                <Button
+                                    size="small"
+                                    variant="text"
+                                    color="inherit"
+                                    onClick={handleWikiCancel}
+                                    disabled={updateWiki.loading}
+                                    startIcon={<CloseIcon fontSize="small" />}
+                                    sx={{ minHeight: 32 }}
+                                >
+                                    Cancel
+                                </Button>
+                                <Button
+                                    size="small"
+                                    variant="contained"
+                                    color="primary"
+                                    onClick={handleWikiSave}
+                                    disabled={updateWiki.loading}
+                                    startIcon={
+                                        updateWiki.loading ? (
+                                            <CircularProgress
+                                                size={14}
+                                                color="inherit"
+                                                aria-label="Saving wiki"
+                                            />
+                                        ) : (
+                                            <SaveIcon fontSize="small" />
+                                        )
+                                    }
+                                    sx={{ minHeight: 32 }}
+                                >
+                                    {updateWiki.loading ? 'Saving…' : 'Save'}
+                                </Button>
+                            </Stack>
+                        ) : (
+                            <Button
+                                size="small"
+                                variant="outlined"
+                                onClick={handleWikiEditStart}
+                                startIcon={<EditIcon fontSize="small" />}
+                                aria-label="Edit wiki"
+                                sx={{ minHeight: 32 }}
+                            >
+                                Edit Wiki
+                            </Button>
+                        )}
+                    </Stack>
+
+                    {/* 409 version-conflict banner. Distinct from the inline
+                        save error so the user sees the actionable Reload
+                        affordance rather than a raw error message. The
+                        underlying mutation `error` is also populated, but we
+                        intentionally hide the generic message in this case to
+                        avoid a redundant red rectangle stack. */}
+                    {updateWiki.conflict && (
+                        <Alert
+                            severity="warning"
+                            sx={{ mb: 2 }}
+                            action={
+                                <Button
+                                    color="inherit"
+                                    size="small"
+                                    onClick={handleWikiReload}
+                                >
+                                    Reload
+                                </Button>
+                            }
                         >
-                            {task.wiki.contentMd}
-                        </Box>
-                    </Paper>
-                ) : (
-                    <Paper
-                        elevation={0}
-                        sx={{
-                            p: { xs: 2, md: 3 },
-                            mb: 3,
-                            border: '1px dashed #D1D5DB',
-                            bgcolor: '#FFFFFF',
-                        }}
+                            <AlertTitle>Wiki was edited by someone else</AlertTitle>
+                            Reload to pick up the latest version. Your unsaved
+                            edits will be lost — copy them elsewhere first if
+                            you need to keep them.
+                        </Alert>
+                    )}
+
+                    {/* Non-conflict save errors. The 409 path uses
+                        `updateWiki.conflict` above, so we suppress the
+                        generic alert when that's set. */}
+                    {wikiSaveError && !updateWiki.conflict && (
+                        <Alert
+                            severity="error"
+                            sx={{ mb: 2 }}
+                            onClose={() => setWikiSaveError(null)}
+                        >
+                            {wikiSaveError}
+                        </Alert>
+                    )}
+
+                    {/* Empty-state hint when there's no content and we're not
+                        editing yet. Keeps the section discoverable. The
+                        editor below still mounts (in readOnly) so the layout
+                        doesn't collapse when the user clicks Edit. */}
+                    {!wikiEditing &&
+                        (!task.wiki || !task.wiki.contentMd) && (
+                            <Typography
+                                variant="body2"
+                                sx={{ color: '#6B7280', mb: 1.5 }}
+                            >
+                                No wiki content yet. Click{' '}
+                                <strong>Edit Wiki</strong> to add notes.
+                            </Typography>
+                        )}
+
+                    {/* The editor itself. Suspense fallback is a skeleton
+                        block matching the editor's typical height (~280 px)
+                        so the layout doesn't jump when the chunk arrives. */}
+                    <Suspense
+                        fallback={
+                            <Skeleton
+                                variant="rectangular"
+                                height={280}
+                                sx={{ borderRadius: 1 }}
+                            />
+                        }
                     >
-                        <SectionTitle>Wiki</SectionTitle>
-                        <Stack
-                            direction={{ xs: 'column', sm: 'row' }}
-                            alignItems={{ xs: 'flex-start', sm: 'center' }}
-                            justifyContent="space-between"
-                            spacing={2}
-                        >
-                            <Typography variant="body2" sx={{ color: '#4B5563' }}>
-                                No wiki content yet. Edit to add notes.
-                            </Typography>
-                            <Tooltip title="Coming soon — Markdown editor lands in PR 4.3">
-                                <span>
-                                    <Button
-                                        size="small"
-                                        variant="outlined"
-                                        disabled
-                                        aria-label="Edit wiki (coming soon)"
-                                        sx={{
-                                            // WCAG 2.2 §2.5.8 — keep the
-                                            // disabled affordance discoverable
-                                            // without violating the 24×24
-                                            // minimum target size.
-                                            minHeight: 32,
-                                        }}
-                                    >
-                                        Edit Wiki
-                                    </Button>
-                                </span>
-                            </Tooltip>
-                        </Stack>
-                    </Paper>
-                )}
+                        <WikiEditor
+                            // While editing we show the controlled draft
+                            // buffer; otherwise we render the persisted
+                            // server content directly so a refetch reflects
+                            // immediately. The WikiEditor component itself
+                            // syncs `value` → underlying editor on prop
+                            // change (see its `useEffect` guard against
+                            // self-stomping cursor positions).
+                            value={
+                                wikiEditing
+                                    ? wikiDraft
+                                    : task.wiki?.contentMd ?? ''
+                            }
+                            onChange={setWikiDraft}
+                            readOnly={!wikiEditing}
+                            onAttachmentUpload={placeholderAttachmentUpload}
+                        />
+                    </Suspense>
+                </Paper>
             </Box>
 
             {/* Transition action bar — pinned to bottom */}

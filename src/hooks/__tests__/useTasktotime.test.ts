@@ -14,20 +14,66 @@
 
 import { act, renderHook, waitFor } from '@testing-library/react';
 
-import { useTaskList, useTaskListPaginated, useTransitionTask } from '../useTasktotime';
-import type { TaskDto, TransitionTaskResult } from '../../api/tasktotimeApi';
+import {
+    useCreateTask,
+    useTaskList,
+    useTaskListPaginated,
+    useTransitionTask,
+    useUpdateWiki,
+} from '../useTasktotime';
+import type {
+    CreateTaskInput,
+    TaskDto,
+    TransitionTaskResult,
+} from '../../api/tasktotimeApi';
 
 // ─── Mocks ──────────────────────────────────────────────────────────────
 
 const listTasks = jest.fn();
 const transitionTask = jest.fn();
+const createTask = jest.fn();
+const updateWiki = jest.fn();
 
-jest.mock('../../api/tasktotimeApi', () => ({
-    tasktotimeApi: {
-        listTasks: (...args: unknown[]) => listTasks(...args),
-        transitionTask: (...args: unknown[]) => transitionTask(...args),
-    },
-}));
+/**
+ * The hook detects the conflict via
+ * `instanceof TasktotimeApiError && err.isVersionConflict` — for the mock to
+ * trigger the same branch the test must construct the *same* class identity
+ * the hook imports. Mirror class defined inside jest.mock factory.
+ */
+jest.mock('../../api/tasktotimeApi', () => {
+    class MockTasktotimeApiError extends Error {
+        readonly status: number;
+        readonly code: string | null;
+        constructor(status: number, code: string | null, message: string) {
+            super(code ? `${code}: ${message}` : message);
+            this.name = 'TasktotimeApiError';
+            this.status = status;
+            this.code = code;
+        }
+        get isVersionConflict(): boolean {
+            if (this.status !== 409) return false;
+            return this.code === 'STALE_VERSION' || this.code === 'StaleVersion';
+        }
+    }
+    return {
+        tasktotimeApi: {
+            listTasks: (...args: unknown[]) => listTasks(...args),
+            transitionTask: (...args: unknown[]) => transitionTask(...args),
+            createTask: (...args: unknown[]) => createTask(...args),
+            updateWiki: (...args: unknown[]) => updateWiki(...args),
+        },
+        TasktotimeApiError: MockTasktotimeApiError,
+    };
+});
+
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const { TasktotimeApiError } = require('../../api/tasktotimeApi') as {
+    TasktotimeApiError: new (
+        status: number,
+        code: string | null,
+        message: string,
+    ) => Error & { status: number; code: string | null; isVersionConflict: boolean };
+};
 
 // ─── Fixtures ───────────────────────────────────────────────────────────
 
@@ -68,6 +114,8 @@ const sampleTask: TaskDto = {
 beforeEach(() => {
     listTasks.mockReset();
     transitionTask.mockReset();
+    createTask.mockReset();
+    updateWiki.mockReset();
 });
 
 // ─── useTaskList ─────────────────────────────────────────────────────────
@@ -337,5 +385,223 @@ describe('useTransitionTask', () => {
             idempotencyKey: 'k_accept',
             acceptance,
         });
+    });
+});
+
+// ─── useCreateTask ───────────────────────────────────────────────────────
+
+describe('useCreateTask', () => {
+    const baseInput = (overrides: Partial<CreateTaskInput> = {}): CreateTaskInput => ({
+        idempotencyKey: 'idem_1',
+        companyId: 'co_1',
+        title: 'New task',
+        bucket: 'next',
+        priority: 'medium',
+        source: 'web',
+        requiredHeadcount: 1,
+        assignedTo: { id: 'u_1', name: 'Alice' },
+        dueAt: 1_900_000_000_000,
+        estimatedDurationMinutes: 60,
+        costInternal: { amount: 0, currency: 'USD' },
+        priceClient: { amount: 0, currency: 'USD' },
+        ...overrides,
+    });
+
+    it('forwards the input to the API and resolves to the created task', async () => {
+        const created: TaskDto = { ...sampleTask, taskNumber: 'T-100' };
+        createTask.mockResolvedValueOnce(created);
+
+        const { result } = renderHook(() => useCreateTask());
+
+        let returned: TaskDto | undefined;
+        await act(async () => {
+            returned = await result.current.mutate(
+                baseInput({ title: 'Install kitchen cabinets' }),
+            );
+        });
+
+        expect(returned).toEqual(created);
+        expect(createTask).toHaveBeenCalledTimes(1);
+        expect(createTask).toHaveBeenCalledWith(
+            expect.objectContaining({
+                title: 'Install kitchen cabinets',
+                priority: 'medium',
+                source: 'web',
+                companyId: 'co_1',
+                idempotencyKey: 'idem_1',
+            }),
+        );
+        expect(result.current.error).toBeNull();
+    });
+
+    it('surfaces the error and rethrows when the API rejects', async () => {
+        createTask.mockRejectedValueOnce(new Error('ValidationError: title too short'));
+
+        const { result } = renderHook(() => useCreateTask());
+
+        const caught: { err: Error | null } = { err: null };
+        await act(async () => {
+            try {
+                await result.current.mutate(baseInput({ title: 'no' }));
+            } catch (err) {
+                caught.err = err instanceof Error ? err : new Error(String(err));
+            }
+        });
+
+        expect(caught.err).toBeInstanceOf(Error);
+        expect(caught.err?.message).toBe('ValidationError: title too short');
+        expect(result.current.error?.message).toBe('ValidationError: title too short');
+    });
+
+    it('passes through the string priority value verbatim (no int coercion)', async () => {
+        createTask.mockResolvedValueOnce(sampleTask);
+
+        const { result } = renderHook(() => useCreateTask());
+
+        await act(async () => {
+            await result.current.mutate(baseInput({ priority: 'critical' }));
+        });
+
+        expect(createTask).toHaveBeenCalledWith(
+            expect.objectContaining({ priority: 'critical' }),
+        );
+    });
+});
+
+// ─── useUpdateWiki ──────────────────────────────────────────────────────
+
+describe('useUpdateWiki', () => {
+    it('returns the updated task on success and forwards the wire payload', async () => {
+        const updated: TaskDto = {
+            ...sampleTask,
+            wiki: {
+                contentMd: '# Hello',
+                version: 2,
+                updatedAt: 1_700_000_000_000,
+                updatedBy: { id: 'u_1', name: 'Owner' },
+            },
+        };
+        updateWiki.mockResolvedValueOnce(updated);
+
+        const { result } = renderHook(() => useUpdateWiki());
+
+        let res: TaskDto | undefined;
+        await act(async () => {
+            res = await result.current.mutate({
+                taskId: 'task_1',
+                companyId: 'co_1',
+                input: { contentMd: '# Hello', expectedVersion: 1 },
+            });
+        });
+
+        expect(res).toBe(updated);
+        expect(updateWiki).toHaveBeenCalledWith('task_1', 'co_1', {
+            contentMd: '# Hello',
+            expectedVersion: 1,
+        });
+        expect(result.current.error).toBeNull();
+        expect(result.current.conflict).toBe(false);
+    });
+
+    it('flags `conflict` when the API rejects with a 409 STALE_VERSION', async () => {
+        updateWiki.mockRejectedValueOnce(
+            new TasktotimeApiError(409, 'STALE_VERSION', 'expectedVersion 1 is stale; current is 3'),
+        );
+
+        const { result } = renderHook(() => useUpdateWiki());
+
+        const caught: { err: Error | null } = { err: null };
+        await act(async () => {
+            try {
+                await result.current.mutate({
+                    taskId: 'task_1',
+                    companyId: 'co_1',
+                    input: { contentMd: '# stale', expectedVersion: 1 },
+                });
+            } catch (err) {
+                caught.err = err instanceof Error ? err : new Error(String(err));
+            }
+        });
+
+        expect(caught.err).toBeInstanceOf(TasktotimeApiError);
+        expect(result.current.conflict).toBe(true);
+        expect(result.current.error?.message).toContain('STALE_VERSION');
+    });
+
+    it('also recognises the domain-layer `StaleVersion` code as a conflict', async () => {
+        // Domain-layer code path (`StaleVersion` PascalCase) — same 409
+        // status, different code spelling. UX should be identical.
+        updateWiki.mockRejectedValueOnce(
+            new TasktotimeApiError(409, 'StaleVersion', 'version mismatch'),
+        );
+
+        const { result } = renderHook(() => useUpdateWiki());
+
+        await act(async () => {
+            try {
+                await result.current.mutate({
+                    taskId: 'task_1',
+                    companyId: 'co_1',
+                    input: { contentMd: '# stale', expectedVersion: 1 },
+                });
+            } catch {
+                // expected
+            }
+        });
+
+        expect(result.current.conflict).toBe(true);
+    });
+
+    it('does NOT flag `conflict` for non-409 failures', async () => {
+        updateWiki.mockRejectedValueOnce(
+            new TasktotimeApiError(403, 'PERMISSION_DENIED', 'no access'),
+        );
+
+        const { result } = renderHook(() => useUpdateWiki());
+
+        await act(async () => {
+            try {
+                await result.current.mutate({
+                    taskId: 'task_1',
+                    companyId: 'co_1',
+                    input: { contentMd: '# x', expectedVersion: 0 },
+                });
+            } catch {
+                // expected
+            }
+        });
+
+        expect(result.current.conflict).toBe(false);
+        expect(result.current.error?.message).toContain('PERMISSION_DENIED');
+    });
+
+    it('clears `conflict` and `error` on `reset()`', async () => {
+        updateWiki.mockRejectedValueOnce(
+            new TasktotimeApiError(409, 'STALE_VERSION', 'stale'),
+        );
+
+        const { result } = renderHook(() => useUpdateWiki());
+
+        await act(async () => {
+            try {
+                await result.current.mutate({
+                    taskId: 'task_1',
+                    companyId: 'co_1',
+                    input: { contentMd: '# x', expectedVersion: 1 },
+                });
+            } catch {
+                // expected
+            }
+        });
+
+        expect(result.current.conflict).toBe(true);
+        expect(result.current.error).not.toBeNull();
+
+        act(() => {
+            result.current.reset();
+        });
+
+        expect(result.current.conflict).toBe(false);
+        expect(result.current.error).toBeNull();
     });
 });

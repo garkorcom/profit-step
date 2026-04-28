@@ -33,7 +33,21 @@ async function authHeaders(companyId: string): Promise<Record<string, string>> {
     };
 }
 
-async function readErr(res: Response): Promise<string> {
+/**
+ * Parsed error payload returned by tasktotime / agentApi error responses.
+ *
+ * Both the tasktotime adapter shape (`{ ok: false, error: { code, message } }`)
+ * and the agentApi fallback (`{ error, message }`) collapse to this object so
+ * the call sites can switch on `code` without a second parser.
+ */
+interface ParsedApiError {
+    message: string;
+    /** Server-supplied error code. Non-null when the response shape exposed
+     * one — e.g. tasktotime's `STALE_VERSION` / `NOT_FOUND` / `StaleVersion`. */
+    code: string | null;
+}
+
+async function parseApiError(res: Response): Promise<ParsedApiError> {
     try {
         const body: unknown = await res.json();
         if (body && typeof body === 'object') {
@@ -42,17 +56,67 @@ async function readErr(res: Response): Promise<string> {
             if (obj.error && typeof obj.error === 'object') {
                 const err = obj.error as Record<string, unknown>;
                 const message = typeof err.message === 'string' ? err.message : undefined;
-                const code = typeof err.code === 'string' ? err.code : undefined;
-                if (message) return code ? `${code}: ${message}` : message;
+                const code = typeof err.code === 'string' ? err.code : null;
+                if (message) return { message, code };
             }
             // Fallback (agentApi errors): { error, message }
-            if (typeof obj.error === 'string') return obj.error;
-            if (typeof obj.message === 'string') return obj.message;
+            if (typeof obj.error === 'string') return { message: obj.error, code: null };
+            if (typeof obj.message === 'string') {
+                return { message: obj.message, code: null };
+            }
         }
     } catch {
         // body wasn't JSON
     }
-    return res.statusText || `HTTP ${res.status}`;
+    return {
+        message: res.statusText || `HTTP ${res.status}`,
+        code: null,
+    };
+}
+
+/** Convenience wrapper retained for the existing throw-string call sites that
+ * don't need the structured `code` (e.g. listTasks, getTask, transitionTask).
+ * New call sites that need to distinguish error kinds should use
+ * {@link parseApiError} + {@link TasktotimeApiError} instead. */
+async function readErr(res: Response): Promise<string> {
+    const parsed = await parseApiError(res);
+    return parsed.code ? `${parsed.code}: ${parsed.message}` : parsed.message;
+}
+
+/**
+ * Typed error thrown by API methods that need their callers to distinguish
+ * outcomes by HTTP status / server-supplied `code`. Currently used by
+ * {@link tasktotimeApi.updateWiki} so the wiki edit flow in `TaskDetailPage`
+ * can detect a 409 `STALE_VERSION` / `StaleVersion` collision and prompt the
+ * user to reload, instead of silently surfacing the message-as-string.
+ *
+ * Other call sites continue to throw a vanilla `Error` (string message); we
+ * only pay the typed-error tax where it materially changes UX.
+ */
+export class TasktotimeApiError extends Error {
+    /** HTTP status from the response. */
+    readonly status: number;
+    /** Server-supplied error code (e.g. `STALE_VERSION`, `StaleVersion`,
+     * `NOT_FOUND`); `null` when the response didn't include one. */
+    readonly code: string | null;
+
+    constructor(status: number, code: string | null, message: string) {
+        super(code ? `${code}: ${message}` : message);
+        this.name = 'TasktotimeApiError';
+        this.status = status;
+        this.code = code;
+    }
+
+    /**
+     * `true` when the response represents an optimistic-concurrency conflict
+     * for a wiki update — i.e. HTTP 409 with a `STALE_VERSION` / `StaleVersion`
+     * code. The two codes both reach 409 (adapter vs domain layer); we treat
+     * them as the same UX-wise.
+     */
+    get isVersionConflict(): boolean {
+        if (this.status !== 409) return false;
+        return this.code === 'STALE_VERSION' || this.code === 'StaleVersion';
+    }
 }
 
 // ─── Wire types ─────────────────────────────────────────────────────────
@@ -263,7 +327,14 @@ export interface CreateTaskInput {
     description?: string;
     memo?: string;
     bucket: TaskBucket;
-    priority: 0 | 1 | 2 | 3;
+    /**
+     * Backend `parseCreateTaskBody` accepts either an integer 0..3 or the
+     * string union (`'low' | 'medium' | 'high' | 'critical'`) — see
+     * `tasktotime/adapters/http/schemas.ts`. Frontend dialogs send the
+     * string form (per PR #82) since that's what the domain Task uses
+     * internally; the int form remains for legacy callers / scripts.
+     */
+    priority: TaskPriority | 0 | 1 | 2 | 3;
     source: TaskSource;
     requiredHeadcount: number;
     assignedTo: TaskUserRef;
@@ -447,7 +518,16 @@ export const tasktotimeApi = {
         if (!res.ok) throw new Error(await readErr(res));
     },
 
-    /** `PUT /api/tasktotime/tasks/:id/wiki` */
+    /**
+     * `PUT /api/tasktotime/tasks/:id/wiki` — patch with optimistic concurrency.
+     *
+     * Throws {@link TasktotimeApiError} (not a plain Error) so the caller can
+     * detect a 409 `STALE_VERSION` / `StaleVersion` collision via
+     * `err.isVersionConflict` and prompt the user to reload the task. All
+     * other failure modes still surface a typed error with the same shape —
+     * call sites that don't care about the conflict path can read `err.message`
+     * exactly like they would on a plain Error.
+     */
     async updateWiki(
         taskId: string,
         companyId: string,
@@ -459,7 +539,10 @@ export const tasktotimeApi = {
             headers: await authHeaders(companyId),
             body: JSON.stringify(input),
         });
-        if (!res.ok) throw new Error(await readErr(res));
+        if (!res.ok) {
+            const { code, message } = await parseApiError(res);
+            throw new TasktotimeApiError(res.status, code, message);
+        }
         const body = (await res.json()) as { ok: boolean; task: TaskDto };
         return body.task;
     },

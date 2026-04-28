@@ -437,10 +437,45 @@ service cloud.firestore {
     }
 
     // Work Sessions (Time Tracking)
+    //
+    // RLS: companyId-scoped reads + writes. Closes the cross-tenant leak
+    // surfaced by the work_sessions TARGET test in
+    // `functions/test/rlsCrossTenant.test.ts` (added in PR #91).
+    //
+    // Note: server-side handlers (functions/src/triggers/workSessions/*,
+    // functions/src/agent/routes/timeTracking.ts, telegram bot session
+    // managers) use the Admin SDK which bypasses these rules entirely.
+    // The constraints below only apply to direct client SDK writes.
     match /work_sessions/{sessionId} {
-      allow read: if isSignedIn();
-      allow create, update: if isSignedIn(); // Allow workers to create/update their sessions
-      allow delete: if false; // Deletion only via admin or functions
+      // READ: signed-in user from the same company.
+      allow read: if isSignedIn() &&
+                  resource.data.companyId == getUserCompany();
+
+      // CREATE: signed-in user must set companyId == own company AND
+      // either own session (employeeId == auth.uid) OR be a same-company
+      // admin (e.g. CreateSessionDialog flow where admin opens a session
+      // for a worker).
+      allow create: if isSignedIn() &&
+                    request.resource.data.companyId == getUserCompany() &&
+                    (
+                      request.resource.data.employeeId == request.auth.uid ||
+                      isAdmin()
+                    );
+
+      // UPDATE: signed-in user, same-company, AND either it is the
+      // worker's own session OR a same-company admin (closing/voiding
+      // sessions). companyId must remain pinned to the user's company.
+      allow update: if isSignedIn() &&
+                    resource.data.companyId == getUserCompany() &&
+                    request.resource.data.companyId == getUserCompany() &&
+                    (
+                      resource.data.employeeId == request.auth.uid ||
+                      isAdmin()
+                    );
+
+      // DELETE: never via client SDK. Use Admin SDK (Cloud Functions)
+      // for ledger-safe corrections instead.
+      allow delete: if false;
     }
 
     // Notes (INBOX - captured from Telegram bot)

@@ -20,11 +20,10 @@
  *   3. tasktotime_transitions
  *      - read scoped by companyId
  *      - write permanently denied (append-only via server-side writes)
- *   4. work_sessions  ← KNOWN GAP from the rules-as-deployed
- *      - CURRENT: any signed-in user CAN read another tenant's sessions
- *        (firestore.rules:439-444). This is documented in a passing test so
- *        the spec evidence is captured. Hardening is deferred — see PR body.
- *      - TARGET: cross-tenant denied  ← test.skip + TODO until rules updated
+ *   4. work_sessions  ← cross-tenant gap CLOSED in fix/work-sessions-cross-tenant-rls
+ *      - read scoped by companyId (denies cross-tenant)
+ *      - delete remains hard-denied (server-only via Admin SDK)
+ *      - unauthenticated read denied (sanity check)
  *
  * Runtime gating:
  *   These tests need the Firestore rules emulator on `localhost:8080`. We
@@ -456,29 +455,31 @@ describeIfEmulator('rules: tasktotime_transitions', () => {
   });
 });
 
-// ─── work_sessions — KNOWN CROSS-TENANT GAP ─────────────────────────────
+// ─── work_sessions — cross-tenant scoping (gap closed) ──────────────────
 
-describeIfEmulator('rules: work_sessions — known cross-tenant gap', () => {
+describeIfEmulator('rules: work_sessions — cross-tenant scoping', () => {
   const WS_A = 'session_in_company_A';
 
   beforeEach(async () => {
     await seedDoc(testEnv, `work_sessions/${WS_A}`, {
       companyId: COMPANY_A,
-      userId: USER_A_OWNER,
-      startAt: Date.now(),
-      endAt: Date.now() + 1000,
+      employeeId: USER_A_OWNER,
+      startTime: Date.now(),
+      status: 'active',
     });
   });
 
-  // CURRENT BEHAVIOR — pinned by test so we notice if the rule changes.
-  // firestore.rules:439-444 reads:
-  //   allow read: if isSignedIn();
-  //   allow create, update: if isSignedIn();
-  //   allow delete: if false;
-  // No companyId scoping ⇒ a companyB user can read companyA's sessions.
-  // This is a TODO not addressed in this PR; see PR body.
-  it('CURRENT: any signed-in user CAN read another tenant session (documents the gap)', async () => {
+  it('ALLOWS same-company employee to read', async () => {
     await assertSucceeds(
+      authedAs(testEnv, USER_A_RANDOM)
+        .firestore()
+        .doc(`work_sessions/${WS_A}`)
+        .get(),
+    );
+  });
+
+  it('DENIES cross-tenant read (companyB user reading companyA session)', async () => {
+    await assertFails(
       authedAs(testEnv, USER_B_RANDOM)
         .firestore()
         .doc(`work_sessions/${WS_A}`)
@@ -486,14 +487,10 @@ describeIfEmulator('rules: work_sessions — known cross-tenant gap', () => {
     );
   });
 
-  // TARGET BEHAVIOR — once `firestore.rules` adds `resource.data.companyId
-  // == getUserCompany()` to the work_sessions read rule, flip `.skip` →
-  // `.it` to enforce the cross-tenant denial. Tracked as a follow-up; do
-  // NOT modify rules in this PR.
-  // eslint-disable-next-line jest/no-disabled-tests
-  it.skip('TARGET: cross-tenant denied (TODO: tighten firestore.rules:439-444)', async () => {
+  it('DENIES cross-tenant read even for cross-company admin', async () => {
+    // Admin scope is company-bound — companyB admin must NOT read companyA sessions.
     await assertFails(
-      authedAs(testEnv, USER_B_RANDOM)
+      authedAs(testEnv, USER_B_ADMIN)
         .firestore()
         .doc(`work_sessions/${WS_A}`)
         .get(),

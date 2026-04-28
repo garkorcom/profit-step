@@ -2,8 +2,8 @@
  * AIAuditPort — append-only log for AI-driven flows.
  *
  * Records prompt + response + token cost + user edits for every AI call
- * (generate_task / estimate_minutes / modify_task / decompose_estimate).
- * Used for accuracy analysis and cost tracking.
+ * (generate_task / estimate_minutes / modify_task / decompose_estimate /
+ * decompose_task). Used for accuracy analysis and cost tracking.
  *
  * See spec/04-storage/data-dependencies.md §aiAuditLogs.
  */
@@ -19,7 +19,8 @@ export interface AIAuditEntry {
     | 'generate_task'
     | 'estimate_minutes'
     | 'modify_task'
-    | 'decompose_estimate';
+    | 'decompose_estimate'
+    | 'decompose_task';
   prompt: string;
   response: unknown;
   confidence?: number;

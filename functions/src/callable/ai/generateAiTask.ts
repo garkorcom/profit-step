@@ -2,12 +2,32 @@ import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import Anthropic from "@anthropic-ai/sdk";
 import { ANTHROPIC_API_KEY } from "../../config";
+import * as envModule from "../../config/env";
+import { getTasktotimeServices } from "../../tasktotime/composition";
 import { z } from "zod";
 import {
     EstimateItem,
     ScopeCandidate,
     findScopeCandidates,
 } from "./scopeMatcher";
+
+// ============================================================
+// FEATURE FLAG — tasktotime migration
+// ============================================================
+//
+// When `TASKTOTIME_AI_CALLABLES_ENABLED` is true (default):
+//   - generateAiTask reads "recent tasks" context from `tasktotime_tasks`
+//   - confirmAiTask persists via `createTaskHandler` → `tasktotime_tasks`
+// When false (rollback path):
+//   - reads/writes target the legacy `gtd_tasks` collection
+//
+// We import the env module as a namespace (not a destructured const) so
+// jest.mock can rebind the `TASKTOTIME_AI_CALLABLES_ENABLED` getter at
+// runtime. A direct named import would be inlined by the TS compiler
+// (commonjs bindings are read-only in the consumer's perspective).
+function tasktotimeEnabled(): boolean {
+    return envModule.TASKTOTIME_AI_CALLABLES_ENABLED;
+}
 
 // ============================================================
 // 1. ZOD SCHEMAS
@@ -124,12 +144,21 @@ async function loadContextSnapshot(
 ): Promise<ContextSnapshot> {
     const db = getFirestore();
 
+    // Recent-tasks query: read from `tasktotime_tasks` when the migration
+    // flag is on, otherwise the legacy `gtd_tasks`. Both collections share
+    // the `clientId` field name so the query shape is identical; only the
+    // result mapping differs (lifecycle vs status, assignedTo.name vs
+    // assigneeName, createdAt as epoch ms vs Firestore Timestamp).
+    const recentTasksCollection = tasktotimeEnabled()
+        ? "tasktotime_tasks"
+        : "gtd_tasks";
+
     // Parallel fetch for speed
     const [projectDoc, tasksSnap, estimatesSnap, cosSnap, employeesSnap, projectsSnap] =
         await Promise.all([
             db.doc(`clients/${projectId}`).get(),
             db
-                .collection("gtd_tasks")
+                .collection(recentTasksCollection)
                 .where("clientId", "==", projectId)
                 .orderBy("createdAt", "desc")
                 .limit(30)
@@ -181,12 +210,27 @@ async function loadContextSnapshot(
         },
         recentTasks: tasksSnap.docs.map((d) => {
             const t = d.data();
+            // tasktotime stores createdAt as epoch ms (number); legacy
+            // gtd_tasks stores it as a Firestore Timestamp. Handle both.
+            let createdAtIso = "";
+            if (typeof t.createdAt === "number" && Number.isFinite(t.createdAt)) {
+                createdAtIso = new Date(t.createdAt).toISOString();
+            } else if (t.createdAt?.toDate?.()) {
+                createdAtIso = t.createdAt.toDate().toISOString();
+            }
             return {
                 title: t.title,
-                assigneeName: t.assigneeName || "",
-                status: t.status,
+                // tasktotime: assignedTo: { id, name } — denormalised display
+                // legacy: assigneeName field
+                assigneeName:
+                    t.assignedTo?.name ?? t.assigneeName ?? "",
+                // tasktotime: lifecycle vocabulary; legacy: status vocabulary
+                // The AI prompt accepts either as opaque strings.
+                status: t.lifecycle ?? t.status ?? "",
+                // tasktotime drops `completionNotes`; gtd_tasks has it.
                 completionNotes: t.completionNotes,
-                createdAt: t.createdAt?.toDate?.()?.toISOString?.() || "",
+                createdAt: createdAtIso,
+                // tasktotime drops `zone`; gtd_tasks has it.
                 zone: t.zone,
             };
         }),
@@ -552,6 +596,239 @@ export const generateAiTask = onCall(
 // 8. COMPANION: Confirm/Save Task (called after user reviews draft)
 // ============================================================
 
+/**
+ * Resolve the caller's `companyId` from the `users/{uid}` profile. The
+ * tasktotime aggregate requires a `companyId` for RLS scoping; the legacy
+ * `gtd_tasks` collection had no equivalent so this lookup is new.
+ *
+ * Throws `failed-precondition` if the user has no companyId — that
+ * indicates a partially-provisioned tenant and must be surfaced rather
+ * than silently writing to an unscoped row.
+ */
+async function resolveCallerCompanyId(uid: string): Promise<string> {
+    const db = getFirestore();
+    const userDoc = await db.doc(`users/${uid}`).get();
+    if (!userDoc.exists) {
+        throw new HttpsError(
+            "failed-precondition",
+            `User profile for uid=${uid} not found`
+        );
+    }
+    const companyId = userDoc.data()?.companyId;
+    if (typeof companyId !== "string" || companyId.length === 0) {
+        throw new HttpsError(
+            "failed-precondition",
+            `User ${uid} has no companyId — tasktotime write requires tenant scope`
+        );
+    }
+    return companyId;
+}
+
+/**
+ * Persist via the canonical tasktotime path. Called when the migration
+ * flag is enabled.
+ *
+ * Why use `createTaskHandler` and not write `tasktotime_tasks` directly:
+ *   - Idempotency (handler reserves the key + replays return the existing
+ *     task instead of creating a duplicate)
+ *   - Domain validation (lifecycle, headcount, money)
+ *   - Trigger fan-out (onTaskCreate cascade, audit log, BigQuery)
+ *   - Future-proof: schema changes land in one place
+ *
+ * The legacy `gtd_tasks` direct-write path stays in `confirmTaskLegacy`
+ * for the rollback case (flag=false). Both paths must produce the same
+ * wire response `{ success: true, taskId }` so the frontend hook
+ * `useAiTask.confirm` is unaffected.
+ */
+async function confirmTaskTasktotime(params: {
+    uid: string;
+    taskData: z.infer<typeof ConfirmInputSchema>["taskData"];
+    auditLogId: string | undefined;
+    userEdits: Array<{ field: string; aiValue?: unknown; userValue?: unknown }>;
+    scopeDecision: string | null | undefined;
+}): Promise<{ taskId: string }> {
+    const { uid, taskData, auditLogId, userEdits, scopeDecision } = params;
+    const db = getFirestore();
+    const companyId = await resolveCallerCompanyId(uid);
+
+    // Resolve display name for the `by` ref. Fallback to uid so the trigger
+    // fan-out always has a non-empty actor name (UserRef.name is required).
+    const userDoc = await db.doc(`users/${uid}`).get();
+    const callerName =
+        userDoc.data()?.displayName ??
+        userDoc.data()?.name ??
+        userDoc.data()?.email ??
+        uid;
+
+    // Map legacy AI priority vocabulary (low|medium|high|urgent|none) to
+    // tasktotime priority (critical|high|medium|low). 'urgent' and
+    // 'critical' collide in meaning — map 'urgent' → 'critical'. 'none' → 'low'.
+    const priority: "critical" | "high" | "medium" | "low" =
+        taskData.priority === "urgent"
+            ? "critical"
+            : taskData.priority === "high"
+                ? "high"
+                : taskData.priority === "low" || taskData.priority === "none"
+                    ? "low"
+                    : "medium";
+
+    // Map AI dueDate (ISO string) → tasktotime dueAt (epoch ms). Default
+    // to "1 week from now" if missing — same fallback as the gtd-proxy.
+    const dueAt = (() => {
+        if (typeof taskData.dueDate === "string" && taskData.dueDate.length > 0) {
+            const ms = Date.parse(taskData.dueDate);
+            if (Number.isFinite(ms)) return ms;
+        }
+        return Date.now() + 7 * 24 * 60 * 60 * 1000;
+    })();
+
+    // Build the assignedTo UserRef. The AI returns `assigneeIds[]` (string
+    // ids, possibly empty); pick the first as primary and fall back to the
+    // caller. `assigneeName` from the legacy shape may have the display name.
+    const primaryAssigneeId = taskData.assigneeIds?.[0];
+    const assignedTo =
+        typeof primaryAssigneeId === "string" && primaryAssigneeId.length > 0
+            ? {
+                id: primaryAssigneeId,
+                name: taskData.assigneeName || primaryAssigneeId,
+            }
+            : { id: uid, name: callerName };
+
+    // Co-assignees: remaining ids from assigneeIds[]. Names are not in the
+    // legacy shape so we use the id as the display fallback.
+    const coAssignees = (taskData.assigneeIds ?? []).slice(1).map((id) => ({
+        id,
+        name: id,
+    }));
+
+    // The `clientId` field carries the project id in legacy AI flows (the
+    // bot used `clientId` as the canonical link). tasktotime separates
+    // clientId vs projectId — preserve both for compatibility.
+    const linkedClientId = taskData.clientId || taskData.projectId;
+    const linkedProjectId = taskData.projectId;
+
+    // Idempotency key — derived from auditLogId when present (one
+    // confirmation per AI draft) so retries are safe. When absent (manual
+    // path), use a synthetic uid+timestamp key.
+    const idempotencyKey = auditLogId
+        ? `confirmAiTask:${auditLogId}`
+        : `confirmAiTask:manual:${uid}:${Date.now()}`;
+
+    const services = getTasktotimeServices();
+    const task = await services.createTaskHandler.execute({
+        idempotencyKey,
+        initialLifecycle: "ready",
+        by: { id: uid, name: callerName },
+        companyId,
+        title: taskData.title,
+        description: taskData.description || undefined,
+        dueAt,
+        estimatedDurationMinutes:
+            typeof taskData.estimatedMinutes === "number" &&
+                Number.isFinite(taskData.estimatedMinutes)
+                ? taskData.estimatedMinutes
+                : 60,
+        bucket: "next",
+        priority,
+        source: "ai",
+        assignedTo,
+        coAssignees: coAssignees.length > 0 ? coAssignees : undefined,
+        requiredHeadcount: 1,
+        costInternal: { amount: 0, currency: "USD" },
+        priceClient: { amount: 0, currency: "USD" },
+        clientId: linkedClientId || undefined,
+        clientName: taskData.clientName || undefined,
+        projectId: linkedProjectId || undefined,
+    });
+
+    // Update audit log to mirror the legacy behaviour. The audit collection
+    // itself is unchanged — only the `confirmedTaskId` now points to a
+    // tasktotime_tasks doc id instead of gtd_tasks.
+    if (auditLogId) {
+        const auditDoc = await db.doc(`aiAuditLogs/${auditLogId}`).get();
+        if (auditDoc.exists && auditDoc.data()?.userId === uid) {
+            await db.doc(`aiAuditLogs/${auditLogId}`).update({
+                wasAccepted: true,
+                userEdits,
+                scopeDecision: scopeDecision || null,
+                confirmedTaskId: task.id,
+                confirmedCollection: "tasktotime_tasks",
+            });
+        }
+    }
+
+    return { taskId: task.id };
+}
+
+/**
+ * Legacy persistence path — writes directly to `gtd_tasks`. Kept behind
+ * the feature flag for instant rollback. Mirrors the original
+ * pre-migration behaviour byte-for-byte.
+ */
+async function confirmTaskLegacy(params: {
+    uid: string;
+    taskData: z.infer<typeof ConfirmInputSchema>["taskData"];
+    auditLogId: string | undefined;
+    userEdits: Array<{ field: string; aiValue?: unknown; userValue?: unknown }>;
+    scopeDecision: string | null | undefined;
+}): Promise<{ taskId: string }> {
+    const { uid, taskData, auditLogId, userEdits, scopeDecision } = params;
+    const db = getFirestore();
+
+    const gtdTask: Record<string, any> = {
+        ownerId: uid,
+        ownerName: taskData.ownerName || "",
+        title: taskData.title || "",
+        description: taskData.description || "",
+        status: taskData.status || "next",
+        priority: taskData.priority || "medium",
+        taskType: taskData.taskType || "maintenance",
+        clientId: taskData.projectId || taskData.clientId || null,
+        clientName: taskData.clientName || "",
+        dueDate: taskData.dueDate || null,
+        needsEstimate: taskData.needsEstimate || false,
+        assigneeId: taskData.assigneeIds?.[0] || null,
+        assigneeName: taskData.assigneeName || "",
+        coAssignees: [],
+        coAssigneeIds: taskData.assigneeIds?.slice(1) || [],
+        estimatedMinutes: taskData.estimatedMinutes || null,
+        estimatedHours: taskData.estimatedMinutes
+            ? Math.round((taskData.estimatedMinutes / 60) * 10) / 10
+            : null,
+        checklistItems: (taskData.checklist || []).map(
+            (item: any, i: number) => ({
+                id: `ai_sub_${Date.now()}_${i}`,
+                text: item.title || item.text || "",
+                completed: false,
+                createdAt: FieldValue.serverTimestamp(),
+            })
+        ),
+        context: "@office",
+        source: "ai",
+        aiAuditLogId: auditLogId || null,
+        scopeStatus: scopeDecision || taskData.scopeStatus || null,
+        zone: taskData.zone || null,
+        createdAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+    };
+
+    const taskRef = await db.collection("gtd_tasks").add(gtdTask);
+
+    if (auditLogId) {
+        const auditDoc = await db.doc(`aiAuditLogs/${auditLogId}`).get();
+        if (auditDoc.exists && auditDoc.data()?.userId === uid) {
+            await db.doc(`aiAuditLogs/${auditLogId}`).update({
+                wasAccepted: true,
+                userEdits,
+                scopeDecision: scopeDecision || null,
+                confirmedTaskId: taskRef.id,
+            });
+        }
+    }
+
+    return { taskId: taskRef.id };
+}
+
 export const confirmAiTask = onCall(
     {
         region: "us-east1",
@@ -569,69 +846,46 @@ export const confirmAiTask = onCall(
             validData = ConfirmInputSchema.parse(request.data);
         } catch (err: any) {
             if (err instanceof z.ZodError) {
-                throw new HttpsError("invalid-argument", `Invalid input: ${err.issues.map(i => i.message).join(", ")}`);
+                throw new HttpsError(
+                    "invalid-argument",
+                    `Invalid input: ${err.issues.map((i) => i.message).join(", ")}`
+                );
             }
             throw new HttpsError("invalid-argument", "Invalid task data");
         }
 
         const { taskData, auditLogId, userEdits, scopeDecision } = validData;
+        const uid = request.auth.uid;
 
-        const db = getFirestore();
-
-        // Build GTD-compatible task document
-        // (must match the schema used by manual creation in GTDCreatePage)
-        const gtdTask: Record<string, any> = {
-            ownerId: request.auth.uid,
-            ownerName: taskData.ownerName || "",
-            title: taskData.title || "",
-            description: taskData.description || "",
-            status: taskData.status || "next",
-            priority: taskData.priority || "medium",
-            taskType: taskData.taskType || "maintenance",
-            clientId: taskData.projectId || taskData.clientId || null,
-            clientName: taskData.clientName || "",
-            dueDate: taskData.dueDate || null,
-            needsEstimate: taskData.needsEstimate || false,
-            assigneeId: taskData.assigneeIds?.[0] || null,
-            assigneeName: taskData.assigneeName || "",
-            coAssignees: [],
-            coAssigneeIds: taskData.assigneeIds?.slice(1) || [],
-            estimatedMinutes: taskData.estimatedMinutes || null,
-            estimatedHours: taskData.estimatedMinutes ? Math.round(taskData.estimatedMinutes / 60 * 10) / 10 : null,
-            checklistItems: (taskData.checklist || []).map(
-                (item: any, i: number) => ({
-                    id: `ai_sub_${Date.now()}_${i}`,
-                    text: item.title || item.text || "",
-                    completed: false,
-                    createdAt: FieldValue.serverTimestamp(),
+        // Branch on the migration flag. When ON (default) → tasktotime;
+        // when OFF → legacy gtd_tasks. Both paths return the SAME wire
+        // shape { success, taskId } so the frontend is unaffected.
+        try {
+            const result = tasktotimeEnabled()
+                ? await confirmTaskTasktotime({
+                    uid,
+                    taskData,
+                    auditLogId,
+                    userEdits: userEdits ?? [],
+                    scopeDecision,
                 })
-            ),
-            context: "@office",
-            source: "ai",
-            aiAuditLogId: auditLogId || null,
-            scopeStatus: scopeDecision || taskData.scopeStatus || null,
-            zone: taskData.zone || null,
-            createdAt: FieldValue.serverTimestamp(),
-            updatedAt: FieldValue.serverTimestamp(),
-        };
-
-        // Save to the global GTD tasks collection
-        const taskRef = await db.collection("gtd_tasks").add(gtdTask);
-
-        // Update audit log with user's edits and confirmation
-        if (auditLogId) {
-            // Verify ownership before updating
-            const auditDoc = await db.doc(`aiAuditLogs/${auditLogId}`).get();
-            if (auditDoc.exists && auditDoc.data()?.userId === request.auth.uid) {
-                await db.doc(`aiAuditLogs/${auditLogId}`).update({
-                    wasAccepted: true,
-                    userEdits: userEdits || [],
-                    scopeDecision: scopeDecision || null,
-                    confirmedTaskId: taskRef.id,
+                : await confirmTaskLegacy({
+                    uid,
+                    taskData,
+                    auditLogId,
+                    userEdits: userEdits ?? [],
+                    scopeDecision,
                 });
-            }
-        }
 
-        return { success: true, taskId: taskRef.id };
+            return { success: true, taskId: result.taskId };
+        } catch (err: any) {
+            // Re-throw HttpsError as-is; wrap anything else as internal.
+            if (err instanceof HttpsError) throw err;
+            console.error("confirmAiTask error:", err);
+            throw new HttpsError(
+                "internal",
+                err?.message || "Failed to persist confirmed task"
+            );
+        }
     }
 );

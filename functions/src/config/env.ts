@@ -55,3 +55,23 @@ export const ADMIN_GROUP_ID = process.env.ADMIN_GROUP_ID ?? '';
 // Kept here because it's an identifier more than a credential.
 // ============================================================================
 export const WHATSAPP_VERIFY_TOKEN = process.env.WHATSAPP_VERIFY_TOKEN ?? '';
+
+// ============================================================================
+// Feature flags
+// ============================================================================
+
+/**
+ * Toggle for AI callables (`generateAiTask`, `confirmAiTask`, `modifyAiTask`)
+ * to target the canonical `tasktotime_tasks` collection instead of the
+ * legacy `gtd_tasks`. Default ON.
+ *
+ * Rollback path: set `TASKTOTIME_AI_CALLABLES_ENABLED=false` in the function's
+ * runtime env vars and re-deploy. Reverts behaviour to writing `gtd_tasks` /
+ * reading from `gtd_tasks` for context. No code change required.
+ *
+ * Migration of existing legacy `gtd_tasks` rows is a separate Phase 6 effort
+ * (data migration script). The legacy `gtd_tasks` triggers continue to fire
+ * for any rows still in that collection regardless of this flag.
+ */
+export const TASKTOTIME_AI_CALLABLES_ENABLED =
+  (process.env.TASKTOTIME_AI_CALLABLES_ENABLED ?? 'true').toLowerCase() !== 'false';

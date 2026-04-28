@@ -263,7 +263,14 @@ export interface CreateTaskInput {
     description?: string;
     memo?: string;
     bucket: TaskBucket;
-    priority: 0 | 1 | 2 | 3;
+    /**
+     * Backend `parseCreateTaskBody` accepts either an integer 0..3 or the
+     * string union (`'low' | 'medium' | 'high' | 'critical'`) — see
+     * `tasktotime/adapters/http/schemas.ts`. Frontend dialogs send the
+     * string form (per PR #82) since that's what the domain Task uses
+     * internally; the int form remains for legacy callers / scripts.
+     */
+    priority: TaskPriority | 0 | 1 | 2 | 3;
     source: TaskSource;
     requiredHeadcount: number;
     assignedTo: TaskUserRef;

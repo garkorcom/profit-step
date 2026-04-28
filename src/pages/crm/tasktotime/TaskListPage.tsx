@@ -22,7 +22,7 @@
  * later PRs.
  */
 
-import React, { useCallback, useEffect, useMemo, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
     Alert,
     Box,
@@ -36,6 +36,7 @@ import {
     OutlinedInput,
     Paper,
     Select,
+    Snackbar,
     Stack,
     Table,
     TableBody,
@@ -51,17 +52,20 @@ import Grid from '@mui/material/Grid';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import ClearIcon from '@mui/icons-material/Clear';
+import AddIcon from '@mui/icons-material/Add';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Controller, useForm, useWatch } from 'react-hook-form';
 
 import { useAuth } from '../../../auth/AuthContext';
 import { useTaskListPaginated } from '../../../hooks/useTasktotime';
+import CreateTaskDialog from '../../../components/tasktotime/CreateTaskDialog';
 import type {
     ListTasksParams,
     TaskBucket,
     TaskDto,
     TaskLifecycle,
     TaskPriority,
+    TaskUserRef,
 } from '../../../api/tasktotimeApi';
 
 const LIFECYCLE_COLORS: Record<TaskLifecycle, { bg: string; fg: string }> = {
@@ -716,6 +720,44 @@ const TaskListPage: React.FC = () => {
 
     const filtersActive = hasAnyFilter(liveFilters);
 
+    // ─── Create Task dialog ─────────────────────────────────────────────
+    //
+    // We previously instructed users to "create one via the API" — there was
+    // no in-app affordance. The button + dialog below close that gap.
+    // `defaultAssignee` is sourced from the auth profile so the form
+    // pre-fills with the current user; the dialog still allows free-text
+    // override (a real picker is a follow-up PR).
+    const [isCreateOpen, setIsCreateOpen] = useState<boolean>(false);
+    const [createdSnackbar, setCreatedSnackbar] = useState<string | null>(null);
+
+    const defaultAssignee: TaskUserRef = useMemo(
+        () => ({
+            id: userProfile?.id ?? '',
+            name: userProfile?.displayName ?? userProfile?.email ?? 'Me',
+        }),
+        [userProfile?.id, userProfile?.displayName, userProfile?.email],
+    );
+
+    const handleOpenCreate = useCallback(() => setIsCreateOpen(true), []);
+    const handleCloseCreate = useCallback(() => setIsCreateOpen(false), []);
+    const handleTaskCreated = useCallback(
+        (taskNumber: string) => {
+            setCreatedSnackbar(`Task ${taskNumber} created`);
+            refetch();
+        },
+        [refetch],
+    );
+    const handleSnackbarClose = useCallback(
+        (_e: React.SyntheticEvent | Event, reason?: string) => {
+            // Don't dismiss the success toast on a stray click-away — only
+            // on timeout / explicit close. Mirrors `TasksMasonryPage` undo
+            // pattern.
+            if (reason === 'clickaway') return;
+            setCreatedSnackbar(null);
+        },
+        [],
+    );
+
     return (
         <Box sx={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
             {/* Page Header */}
@@ -760,18 +802,29 @@ const TaskListPage: React.FC = () => {
                     )}
                 </Box>
 
-                <Tooltip title="Refresh">
-                    <span>
-                        <IconButton
-                            onClick={refetch}
-                            disabled={loading}
-                            size="small"
-                            aria-label="Refresh task list"
-                        >
-                            <RefreshIcon />
-                        </IconButton>
-                    </span>
-                </Tooltip>
+                <Stack direction="row" spacing={1} alignItems="center">
+                    <Button
+                        variant="contained"
+                        size="small"
+                        startIcon={<AddIcon />}
+                        onClick={handleOpenCreate}
+                        disabled={!companyId}
+                    >
+                        Create task
+                    </Button>
+                    <Tooltip title="Refresh">
+                        <span>
+                            <IconButton
+                                onClick={refetch}
+                                disabled={loading}
+                                size="small"
+                                aria-label="Refresh task list"
+                            >
+                                <RefreshIcon />
+                            </IconButton>
+                        </span>
+                    </Tooltip>
+                </Stack>
             </Box>
 
             {/* Body */}
@@ -847,14 +900,41 @@ const TaskListPage: React.FC = () => {
                                                 align="center"
                                                 sx={{ py: 6 }}
                                             >
-                                                <Typography
-                                                    variant="body2"
-                                                    color="text.secondary"
-                                                >
-                                                    {filtersActive
-                                                        ? 'No tasks match the current filters.'
-                                                        : 'No tasks yet. Create one via the API or wait for estimate decomposition to push tasks here.'}
-                                                </Typography>
+                                                {filtersActive ? (
+                                                    <Typography
+                                                        variant="body2"
+                                                        color="text.secondary"
+                                                    >
+                                                        No tasks match the current
+                                                        filters.
+                                                    </Typography>
+                                                ) : (
+                                                    <Stack
+                                                        spacing={1.5}
+                                                        alignItems="center"
+                                                    >
+                                                        <Typography
+                                                            variant="body2"
+                                                            color="text.secondary"
+                                                        >
+                                                            No tasks yet. Click{' '}
+                                                            <strong>Create task</strong>{' '}
+                                                            above to add your first
+                                                            one, or wait for estimate
+                                                            decomposition to push tasks
+                                                            here.
+                                                        </Typography>
+                                                        <Button
+                                                            variant="outlined"
+                                                            size="small"
+                                                            startIcon={<AddIcon />}
+                                                            onClick={handleOpenCreate}
+                                                            disabled={!companyId}
+                                                        >
+                                                            Create task
+                                                        </Button>
+                                                    </Stack>
+                                                )}
                                             </TableCell>
                                         </TableRow>
                                     ) : (
@@ -891,6 +971,35 @@ const TaskListPage: React.FC = () => {
                     </>
                 )}
             </Box>
+
+            {/* Create Task dialog — mounted only when companyId is known so
+                we never POST without a tenant scope. */}
+            {companyId && (
+                <CreateTaskDialog
+                    open={isCreateOpen}
+                    onClose={handleCloseCreate}
+                    onCreated={handleTaskCreated}
+                    companyId={companyId}
+                    defaultAssignee={defaultAssignee}
+                />
+            )}
+
+            {/* Created-confirmation toast. Stays for 4s then auto-hides. */}
+            <Snackbar
+                open={!!createdSnackbar}
+                autoHideDuration={4000}
+                onClose={handleSnackbarClose}
+                anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+            >
+                <Alert
+                    onClose={() => setCreatedSnackbar(null)}
+                    severity="success"
+                    variant="filled"
+                    sx={{ width: '100%' }}
+                >
+                    {createdSnackbar ?? ''}
+                </Alert>
+            </Snackbar>
         </Box>
     );
 };

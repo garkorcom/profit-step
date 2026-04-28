@@ -18,6 +18,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import {
     tasktotimeApi,
+    type CreateTaskInput,
     type ListTasksParams,
     type TaskDto,
     type TransitionTaskInput,
@@ -423,6 +424,53 @@ export function useUpdateWiki(): MutationState<UpdateWikiArgs, TaskDto> {
                 args.input,
             );
             return updated;
+        } catch (err: unknown) {
+            const e = err instanceof Error ? err : new Error(String(err));
+            setError(e);
+            throw e;
+        } finally {
+            inFlight.current = false;
+            setLoading(false);
+        }
+    }, []);
+
+    const reset = useCallback(() => {
+        setError(null);
+    }, []);
+
+    return { mutate, loading, error, reset };
+}
+
+// ─── useCreateTask ───────────────────────────────────────────────────────
+
+/**
+ * Mutation hook for `POST /api/tasktotime/tasks`. Returns `{ mutate, loading,
+ * error, reset }` — same shape as `useTransitionTask` / `useUpdateWiki`.
+ *
+ * `mutate` resolves to the created `TaskDto` so callers can navigate to the
+ * new detail page or push it into a list optimistically; on failure the
+ * promise rejects AND `error` is populated for declarative rendering.
+ *
+ * Idempotency: the `idempotencyKey` field is part of `CreateTaskInput` —
+ * callers (the dialog) generate it once per submit attempt so a retry/dedup
+ * lookup matches. The hook is a thin pass-through and doesn't synthesise the
+ * key itself; that keeps the contract explicit at the call site.
+ */
+export function useCreateTask(): MutationState<CreateTaskInput, TaskDto> {
+    const [loading, setLoading] = useState<boolean>(false);
+    const [error, setError] = useState<Error | null>(null);
+    const inFlight = useRef<boolean>(false);
+
+    const mutate = useCallback(async (input: CreateTaskInput): Promise<TaskDto> => {
+        if (inFlight.current) {
+            throw new Error('Task creation already in progress');
+        }
+        inFlight.current = true;
+        setLoading(true);
+        setError(null);
+        try {
+            const created = await tasktotimeApi.createTask(input);
+            return created;
         } catch (err: unknown) {
             const e = err instanceof Error ? err : new Error(String(err));
             setError(e);

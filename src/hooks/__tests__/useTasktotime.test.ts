@@ -14,18 +14,29 @@
 
 import { act, renderHook, waitFor } from '@testing-library/react';
 
-import { useTaskList, useTaskListPaginated, useTransitionTask } from '../useTasktotime';
-import type { TaskDto, TransitionTaskResult } from '../../api/tasktotimeApi';
+import {
+    useCreateTask,
+    useTaskList,
+    useTaskListPaginated,
+    useTransitionTask,
+} from '../useTasktotime';
+import type {
+    CreateTaskInput,
+    TaskDto,
+    TransitionTaskResult,
+} from '../../api/tasktotimeApi';
 
 // ─── Mocks ──────────────────────────────────────────────────────────────
 
 const listTasks = jest.fn();
 const transitionTask = jest.fn();
+const createTask = jest.fn();
 
 jest.mock('../../api/tasktotimeApi', () => ({
     tasktotimeApi: {
         listTasks: (...args: unknown[]) => listTasks(...args),
         transitionTask: (...args: unknown[]) => transitionTask(...args),
+        createTask: (...args: unknown[]) => createTask(...args),
     },
 }));
 
@@ -68,6 +79,7 @@ const sampleTask: TaskDto = {
 beforeEach(() => {
     listTasks.mockReset();
     transitionTask.mockReset();
+    createTask.mockReset();
 });
 
 // ─── useTaskList ─────────────────────────────────────────────────────────
@@ -337,5 +349,92 @@ describe('useTransitionTask', () => {
             idempotencyKey: 'k_accept',
             acceptance,
         });
+    });
+});
+
+// ─── useCreateTask ───────────────────────────────────────────────────────
+
+describe('useCreateTask', () => {
+    /** Build a complete `CreateTaskInput` for testing — keeps each test
+     * focused on the one field it cares about without recreating the full
+     * required-field surface every time. */
+    const baseInput = (overrides: Partial<CreateTaskInput> = {}): CreateTaskInput => ({
+        idempotencyKey: 'idem_1',
+        companyId: 'co_1',
+        title: 'New task',
+        bucket: 'next',
+        // String form per PR #82 (backend accepts both int and string).
+        priority: 'medium',
+        source: 'web',
+        requiredHeadcount: 1,
+        assignedTo: { id: 'u_1', name: 'Alice' },
+        dueAt: 1_900_000_000_000,
+        estimatedDurationMinutes: 60,
+        costInternal: { amount: 0, currency: 'USD' },
+        priceClient: { amount: 0, currency: 'USD' },
+        ...overrides,
+    });
+
+    it('forwards the input to the API and resolves to the created task', async () => {
+        const created: TaskDto = { ...sampleTask, taskNumber: 'T-100' };
+        createTask.mockResolvedValueOnce(created);
+
+        const { result } = renderHook(() => useCreateTask());
+
+        let returned: TaskDto | undefined;
+        await act(async () => {
+            returned = await result.current.mutate(
+                baseInput({ title: 'Install kitchen cabinets' }),
+            );
+        });
+
+        expect(returned).toEqual(created);
+        expect(createTask).toHaveBeenCalledTimes(1);
+        expect(createTask).toHaveBeenCalledWith(
+            expect.objectContaining({
+                title: 'Install kitchen cabinets',
+                priority: 'medium',
+                source: 'web',
+                companyId: 'co_1',
+                idempotencyKey: 'idem_1',
+            }),
+        );
+        expect(result.current.error).toBeNull();
+    });
+
+    it('surfaces the error and rethrows when the API rejects', async () => {
+        createTask.mockRejectedValueOnce(new Error('ValidationError: title too short'));
+
+        const { result } = renderHook(() => useCreateTask());
+
+        const caught: { err: Error | null } = { err: null };
+        await act(async () => {
+            try {
+                await result.current.mutate(baseInput({ title: 'no' }));
+            } catch (err) {
+                caught.err = err instanceof Error ? err : new Error(String(err));
+            }
+        });
+
+        expect(caught.err).toBeInstanceOf(Error);
+        expect(caught.err?.message).toBe('ValidationError: title too short');
+        expect(result.current.error?.message).toBe('ValidationError: title too short');
+    });
+
+    // Locks the wire shape for priority — the frontend dialog now sends
+    // strings (PR #82) instead of the legacy `0..3` ints. If a future schema
+    // tightening flips this back, this test should fail loudly.
+    it('passes through the string priority value verbatim (no int coercion)', async () => {
+        createTask.mockResolvedValueOnce(sampleTask);
+
+        const { result } = renderHook(() => useCreateTask());
+
+        await act(async () => {
+            await result.current.mutate(baseInput({ priority: 'critical' }));
+        });
+
+        expect(createTask).toHaveBeenCalledWith(
+            expect.objectContaining({ priority: 'critical' }),
+        );
     });
 });

@@ -3,8 +3,10 @@
  *
  * - Source: `tasktotime_tasks/{taskId}` onUpdate where `wiki.contentMd` or
  *   `wiki.attachments` differ.
- * - Audit row only in PR-C; `versionHistory` archive overflow + parent
- *   rollup wiki invalidation come in PR-B6 once a `WikiHistoryPort` lands.
+ * - Audit row + `versionHistory` archive overflow into the
+ *   `tasktotime_tasks/{taskId}/wiki_history` subcollection (via
+ *   `WikiHistoryPort`). Parent rollup wiki invalidation is a future
+ *   follow-up.
  *
  * Note: this is a SECOND trigger on `tasktotime_tasks/{taskId}` onUpdate
  * (the other being `onTasktotimeTaskUpdate`). Cloud Functions allows
@@ -34,6 +36,7 @@ export const onTasktotimeWikiUpdate = functions
         { before, after, docId: taskId, eventId },
         {
           taskRepo: services.adapters.taskRepo,
+          wikiHistory: services.adapters.wikiHistory,
           idempotency: services.adapters.idempotency,
           bigQueryAudit: services.adapters.bigQueryAudit,
           clock: services.adapters.clock,

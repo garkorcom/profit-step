@@ -7,6 +7,7 @@
 
 import { InMemoryTaskRepository } from './InMemoryTaskRepository';
 import { InMemoryTransitionLog } from './InMemoryTransitionLog';
+import { InMemoryWikiHistory } from './InMemoryWikiHistory';
 import { StubClientLookup } from './StubClientLookup';
 import { StubUserLookup } from './StubUserLookup';
 import { FakeClock } from './FakeClock';
@@ -299,6 +300,7 @@ export class FakeIdGenerator implements IdGeneratorPort {
 export interface AllPorts {
   taskRepo: InMemoryTaskRepository;
   transitionLog: InMemoryTransitionLog;
+  wikiHistory: InMemoryWikiHistory;
   clientLookup: StubClientLookup;
   projectLookup: StubProjectLookup;
   userLookup: StubUserLookup;
@@ -330,6 +332,7 @@ export function makeAllPorts(initialEpochMs?: number): AllPorts {
   return {
     taskRepo: new InMemoryTaskRepository(),
     transitionLog: new InMemoryTransitionLog(),
+    wikiHistory: new InMemoryWikiHistory(),
     clientLookup: new StubClientLookup(),
     projectLookup: new StubProjectLookup(),
     userLookup: new StubUserLookup(),

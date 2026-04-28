@@ -35,6 +35,12 @@ export {
   TRANSITION_LOG_COLLECTION,
   makeTransitionLogId,
 } from './FirestoreTransitionLog';
+export {
+  FirestoreWikiHistory,
+  WIKI_HISTORY_PARENT_COLLECTION,
+  WIKI_HISTORY_SUBCOLLECTION,
+  makeWikiHistoryDocId,
+} from './FirestoreWikiHistory';
 
 // §3-9 — read-only lookups
 export { FirestoreClientLookup } from './FirestoreClientLookup';

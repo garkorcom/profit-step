@@ -46,9 +46,16 @@ import {
     type ProposedSubtask,
 } from '../../api/aiTaskApi';
 
-const PRIORITY_OPTIONS: AiSubtaskPriority[] = ['low', 'medium', 'high', 'urgent'];
+const PRIORITY_OPTIONS: AiSubtaskPriority[] = [
+    'low',
+    'medium',
+    'high',
+    'urgent',
+    'critical',
+];
 
 const PRIORITY_COLORS: Record<AiSubtaskPriority, { bg: string; fg: string }> = {
+    critical: { bg: '#FEE2E2', fg: '#991B1B' },
     urgent: { bg: '#FEE2E2', fg: '#991B1B' },
     high: { bg: '#FED7AA', fg: '#9A3412' },
     medium: { bg: '#FEF3C7', fg: '#92400E' },

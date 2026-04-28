@@ -433,7 +433,7 @@ describe("confirmAiDecomposition", () => {
         expect(auditUpdate?.data.confirmedCollection).toBe("tasktotime_tasks");
     });
 
-    test("priority vocab mapping: urgent → critical, none → low", async () => {
+    test("priority vocab mapping: urgent → critical, critical → critical, none → low", async () => {
         await confirmAiDecomposition({
             auth: { uid: CALLER_UID_A },
             data: {
@@ -445,6 +445,11 @@ describe("confirmAiDecomposition", () => {
                         priority: "urgent",
                     },
                     {
+                        title: "Already-critical step (AI mirrored parent)",
+                        estimatedDurationMinutes: 30,
+                        priority: "critical",
+                    },
+                    {
                         title: "Lazy step",
                         estimatedDurationMinutes: 30,
                         priority: "none",
@@ -453,9 +458,58 @@ describe("confirmAiDecomposition", () => {
             },
         });
 
-        expect(capturedCreateTaskCommands).toHaveLength(2);
+        expect(capturedCreateTaskCommands).toHaveLength(3);
         expect(capturedCreateTaskCommands[0].priority).toBe("critical");
-        expect(capturedCreateTaskCommands[1].priority).toBe("low");
+        // Regression coverage for the production smoke-test: Claude looks at
+        // the parent's domain priority ("critical") and naturally mirrors it
+        // back. The Zod schema must accept it AND the mapper must pass it
+        // through unchanged — `critical` is already the domain enum value.
+        expect(capturedCreateTaskCommands[1].priority).toBe("critical");
+        expect(capturedCreateTaskCommands[2].priority).toBe("low");
+    });
+
+    test("decomposeAiTask audit log strips undefined fields (parent.phase)", async () => {
+        // Parent has no `phase` / `category` / `clientName` / `projectName` —
+        // they arrive as undefined, which Firestore rejects by default.
+        // `stripUndefined` in writeAuditLog drops them so the .add() succeeds.
+        mockAnthropicCreate.mockResolvedValueOnce(
+            buildClaudeToolUseResponse({
+                subtasks: [
+                    {
+                        title: "Some subtask",
+                        estimatedDurationMinutes: 60,
+                        priority: "critical",
+                    },
+                ],
+                summary: "ok",
+            }),
+        );
+
+        // parent_in_b has only the required fields — phase/category/etc
+        // are undefined.
+        const result = await decomposeAiTask({
+            auth: { uid: CALLER_UID_B },
+            data: { taskId: "parent_in_b" },
+        });
+
+        expect(result.success).toBe(true);
+        expect(capturedAuditLogAdds).toHaveLength(1);
+        const audit = capturedAuditLogAdds[0].data;
+        // Audit log must NOT contain undefined values (would break Firestore).
+        const walk = (obj: any, path = ""): string[] => {
+            if (obj === null) return [];
+            if (typeof obj !== "object") return obj === undefined ? [path] : [];
+            const out: string[] = [];
+            for (const [k, v] of Object.entries(obj)) {
+                out.push(...walk(v, `${path}.${k}`));
+            }
+            return out;
+        };
+        expect(walk(audit)).toEqual([]);
+        // Optional fields that were undefined on the parent should be
+        // ABSENT (not null), since stripUndefined drops the keys.
+        expect("phase" in (audit.parent as Record<string, unknown>)).toBe(false);
+        expect("category" in (audit.parent as Record<string, unknown>)).toBe(false);
     });
 
     test("cross-tenant parent → not-found", async () => {

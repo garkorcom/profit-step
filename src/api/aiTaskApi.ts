@@ -137,7 +137,16 @@ export async function confirmAiTask(request: ConfirmAiTaskRequest): Promise<Conf
 // operator reviews/edits in the dialog, then confirmAiDecomposition()
 // atomically creates the subtasks via the canonical createTaskHandler.
 
-export type AiSubtaskPriority = 'low' | 'medium' | 'high' | 'urgent';
+// Includes 'critical' because Claude often mirrors the parent task's
+// post-domain priority back (parents store 'critical' in tasktotime_tasks).
+// Backend mapPriority() folds 'urgent' / 'critical' to the same domain
+// value, so they are visually distinct here but functionally equivalent.
+export type AiSubtaskPriority =
+    | 'low'
+    | 'medium'
+    | 'high'
+    | 'urgent'
+    | 'critical';
 
 /** Proposed subtask returned from decomposeAiTask preview. */
 export interface ProposedSubtask {
@@ -179,7 +188,7 @@ export interface ConfirmSubtaskInput {
     title: string;
     description?: string;
     estimatedDurationMinutes: number;
-    priority: 'low' | 'medium' | 'high' | 'urgent' | 'none';
+    priority: 'low' | 'medium' | 'high' | 'urgent' | 'critical' | 'none';
 }
 
 export interface ConfirmAiDecompositionRequest {

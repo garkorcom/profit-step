@@ -43,7 +43,12 @@ import { getTasktotimeServices } from "../../tasktotime/composition";
  * `confirmAiDecomposition` handler maps `'urgent' → 'critical'` and
  * `'none' → 'low'` to land on the tasktotime domain enum.
  */
-const PrioritySchema = z.enum(["low", "medium", "high", "urgent"]);
+// Accept both the wire vocabulary ('urgent') and the domain vocabulary
+// ('critical'). The AI sees the parent task's priority string in the prompt
+// (post-backfill that's the domain form 'critical') and naturally mirrors
+// it back. The mapPriority() helper folds 'urgent' → 'critical' on the way
+// to createTaskHandler so both inputs land on the same domain enum.
+const PrioritySchema = z.enum(["low", "medium", "high", "urgent", "critical"]);
 
 const ProposedSubtaskSchema = z.object({
     title: z.string().min(1).max(500),
@@ -75,7 +80,7 @@ const ConfirmInputSchema = z.object({
                 description: z.string().max(5000).optional().default(""),
                 estimatedDurationMinutes: z.number().int().min(5).max(60 * 24 * 7),
                 priority: z
-                    .enum(["low", "medium", "high", "urgent", "none"])
+                    .enum(["low", "medium", "high", "urgent", "critical", "none"])
                     .optional()
                     .default("medium"),
             }),
@@ -128,7 +133,7 @@ const TOOL_DEFINITION: Anthropic.Tool = {
                         },
                         priority: {
                             type: "string",
-                            enum: ["low", "medium", "high", "urgent"],
+                            enum: ["low", "medium", "high", "urgent", "critical"],
                         },
                         rationale: {
                             type: "string",
@@ -268,6 +273,28 @@ async function callClaude(
 // 5. AUDIT LOG
 // ============================================================
 
+/**
+ * Strip `undefined` properties recursively. Firestore rejects them by
+ * default (the alternative is `initializeFirestore({
+ * ignoreUndefinedProperties: true })` which is a global setting we don't
+ * want to flip blindly across the whole functions codebase). Optional
+ * parent fields (category / phase / clientName / projectName) routinely
+ * arrive as undefined when the source task has no value for them.
+ */
+function stripUndefined<T>(value: T): T {
+    if (Array.isArray(value)) {
+        return value.map((v) => stripUndefined(v)) as unknown as T;
+    }
+    if (value !== null && typeof value === "object") {
+        const out: Record<string, unknown> = {};
+        for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+            if (v !== undefined) out[k] = stripUndefined(v);
+        }
+        return out as unknown as T;
+    }
+    return value;
+}
+
 async function writeAuditLog(params: {
     taskId: string;
     parent: ParentTaskSnapshot;
@@ -279,21 +306,23 @@ async function writeAuditLog(params: {
     companyId: string;
 }): Promise<string> {
     const db = getFirestore();
-    const logRef = await db.collection("aiAuditLogs").add({
-        flow: "decompose_task",
-        taskId: params.taskId,
-        userId: params.userId,
-        companyId: params.companyId,
-        parent: params.parent,
-        response: params.response,
-        latencyMs: params.latencyMs,
-        tokensIn: params.tokensIn,
-        tokensOut: params.tokensOut,
-        timestamp: FieldValue.serverTimestamp(),
-        modelUsed: "claude-sonnet-4-20250514",
-        userEdits: [],
-        wasAccepted: null,
-    });
+    const logRef = await db.collection("aiAuditLogs").add(
+        stripUndefined({
+            flow: "decompose_task",
+            taskId: params.taskId,
+            userId: params.userId,
+            companyId: params.companyId,
+            parent: params.parent,
+            response: params.response,
+            latencyMs: params.latencyMs,
+            tokensIn: params.tokensIn,
+            tokensOut: params.tokensOut,
+            timestamp: FieldValue.serverTimestamp(),
+            modelUsed: "claude-sonnet-4-20250514",
+            userEdits: [],
+            wasAccepted: null,
+        }),
+    );
     return logRef.id;
 }
 
@@ -461,9 +490,9 @@ export const decomposeAiTask = onCall(
  * used by `confirmAiTask` (urgent → critical, none → low).
  */
 function mapPriority(
-    p: "low" | "medium" | "high" | "urgent" | "none",
+    p: "low" | "medium" | "high" | "urgent" | "critical" | "none",
 ): "low" | "medium" | "high" | "critical" {
-    if (p === "urgent") return "critical";
+    if (p === "critical" || p === "urgent") return "critical";
     if (p === "high") return "high";
     if (p === "low" || p === "none") return "low";
     return "medium";

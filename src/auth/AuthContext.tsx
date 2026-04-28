@@ -52,7 +52,22 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   useEffect(() => {
     let unsubscribeProfile: (() => void) | undefined;
 
+    // QA 2026-04-27 P1-2: if Firebase Auth SDK lands in a weird state
+    // (e.g. after manual IndexedDB wipe / "clear site data" mid-session),
+    // `onAuthStateChanged` may never fire its first event, leaving the
+    // app's loading screen stuck and the route protector unable to render
+    // anything. Force-resolve `loading` after 10s so the user sees the
+    // login page instead of a blank screen — they can re-login and
+    // recover. Cleared on the first auth event.
+    const stuckLoadingFallback = setTimeout(() => {
+      // eslint-disable-next-line no-console
+      console.warn('[AuthProvider] onAuthStateChanged silent for 10s — forcing loading=false');
+      setLoading(false);
+    }, 10000);
+
     const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
+      // Auth event fired — cancel the stuck-loading fallback.
+      clearTimeout(stuckLoadingFallback);
       setCurrentUser(user);
 
       // Отписываемся от предыдущей подписки на профиль
@@ -123,6 +138,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     });
 
     return () => {
+      clearTimeout(stuckLoadingFallback);
       unsubscribeAuth();
       if (unsubscribeProfile) {
         unsubscribeProfile();

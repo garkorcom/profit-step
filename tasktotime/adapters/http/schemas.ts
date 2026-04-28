@@ -651,6 +651,18 @@ export function parseListTasksQuery(
       errors.push({ path: 'bucket', message: 'invalid bucket value' });
     }
   }
+  if (typeof query.priority === 'string') {
+    const validPriorities = new Set<Priority>(['low', 'medium', 'high', 'critical']);
+    const arr = query.priority.split(',').filter(Boolean) as Priority[];
+    if (arr.every((p) => validPriorities.has(p))) {
+      filter.priority = arr;
+    } else {
+      errors.push({
+        path: 'priority',
+        message: 'comma-separated priority values must each be low | medium | high | critical',
+      });
+    }
+  }
   if (typeof query.assigneeId === 'string') filter.assigneeId = query.assigneeId;
   if (typeof query.parentTaskId === 'string') {
     filter.parentTaskId = query.parentTaskId === 'null' ? null : query.parentTaskId;

@@ -8,6 +8,7 @@ export interface ListTasksQuery {
   companyId: string;
   lifecycle?: TaskLifecycle[];
   bucket?: Array<'inbox' | 'next' | 'someday' | 'archive'>;
+  priority?: Array<'low' | 'medium' | 'high' | 'critical'>;
   assigneeId?: string;
   parentTaskId?: string | null;
   projectId?: string;

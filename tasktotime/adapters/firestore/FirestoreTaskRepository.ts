@@ -247,6 +247,16 @@ function applyFilter(
     }
     q = q.where('bucket', 'in', filter.bucket);
   }
+  if (filter.priority && filter.priority.length > 0) {
+    if (filter.priority.length > FIRESTORE_IN_LIMIT) {
+      throw new AdapterError(
+        'STORAGE_FAILURE',
+        `priority filter exceeds Firestore in-limit (${FIRESTORE_IN_LIMIT})`,
+        { count: filter.priority.length },
+      );
+    }
+    q = q.where('priority', 'in', filter.priority);
+  }
   if (filter.assigneeId !== undefined) {
     q = q.where('assignedTo.id', '==', filter.assigneeId);
   }

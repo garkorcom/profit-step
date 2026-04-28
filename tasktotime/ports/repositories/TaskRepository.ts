@@ -20,6 +20,7 @@ export interface TaskFilter {
   companyId: CompanyId;
   lifecycle?: TaskLifecycle[];
   bucket?: Array<'inbox' | 'next' | 'someday' | 'archive'>;
+  priority?: Array<'low' | 'medium' | 'high' | 'critical'>;
   assigneeId?: UserId;
   /** null = root tasks only (no parentTaskId). */
   parentTaskId?: TaskId | null;

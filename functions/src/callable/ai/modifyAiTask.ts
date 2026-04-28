@@ -1,7 +1,33 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
+import { getFirestore } from "firebase-admin/firestore";
 import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 import { ANTHROPIC_API_KEY } from "../../config";
+import * as envModule from "../../config/env";
+
+// ============================================================
+// FEATURE FLAG — tasktotime migration
+// ============================================================
+//
+// modifyAiTask is purely an AI inline-edit on a snapshot — it does NOT
+// write the task itself. The two paths differ only in WHERE the snapshot
+// is sourced from when the caller passes `taskId` (instead of an inline
+// `currentTask` object):
+//
+//   - flag ON  (default) → read from `tasktotime_tasks/{taskId}`
+//   - flag OFF (rollback) → read from `gtd_tasks/{taskId}`
+//
+// When the caller already supplies `currentTask` (the existing frontend
+// path), the flag is irrelevant and we operate on the in-memory snapshot
+// just like before. Backwards compat is therefore total — no breaking
+// change for current frontend callers.
+//
+// We import the env module as a namespace (not a destructured const) so
+// jest.mock can rebind the `TASKTOTIME_AI_CALLABLES_ENABLED` getter at
+// runtime.
+function tasktotimeEnabled(): boolean {
+    return envModule.TASKTOTIME_AI_CALLABLES_ENABLED;
+}
 
 // ============================================================
 // 1. ZOD SCHEMAS FOR MODIFICATION
@@ -50,7 +76,73 @@ USER COMMAND:
 `;
 
 // ============================================================
-// 3. MAIN FUNCTION
+// 3. SNAPSHOT LOADER (tasktotime_tasks ↔ gtd_tasks)
+// ============================================================
+
+/**
+ * Read a task snapshot for AI modification. Source collection is
+ * controlled by the migration flag:
+ *
+ *   - flag ON  → `tasktotime_tasks/{taskId}` (canonical)
+ *   - flag OFF → `gtd_tasks/{taskId}`        (legacy rollback)
+ *
+ * Cross-tenant guard: compares the task's `companyId` against the
+ * caller's `users/{uid}.companyId`. If they differ we return 404 (not
+ * 403) to avoid leaking task existence.
+ */
+async function loadTaskSnapshot(
+    taskId: string,
+    callerUid: string,
+): Promise<Record<string, unknown>> {
+    const db = getFirestore();
+    const collection = tasktotimeEnabled() ? "tasktotime_tasks" : "gtd_tasks";
+
+    const userDoc = await db.doc(`users/${callerUid}`).get();
+    const callerCompanyId = userDoc.data()?.companyId;
+
+    const taskDoc = await db.doc(`${collection}/${taskId}`).get();
+    if (!taskDoc.exists) {
+        throw new HttpsError("not-found", `Task ${taskId} not found`);
+    }
+
+    const data = taskDoc.data() ?? {};
+
+    // Tenant scope check — only meaningful in the tasktotime path
+    // (legacy gtd_tasks docs predate the companyId field). For tasktotime,
+    // a missing companyId on the task is itself an integrity bug; we err
+    // on the side of returning 404 to avoid leaking the existence.
+    if (collection === "tasktotime_tasks") {
+        const taskCompanyId = (data as Record<string, unknown>).companyId;
+        if (
+            typeof callerCompanyId !== "string" ||
+            callerCompanyId.length === 0 ||
+            taskCompanyId !== callerCompanyId
+        ) {
+            throw new HttpsError("not-found", `Task ${taskId} not found`);
+        }
+    }
+
+    // Project a minimal snapshot — Claude does not need every field, just
+    // the ones the modification tool can touch.
+    const checklist = Array.isArray(data.checklistItems)
+        ? data.checklistItems
+        : [];
+    return {
+        id: taskId,
+        title: data.title ?? "",
+        description: data.description ?? "",
+        // tasktotime stores estimatedDurationMinutes; legacy used the same
+        // key so this maps directly. Coerce to number; Claude is permissive.
+        estimatedDurationMinutes:
+            typeof data.estimatedDurationMinutes === "number"
+                ? data.estimatedDurationMinutes
+                : 0,
+        checklistItems: checklist,
+    };
+}
+
+// ============================================================
+// 4. MAIN FUNCTION
 // ============================================================
 
 export const modifyAiTask = onCall(
@@ -70,11 +162,40 @@ export const modifyAiTask = onCall(
             );
         }
 
-        const { currentTask, userCommand } = request.data;
-        if (!currentTask || !userCommand) {
+        // The caller may either:
+        //   (a) Pass `currentTask` inline — existing frontend behaviour.
+        //       Used by `useCockpitTask.handleAiModification` which already
+        //       has the editable form state in memory.
+        //   (b) Pass `taskId` — new bot path. We read the snapshot from
+        //       Firestore (tasktotime_tasks when flag ON, gtd_tasks when
+        //       OFF). Cross-tenant scope is enforced via users/{uid}.companyId
+        //       comparison so a caller cannot read another tenant's task.
+        const {
+            currentTask: inlineCurrentTask,
+            userCommand,
+            taskId,
+        } = request.data as {
+            currentTask?: unknown;
+            userCommand?: unknown;
+            taskId?: unknown;
+        };
+
+        if (typeof userCommand !== "string" || userCommand.length === 0) {
             throw new HttpsError(
                 "invalid-argument",
-                "Both 'currentTask' and 'userCommand' are required."
+                "'userCommand' is required."
+            );
+        }
+
+        let currentTask: unknown;
+        if (inlineCurrentTask) {
+            currentTask = inlineCurrentTask;
+        } else if (typeof taskId === "string" && taskId.length > 0) {
+            currentTask = await loadTaskSnapshot(taskId, request.auth.uid);
+        } else {
+            throw new HttpsError(
+                "invalid-argument",
+                "Either 'currentTask' or 'taskId' is required."
             );
         }
 

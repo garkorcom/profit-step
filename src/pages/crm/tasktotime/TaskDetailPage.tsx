@@ -564,6 +564,17 @@ const TaskDetailPage: React.FC = () => {
     const [actionError, setActionError] = useState<string | null>(null);
     const [blockOpen, setBlockOpen] = useState<boolean>(false);
     const [acceptOpen, setAcceptOpen] = useState<boolean>(false);
+    /**
+     * Which transition button the user just clicked. We still disable every
+     * action button while a mutation is in flight (prevents double-submits
+     * across actions), but we render an inline spinner only next to this one
+     * so the user can tell which action is pending. Cleared in a `useEffect`
+     * once `transitionTask.loading` flips back to `false`.
+     */
+    const [pendingAction, setPendingAction] = useState<TransitionAction | null>(null);
+    useEffect(() => {
+        if (!transitionTask.loading) setPendingAction(null);
+    }, [transitionTask.loading]);
 
     /**
      * Fire a transition with a fresh idempotency key. Surface backend errors
@@ -585,6 +596,10 @@ const TaskDetailPage: React.FC = () => {
         ): Promise<boolean> => {
             if (!task || !companyId) return false;
             setActionError(null);
+            // Track which action is in flight so the inline spinner renders
+            // next to the right button. Cleared by the `useEffect` watcher on
+            // `transitionTask.loading`.
+            setPendingAction(action);
             try {
                 await transitionTask.mutate({
                     taskId: task.id,
@@ -687,7 +702,12 @@ const TaskDetailPage: React.FC = () => {
 
             <Tooltip title="Refresh">
                 <span>
-                    <IconButton onClick={refetch} disabled={loading} size="small">
+                    <IconButton
+                        onClick={refetch}
+                        disabled={loading}
+                        size="small"
+                        aria-label="Refresh task"
+                    >
                         <RefreshIcon />
                     </IconButton>
                 </span>
@@ -1012,8 +1032,12 @@ const TaskDetailPage: React.FC = () => {
                     </Grid>
                 </Paper>
 
-                {/* Wiki content (read-only — Markdown editor lands in PR 4.3) */}
-                {task.wiki && task.wiki.contentMd && (
+                {/* Wiki content (read-only — Markdown editor lands in PR 4.3).
+                    When the task has no wiki content yet we still render the
+                    section as a friendly empty state so the user knows the
+                    surface exists and discovers the (still-disabled) editor
+                    affordance — instead of the section silently disappearing. */}
+                {task.wiki && task.wiki.contentMd ? (
                     <Paper
                         elevation={0}
                         sx={{
@@ -1054,6 +1078,47 @@ const TaskDetailPage: React.FC = () => {
                             {task.wiki.contentMd}
                         </Box>
                     </Paper>
+                ) : (
+                    <Paper
+                        elevation={0}
+                        sx={{
+                            p: { xs: 2, md: 3 },
+                            mb: 3,
+                            border: '1px dashed #D1D5DB',
+                            bgcolor: '#FFFFFF',
+                        }}
+                    >
+                        <SectionTitle>Wiki</SectionTitle>
+                        <Stack
+                            direction={{ xs: 'column', sm: 'row' }}
+                            alignItems={{ xs: 'flex-start', sm: 'center' }}
+                            justifyContent="space-between"
+                            spacing={2}
+                        >
+                            <Typography variant="body2" sx={{ color: '#4B5563' }}>
+                                No wiki content yet. Edit to add notes.
+                            </Typography>
+                            <Tooltip title="Coming soon — Markdown editor lands in PR 4.3">
+                                <span>
+                                    <Button
+                                        size="small"
+                                        variant="outlined"
+                                        disabled
+                                        aria-label="Edit wiki (coming soon)"
+                                        sx={{
+                                            // WCAG 2.2 §2.5.8 — keep the
+                                            // disabled affordance discoverable
+                                            // without violating the 24×24
+                                            // minimum target size.
+                                            minHeight: 32,
+                                        }}
+                                    >
+                                        Edit Wiki
+                                    </Button>
+                                </span>
+                            </Tooltip>
+                        </Stack>
+                    </Paper>
                 )}
             </Box>
 
@@ -1081,6 +1146,7 @@ const TaskDetailPage: React.FC = () => {
                     spacing={1}
                     alignItems="center"
                     sx={{ flexWrap: 'wrap', gap: 1 }}
+                    aria-busy={transitionTask.loading}
                 >
                     <Typography
                         variant="caption"
@@ -1099,21 +1165,36 @@ const TaskDetailPage: React.FC = () => {
                             No further transitions available (terminal state).
                         </Typography>
                     ) : (
-                        allowedActions.map((action) => (
-                            <Button
-                                key={action}
-                                size="small"
-                                variant={ACTION_VARIANTS[action]}
-                                color={ACTION_COLORS[action]}
-                                disabled={transitionTask.loading}
-                                onClick={() => handleTransition(action)}
-                            >
-                                {ACTION_LABELS[action]}
-                            </Button>
-                        ))
-                    )}
-                    {transitionTask.loading && (
-                        <CircularProgress size={18} sx={{ ml: 1 }} />
+                        allowedActions.map((action) => {
+                            // We still disable every button while one
+                            // mutation is in flight (prevents racing two
+                            // transitions). The spinner is rendered as an
+                            // `endIcon` only on the active one — so the
+                            // user can tell which click is pending.
+                            const isThisPending =
+                                transitionTask.loading && pendingAction === action;
+                            return (
+                                <Button
+                                    key={action}
+                                    size="small"
+                                    variant={ACTION_VARIANTS[action]}
+                                    color={ACTION_COLORS[action]}
+                                    disabled={transitionTask.loading}
+                                    onClick={() => handleTransition(action)}
+                                    endIcon={
+                                        isThisPending ? (
+                                            <CircularProgress
+                                                size={14}
+                                                color="inherit"
+                                                aria-label={`${ACTION_LABELS[action]} in progress`}
+                                            />
+                                        ) : undefined
+                                    }
+                                >
+                                    {ACTION_LABELS[action]}
+                                </Button>
+                            );
+                        })
                     )}
                 </Stack>
             </Box>

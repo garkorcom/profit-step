@@ -112,6 +112,15 @@ const TasktotimeSidebar: React.FC<TasktotimeSidebarProps> = ({ onNavigate }) => 
                             to={item.to}
                             selected={isActive}
                             onClick={onNavigate}
+                            // WCAG/ARIA: the Coming Soon items are visually
+                            // dimmed but still navigate (target page renders a
+                            // placeholder). Mark them `aria-disabled` so
+                            // assistive tech announces the disabled state
+                            // while we keep the click behaviour. Don't use
+                            // the `disabled` prop — that would block the click
+                            // entirely and leave the user wondering why
+                            // nothing happened.
+                            aria-disabled={item.enabled ? undefined : true}
                             sx={{
                                 opacity: item.enabled ? 1 : 0.55,
                                 py: 0.75,

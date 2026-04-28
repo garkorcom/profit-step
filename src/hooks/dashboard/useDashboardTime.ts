@@ -135,6 +135,14 @@ export const useDashboardTime = (companyId: string | undefined): DashboardTimeDa
             });
 
         }, (error) => {
+            // QA 2026-04-27 P1-4: work_sessions tightened RLS. Users
+            // without scope for the queried sessions hit `permission-denied`.
+            // Treat as empty data (widget shows zeros) — DON'T spam the
+            // console on every page nav.
+            if ((error as { code?: string })?.code === 'permission-denied') {
+                setData(prev => ({ ...prev, loading: false }));
+                return;
+            }
             console.error('Error fetching time tracking stats:', error);
             setData(prev => ({ ...prev, loading: false }));
         });

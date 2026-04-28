@@ -359,7 +359,10 @@ const CompanyDashboard: React.FC = () => {
         setMonthlyPnL(pnlData);
         setAvailableClients(Array.from(clientSet).sort());
       } catch (error) {
-        console.error('Error loading P&L data:', error);
+        // QA 2026-04-27 P1-4: tightened RLS — silent on permission-denied.
+        if ((error as { code?: string })?.code !== 'permission-denied') {
+          console.error('Error loading P&L data:', error);
+        }
       } finally {
         setPnlLoading(false);
       }
@@ -387,7 +390,10 @@ const CompanyDashboard: React.FC = () => {
       });
       setActiveEmployees(employees);
     }, (error) => {
-      console.error('Error listening to active sessions:', error);
+      // QA 2026-04-27 P1-4: tightened RLS — silent on permission-denied.
+      if ((error as { code?: string })?.code !== 'permission-denied') {
+        console.error('Error listening to active sessions:', error);
+      }
     });
 
     return () => unsubscribe();

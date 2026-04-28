@@ -10,7 +10,7 @@ import type { Task, TaskWiki, EpochMs } from '../../domain/Task';
 import type { TaskRepository } from '../../ports/repositories/TaskRepository';
 import type { ClockPort } from '../../ports/infra/ClockPort';
 import { asTaskId } from '../../domain/identifiers';
-import { TaskNotFound, PreconditionFailed } from '../../domain/errors';
+import { TaskNotFound, WikiStaleVersion } from '../../domain/errors';
 import type { UpdateWikiCommand } from '../commands/UpdateWikiCommand';
 
 export interface UpdateWikiHandlerDeps {
@@ -28,10 +28,12 @@ export class UpdateWikiHandler {
 
     const currentVersion = task.wiki?.version ?? 0;
     if (currentVersion !== command.expectedVersion) {
-      throw new PreconditionFailed(
-        `Wiki version conflict — expected ${command.expectedVersion}, current ${currentVersion}`,
-        { expected: command.expectedVersion, current: currentVersion },
-      );
+      // Concurrency conflict, not a draft / precondition error — surface as
+      // 409 (StaleVersion) so frontend retry/resync logic catches it the
+      // same way it already catches the document-level StaleVersion case.
+      // Was `PreconditionFailed` (→ 400) until QA 2026-04-27 found the
+      // status-code mismatch.
+      throw new WikiStaleVersion(taskId, command.expectedVersion, currentVersion);
     }
 
     const now = this.deps.clock.now() as EpochMs;

@@ -15,7 +15,12 @@ export interface UseSessionManagerReturn {
     setSessionSnackbarOpen: (open: boolean) => void;
 }
 
-export const useSessionManager = (userId?: string, userDisplayName?: string, userTelegramId?: string): UseSessionManagerReturn => {
+export const useSessionManager = (
+    userId?: string,
+    userDisplayName?: string,
+    userTelegramId?: string,
+    userCompanyId?: string
+): UseSessionManagerReturn => {
 
     /**
      * Effective User ID for Time Tracking
@@ -37,6 +42,14 @@ export const useSessionManager = (userId?: string, userDisplayName?: string, use
     const stopSession = async () => {
         if (!activeSession) return;
 
+        // PR #95 companion: tightened rules require `companyId` on every
+        // work_sessions write (incl. updates — legacy docs missing the field
+        // would otherwise fail the rule). Refuse to write a half-formed doc.
+        if (!userCompanyId) {
+            toast.error("Cannot stop session: missing company. Please re-login.");
+            return;
+        }
+
         try {
             const sessionRef = doc(db, 'work_sessions', activeSession.id);
             const endTime = Timestamp.now();
@@ -45,17 +58,17 @@ export const useSessionManager = (userId?: string, userDisplayName?: string, use
             let diffArr = 0;
             if (startTime) {
                 diffArr = endTime.toMillis() - startTime.toMillis();
-                
+
                 // Subtract completed breaks
                 if (activeSession.totalBreakMinutes) {
                     diffArr -= activeSession.totalBreakMinutes * 60 * 1000;
                 }
-                
+
                 // Subtract ongoing break if currently paused
                 if (activeSession.status === 'paused' && activeSession.lastBreakStart) {
                     diffArr -= (endTime.toMillis() - activeSession.lastBreakStart.toMillis());
                 }
-                
+
                 if (diffArr < 0) diffArr = 0;
             }
             const durationMinutes = Math.round(diffArr / 1000 / 60);
@@ -69,7 +82,8 @@ export const useSessionManager = (userId?: string, userDisplayName?: string, use
                 status: 'completed',
                 endTime: endTime,
                 durationMinutes: durationMinutes,
-                sessionEarnings: earnings
+                sessionEarnings: earnings,
+                companyId: userCompanyId // PR #95 companion: ensure tightened rule passes for legacy docs
             });
 
             // 2. Aggregate stats on the related task
@@ -113,6 +127,14 @@ export const useSessionManager = (userId?: string, userDisplayName?: string, use
 
         if (!navigator.onLine) {
             toast.error("Offline. Cannot start task.", { icon: "🔌" });
+            return;
+        }
+
+        // PR #95 companion: tightened rules require `companyId` on every
+        // work_sessions write. Refuse to start a session we know will be
+        // rejected — better to fail loudly than write a half-formed doc.
+        if (!userCompanyId) {
+            toast.error("Cannot start session: missing company. Please re-login.");
             return;
         }
 
@@ -164,6 +186,7 @@ export const useSessionManager = (userId?: string, userDisplayName?: string, use
                     endTime: endTime,
                     durationMinutes: durationMinutes,
                     sessionEarnings: earnings,
+                    companyId: userCompanyId, // PR #95 companion: heal legacy docs missing the field
                 });
                 closedSessionMsg = 'Previous session closed. ';
             }
@@ -199,6 +222,7 @@ export const useSessionManager = (userId?: string, userDisplayName?: string, use
             await addDoc(collection(db, 'work_sessions'), {
                 employeeId: effectiveUserId,
                 employeeName: userDisplayName || 'Unknown',
+                companyId: userCompanyId, // PR #95 companion: required by tightened rules
                 startTime: Timestamp.now(),
                 status: 'active',
                 description: task.title,

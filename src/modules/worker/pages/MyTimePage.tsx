@@ -82,7 +82,8 @@ const MyTimePage: React.FC = () => {
     const sessionManager = useSessionManager(
         uid,
         userProfile?.displayName || currentUser?.displayName || undefined,
-        telegramId ? String(telegramId) : undefined
+        telegramId ? String(telegramId) : undefined,
+        userProfile?.companyId
     );
 
     // Worker's own ledger — YTD by default, same as Finance page.

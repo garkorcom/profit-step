@@ -5,6 +5,7 @@ import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import { WorkSessionData } from '../../hooks/useActiveSession';
 import { doc, updateDoc, Timestamp } from 'firebase/firestore';
 import { db } from '../../firebase/firebase';
+import { useAuth } from '../../auth/AuthContext';
 import toast from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
@@ -17,6 +18,11 @@ const ActiveSessionIndicator: React.FC<ActiveSessionIndicatorProps> = ({ session
     const [elapsed, setElapsed] = useState<string>('00:00');
     const [open, setOpen] = useState(false);
     const navigate = useNavigate();
+    const { userProfile } = useAuth();
+    // PR #95 companion: tightened work_sessions rules require companyId on
+    // every write (incl. updates — legacy docs missing the field would
+    // otherwise fail the rule).
+    const companyId = userProfile?.companyId;
 
     // Timer Logic
     useEffect(() => {
@@ -52,6 +58,10 @@ const ActiveSessionIndicator: React.FC<ActiveSessionIndicatorProps> = ({ session
     }, [session.startTime, session.totalBreakMinutes, session.status, session.lastBreakStart]);
 
     const handleStop = async () => {
+        if (!companyId) {
+            toast.error("Cannot stop session: missing company. Please re-login.");
+            return;
+        }
         try {
             const sessionRef = doc(db, 'work_sessions', session.id);
             const endTime = Timestamp.now();
@@ -71,7 +81,8 @@ const ActiveSessionIndicator: React.FC<ActiveSessionIndicatorProps> = ({ session
                 status: 'completed',
                 endTime: endTime,
                 durationMinutes: durationMinutes,
-                sessionEarnings: earnings
+                sessionEarnings: earnings,
+                companyId // PR #95 companion: heal legacy docs + satisfy tightened rule
             });
 
             toast.success("Active session stopped", { icon: '⏹️' });

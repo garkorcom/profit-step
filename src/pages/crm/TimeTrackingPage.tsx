@@ -66,6 +66,10 @@ const TimeTrackingPage: React.FC = () => {
     // Auth
     const { currentUser, userProfile } = useAuth();
     const isAdmin = userProfile?.role === 'admin';
+    // PR #95 companion: tightened rules require `companyId` on every
+    // work_sessions write (create + update). Surface the field once here
+    // so the handlers below can guard + include it consistently.
+    const companyId = userProfile?.companyId;
 
     // Refresh trigger
     const [refreshKey, setRefreshKey] = useState(0);
@@ -77,8 +81,14 @@ const TimeTrackingPage: React.FC = () => {
     // --- Handlers ---
 
     const handleEditSession = async (sessionId: string, updates: Partial<WorkSession>) => {
+        if (!companyId) {
+            alert("Cannot save: missing company. Please re-login.");
+            return;
+        }
         try {
-            await updateDoc(doc(db, 'work_sessions', sessionId), updates);
+            // PR #95 companion: include companyId so legacy docs missing the
+            // field self-heal on next edit + tightened rule passes.
+            await updateDoc(doc(db, 'work_sessions', sessionId), { ...updates, companyId });
             setRefreshKey(prev => prev + 1);
             setEditSession(null);
         } catch (error) {
@@ -91,13 +101,19 @@ const TimeTrackingPage: React.FC = () => {
         if (!window.confirm("ARE YOU SURE you want to DELETE/VOID this session?\n\nThis will create a negative correction entry. The action is irreversible.")) {
             return;
         }
+        if (!companyId) {
+            alert("Cannot void: missing company. Please re-login.");
+            return;
+        }
 
         try {
+            // PR #95 companion: companyId required by tightened work_sessions rules.
             const voidCorrection: Partial<WorkSession> = {
                 employeeId: session.employeeId,
                 employeeName: session.employeeName,
                 clientId: session.clientId,
                 clientName: session.clientName,
+                companyId,
                 startTime: Timestamp.now(),
                 endTime: Timestamp.now(),
                 durationMinutes: -(session.durationMinutes || 0),
@@ -113,7 +129,8 @@ const TimeTrackingPage: React.FC = () => {
 
             await updateDoc(doc(db, 'work_sessions', session.id), {
                 isVoided: true,
-                voidReason: 'Manual void by admin'
+                voidReason: 'Manual void by admin',
+                companyId // self-heal legacy docs missing the field
             });
 
             setRefreshKey(prev => prev + 1);
@@ -149,6 +166,10 @@ const TimeTrackingPage: React.FC = () => {
 
     const handleForceStopAll = async () => {
         if (!window.confirm("Are you sure you want to stop ALL active sessions? This is an admin action.")) return;
+        if (!companyId) {
+            alert("Cannot stop sessions: missing company. Please re-login.");
+            return;
+        }
 
         const activeSessions = sessions.filter(s => s.status === 'active');
         const now = Timestamp.now();
@@ -159,7 +180,8 @@ const TimeTrackingPage: React.FC = () => {
             await updateDoc(doc(db, 'work_sessions', session.id), {
                 status: 'auto_closed',
                 endTime: now,
-                durationMinutes
+                durationMinutes,
+                companyId // PR #95 companion: heal legacy docs + satisfy tightened update rule
             });
         }
 
@@ -169,6 +191,10 @@ const TimeTrackingPage: React.FC = () => {
 
     // Admin: Stop a specific session
     const handleAdminStopSession = async (session: WorkSession, reason: string, endTime: Date) => {
+        if (!companyId) {
+            toast.error('Cannot stop session: missing company. Please re-login.');
+            return;
+        }
         try {
             const endTs = Timestamp.fromDate(endTime);
             const startTime = session.startTime;
@@ -185,7 +211,8 @@ const TimeTrackingPage: React.FC = () => {
                 sessionEarnings,
                 stoppedByAdmin: true,
                 adminStopReason: reason,
-                adminStopperId: currentUser?.uid
+                adminStopperId: currentUser?.uid,
+                companyId // PR #95 companion: heal legacy docs + satisfy tightened update rule
             });
 
             toast.success(`Сессия остановлена: ${session.employeeName}`, { icon: '⏹️' });
@@ -206,6 +233,10 @@ const TimeTrackingPage: React.FC = () => {
         reason: string,
         startTime: Date
     ) => {
+        if (!companyId) {
+            toast.error('Cannot start session: missing company. Please re-login.');
+            return;
+        }
         try {
             // Get employee hourly rate from users collection by odooId
             let hourlyRate = 0;
@@ -223,6 +254,7 @@ const TimeTrackingPage: React.FC = () => {
                 employeeName,
                 clientId,
                 clientName,
+                companyId, // PR #95 companion: required by tightened rules
                 startTime: Timestamp.fromDate(startTime),
                 status: 'active',
                 hourlyRate,

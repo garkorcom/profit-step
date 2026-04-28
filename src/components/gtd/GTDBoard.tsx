@@ -80,7 +80,7 @@ const GTDBoard: React.FC = () => {
         sessionSnackbarOpen,
         sessionStartMessage,
         setSessionSnackbarOpen
-    } = useSessionManager(currentUser?.uid, currentUser?.displayName || undefined, userProfile?.telegramId);
+    } = useSessionManager(currentUser?.uid, currentUser?.displayName || undefined, userProfile?.telegramId, userProfile?.companyId);
 
     const isMobile = useMediaQuery('(max-width:599px)'); // Phone — 1 column + tabs + swipe
     const isFoldable = useMediaQuery('(min-width:600px) and (max-width:959px)'); // Pixel Fold / small tablet — horizontal scroll

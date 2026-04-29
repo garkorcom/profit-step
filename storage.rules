@@ -74,6 +74,19 @@ service firebase.storage {
       allow read, write: if isSignedIn();
     }
 
+    // ==================== TASKTOTIME WIKI ATTACHMENTS ====================
+
+    // Wiki вложения tasktotime: companies/{companyId}/tasks/{taskId}/wiki/{filename}
+    // Загрузки идут из MDXEditor через `uploadWikiAttachment` —
+    // см. src/api/tasktotimeWikiAttachments.ts (5MB max + image/* MIME).
+    match /companies/{companyId}/tasks/{taskId}/wiki/{allPaths=**} {
+      // ЧТЕНИЕ: любой авторизованный (картинки рендерятся внутри MDXEditor).
+      // ЗАПИСЬ: только image/* до 5MB — клиент-сайд проверки дублируем здесь
+      // как defense-in-depth (если кто-то обойдёт UI и POSTит напрямую).
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && isImage() && isValidSize();
+    }
+
     // ==================== DEFAULT DENY ====================
 
     // Запретить доступ ко всем остальным файлам

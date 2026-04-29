@@ -1,4 +1,4 @@
-import React, { useState, useCallback, Suspense } from 'react';
+import React, { useState, useCallback, useMemo, Suspense } from 'react';
 import { Box, Typography, Paper, CircularProgress, Alert, Stack, Button, Skeleton, Chip, TextField, InputAdornment, Dialog, DialogTitle, DialogContent, DialogContentText, DialogActions, IconButton, Tooltip } from '@mui/material';
 import EditIcon from '@mui/icons-material/Edit';
 import SaveIcon from '@mui/icons-material/Save';
@@ -16,17 +16,12 @@ import { TaskTree } from './hierarchy/TaskTree';
 import { useTask, useUpdateWiki } from '../../../hooks/useTasktotime';
 import { formatDate } from '../../../utils/dateFormatters';
 import { FALLBACK_CHIP, LIFECYCLE_COLORS, PRIORITY_COLORS, resolvePriorityKey } from '../../../components/tasktotime/visualTokens';
+import {
+    uploadWikiAttachment,
+    WikiAttachmentError,
+} from '../../../api/tasktotimeWikiAttachments';
 
 const WikiEditor = React.lazy(() => import('../../../components/tasktotime/WikiEditor'));
-
-function sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-async function placeholderAttachmentUpload(file: File): Promise<string> {
-    await sleep(500);
-    return 'https://placehold.co/600x400';
-}
 
 interface WikiDetailViewProps {
     taskId: string;
@@ -39,6 +34,27 @@ interface WikiDetailViewProps {
 const WikiDetailView: React.FC<WikiDetailViewProps> = ({ taskId, companyId, onDirtyStateChange, isFullScreen, onToggleFullScreen }) => {
     const { task, loading, error, refetch } = useTask(taskId, companyId);
     const updateWiki = useUpdateWiki();
+
+    /**
+     * Editor's image-upload handler. Memoised on (companyId, taskId) so the
+     * MDXEditor doesn't reset its internal upload state on every render. The
+     * function only captures stable IDs — re-creating it for each task switch
+     * is fine. We re-throw via a plain `Error` so the editor's inline
+     * error UI shows the human message without leaking the bucket path.
+     */
+    const handleAttachmentUpload = useMemo(
+        () => async (file: File): Promise<string> => {
+            try {
+                return await uploadWikiAttachment(file, companyId, taskId);
+            } catch (err) {
+                if (err instanceof WikiAttachmentError) {
+                    throw new Error(err.message);
+                }
+                throw err;
+            }
+        },
+        [companyId, taskId],
+    );
 
     const [wikiEditing, setWikiEditing] = useState<boolean>(false);
     const [wikiDraft, setWikiDraft] = useState<string>('');
@@ -208,7 +224,7 @@ const WikiDetailView: React.FC<WikiDetailViewProps> = ({ taskId, companyId, onDi
                                 value={wikiEditing ? wikiDraft : task.wiki?.contentMd ?? ''}
                                 onChange={setWikiDraft}
                                 readOnly={!wikiEditing}
-                                onAttachmentUpload={placeholderAttachmentUpload}
+                                onAttachmentUpload={handleAttachmentUpload}
                             />
                         </Box>
                     </Suspense>

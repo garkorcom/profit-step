@@ -65,6 +65,10 @@ import type {
     TaskPriority,
     TransitionAction,
 } from '../../../api/tasktotimeApi';
+import {
+    uploadWikiAttachment,
+    WikiAttachmentError,
+} from '../../../api/tasktotimeWikiAttachments';
 
 /**
  * Lazy-load the Markdown editor so the heavy MDXEditor bundle (~590 KB raw,
@@ -332,32 +336,34 @@ function newIdempotencyKey(): string {
 }
 
 /**
- * Tiny sleep helper used by the wiki attachment-upload stub. Matches the
- * 500 ms latency of the Phase 4.3 demo so the editor's "uploading…" UX feels
- * realistic until Firebase Storage wiring lands.
- */
-function sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => {
-        setTimeout(resolve, ms);
-    });
-}
-
-/**
- * Placeholder attachment-upload handler for the wiki editor.
+ * Build the editor's `imageUploadHandler` for one (companyId, taskId) pair.
  *
- * TODO(tasktotime/wiki-attachments): wire to Firebase Storage. Should upload
- * the file to a per-task path (e.g. `companies/{companyId}/tasks/{taskId}/wiki/{filename}`)
- * and return the public download URL. Until then we return a stable
- * placeholder so the editor's drop-image / insert-image affordances render
- * end-to-end without a backend dependency.
+ * The MDXEditor only hands us `(file: File) => Promise<string>` — no task
+ * context — so we close over the IDs here. Validation / upload-rejection
+ * messaging surfaces through the editor's own error UI; we deliberately do
+ * NOT toast errors from this layer because MDXEditor already renders an
+ * inline `<Alert>` next to the broken insert. Re-throwing keeps the editor's
+ * spinner state in sync (it relies on the rejected Promise to clear).
+ *
+ * `WikiAttachmentError` is the typed shape thrown by `uploadWikiAttachment`
+ * — we re-message size/type errors so the editor doesn't show the raw
+ * Storage error string, which leaks the bucket path on production.
  */
-async function placeholderAttachmentUpload(file: File): Promise<string> {
-    await sleep(500);
-    // eslint-disable-next-line no-console
-    console.info(
-        `[TaskDetailPage] stub wiki upload for "${file.name}" (${file.size} bytes) — returning placeholder URL`,
-    );
-    return 'https://placehold.co/600x400';
+function buildWikiAttachmentUploader(
+    companyId: string,
+    taskId: string,
+): (file: File) => Promise<string> {
+    return async (file: File): Promise<string> => {
+        try {
+            return await uploadWikiAttachment(file, companyId, taskId);
+        } catch (err) {
+            if (err instanceof WikiAttachmentError) {
+                // Surface the human message; MDXEditor renders it inline.
+                throw new Error(err.message);
+            }
+            throw err;
+        }
+    };
 }
 
 // ─── Block dialog ───────────────────────────────────────────────────────
@@ -611,6 +617,22 @@ const TaskDetailPage: React.FC = () => {
 
     const companyId = userProfile?.companyId ?? null;
     const taskId = id ?? null;
+
+    /**
+     * Editor's image-upload handler. Memoised so swapping handlers between
+     * renders doesn't reset MDXEditor's internal upload state. We only build
+     * the real uploader once both IDs land — until then the placeholder
+     * rejects with a friendly message instead of trying to upload to
+     * `companies/null/tasks/null/...`.
+     */
+    const handleWikiAttachmentUpload = useMemo(() => {
+        if (!companyId || !taskId) {
+            return async (): Promise<string> => {
+                throw new Error('Wait for the task to load before uploading attachments.');
+            };
+        }
+        return buildWikiAttachmentUploader(companyId, taskId);
+    }, [companyId, taskId]);
 
     const { task, loading, error, refetch } = useTask(taskId, companyId);
     const transitionTask = useTransitionTask();
@@ -1374,7 +1396,7 @@ const TaskDetailPage: React.FC = () => {
                             }
                             onChange={setWikiDraft}
                             readOnly={!wikiEditing}
-                            onAttachmentUpload={placeholderAttachmentUpload}
+                            onAttachmentUpload={handleWikiAttachmentUpload}
                         />
                     </Suspense>
                 </Paper>

@@ -353,7 +353,12 @@ const CalendarPage: React.FC = () => {
                     <Box display="flex" alignItems="center" justifyContent="space-between" width={isMobile ? '100%' : 'auto'}>
                         <Box display="flex" alignItems="center" gap={1}>
                             <Typography variant="h6" fontWeight="600" sx={{ letterSpacing: '-0.02em', fontFamily: 'Inter, system-ui, sans-serif' }}>
-                                {isMobile ? format(currentDate, 'MMMM') : 'Calendar'}
+                                {/* Always include the year so a screenshot or
+                                    URL share doesn't strip the calendar's
+                                    primary date context. Mobile previously
+                                    showed only `MMMM` which left "April" looking
+                                    like the same screen across years. */}
+                                {isMobile ? format(currentDate, 'MMMM yyyy') : 'Calendar'}
                             </Typography>
                             {!isMobile && (
                                 <Typography variant="body1" fontWeight="500" sx={{ minWidth: 160, ml: 2 }}>
@@ -363,22 +368,54 @@ const CalendarPage: React.FC = () => {
                         </Box>
 
                         <Box display="flex" alignItems="center" bgcolor="#F7F7F5" borderRadius={1} px={0.5}>
-                            <IconButton size="small" onClick={handlePrev}><ChevronLeftIcon fontSize="small" /></IconButton>
-                            <Button onClick={handleToday} sx={{ color: '#37352F', textTransform: 'none', fontWeight: 500, minWidth: 'auto', px: 1.5 }}>
+                            <IconButton
+                                size="small"
+                                onClick={handlePrev}
+                                aria-label={
+                                    viewMode === 'day'
+                                        ? 'Previous day'
+                                        : viewMode === 'week'
+                                          ? 'Previous week'
+                                          : 'Previous month'
+                                }
+                            >
+                                <ChevronLeftIcon fontSize="small" />
+                            </IconButton>
+                            <Button
+                                onClick={handleToday}
+                                aria-label="Jump to today"
+                                sx={{ color: '#37352F', textTransform: 'none', fontWeight: 500, minWidth: 'auto', px: 1.5 }}
+                            >
                                 {isMobile ? 'T' : 'Today'}
                             </Button>
-                            <IconButton size="small" onClick={handleNext}><ChevronRightIcon fontSize="small" /></IconButton>
+                            <IconButton
+                                size="small"
+                                onClick={handleNext}
+                                aria-label={
+                                    viewMode === 'day'
+                                        ? 'Next day'
+                                        : viewMode === 'week'
+                                          ? 'Next week'
+                                          : 'Next month'
+                                }
+                            >
+                                <ChevronRightIcon fontSize="small" />
+                            </IconButton>
                         </Box>
                     </Box>
 
                     <Box display="flex" alignItems="center" gap={1} justifyContent={isMobile ? 'space-between' : 'flex-end'} width={isMobile ? '100%' : 'auto'}>
                         <Box sx={{ border: '1px solid #E0E0E0', borderRadius: 1, display: 'flex', overflow: 'hidden' }}>
-                            {(isMobile ? ['list', 'day', 'month'] : ['month', 'week', 'day']).map((mode, i) => (
+                            {/* Show all 4 modes on both viewports so users can
+                                pick whichever suits their work style. The default
+                                still differs by viewport (mobile→list, desktop→
+                                month — set in the useEffect on isMobile). */}
+                            {(['list', 'day', 'week', 'month'] as ViewMode[]).map((mode, i) => (
                                 <React.Fragment key={mode}>
                                     {i > 0 && <Box sx={{ width: '1px', bgcolor: '#E0E0E0' }} />}
                                     <Button
                                         size="small"
-                                        onClick={() => setViewMode(mode as ViewMode | 'list')}
+                                        onClick={() => setViewMode(mode)}
                                         sx={{
                                             bgcolor: viewMode === mode ? '#F7F7F5' : 'transparent',
                                             color: '#37352F',

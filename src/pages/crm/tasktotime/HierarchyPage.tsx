@@ -27,11 +27,13 @@ const HierarchyPage: React.FC = () => {
                 taskId,
                 updates: { parentTaskId: targetParentId }
             });
-            toast.success('Task moved successfully');
+            toast.success('Task moved');
             refetch();
         } catch (err) {
             console.error('Failed to move task:', err);
-            toast.error('Failed to move task');
+            toast.error('Failed to move task — reverting');
+            // Re-fetch so the optimistic visual revert matches server state.
+            refetch();
         }
     }, [companyId, refetch]);
 

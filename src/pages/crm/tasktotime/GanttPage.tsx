@@ -7,37 +7,22 @@ import "gantt-task-react/dist/index.css";
 import { useAuth } from '../../../auth/AuthContext';
 import { tasktotimeApi } from '../../../api/tasktotimeApi';
 import type { TaskDto, TaskLifecycle } from '../../../api/tasktotimeApi';
+import { LIFECYCLE_COLORS } from '../../../components/tasktotime/visualTokens';
 
 const getTaskProgress = (lifecycle: TaskLifecycle): number => {
     switch (lifecycle) {
         case 'completed':
         case 'accepted':
             return 100;
-        case 'doing':
-        case 'review':
+        case 'started':
+        case 'blocked':
             return 50;
         default:
             return 0;
     }
 };
 
-const getTaskColor = (lifecycle: TaskLifecycle): string => {
-    switch (lifecycle) {
-        case 'completed':
-        case 'accepted':
-            return '#4caf50'; // green
-        case 'doing':
-        case 'review':
-            return '#ff9800'; // orange
-        case 'todo':
-        case 'draft':
-            return '#2196f3'; // blue
-        case 'canceled':
-            return '#9e9e9e'; // grey
-        default:
-            return '#2196f3';
-    }
-};
+const getTaskColor = (lifecycle: TaskLifecycle): string => LIFECYCLE_COLORS[lifecycle].fg;
 
 const GanttPage: React.FC = () => {
     const { userProfile } = useAuth();
@@ -107,9 +92,9 @@ const GanttPage: React.FC = () => {
                 start,
                 end,
                 progress: getTaskProgress(t.lifecycle),
-                type: t.subtaskIds?.length > 0 ? 'project' : 'task',
+                type: t.subtaskIds.length > 0 ? 'project' : 'task',
                 project: t.parentTaskId || undefined,
-                dependencies: t.dependencies?.map(d => d.taskId),
+                dependencies: t.dependsOn?.map(d => d.taskId),
                 isDisabled: false,
                 styles: {
                     progressColor: getTaskColor(t.lifecycle),

@@ -181,9 +181,15 @@ function applyOrderAndCursor(
     typeof filter.search === 'string' &&
     filter.search.trim().length > 0;
   const orderBy = hasSearch ? 'titleLowercase' : (options?.orderBy ?? 'createdAt');
-  const direction = hasSearch
-    ? (options?.direction ?? 'asc')
-    : (options?.direction ?? 'desc');
+  // When search is active we MUST use `asc` regardless of what the caller
+  // requested. Composite indexes are direction-specific in Firestore — the
+  // `tasktotime_tasks` index for prefix search is published as ASC (see
+  // `firestore.indexes.json:companyId,parentTaskId,titleLowercase`). Honoring
+  // a stray `direction=desc` from the list view (whose non-search default is
+  // `updatedAt DESC`) makes the query require an index that doesn't exist
+  // and trip a 503 MISSING_INDEX at the gateway. Alphabetical (A→Z) is also
+  // the only ordering that makes sense for a prefix-match result set.
+  const direction = hasSearch ? 'asc' : (options?.direction ?? 'desc');
   // Primary sort + stable tiebreaker on the doc id. The same direction is
   // used for both legs so Firestore can satisfy the ordering with a single
   // index walk (the trailing `__name__` order matches the implicit doc-id

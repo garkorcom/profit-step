@@ -470,6 +470,31 @@ describe('FirestoreTaskRepository titleLowercase derived index', () => {
     expect(orderByFields).not.toContain('createdAt');
   });
 
+  test('findMany() with filter.search forces ASC direction even when caller asked for DESC', async () => {
+    // Regression: prod 503 (MISSING_INDEX) seen on 2026-04-29 when the
+    // TaskListPage default `direction=desc` (matching its non-search
+    // `updatedAt DESC` order) bled into a search-active request. The
+    // composite index on `(companyId, parentTaskId, titleLowercase)` is
+    // published as ASC, so honoring a stray `desc` requires a second index
+    // that doesn't exist. Always coerce to ASC for prefix-search queries.
+    const { db, orderBySpy } = makeMockDb();
+    const repo = new FirestoreTaskRepository(db);
+    await repo.findMany(
+      { companyId: asCompanyId('c1'), search: 'kitchen' },
+      // Caller asks for DESC — must be overridden when search is active.
+      { direction: 'desc' },
+    );
+    const titleLowercaseCall = orderBySpy.mock.calls.find(
+      (c: unknown[]) => c[0] === 'titleLowercase',
+    );
+    expect(titleLowercaseCall).toBeDefined();
+    expect(titleLowercaseCall?.[1]).toBe('asc');
+    // The __name__ tiebreaker must use the same direction so a single
+    // index walk satisfies the query.
+    const nameCall = orderBySpy.mock.calls.find((c: unknown[]) => c[0] === '__name__');
+    expect(nameCall?.[1]).toBe('asc');
+  });
+
   test('findMany() canonicalises uppercase user input to match lowercase-stored data', async () => {
     const { db, whereSpy } = makeMockDb();
     const repo = new FirestoreTaskRepository(db);

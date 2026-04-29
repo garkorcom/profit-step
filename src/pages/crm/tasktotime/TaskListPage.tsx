@@ -481,7 +481,7 @@ const FilterBar: React.FC<FilterBarProps> = ({ control, onReset, canReset, searc
                                 fullWidth
                                 size="small"
                                 label="Search title"
-                                placeholder="Поиск по названию"
+                                placeholder="Search title"
                                 InputProps={{
                                     endAdornment:
                                         searchPending ? (

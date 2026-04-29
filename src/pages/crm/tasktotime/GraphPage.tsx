@@ -319,8 +319,8 @@ const GraphPage: React.FC = () => {
             // by topological rank — but `createdAt` keeps fetches stable
             // across reloads (so dagre's deterministic layout produces the
             // same diagram for a given task set).
-            orderBy: 'createdAt',
-            direction: 'asc',
+            orderBy: 'updatedAt',
+            direction: 'desc',
             limit: FETCH_LIMIT,
         };
         if (lifecycle.length > 0) p.lifecycle = lifecycle;

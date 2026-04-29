@@ -1445,6 +1445,24 @@
           "order": "ASCENDING"
         },
         {
+          "fieldPath": "createdAt",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "tasktotime_tasks",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "companyId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "parentTaskId",
+          "order": "ASCENDING"
+        },
+        {
           "fieldPath": "lifecycle",
           "order": "ASCENDING"
         },

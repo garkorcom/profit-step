@@ -85,6 +85,10 @@ const TasktotimeComingSoon = React.lazy(() => import('../pages/crm/tasktotime').
 // /crm/tasktotime/graph is opened. Keeps the main bundle and the task-list
 // path free of the ~135KB graph runtime.
 const TasktotimeGraphPage = React.lazy(() => import('../pages/crm/tasktotime/GraphPage'));
+const TasktotimeHierarchyPage = React.lazy(() => import('../pages/crm/tasktotime/HierarchyPage'));
+const TasktotimeGanttPage = React.lazy(() => import('../pages/crm/tasktotime/GanttPage'));
+const TasktotimeWikiPage = React.lazy(() => import('../pages/crm/tasktotime/WikiPage'));
+const TasktotimeCalendarPage = React.lazy(() => import('../pages/crm/tasktotime/CalendarPage'));
 
 // Loading fallback component
 const PageLoader = () => (
@@ -274,12 +278,12 @@ const AppRouter: React.FC = () => {
             <Route path="inbox" element={<Navigate to="/crm/tasktotime/list?bucket=inbox" replace />} />
             <Route path="board" element={<TasktotimeBoardPage />} />
             <Route path="timeline" element={<TasktotimeComingSoon label="Timeline" />} />
-            <Route path="calendar" element={<TasktotimeComingSoon label="Calendar" />} />
-            <Route path="gantt" element={<TasktotimeComingSoon label="Gantt" />} />
+            <Route path="calendar" element={<TasktotimeCalendarPage />} />
+            <Route path="gantt" element={<TasktotimeGanttPage />} />
             {/* Phase 4.5 — dependency graph view (real, no longer Coming Soon). */}
             <Route path="graph" element={<TasktotimeGraphPage />} />
-            <Route path="hierarchy" element={<TasktotimeComingSoon label="Hierarchy" />} />
-            <Route path="wiki" element={<TasktotimeComingSoon label="Wiki" />} />
+            <Route path="hierarchy" element={<TasktotimeHierarchyPage />} />
+            <Route path="wiki" element={<TasktotimeWikiPage />} />
             <Route path="reports" element={<TasktotimeComingSoon label="Reports" />} />
             <Route path="tasks/:id" element={<TaskDetailPage />} />
           </Route>

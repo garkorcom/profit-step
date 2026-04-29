@@ -434,6 +434,25 @@ const GraphPage: React.FC = () => {
                             {edges.length} {edges.length === 1 ? 'edge' : 'edges'}
                         </Box>
                     )}
+                    {/* When the API returned exactly FETCH_LIMIT we very likely
+                        truncated. The backend doesn't return total count, so we
+                        can't show "X of Y" — just warn that more may exist. */}
+                    {!loadingInitial && !error && tasks.length >= FETCH_LIMIT && (
+                        <Box
+                            role="status"
+                            sx={{
+                                bgcolor: '#FEF3C7',
+                                color: '#92400E',
+                                px: 1,
+                                py: 0.25,
+                                borderRadius: '12px',
+                                fontSize: '0.75rem',
+                                fontWeight: 600,
+                            }}
+                        >
+                            Showing first {FETCH_LIMIT} — narrow with filters
+                        </Box>
+                    )}
                 </Box>
 
                 <Tooltip title="Refresh">

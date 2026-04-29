@@ -83,6 +83,13 @@ async function readErr(res: Response): Promise<string> {
     return parsed.code ? `${parsed.code}: ${parsed.message}` : parsed.message;
 }
 
+function mintIdempotencyKey(): string {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+        return crypto.randomUUID();
+    }
+    return `update-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
 /**
  * Typed error thrown by API methods that need their callers to distinguish
  * outcomes by HTTP status / server-supplied `code`. Currently used by
@@ -405,6 +412,50 @@ export interface UpdateWikiInput {
     changeSummary?: string;
 }
 
+/**
+ * Whitelist of fields that may be patched via `PATCH /api/tasktotime/tasks/:id`.
+ * Mirrors `tasktotime/adapters/http/schemas.ts:PATCHABLE_KEYS`. Lifecycle and
+ * identity fields go through dedicated endpoints (`/transition`, `/wiki`).
+ */
+export interface PatchTaskUpdates {
+    title?: string;
+    description?: string;
+    memo?: string;
+    bucket?: TaskBucket;
+    priority?: TaskPriority;
+    blockedReason?: string;
+    assignedTo?: TaskUserRef;
+    reviewedBy?: TaskUserRef;
+    coAssignees?: TaskUserRef[];
+    requiredHeadcount?: number;
+    linkedContactIds?: string[];
+    plannedStartAt?: number | null;
+    dueAt?: number | null;
+    estimatedDurationMinutes?: number | null;
+    autoShiftEnabled?: boolean;
+    parentTaskId?: string | null;
+    category?: string | null;
+    phase?: string | null;
+    clientId?: string | null;
+    clientName?: string | null;
+    projectId?: string | null;
+    projectName?: string | null;
+    sourceEstimateId?: string | null;
+    sourceEstimateItemId?: string | null;
+    sourceNoteId?: string | null;
+    linkedTaskIds?: string[];
+    clientVisible?: boolean;
+    internalOnly?: boolean;
+}
+
+export interface UpdateTaskInput {
+    companyId: string;
+    taskId: string;
+    updates: PatchTaskUpdates;
+    /** Caller may supply a key for de-duplication; otherwise we mint one. */
+    idempotencyKey?: string;
+}
+
 export interface TransitionTaskResult {
     task: TaskDto;
     events: unknown[];
@@ -543,6 +594,28 @@ export const tasktotimeApi = {
             const { code, message } = await parseApiError(res);
             throw new TasktotimeApiError(res.status, code, message);
         }
+        const body = (await res.json()) as { ok: boolean; task: TaskDto };
+        return body.task;
+    },
+
+    /**
+     * `PATCH /api/tasktotime/tasks/:id` — partial update for non-state-machine
+     * fields. Lifecycle transitions go through `transitionTask`; wiki edits
+     * through `updateWiki`.
+     *
+     * The backend requires `idempotencyKey` (header or body). We generate one
+     * when the caller doesn't supply it so a double-click on a Gantt drag
+     * doesn't create two updates.
+     */
+    async updateTask(input: UpdateTaskInput): Promise<TaskDto> {
+        const idempotencyKey = input.idempotencyKey ?? mintIdempotencyKey();
+        const url = `${getApiUrl()}/api/tasktotime/tasks/${encodeURIComponent(input.taskId)}`;
+        const res = await fetch(url, {
+            method: 'PATCH',
+            headers: await authHeaders(input.companyId),
+            body: JSON.stringify({ ...input.updates, idempotencyKey }),
+        });
+        if (!res.ok) throw new Error(await readErr(res));
         const body = (await res.json()) as { ok: boolean; task: TaskDto };
         return body.task;
     },

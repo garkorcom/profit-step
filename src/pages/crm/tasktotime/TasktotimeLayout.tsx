@@ -88,12 +88,11 @@ const NAV_ITEMS: NavItem[] = [
     { to: 'inbox', label: 'Inbox', icon: <InboxIcon />, enabled: true },
     { to: 'board', label: 'Board', icon: <ViewKanbanIcon />, enabled: true },
     { to: 'timeline', label: 'Timeline', icon: <TimelineIcon />, enabled: false },
-    { to: 'calendar', label: 'Calendar', icon: <CalendarMonthIcon />, enabled: false },
-    { to: 'gantt', label: 'Gantt', icon: <ArchitectureIcon />, enabled: false },
-    // Phase 4.5 — dependency graph view shipped.
+    { to: 'calendar', label: 'Calendar', icon: <CalendarMonthIcon />, enabled: true },
+    { to: 'gantt', label: 'Gantt', icon: <ArchitectureIcon />, enabled: true },
     { to: 'graph', label: 'Graph', icon: <HubIcon />, enabled: true },
-    { to: 'hierarchy', label: 'Hierarchy', icon: <AccountTreeIcon />, enabled: false },
-    { to: 'wiki', label: 'Wiki', icon: <DescriptionIcon />, enabled: false },
+    { to: 'hierarchy', label: 'Hierarchy', icon: <AccountTreeIcon />, enabled: true },
+    { to: 'wiki', label: 'Wiki', icon: <DescriptionIcon />, enabled: true },
     { to: 'reports', label: 'Reports', icon: <AssessmentIcon />, enabled: false },
 ];
 

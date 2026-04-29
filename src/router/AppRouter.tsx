@@ -268,7 +268,10 @@ const AppRouter: React.FC = () => {
           <Route path="/crm/tasktotime" element={<TasktotimeLayout />}>
             <Route index element={<TaskListPage />} />
             <Route path="list" element={<TaskListPage />} />
-            <Route path="inbox" element={<TasktotimeComingSoon label="Inbox" />} />
+            {/* Inbox = TaskListPage с pre-set фильтром bucket=inbox.
+                TaskListPage уже умеет читать `?bucket=` из URL (Phase 4.2).
+                Один redirect = один enabled view, нулевой риск. */}
+            <Route path="inbox" element={<Navigate to="/crm/tasktotime/list?bucket=inbox" replace />} />
             <Route path="board" element={<TasktotimeBoardPage />} />
             <Route path="timeline" element={<TasktotimeComingSoon label="Timeline" />} />
             <Route path="calendar" element={<TasktotimeComingSoon label="Calendar" />} />

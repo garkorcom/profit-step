@@ -14,7 +14,23 @@ import { useAuth } from '../../../auth/AuthContext';
 import { useHierarchyTree } from '../../../hooks/useHierarchyTree';
 import { TaskTree } from './hierarchy/TaskTree';
 import { useTask, useUpdateWiki } from '../../../hooks/useTasktotime';
+import { Timestamp } from 'firebase/firestore';
 import { formatDate } from '../../../utils/dateFormatters';
+
+/**
+ * Tasktotime serialises timestamps as epoch-millisecond `number` over the
+ * REST wire format, but the shared `formatDate` helper only accepts a
+ * Firestore `Timestamp`. Wrapping in `Timestamp.fromMillis` is the cheapest
+ * fix that doesn't require touching the shared helper (which the
+ * time-tracking module imports — out-of-scope to modify per CLAUDE.md).
+ *
+ * Returns `'-'` for missing input to match the helper's own empty-state
+ * convention so the call site doesn't need conditional rendering.
+ */
+function formatTaskTimestamp(ts: unknown): string {
+    if (typeof ts !== 'number' || !Number.isFinite(ts)) return '-';
+    return formatDate(Timestamp.fromMillis(ts));
+}
 import { FALLBACK_CHIP, LIFECYCLE_COLORS, PRIORITY_COLORS, resolvePriorityKey } from '../../../components/tasktotime/visualTokens';
 import {
     uploadWikiAttachment,
@@ -162,7 +178,7 @@ const WikiDetailView: React.FC<WikiDetailViewProps> = ({ taskId, companyId, onDi
                         <Typography variant="h6" fontWeight={600}>Wiki Document</Typography>
                         {task.wiki && task.wiki.version > 0 && (
                             <Typography variant="caption" color="text.secondary" sx={{ display: { xs: 'none', sm: 'block' } }}>
-                                v{task.wiki.version} · updated {formatDate(task.wiki.updatedAt)}
+                                v{task.wiki.version} · updated {formatTaskTimestamp(task.wiki.updatedAt)}
                             </Typography>
                         )}
                     </Stack>

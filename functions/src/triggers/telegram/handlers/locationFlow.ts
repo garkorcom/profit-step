@@ -259,6 +259,26 @@ export async function handleLocationConfirmStart(chatId: number, userId: number)
 
     const { hourlyRate, platformUserId, companyId, employeeName } = await resolveHourlyRate(userId);
 
+    // ─── companyId guard (incident 2026-05-07) ───
+    if (!companyId) {
+        await pendingStartRef.delete();
+        logger.error(
+            `[locationFlow] BLOCKED — no companyId for user ${userId} (${employeeName}). Session creation refused.`,
+            { userId, employeeName, platformUserId },
+        );
+        await sendMessage(
+            chatId,
+            '❌ Не могу начать смену: твой профиль не привязан к компании.\n\n' +
+            'Свяжись с админом — он добавит тебя в компанию, и попробуем ещё раз.',
+        );
+        await sendAdminNotification(
+            `🚨 *Bot session blocked*\n` +
+            `Worker: ${employeeName} (tg ${userId})\n` +
+            `Reason: profile has no companyId — link the user to a company.`,
+        );
+        return;
+    }
+
     // Use Timestamp.now() instead of serverTimestamp() — see comment in handleLocationConfirmStart
     const sessionStartTime = admin.firestore.Timestamp.now();
 
@@ -445,6 +465,25 @@ export async function handleLocationNewClient(chatId: number, userId: number, cl
     );
 
     const { hourlyRate, platformUserId, companyId, employeeName } = await resolveHourlyRate(userId);
+
+    // ─── companyId guard (incident 2026-05-07) ───
+    if (!companyId) {
+        logger.error(
+            `[locationFlow new-client] BLOCKED — no companyId for user ${userId} (${employeeName}). Session creation refused.`,
+            { userId, employeeName, platformUserId },
+        );
+        await sendMessage(
+            chatId,
+            '❌ Не могу начать смену: твой профиль не привязан к компании.\n\n' +
+            'Свяжись с админом — он добавит тебя в компанию, и попробуем ещё раз.',
+        );
+        await sendAdminNotification(
+            `🚨 *Bot session blocked*\n` +
+            `Worker: ${employeeName} (tg ${userId})\n` +
+            `Reason: profile has no companyId — link the user to a company.`,
+        );
+        return;
+    }
 
     // Use Timestamp.now() instead of serverTimestamp() — see comment in handleLocationConfirmStart
     const sessionStartTime = admin.firestore.Timestamp.now();

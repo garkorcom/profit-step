@@ -60,6 +60,30 @@ export async function initWorkSession(chatId: number, userId: number, clientId: 
     // 3. Identity Sync & Rate Resolution
     const { hourlyRate, platformUser, platformUserId, companyId, employeeName } = await resolveHourlyRate(userId);
 
+    // ─── companyId guard (incident 2026-05-07) ───
+    // Without companyId on the session, RLS rules hide the document from the
+    // web UI — a "пропало время" symptom. Refuse to create the session and
+    // surface a clear instruction to the worker. Operations should attach
+    // the user / employee profile to a company before retry.
+    if (!companyId) {
+        logger.error(
+            `[initWorkSession] BLOCKED — no companyId for user ${userId} (${employeeName}). ` +
+            `User profile is not linked to a company; bot session creation refused.`,
+            { userId, employeeName, platformUserId },
+        );
+        await sendMessage(
+            chatId,
+            '❌ Не могу начать смену: твой профиль не привязан к компании.\n\n' +
+            'Свяжись с админом — он добавит тебя в компанию, и попробуем ещё раз.',
+        );
+        await sendAdminNotification(
+            `🚨 *Bot session blocked*\n` +
+            `Worker: ${employeeName} (tg ${userId})\n` +
+            `Reason: profile has no companyId — link the user to a company.`,
+        );
+        return;
+    }
+
     if (platformUser) {
         // Sync local employee record to match platform name
         await db.collection('employees').doc(String(userId)).set({
@@ -77,7 +101,7 @@ export async function initWorkSession(chatId: number, userId: number, clientId: 
         employeeId: userId,
         employeeName: employeeName,
         platformUserId: platformUserId, // Link to platform user
-        companyId: companyId,           // Link to company
+        companyId: companyId,           // Link to company (guaranteed non-null by guard above)
         clientId: clientId,
         clientName: clientName,
         startTime: admin.firestore.Timestamp.now(),

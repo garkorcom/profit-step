@@ -28,6 +28,22 @@ export async function handleText(chatId: number, userId: number, text: string) {
         const location = pendingData.location;
         const { hourlyRate, platformUserId, companyId, employeeName } = await resolveHourlyRate(userId);
 
+        // ─── companyId guard (incident 2026-05-07) ───
+        if (!companyId) {
+            await pendingStartRef.delete();
+            await sendMessage(
+                chatId,
+                '❌ Не могу начать смену: твой профиль не привязан к компании.\n\n' +
+                'Свяжись с админом — он добавит тебя в компанию, и попробуем ещё раз.',
+            );
+            await sendAdminNotification(
+                `🚨 *Bot session blocked (textFallback)*\n` +
+                `Worker: ${employeeName} (tg ${userId})\n` +
+                `Reason: profile has no companyId — link the user to a company.`,
+            );
+            return;
+        }
+
         await db.collection('work_sessions').add({
             employeeId: userId,
             employeeName: employeeName,
